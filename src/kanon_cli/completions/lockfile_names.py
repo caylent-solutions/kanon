@@ -53,11 +53,6 @@ from kanon_cli.utils.lock_file_path import derive_lock_file_path
 _COMPLETER_NAME = "__complete_names_in_lockfile"
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
 def _collect_include_paths(includes: list[IncludeEntry]) -> list[str]:
     """Recursively collect path_in_repo values from all nested includes.
 
@@ -107,11 +102,6 @@ def _extract_names(lockfile: Lockfile) -> list[str]:
     return sorted(candidates)
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def complete(current_token: str) -> list[str]:
     """Return lockfile names that start with current_token.
 
@@ -153,11 +143,6 @@ def complete(current_token: str) -> list[str]:
 
     names = _extract_names(lockfile)
     return [n for n in names if n.startswith(current_token)]
-
-
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
 
 
 def register(

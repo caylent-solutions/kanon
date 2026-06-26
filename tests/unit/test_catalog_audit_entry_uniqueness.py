@@ -23,11 +23,6 @@ import pytest
 from kanon_cli.commands.catalog import AUDIT_CHECK_REGISTRY, AuditFinding
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_xml(tmp_path: pathlib.Path, filename: str, entry_name: str) -> pathlib.Path:
     """Write a minimal *-marketplace.xml with the given entry name under repo-specs/."""
     repo_specs = tmp_path / "repo-specs"
@@ -73,11 +68,6 @@ def _run_check(tmp_path: pathlib.Path) -> list[AuditFinding]:
     return check_fn(tmp_path)
 
 
-# ---------------------------------------------------------------------------
-# Registry registration (AC-FUNC-007)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestEntryNameUniquenessCheckRegistered:
     """'entry-name-uniqueness' is registered in AUDIT_CHECK_REGISTRY."""
@@ -87,11 +77,6 @@ class TestEntryNameUniquenessCheckRegistered:
 
     def test_entry_name_uniqueness_value_is_callable(self) -> None:
         assert callable(AUDIT_CHECK_REGISTRY["entry-name-uniqueness"])
-
-
-# ---------------------------------------------------------------------------
-# All-unique names produce zero findings (AC-FUNC-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -110,7 +95,7 @@ class TestAllUniqueNamesProduceZeroFindings:
             ["alpha", "beta"],
             ["foo", "bar", "baz"],
             ["tool_x", "tool_y", "tool_z"],
-            ["Foo", "foo"],  # case-sensitive: these are distinct
+            ["Foo", "foo"],
         ],
     )
     def test_all_distinct_names_produce_zero_findings(self, tmp_path: pathlib.Path, names: list[str]) -> None:
@@ -127,11 +112,6 @@ class TestAllUniqueNamesProduceZeroFindings:
         (tmp_path / "repo-specs").mkdir(parents=True, exist_ok=True)
         findings = _run_check(tmp_path)
         assert findings == []
-
-
-# ---------------------------------------------------------------------------
-# Two-way collision produces one ERROR finding (AC-FUNC-002)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -193,11 +173,6 @@ class TestTwoWayCollisionProducesOneError:
         assert colliding_name in error_findings[0].message, f"Expected finding to name {colliding_name!r}"
 
 
-# ---------------------------------------------------------------------------
-# Three-way collision produces one ERROR finding (AC-FUNC-003)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestThreeWayCollisionProducesOneError:
     """Three XML files with the same entry name produce exactly one ERROR finding."""
@@ -226,11 +201,6 @@ class TestThreeWayCollisionProducesOneError:
         assert str(file_a) in msg or file_a.name in msg, f"Expected finding to name {file_a} but got: {msg}"
         assert str(file_b) in msg or file_b.name in msg, f"Expected finding to name {file_b} but got: {msg}"
         assert str(file_c) in msg or file_c.name in msg, f"Expected finding to name {file_c} but got: {msg}"
-
-
-# ---------------------------------------------------------------------------
-# Two independent collision groups produce two ERROR findings (AC-FUNC-004)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -274,7 +244,7 @@ class TestTwoIndependentCollisionGroups:
         findings = _run_check(tmp_path)
         error_findings = [f for f in findings if f.kind == "error"]
         assert len(error_findings) == 2
-        # The finding for 'name-a' should name file_a1 and file_a2, not file_b1 / file_b2.
+
         finding_a = next((f for f in error_findings if "name-a" in f.message), None)
         assert finding_a is not None, "Expected a finding for 'name-a'"
         assert str(file_a1) in finding_a.message or file_a1.name in finding_a.message
@@ -285,11 +255,6 @@ class TestTwoIndependentCollisionGroups:
         assert file_b2.name not in finding_a.message, (
             f"'name-a' finding should not name group-b files but got: {finding_a.message}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Missing <name> element contributes nothing (AC-FUNC-005)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -318,7 +283,7 @@ class TestMissingNameIgnored:
         _write_xml(tmp_path, "tool-b-marketplace.xml", "shared-name")
         findings = _run_check(tmp_path)
         error_findings = [f for f in findings if f.kind == "error"]
-        # Still exactly one ERROR (for the two colliding named files), not two or three.
+
         assert len(error_findings) == 1, (
             f"Expected exactly one ERROR (missing-name file must not add a collision), "
             f"got {len(error_findings)}: {[f.message for f in error_findings]}"
@@ -332,7 +297,7 @@ class TestMissingNameIgnored:
         bad_xml.write_text("<unclosed", encoding="utf-8")
         _write_xml(tmp_path, "good-marketplace.xml", "good-name")
         findings = _run_check(tmp_path)
-        # Only one good-named file; no collision possible => zero findings.
+
         assert findings == [], (
             f"Expected zero uniqueness findings when malformed XML present with one good file, got: {findings}"
         )
@@ -366,11 +331,6 @@ class TestMissingNameIgnored:
         assert findings == [], (
             f"Expected zero uniqueness findings when multi-block XML present with one good file, got: {findings}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Case-sensitive comparison (AC-FUNC-006)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -408,11 +368,6 @@ class TestCaseSensitiveComparison:
             f"Expected exactly one ERROR for same-case name collision, "
             f"got {len(error_findings)}: {[f.message for f in error_findings]}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Finding code and attributes
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

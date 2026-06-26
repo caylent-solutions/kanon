@@ -28,6 +28,8 @@ import pytest
 import kanon_cli.repo.color as color
 import kanon_cli.repo.platform_utils as platform_utils
 import kanon_cli.repo.repo_trace as repo_trace
+from kanon_cli.repo.command import Command
+from tests.conftest import managed_repo_dir
 
 SMOKE_TEST_TIMEOUT_ENV_VAR = "SMOKE_TEST_TIMEOUT"
 
@@ -42,24 +44,11 @@ if _THIS_DIR not in sys.path:
     sys.path.insert(0, _THIS_DIR)
 
 
-# ---------------------------------------------------------------------------
-# Auto-apply the unit marker to every test in this directory.
-#
-# The upstream files under tests/unit/repo/ were copied from the Gerrit repo
-# test suite, which predates the project-level pytest marker conventions
-# (unit / integration / functional). This hook applies @pytest.mark.unit to
-# any test collected from tests/unit/repo/** that does not already carry one
-# of the three registered markers, so every test runs under exactly one of
-# the three make targets (make test-unit / test-integration / test-functional)
-# and nothing is orphaned.
-# ---------------------------------------------------------------------------
-
-
 _MARKERS = {"unit", "integration", "functional"}
 
 
 def pytest_collection_modifyitems(config, items):
-    """Apply @pytest.mark.unit to unmarked items collected under tests/unit/repo/."""
+    """Apply @pytest.mark.unit under tests/unit/repo/."""
     this_dir = pathlib.Path(__file__).resolve().parent
     for item in items:
         try:
@@ -75,17 +64,30 @@ def pytest_collection_modifyitems(config, items):
         item.add_marker(pytest.mark.unit)
 
 
-# ---------------------------------------------------------------------------
-# Shared pytest fixtures for the repo test suite.
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(autouse=True)
 def reset_color_default():
     """Prevent test pollution via color.DEFAULT global state."""
     saved = color.DEFAULT
     yield
     color.DEFAULT = saved
+
+
+@pytest.fixture(autouse=True)
+def reset_parallel_context():
+    """Reset the Command._parallel_context class attribute before each test.
+
+    Command.ParallelContext asserts the class attribute is None on entry, and
+    Command._InitParallelWorker sets it without a paired reset (it normally runs
+    in a child worker process). Tests that exercise that worker entry point in
+    process leave the attribute populated on the shared class object. Under
+    pytest-xdist loadscope grouping that leaked state survives into later tests
+    in the same worker (for example the Branches/Diff Execute tests), tripping
+    the ParallelContext assertion. Reset it before and after each test so the
+    leak cannot cross test boundaries.
+    """
+    Command._parallel_context = None
+    yield
+    Command._parallel_context = None
 
 
 @pytest.fixture(autouse=True)
@@ -123,8 +125,13 @@ def session_tmp_home_dir(tmp_path_factory, monkeysession):
     """Set HOME to a temporary directory, avoiding the user's .gitconfig.
 
     Set home at session scope to take effect prior to test class setUpClass.
+
+    The session-scoped HOME accumulates git state for the whole run, so its
+    backing temp directory is removed on session teardown via
+    :func:`tests.conftest.managed_repo_dir` to reap that state promptly.
     """
-    return _set_home(monkeysession, tmp_path_factory.mktemp("home"))
+    with managed_repo_dir(tmp_path_factory, "home") as home:
+        yield _set_home(monkeysession, home)
 
 
 @pytest.fixture(autouse=True)
@@ -178,11 +185,6 @@ def subprocess_timeout() -> int:
     return timeout
 
 
-# ---------------------------------------------------------------------------
-# Kanon repo root fixture
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def repo_root() -> str:
     """Return the absolute path to the kanon repository root as a string.
@@ -196,10 +198,6 @@ def repo_root() -> str:
     """
     return str(REPO_ROOT)
 
-
-# ---------------------------------------------------------------------------
-# Fixtures loaded from tests/unit/repo/fixtures/
-# ---------------------------------------------------------------------------
 
 _FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 

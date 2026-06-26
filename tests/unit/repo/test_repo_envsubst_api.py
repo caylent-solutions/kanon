@@ -31,11 +31,6 @@ import kanon_cli.repo as repo_pkg
 from kanon_cli.repo import RepoCommandError
 
 
-# ---------------------------------------------------------------------------
-# Test helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_manifest_dir(base: pathlib.Path) -> pathlib.Path:
     """Create the .repo/manifests/ directory structure under base.
 
@@ -79,11 +74,6 @@ _UNDEFINED_VAR_MANIFEST_TEMPLATE = """\
 """
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: repo_envsubst() expands environment variables in the manifest
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_envsubst_expands_environment_variables(tmp_path: pathlib.Path) -> None:
     """AC-TEST-001: repo_envsubst() substitutes ${VAR} placeholders with values.
@@ -112,11 +102,6 @@ def test_envsubst_expands_environment_variables(tmp_path: pathlib.Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: repo_envsubst() preserves XML entities
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_envsubst_preserves_xml_entities(tmp_path: pathlib.Path) -> None:
     """AC-TEST-002: repo_envsubst() must not corrupt XML entity references.
@@ -138,8 +123,6 @@ def test_envsubst_preserves_xml_entities(tmp_path: pathlib.Path) -> None:
 
     result_content = manifest_path.read_text(encoding="utf-8")
 
-    # Output must still be parseable as valid XML -- if entities were corrupted
-    # the parser will raise. This assertion can fail if envsubst corrupts XML.
     try:
         ET.fromstring(result_content)
     except ET.ParseError as exc:
@@ -148,11 +131,6 @@ def test_envsubst_preserves_xml_entities(tmp_path: pathlib.Path) -> None:
             f"ParseError: {exc}\n"
             f"Manifest content:\n{result_content}"
         ) from exc
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: repo_envsubst() creates a backup of the original manifest
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -182,11 +160,6 @@ def test_envsubst_creates_backup_of_original_manifest(tmp_path: pathlib.Path) ->
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: repo_envsubst() preserves undefined variables
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_envsubst_preserves_undefined_variables(tmp_path: pathlib.Path) -> None:
     """AC-TEST-004: repo_envsubst() must leave undefined ${VAR} placeholders intact.
@@ -198,8 +171,6 @@ def test_envsubst_preserves_undefined_variables(tmp_path: pathlib.Path) -> None:
     manifests_dir = _make_manifest_dir(tmp_path)
     manifest_path = _write_manifest(manifests_dir, "with_undefined.xml", _UNDEFINED_VAR_MANIFEST_TEMPLATE)
 
-    # Provide only GITBASE; UNDEFINED_VAR_XYZ is intentionally absent.
-    # Also ensure UNDEFINED_VAR_XYZ is not in os.environ by removing it if present.
     env_without_undefined = {k: v for k, v in os.environ.items() if k != "UNDEFINED_VAR_XYZ"}
     env_without_undefined.pop("UNDEFINED_VAR_XYZ", None)
 
@@ -213,11 +184,6 @@ def test_envsubst_preserves_undefined_variables(tmp_path: pathlib.Path) -> None:
         f"Expected undefined variable ${{UNDEFINED_VAR_XYZ}} to be preserved literally in "
         f"the manifest, but it was removed or expanded.\nManifest content:\n{result_content}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005: repo_envsubst() does not mutate sys.argv
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -243,11 +209,6 @@ def test_envsubst_does_not_mutate_sys_argv(tmp_path: pathlib.Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-006: repo_envsubst() restores os.environ after the call
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_envsubst_restores_os_environ_after_call(tmp_path: pathlib.Path) -> None:
     """AC-TEST-006: repo_envsubst() must restore os.environ to its pre-call state.
@@ -261,11 +222,7 @@ def test_envsubst_restores_os_environ_after_call(tmp_path: pathlib.Path) -> None
     _write_manifest(manifests_dir, "default.xml", _SIMPLE_MANIFEST_TEMPLATE)
 
     env_before = copy.deepcopy(dict(os.environ))
-    # Use a key that is unlikely to be set in the actual environment.
-    # The literal must have low Shannon entropy so the project's gitleaks
-    # `generic-api-key` rule does not classify it as a hardcoded secret;
-    # uppercase + underscore (no digits, no mixed case-and-digits) keeps
-    # entropy well below the rule's threshold.
+
     test_key = "KANON_TEST_ENVSUBST_SENTINEL_VAR"
     assert test_key not in env_before, (
         f"Test sentinel key {test_key!r} is already in os.environ -- choose a different key."
@@ -296,11 +253,6 @@ def test_envsubst_restores_os_environ_after_call(tmp_path: pathlib.Path) -> None
     assert not violations, "repo_envsubst() did not restore os.environ:\n" + "\n".join(f"  {v}" for v in violations)
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-007: repo_envsubst() raises on failure (does not call sys.exit)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_envsubst_raises_on_failure_not_sys_exit(tmp_path: pathlib.Path) -> None:
     """AC-TEST-007: repo_envsubst() must raise RepoCommandError on failure, not call sys.exit().
@@ -310,7 +262,7 @@ def test_envsubst_raises_on_failure_not_sys_exit(tmp_path: pathlib.Path) -> None
     failure as a RepoCommandError (not SystemExit) so library callers can catch
     and handle it programmatically.
     """
-    # tmp_path has no .repo/ directory -- the envsubst command will fail.
+
     empty_dir = tmp_path / "no_repo_dir"
     empty_dir.mkdir()
 
@@ -323,11 +275,6 @@ def test_envsubst_raises_on_failure_not_sys_exit(tmp_path: pathlib.Path) -> None
     assert exc_info.value.exit_code is not None, (
         f"RepoCommandError must carry the exit_code from the underlying failure. Got: {exc_info.value!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-008: repo_envsubst() does not call os.execv
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -349,7 +296,6 @@ def test_envsubst_does_not_call_os_execv(tmp_path: pathlib.Path, monkeypatch: py
 
     monkeypatch.setattr(os, "execv", _record_execv)
 
-    # Allow the call to succeed or raise a library exception -- either is fine.
     try:
         repo_pkg.repo_envsubst(
             repo_dir=str(tmp_path),
@@ -361,11 +307,6 @@ def test_envsubst_does_not_call_os_execv(tmp_path: pathlib.Path, monkeypatch: py
         ) from exc
 
     assert execv_calls == [], f"os.execv was called {len(execv_calls)} time(s) during repo_envsubst(): {execv_calls!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-009: repo_envsubst() does not read from stdin
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -405,8 +346,6 @@ def test_envsubst_does_not_read_from_stdin(tmp_path: pathlib.Path, monkeypatch: 
     sentinel_stdin = _NoReadStdin()
     monkeypatch.setattr(sys, "stdin", sentinel_stdin)
 
-    # Allow the call to succeed or raise a library exception -- either is fine
-    # as long as no stdin read is attempted.
     try:
         repo_pkg.repo_envsubst(
             repo_dir=str(tmp_path),

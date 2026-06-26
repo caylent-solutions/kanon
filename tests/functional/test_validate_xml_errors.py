@@ -15,10 +15,6 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _write_xml(path: Path, content: str) -> Path:
     """Write an XML file, creating parent directories as needed.
@@ -49,11 +45,6 @@ def _make_repo(tmp_path: Path) -> Path:
     return repo_root
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestValidateXmlErrorSurfacing:
     """Verify that parse errors are surfaced through `kanon validate xml`."""
@@ -79,14 +70,14 @@ class TestValidateXmlErrorSurfacing:
         assert result.returncode == 1, (
             f"Expected exit 1 for malformed XML.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # AC-TEST-001 + AC-FUNC-001: error message in stderr must name the file and include a line reference.
+
         assert "broken.xml" in result.stderr, (
             f"AC-TEST-001: expected file name 'broken.xml' in stderr.\nstderr: {result.stderr!r}"
         )
         assert "line" in result.stderr, (
             f"AC-TEST-001 + AC-FUNC-001: expected line reference in stderr.\nstderr: {result.stderr!r}"
         )
-        # AC-CHANNEL-001: the error summary must be on stderr, not on stdout.
+
         assert "error" in result.stderr.lower(), (
             f"AC-CHANNEL-001: expected error summary on stderr.\nstderr: {result.stderr!r}"
         )
@@ -104,7 +95,7 @@ class TestValidateXmlErrorSurfacing:
         messages ("Validating ...") correctly appear on stdout.
         """
         repo_root = _make_repo(tmp_path)
-        # A <project> element without 'path', 'remote', and 'revision' attributes.
+
         content = textwrap.dedent("""\
             <?xml version="1.0" encoding="UTF-8"?>
             <manifest>
@@ -119,15 +110,15 @@ class TestValidateXmlErrorSurfacing:
         assert result.returncode == 1, (
             f"Expected exit 1 for manifest with missing attributes.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # AC-TEST-002: error message in stderr must name the file and the missing attribute.
+
         assert "missing_attr.xml" in result.stderr, (
             f"AC-TEST-002: expected file name in stderr.\nstderr: {result.stderr!r}"
         )
-        # The error message must name at least one missing attribute
+
         assert "path" in result.stderr or "remote" in result.stderr or "revision" in result.stderr, (
             f"AC-TEST-002: expected a missing attribute name in stderr.\nstderr: {result.stderr!r}"
         )
-        # AC-CHANNEL-001: the error summary must be on stderr, not on stdout.
+
         assert "error" in result.stderr.lower(), (
             f"AC-CHANNEL-001: expected error summary on stderr.\nstderr: {result.stderr!r}"
         )
@@ -155,7 +146,7 @@ class TestValidateXmlErrorSurfacing:
         assert result.returncode == 1, (
             f"Expected exit 1 for broken include reference.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # AC-CHANNEL-001: error must appear on stderr
+
         assert "nonexistent.xml" in result.stderr, (
             f"AC-TEST-003: expected missing include name in stderr.\nstderr: {result.stderr!r}"
         )

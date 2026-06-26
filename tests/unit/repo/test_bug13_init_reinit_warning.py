@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 13: Init reinit warning.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 13 -- When `repo init` is run
@@ -25,11 +11,6 @@ from unittest import mock
 import pytest
 
 from kanon_cli.repo.subcmds import init
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_init_cmd(existing_checkout=True, current_url="https://old.example.com/manifest.git"):
@@ -74,11 +55,6 @@ def _make_opt(manifest_url="https://new.example.com/manifest.git", quiet=False):
     return opt
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-005 -- Warning logged when URL changes on reinit
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_warning_logged_when_url_changes_on_reinit():
     """AC-TEST-005: Warning is logged when reinitializing with a different URL.
@@ -117,7 +93,6 @@ def test_warning_logged_when_url_changes_on_reinit():
 
         cmd.Execute(opt, [])
 
-    # Gather all warning messages.
     all_calls = mock_warning.call_args_list
     formatted_messages = []
     for call in all_calls:
@@ -136,11 +111,6 @@ def test_warning_logged_when_url_changes_on_reinit():
     assert new_url in combined, (
         f"Expected warning to include new URL '{new_url}', but log messages were: {formatted_messages!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-006 -- No warning when URL matches on reinit
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -180,7 +150,6 @@ def test_no_warning_when_url_matches_on_reinit():
 
         cmd.Execute(opt, [])
 
-    # Build all formatted warning messages.
     all_calls = mock_warning.call_args_list
     url_change_warnings = []
     for call in all_calls:
@@ -190,8 +159,7 @@ def test_no_warning_when_url_matches_on_reinit():
                 msg = args[0] % args[1:]
             except (TypeError, IndexError):
                 msg = str(args[0])
-            # A URL-change warning would contain both mentions of the URL
-            # and signal a change (e.g., "changing" or "differs" or "was").
+
             if same_url in msg and any(kw in msg.lower() for kw in ("change", "differ", "was", "new url", "old url")):
                 url_change_warnings.append(msg)
 

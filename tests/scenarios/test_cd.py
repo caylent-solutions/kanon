@@ -18,11 +18,6 @@ from tests.scenarios.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _build_fixtures(
     base: pathlib.Path,
 ) -> tuple[pathlib.Path, pathlib.Path]:
@@ -94,7 +89,7 @@ def _build_fixtures(
         '  <default remote="local" revision="main" sync-j="4" />\n'
         "</manifest>\n"
     )
-    # pkg-collider mapped to .packages/pkg-alpha -- same path as pkg-alpha above
+
     collision_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         "<manifest>\n"
@@ -114,11 +109,6 @@ def _build_fixtures(
     )
 
     return manifest_primary_bare, manifest_collision_bare
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario
@@ -165,8 +155,6 @@ class TestCD:
         primary_url = manifest_primary_bare.as_uri()
         collision_url = manifest_collision_bare.as_uri()
 
-        # Sources are named so alphabetical order is: aaa, bbb, ccc
-        # aaa provides pkg-alpha; bbb also maps pkg-collider to .packages/pkg-alpha --> collision
         write_kanonenv(
             work_dir,
             [

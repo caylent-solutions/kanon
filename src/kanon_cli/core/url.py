@@ -21,8 +21,7 @@ Transformation rules (applied in order):
 import re
 from urllib.parse import urlsplit
 
-# Pattern for the SCP shorthand: [user@]host:path
-# The host must not contain ``/`` or ``:``, and the path follows the colon.
+
 _SCP_RE = re.compile(r"^(?P<user>[^@/:]+@)?(?P<host>[^@/:]+):(?P<path>.+)$")
 
 
@@ -136,14 +135,12 @@ def canonicalize_repo_url(url: str) -> str:
     if stripped.startswith(("https://", "ssh://")):
         authority, path = _parse_scheme_url(stripped)
     else:
-        # SCP shorthand -- no scheme prefix.
         _reject_query_and_fragment(stripped)
         host_raw, path_raw = _parse_scp(stripped)
         authority = host_raw.lower()
-        # SCP path does not start with ``/``; normalise for uniform processing.
+
         path = "/" + path_raw.lstrip("/")
 
-    # Strip exactly one trailing slash (rule 6), then .git suffix (rule 7).
     if path.endswith("/"):
         path = path[:-1]
     if path.endswith(".git"):

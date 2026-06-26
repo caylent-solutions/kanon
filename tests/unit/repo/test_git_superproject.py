@@ -1,17 +1,3 @@
-# Copyright (C) 2021 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the git_superproject.py module."""
 
 import json
@@ -46,14 +32,11 @@ class SuperprojectTestCase(unittest.TestCase):
         os.mkdir(self.repodir)
         self.platform = platform.system().lower()
 
-        # By default we initialize with the expected case where
-        # repo launches us (so GIT_TRACE2_PARENT_SID is set).
         env = {
             self.PARENT_SID_KEY: self.PARENT_SID_VALUE,
         }
         self.git_event_log = git_trace2_event_log.EventLog(env=env)
 
-        # The manifest parsing really wants a git repo currently.
         gitdir = os.path.join(self.repodir, "manifests.git")
         os.mkdir(gitdir)
         with open(os.path.join(gitdir, "config"), "w") as fp:
@@ -99,7 +82,6 @@ class SuperprojectTestCase(unittest.TestCase):
         self.assertIn("thread", log_entry)
         self.assertIn("time", log_entry)
 
-        # Do basic data format validation.
         self.assertEqual(expected_event_name, log_entry["event"])
         if full_sid:
             self.assertRegex(log_entry["sid"], self.FULL_SID_REGEX)
@@ -126,7 +108,7 @@ class SuperprojectTestCase(unittest.TestCase):
         error_event = self.log_data[1]
         self.verifyCommonKeys(self.log_data[0], expected_event_name="version")
         self.verifyCommonKeys(error_event, expected_event_name="error")
-        # Check for 'error' event specific fields.
+
         self.assertIn("msg", error_event)
         self.assertIn("fmt", error_event)
 
@@ -228,7 +210,7 @@ class SuperprojectTestCase(unittest.TestCase):
         self.assertEqual(len(self._superproject._manifest.projects), 1)
         project = self._superproject._manifest.projects[0]
         project.SetRevisionId("ABCDEF")
-        # Create temporary directory so that it can write the file.
+
         os.mkdir(self._superproject._superproject_path)
         manifest_path = self._superproject._WriteManifestFile()
         self.assertIsNotNone(manifest_path)
@@ -256,7 +238,6 @@ class SuperprojectTestCase(unittest.TestCase):
         with mock.patch.object(self._superproject, "_Init", return_value=True):
             with mock.patch.object(self._superproject, "_Fetch", return_value=True):
                 with mock.patch.object(self._superproject, "_LsTree", return_value=data):
-                    # Create temporary directory so that it can write the file.
                     os.mkdir(self._superproject._superproject_path)
                     update_result = self._superproject.UpdateProjectsRevisionId(projects, self.git_event_log)
                     self.assertIsNotNone(update_result.manifest_path)
@@ -333,15 +314,13 @@ class SuperprojectTestCase(unittest.TestCase):
         with mock.patch.object(self._superproject, "_Init", return_value=True):
             with mock.patch.object(self._superproject, "_Fetch", return_value=True):
                 with mock.patch.object(self._superproject, "_LsTree", return_value=data):
-                    # Create temporary directory so that it can write the file.
                     os.mkdir(self._superproject._superproject_path)
                     update_result = self._superproject.UpdateProjectsRevisionId(projects, self.git_event_log)
                     self.assertIsNotNone(update_result.manifest_path)
                     self.assertFalse(update_result.fatal)
                     with open(update_result.manifest_path) as fp:
                         manifest_xml_data = fp.read()
-                    # Verify platform/vendor/x's project revision hasn't
-                    # changed.
+
                     self.assertEqual(
                         sort_attributes(manifest_xml_data),
                         '<?xml version="1.0" ?><manifest>'
@@ -388,15 +367,13 @@ class SuperprojectTestCase(unittest.TestCase):
         with mock.patch.object(self._superproject, "_Init", return_value=True):
             with mock.patch.object(self._superproject, "_Fetch", return_value=True):
                 with mock.patch.object(self._superproject, "_LsTree", return_value=data):
-                    # Create temporary directory so that it can write the file.
                     os.mkdir(self._superproject._superproject_path)
                     update_result = self._superproject.UpdateProjectsRevisionId(projects, self.git_event_log)
                     self.assertIsNotNone(update_result.manifest_path)
                     self.assertFalse(update_result.fatal)
                     with open(update_result.manifest_path) as fp:
                         manifest_xml_data = fp.read()
-                    # Verify platform/vendor/x's project revision hasn't
-                    # changed.
+
                     self.assertEqual(
                         sort_attributes(manifest_xml_data),
                         '<?xml version="1.0" ?><manifest>'
@@ -441,8 +418,6 @@ class SuperprojectTestCase(unittest.TestCase):
 
                     self.assertTrue(self._superproject._Fetch())
                     self.assertEqual(
-                        # TODO: Once we require Python 3.8+,
-                        #  use 'mock_git_command.call_args.args'.
                         mock_git_command.call_args[0],
                         (
                             None,
@@ -460,11 +435,8 @@ class SuperprojectTestCase(unittest.TestCase):
                         ),
                     )
 
-                    # If branch for revision exists, set as --negotiation-tip.
                     self.assertTrue(self._superproject._Fetch())
                     self.assertEqual(
-                        # TODO: Once we require Python 3.8+,
-                        #  use 'mock_git_command.call_args.args'.
                         mock_git_command.call_args[0],
                         (
                             None,
@@ -483,9 +455,6 @@ class SuperprojectTestCase(unittest.TestCase):
                             ],
                         ),
                     )
-
-
-# Additional comprehensive tests below
 
 
 @pytest.mark.unit
@@ -591,7 +560,6 @@ class TestSuperprojectExtended(unittest.TestCase):
         remote = manifest.remotes.get("origin").ToRemoteSpec("super")
         superproject = git_superproject.Superproject(manifest, "super", remote, "refs/heads/main")
 
-        # Create the manifest file
         os.makedirs(superproject._superproject_path, exist_ok=True)
         with open(superproject._manifest_path, "w") as f:
             f.write("<manifest></manifest>")

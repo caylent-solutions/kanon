@@ -1,17 +1,3 @@
-# Copyright (C) 2020 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the git_trace2_event_log.py module."""
 
 import json
@@ -68,8 +54,7 @@ class EventLogTestCase(unittest.TestCase):
     def setUp(self):
         """Load the event_log module every time."""
         self._event_log_module = None
-        # By default we initialize with the expected case where
-        # repo launches us (so GIT_TRACE2_PARENT_SID is set).
+
         env = {
             self.PARENT_SID_KEY: self.PARENT_SID_VALUE,
         }
@@ -83,7 +68,6 @@ class EventLogTestCase(unittest.TestCase):
         self.assertIn("thread", log_entry)
         self.assertIn("time", log_entry)
 
-        # Do basic data format validation.
         if expected_event_name:
             self.assertEqual(expected_event_name, log_entry["event"])
         if full_sid:
@@ -114,7 +98,7 @@ class EventLogTestCase(unittest.TestCase):
 
     def test_initial_state_no_parent_sid(self):
         """Test initial state when 'GIT_TRACE2_PARENT_SID' is not set."""
-        # Setup an empty environment dict (no parent sid).
+
         self._event_log_module = git_trace2_event_log.EventLog(env={})
         self.assertRegex(self._event_log_module.full_sid, self.SELF_SID_REGEX)
 
@@ -131,14 +115,13 @@ class EventLogTestCase(unittest.TestCase):
             log_path = self._event_log_module.Write(path=tempdir)
             self._log_data = self.readLog(log_path)
 
-        # A log with no added events should only have the version entry.
         self.assertEqual(len(self._log_data), 1)
         version_event = self._log_data[0]
         self.verifyCommonKeys(version_event, expected_event_name="version")
-        # Check for 'version' event specific fields.
+
         self.assertIn("evt", version_event)
         self.assertIn("exe", version_event)
-        # Verify "evt" version field is a string.
+
         self.assertIsInstance(version_event["evt"], str)
 
     def test_start_event(self):
@@ -157,7 +140,7 @@ class EventLogTestCase(unittest.TestCase):
         start_event = self._log_data[1]
         self.verifyCommonKeys(self._log_data[0], expected_event_name="version")
         self.verifyCommonKeys(start_event, expected_event_name="start")
-        # Check for 'start' event specific fields.
+
         self.assertIn("argv", start_event)
         self.assertTrue(isinstance(start_event["argv"], list))
 
@@ -179,9 +162,9 @@ class EventLogTestCase(unittest.TestCase):
         exit_event = self._log_data[1]
         self.verifyCommonKeys(self._log_data[0], expected_event_name="version")
         self.verifyCommonKeys(exit_event, expected_event_name="exit")
-        # Check for 'exit' event specific fields.
+
         self.assertIn("code", exit_event)
-        # 'None' result should convert to 0 (successful) return code.
+
         self.assertEqual(exit_event["code"], 0)
 
     def test_exit_event_result_integer(self):
@@ -200,7 +183,7 @@ class EventLogTestCase(unittest.TestCase):
         exit_event = self._log_data[1]
         self.verifyCommonKeys(self._log_data[0], expected_event_name="version")
         self.verifyCommonKeys(exit_event, expected_event_name="exit")
-        # Check for 'exit' event specific fields.
+
         self.assertIn("code", exit_event)
         self.assertEqual(exit_event["code"], 2)
 
@@ -220,7 +203,7 @@ class EventLogTestCase(unittest.TestCase):
         command_event = self._log_data[1]
         self.verifyCommonKeys(self._log_data[0], expected_event_name="version")
         self.verifyCommonKeys(command_event, expected_event_name="cmd_name")
-        # Check for 'command' event specific fields.
+
         self.assertIn("name", command_event)
         self.assertEqual(command_event["name"], "repo-init-this")
 
@@ -249,7 +232,7 @@ class EventLogTestCase(unittest.TestCase):
 
         for event in def_param_events:
             self.verifyCommonKeys(event, expected_event_name="def_param")
-            # Check for 'def_param' event specific fields.
+
             self.assertIn("param", event)
             self.assertIn("value", event)
             self.assertTrue(event["param"].startswith("repo."))
@@ -300,7 +283,7 @@ class EventLogTestCase(unittest.TestCase):
 
         for event in data_events:
             self.verifyCommonKeys(event)
-            # Check for 'data' event specific fields.
+
             self.assertIn("key", event)
             self.assertIn("value", event)
             key = event["key"]
@@ -327,7 +310,7 @@ class EventLogTestCase(unittest.TestCase):
         error_event = self._log_data[1]
         self.verifyCommonKeys(self._log_data[0], expected_event_name="version")
         self.verifyCommonKeys(error_event, expected_event_name="error")
-        # Check for 'error' event specific fields.
+
         self.assertIn("msg", error_event)
         self.assertIn("fmt", error_event)
         self.assertEqual(error_event["msg"], f"RepoErrorEvent:{msg}")
@@ -365,7 +348,7 @@ class EventLogTestCase(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="test_server_sockets") as tempdir:
             socket_path = os.path.join(tempdir, "server.sock")
             server_ready = threading.Condition()
-            # Start "server" listening on Unix domain socket at socket_path.
+
             server_thread = threading.Thread(
                 target=serverLoggingThread,
                 args=(socket_path, server_ready, received_traces),
@@ -381,7 +364,6 @@ class EventLogTestCase(unittest.TestCase):
             finally:
                 server_thread.join(timeout=2)
                 if server_thread.is_alive():
-                    # Force cleanup if thread is still hanging
                     pass
 
         self.assertEqual(path, f"af_unix:stream:{socket_path}")
@@ -390,12 +372,9 @@ class EventLogTestCase(unittest.TestCase):
         start_event = json.loads(received_traces[1])
         self.verifyCommonKeys(version_event, expected_event_name="version")
         self.verifyCommonKeys(start_event, expected_event_name="start")
-        # Check for 'start' event specific fields.
+
         self.assertIn("argv", start_event)
         self.assertIsInstance(start_event["argv"], list)
-
-
-# Additional comprehensive tests below
 
 
 @pytest.mark.unit
@@ -415,7 +394,7 @@ class TestBaseEventLogExtended(unittest.TestCase):
     def test_init_with_repo_source_version(self):
         """Test __init__ with repo_source_version."""
         event_log = git_trace2_event_log.BaseEventLog(repo_source_version="1.2.3")
-        # Should have version event at the start
+
         self.assertEqual(len(event_log._log), 1)
         self.assertEqual(event_log._log[0]["event"], "version")
         self.assertEqual(event_log._log[0]["exe"], "1.2.3")
@@ -424,7 +403,7 @@ class TestBaseEventLogExtended(unittest.TestCase):
         """Test __init__ with add_init_count=True."""
         event_log1 = git_trace2_event_log.BaseEventLog(add_init_count=True)
         event_log2 = git_trace2_event_log.BaseEventLog(add_init_count=True)
-        # SIDs should be different due to init count
+
         self.assertNotEqual(event_log1._sid, event_log2._sid)
 
     def test_full_sid_property(self):
@@ -498,7 +477,7 @@ class TestBaseEventLogExtended(unittest.TestCase):
             "repo.key3": "value3",
         }
         self.event_log.DefParamRepoEvents(config)
-        # Should only log 2 entries (repo.* keys)
+
         self.assertEqual(len(self.event_log._log), 2)
         for event in self.event_log._log:
             self.assertTrue(event["param"].startswith("repo."))
@@ -572,7 +551,7 @@ class TestBaseEventLogExtended(unittest.TestCase):
 
         self.event_log._WriteLog(write_fn)
         self.assertGreater(len(output), 0)
-        # Each line should be valid JSON
+
         import json
 
         for line in output:
@@ -594,7 +573,6 @@ class TestBaseEventLogSocketWrite(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             sock_path = os.path.join(tmpdir, "test.sock")
 
-            # Create a server thread
             received = []
             server_ready = threading.Condition()
 
@@ -632,7 +610,6 @@ class TestBaseEventLogSocketWrite(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             sock_path = os.path.join(tmpdir, "test.sock")
 
-            # Create a datagram server
             received = []
 
             def server():
@@ -654,7 +631,6 @@ class TestBaseEventLogSocketWrite(unittest.TestCase):
             server_thread.start()
 
             try:
-                # Give server time to start
                 import time
 
                 time.sleep(0.1)
@@ -676,7 +652,7 @@ class TestBaseEventLogEdgeCases(unittest.TestCase):
         event_log = git_trace2_event_log.BaseEventLog()
         event_log.StartEvent(["test"])
         event_log._AddVersionEvent("2.0.0")
-        # Version event should be first
+
         self.assertEqual(event_log._log[0]["event"], "version")
         self.assertEqual(event_log._log[0]["exe"], "2.0.0")
         self.assertEqual(event_log._log[0]["evt"], "2")
@@ -734,16 +710,12 @@ class TestBaseEventLogEdgeCases(unittest.TestCase):
         """Test GetDataEventName() with edge cases."""
         event_log = git_trace2_event_log.BaseEventLog()
 
-        # Just brackets
         self.assertEqual(event_log.GetDataEventName("[]"), "data-json")
 
-        # Bracket in middle
         self.assertEqual(event_log.GetDataEventName("a[b]c"), "data")
 
-        # Start with bracket but not end
         self.assertEqual(event_log.GetDataEventName("[abc"), "data")
 
-        # Normal array value
         self.assertEqual(event_log.GetDataEventName("[1,2,3]"), "data-json")
 
     def test_Write_creates_unique_filenames(self):

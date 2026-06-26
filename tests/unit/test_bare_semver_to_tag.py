@@ -31,9 +31,7 @@ class TestNormalizeBareSemverToTag:
             ("1.0", "refs/tags/1.0"),
             ("2.0.0", "refs/tags/2.0.0"),
             ("10.20.30", "refs/tags/10.20.30"),
-            # v-prefixed: valid PEP 440, normalised per spec Section 4.0 rule 3
             ("v1.0.0", "refs/tags/v1.0.0"),
-            # single-digit: valid PEP 440 epoch-less version
             ("1", "refs/tags/1"),
         ],
     )
@@ -48,7 +46,6 @@ class TestNormalizeBareSemverToTag:
             "feature/x",
             "refs/tags/1.0.0",
             "refs/heads/1.0",
-            # hex strings that are not valid PEP 440 versions
             "abcdef0",
             "abcdef0123456789",
         ],
@@ -57,9 +54,6 @@ class TestNormalizeBareSemverToTag:
         assert _normalize_bare_semver_to_tag(rev_spec) == rev_spec
 
     def test_pep440_constraint_passes_through(self) -> None:
-        # Constraints are handled separately by `is_version_constraint` /
-        # `_resolve_constraint_from_tags`; the normaliser must NOT touch
-        # them (their resolution path returns a refs/tags/... value).
         for c in ("~=1.0.0", ">=1.0", "==2.0.0", "!=2.0.0", "*", "latest"):
             assert _normalize_bare_semver_to_tag(c) == c
 
@@ -70,13 +64,10 @@ class TestResolveVersionDelegatesToBareNormalizer:
     rev_spec that is NOT recognised as a PEP 440 constraint."""
 
     def test_bare_semver_normalised_via_resolve_version(self) -> None:
-        # No git ls-remote needed -- normalisation happens in the early
-        # passthrough branch.
         assert resolve_version("file:///fake", "1.0.0") == "refs/tags/1.0.0"
         assert resolve_version("file:///fake", "2.5") == "refs/tags/2.5"
 
     def test_v_prefixed_normalised_via_resolve_version(self) -> None:
-        # v-prefixed strings are valid PEP 440 and normalised to refs/tags/.
         assert resolve_version("file:///fake", "v1.0.0") == "refs/tags/v1.0.0"
 
     def test_branch_name_passes_through_resolve_version(self) -> None:

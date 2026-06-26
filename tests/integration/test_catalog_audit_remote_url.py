@@ -192,10 +192,9 @@ class TestCatalogAuditPlaceholderFetchUrl:
         """
         with tempfile.TemporaryDirectory() as tmp:
             fixture = self._build_placeholder_fixture(pathlib.Path(tmp))
-            # Ensure GITBASE is not present in the subprocess environment.
+
             env_override: dict[str, str] = {"KANON_ALLOW_INSECURE_REMOTES": ""}
-            # Explicitly unset GITBASE by not including it -- subprocess env is built
-            # from os.environ merged with extra_env in _run_kanon; remove it if present.
+
             base_env = {k: v for k, v in os.environ.items() if k != "GITBASE"}
             base_env.update(env_override)
             result = subprocess.run(
@@ -204,7 +203,7 @@ class TestCatalogAuditPlaceholderFetchUrl:
                 text=True,
                 env=base_env,
             )
-            # Match "[R002]" exactly (not "[R002-TEMPLATED]" INFO lines).
+
             r002_error_lines = [line for line in result.stdout.splitlines() if "[R002]" in line]
             assert not r002_error_lines, (
                 "Expected no [R002] ERROR lines for unset ${GITBASE} placeholder, "

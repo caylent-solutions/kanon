@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 7: git ls-remote not retried on transient network errors.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 7 -- git ls-remote calls fail on
@@ -32,13 +18,7 @@ from kanon_cli.repo import project as project_module
 from kanon_cli.repo.project import Project
 
 
-# Logger name used by project.py -- needed for caplog level targeting.
 _PROJECT_LOGGER_NAME = project_module.logger.name
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_project(remote_url="https://example.com/org/repo.git"):
@@ -96,11 +76,6 @@ def _make_failure_result(stderr="Connection reset by peer"):
     return result
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Retry succeeds on second attempt after transient failure
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_retry_succeeds_on_second_attempt(monkeypatch):
     """AC-TEST-001: ls-remote is retried and succeeds on the second attempt.
@@ -129,9 +104,6 @@ def test_retry_succeeds_on_second_attempt(monkeypatch):
         with mock.patch("time.sleep"):
             project._ResolveVersionConstraint()
 
-    # ~=1.0.0 means >= 1.0.0, == 1.0.* (compatible release with 3-part version).
-    # Both 1.0.0 and 1.1.0 are returned by _make_success_result(), but only
-    # 1.0.0 satisfies ~=1.0.0 (because 1.1.0 is not == 1.0.*).
     assert project.revisionExpr == "refs/tags/dev/mylib/1.0.0", (
         f"Expected revisionExpr to be resolved to 'refs/tags/dev/mylib/1.0.0' "
         f"(highest tag satisfying ~=1.0.0) after retry, but got: {project.revisionExpr!r}"
@@ -140,11 +112,6 @@ def test_retry_succeeds_on_second_attempt(monkeypatch):
         f"Expected subprocess.run to be called exactly 2 times (1 failure + 1 success), "
         f"but it was called {mock_run.call_count} times."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Retries exhausted raises ManifestInvalidRevisionError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -183,11 +150,6 @@ def test_retries_exhausted_raises_error(monkeypatch):
     assert "not found" in str(exc_info.value).lower() or "failed" in str(exc_info.value).lower(), (
         f"Expected ManifestInvalidRevisionError to describe the failure, but got: {exc_info.value!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- No retry on authentication error
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -233,11 +195,6 @@ def test_no_retry_on_auth_error(monkeypatch, auth_error_text):
     mock_sleep.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004 -- Retry count configurable via environment variable
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "retry_count",
@@ -274,11 +231,6 @@ def test_retry_count_configurable_via_env_var(monkeypatch, retry_count):
         f"(KANON_GIT_RETRY_COUNT={retry_count}), "
         f"but it was called {mock_run.call_count} times."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002 / AC-FUNC-004 -- Exponential backoff applied and logged
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -350,7 +302,7 @@ def test_retry_attempts_logged_with_attempt_number(monkeypatch):
     assert mock_warning.called, (
         "Expected logger.warning to be called at least once during ls-remote retry, but it was never called."
     )
-    # Collect all formatted warning messages to check content.
+
     all_warning_calls = mock_warning.call_args_list
     formatted_messages = []
     for call in all_warning_calls:
@@ -368,11 +320,6 @@ def test_retry_attempts_logged_with_attempt_number(monkeypatch):
     assert "Connection reset by peer" in combined or "attempt" in combined.lower(), (
         f"Expected retry log to include the error reason or 'attempt', but log messages were: {formatted_messages!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001 -- Full constraint resolution lifecycle with retry
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -394,8 +341,7 @@ def test_lifecycle_constraint_resolution_succeeds_after_retry(monkeypatch):
     monkeypatch.setenv("KANON_GIT_RETRY_DELAY", "0")
 
     project = _make_project("https://git.example.com/org/quality-agent.git")
-    # ~=2.0 means >= 2.0, == 2.* (compatible release with 2-part version).
-    # This matches 2.0.0, 2.1.0, and 2.9.0 but not 3.0.0 or 1.9.0.
+
     project.revisionExpr = "refs/tags/dev/python/quality-agent/~=2.0"
 
     transient_failure = _make_failure_result("Could not resolve host: git.example.com")
@@ -411,7 +357,6 @@ def test_lifecycle_constraint_resolution_succeeds_after_retry(monkeypatch):
         with mock.patch("time.sleep"):
             project._ResolveVersionConstraint()
 
-    # ~=2.0 matches 2.0.0, 2.1.0 (compatible with 2.*); highest is 2.1.0.
     assert project.revisionExpr == "refs/tags/dev/python/quality-agent/2.1.0", (
         f"Expected constraint ~=2.0 to resolve to 2.1.0 (highest compatible 2.x), but got: {project.revisionExpr!r}"
     )

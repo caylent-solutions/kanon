@@ -22,10 +22,6 @@ import pytest
 from kanon_cli.repo import manifest_xml
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern in test_xml_extend_project_roundtrip.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -101,10 +97,6 @@ def _load_manifest(repodir: pathlib.Path, manifest_file: pathlib.Path) -> manife
     return m
 
 
-# ---------------------------------------------------------------------------
-# Fixture XML content for <include> round-trip tests
-# ---------------------------------------------------------------------------
-
 _INCLUDED_FIXTURE_XML = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     "<manifest>\n"
@@ -121,11 +113,6 @@ _PRIMARY_FIXTURE_XML = (
     '  <include name="sub.xml" groups="extra,release" />\n'
     "</manifest>\n"
 )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 + AC-FINAL-010: Real parse + model verification
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -281,11 +268,6 @@ def test_include_revision_override_applies_to_project_without_own_revision(tmp_p
         f"Expected revisionExpr='refs/tags/v4.0.0' from <include revision='...'> applied to "
         f"project with no own revision but got: {norev.revisionExpr!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Round-trip: parse + ToXml preserves structural elements
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

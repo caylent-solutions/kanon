@@ -48,42 +48,34 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no hard-coded domain literals in test logic
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Forall Happy Test User"
 _GIT_USER_EMAIL = "repo-forall-happy@example.com"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "forall-test-project"
 
-# CLI token constants
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_FORALL = "forall"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
 _CLI_FLAG_COMMAND = "-c"
 _CLI_FLAG_JOBS = "--jobs=1"
 
-# The shell command executed in each project; produces a sentinel line on stdout.
+
 _FORALL_COMMAND = "echo"
 _FORALL_ARG = "HELLO"
 
-# Phrase expected in stdout when forall runs echo HELLO in each project.
+
 _EXPECTED_OUTPUT_PHRASE = _FORALL_ARG
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT = 0
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
+
 _ERROR_PREFIX = "Error:"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo forall with default args exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -173,11 +165,6 @@ class TestRepoForallHappyPathDefaultArgs:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo forall has a happy-path test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -292,11 +279,6 @@ class TestRepoForallPositionalArgHappyPath:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

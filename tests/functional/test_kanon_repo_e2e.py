@@ -14,9 +14,6 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
@@ -156,11 +153,6 @@ def _create_envsubst_manifest_repo(base: pathlib.Path, content_repo_url: str) ->
     return bare_dir.resolve(), parent_url
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: kanon repo init with real git repo
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestKanonRepoInitRealGit:
     """AC-TEST-001: kanon repo init -u file://... -b main -m manifest.xml succeeds."""
@@ -242,11 +234,6 @@ class TestKanonRepoInitRealGit:
 
         manifests_dir = repo_dir / "manifests"
         assert manifests_dir.is_dir(), f".repo/manifests/ was not created at {manifests_dir!r} after kanon repo init."
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: kanon repo sync with real git repos
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -346,11 +333,6 @@ class TestKanonRepoSyncRealGit:
         assert content == _CONTENT_FILE_TEXT, f"Content of {readme!r} was {content!r}, expected {_CONTENT_FILE_TEXT!r}."
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: kanon repo envsubst processes manifest XML with env var substitution
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestKanonRepoEnvsubstRealGit:
     """AC-TEST-003: kanon repo envsubst substitutes ${VAR} placeholders in manifest XML."""
@@ -418,11 +400,6 @@ class TestKanonRepoEnvsubstRealGit:
             f"Expected fetch URL {fetch_url!r} to appear in manifest after envsubst.\n"
             f"  manifest content: {manifest_text!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: kanon repo status after sync
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

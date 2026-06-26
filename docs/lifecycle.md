@@ -3,9 +3,9 @@
 ## Install Lifecycle (`kanon install`)
 
 ```text
-1. Parse .kanon, auto-discover sources from KANON_SOURCE_<name>_URL patterns
-2. Validate KANON_SOURCE_<name>_* variables
-3. If KANON_MARKETPLACE_INSTALL=true:
+1. Parse .kanon, auto-discover sources from KANON_SOURCE_<alias>_URL patterns
+2. Validate KANON_SOURCE_<alias>_* variables
+3. If any source sets KANON_SOURCE_<alias>_MARKETPLACE=true:
    mkdir -p CLAUDE_MARKETPLACES_DIR, clean contents
 4. For each source in alphabetical order:
    a. mkdir -p .kanon-data/sources/<name>/
@@ -18,14 +18,14 @@
 5. Aggregate: symlink .kanon-data/sources/<name>/.packages/* -> .packages/
 6. Collision check: fail-fast if duplicate package names
 7. Update .gitignore with .packages/ and .kanon-data/
-8. If KANON_MARKETPLACE_INSTALL=true:
+8. If any source sets KANON_SOURCE_<alias>_MARKETPLACE=true:
    locate claude binary, discover marketplace entries and plugins,
    register marketplaces, install plugins via claude CLI
-9. Reconcile marketplace ownership (schema v3 per-source ledgers):
+9. Reconcile marketplace ownership (per-source registered_marketplaces ledgers):
    auto-unregister any marketplace recorded in the previous lockfile
    that no current source registers (e.g. a source dropped from .kanon,
-   or KANON_MARKETPLACE_INSTALL toggled off), then write the lockfile
-   with each source's registered_marketplaces refreshed
+   or its KANON_SOURCE_<alias>_MARKETPLACE flag toggled off), then write
+   the lockfile with each source's registered_marketplaces refreshed
 ```
 
 All repo operations (init, envsubst, sync) are direct Python API calls into `kanon_cli.repo`.
@@ -47,7 +47,7 @@ touched. See
 2. Parse .kanon
 3. If --orphans: prune orphaned-source marketplaces (see below), then continue
 4. If a marketplace was registered (from .kanon.lock marketplace_registered,
-   else the .kanon KANON_MARKETPLACE_INSTALL flag):
+   else any source's .kanon KANON_SOURCE_<alias>_MARKETPLACE flag):
    a. Uninstall marketplace plugins via claude CLI
    b. rm -rf CLAUDE_MARKETPLACES_DIR
 5. rm -rf .packages/ (ignore_errors)

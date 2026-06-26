@@ -27,13 +27,13 @@ import pytest
 from kanon_cli import __version__
 from kanon_cli.constants import KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE
 
-# Absolute path to the static legacy-catalog-dir fixture.
+
 _FIXTURE_DIR = pathlib.Path(__file__).parent.parent / "fixtures" / "catalog" / "legacy-catalog-dir"
 
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Minimal marketplace XML for a valid manifest repo fixture.
+
 _FIXTURE_XML = """\
 <?xml version="1.0"?>
 <manifest>
@@ -82,12 +82,10 @@ def _create_legacy_catalog_git_repo(base: pathlib.Path) -> pathlib.Path:
     _git(["config", "user.name", _GIT_USER_NAME], cwd=repo_dir)
     _git(["config", "user.email", _GIT_USER_EMAIL], cwd=repo_dir)
 
-    # Create repo-specs/ with a valid marketplace XML.
     repo_specs = repo_dir / "repo-specs"
     repo_specs.mkdir()
     (repo_specs / "sample-marketplace.xml").write_text(_FIXTURE_XML, encoding="utf-8")
 
-    # Create the legacy catalog/sample-entry/.kanon tree.
     legacy_entry = repo_dir / "catalog" / "sample-entry"
     legacy_entry.mkdir(parents=True)
     (legacy_entry / ".kanon").write_text(
@@ -170,13 +168,13 @@ class TestCatalogAuditLegacyDirGitRepo:
         )
 
     def test_migration_doc_reference_in_warn_message(self, tmp_path: pathlib.Path) -> None:
-        """The WARN message references docs/migration-bootstrap-to-add.md. AC-FUNC-004."""
+        """The WARN message references docs/migration-to-add.md. AC-FUNC-004."""
         repo = _create_legacy_catalog_git_repo(tmp_path)
         result = _run_kanon(
             ["catalog", "audit", str(repo), "--check", "all"],
         )
-        assert "docs/migration-bootstrap-to-add.md" in result.stdout, (
-            f"Expected docs/migration-bootstrap-to-add.md reference in stdout.\n"
+        assert "docs/migration-to-add.md" in result.stdout, (
+            f"Expected docs/migration-to-add.md reference in stdout.\n"
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
 

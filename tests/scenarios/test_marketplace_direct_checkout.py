@@ -2,9 +2,12 @@
 
 Documents and locks the fix from spec S.0 / E51-F3:
 
-  A ``kanon install`` with ``KANON_MARKETPLACE_INSTALL=true`` MUST register a
+  A ``kanon install`` for a dependency that opts into the marketplace via its
+  per-dependency ``KANON_SOURCE_<alias>_MARKETPLACE=true`` flag MUST register a
   claude marketplace for a direct ``path=`` checkout entry whose manifest carries
-  a ``.claude-plugin/marketplace.json`` with NO ``<linkfile>`` elements.
+  a ``.claude-plugin/marketplace.json`` with NO ``<linkfile>`` elements. (The
+  global ``KANON_MARKETPLACE_INSTALL`` header was removed in 3.0.0 / FR-17 and is
+  superseded by the per-dependency opt-in.)
 
 Prior to the fix, ``_process_manifest_linkfiles`` only processed ``<linkfile>``
 elements.  A project that carries ``.claude-plugin/marketplace.json`` but has NO
@@ -23,13 +26,14 @@ from ``tests/integration/test_marketplace_lifecycle.py`` is NOT needed here
 because we test at the filesystem level: we assert that the marketplace entry
 appears in ``CLAUDE_MARKETPLACES_DIR`` after install.
 
-Tests that set ``KANON_MARKETPLACE_INSTALL=true`` require the ``claude`` CLI:
-``install_marketplace_plugins`` calls ``locate_claude_binary()`` at the end of
-``kanon install`` regardless of whether any marketplace was registered.  Those
-tests are decorated with ``@pytest.mark.skipif(shutil.which("claude") is None,
-...)`` so they are skipped in CI where ``claude`` is absent; they still run and
-assert real behavior when ``claude`` is present.  BUG-3 logic is independently
-covered by unit tests in ``tests/unit/test_marketplace.py``.
+Tests whose dependency opts into the marketplace (``marketplace_aliases=[...]``)
+require the ``claude`` CLI: ``install_marketplace_plugins`` calls
+``locate_claude_binary()`` at the end of ``kanon install`` regardless of whether
+any marketplace was registered.  Those tests are decorated with
+``@pytest.mark.skipif(shutil.which("claude") is None, ...)`` so they are skipped
+in CI where ``claude`` is absent; they still run and assert real behavior when
+``claude`` is present.  BUG-3 logic is independently covered by unit tests in
+``tests/unit/test_marketplace.py``.
 
 AC-TEST-001: test_marketplace_registered_for_direct_checkout_entry added here.
 AC-TEST-002: RED->GREEN transition recorded in the TDD Cycle Log.
@@ -50,11 +54,6 @@ from tests.scenarios.conftest import (
     run_git,
     write_kanonenv,
 )
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _make_direct_checkout_plugin_repo(
@@ -149,11 +148,6 @@ def _make_manifest_repo_no_linkfile(
     return clone_as_bare(work, bare)
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestMarketplaceDirectCheckout:
     @pytest.mark.skipif(
@@ -168,8 +162,9 @@ class TestMarketplaceDirectCheckout:
         and NO <linkfile> MUST produce a marketplace entry in CLAUDE_MARKETPLACES_DIR.
 
         Build a synthetic catalog where the manifest XML for ``builders-plugins`` has
-        a direct ``path=`` checkout (no ``<linkfile>``), run ``kanon install`` with
-        ``KANON_MARKETPLACE_INSTALL=true``, and assert the marketplace directory entry
+        a direct ``path=`` checkout (no ``<linkfile>``), run ``kanon install`` with the
+        ``bp`` dependency opting into the marketplace via
+        ``KANON_SOURCE_bp_MARKETPLACE=true``, and assert the marketplace directory entry
         appears in ``CLAUDE_MARKETPLACES_DIR``.
 
         Today (before the fix): nothing is created in CLAUDE_MARKETPLACES_DIR.
@@ -198,7 +193,7 @@ class TestMarketplaceDirectCheckout:
         write_kanonenv(
             work_dir,
             sources=[("bp", mfst_bare.as_uri(), "main", manifest_filename)],
-            marketplace_install="true",
+            marketplace_aliases=["bp"],
             extra_lines=[f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}"],
         )
 
@@ -215,15 +210,13 @@ class TestMarketplaceDirectCheckout:
             f"kanon install failed (exit {result.returncode})\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
 
-        # The marketplace entry must exist in CLAUDE_MARKETPLACES_DIR.
-        # The entry name is derived from the marketplace.json "name" field.
         marketplace_entry = marketplaces_dir / plugin_name
         assert marketplace_entry.exists(), (
             f"Expected marketplace entry at {marketplace_entry} after install.\n"
             f"CLAUDE_MARKETPLACES_DIR contents: {list(marketplaces_dir.iterdir())}\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        # The entry must point at a directory containing .claude-plugin/marketplace.json.
+
         manifest_json = marketplace_entry / ".claude-plugin" / "marketplace.json"
         assert manifest_json.is_file(), (
             f"marketplace.json not found at {manifest_json} -- entry does not point at a marketplace root"
@@ -233,9 +226,10 @@ class TestMarketplaceDirectCheckout:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """Without KANON_MARKETPLACE_INSTALL=true, no marketplace entry is created.
+        """Without any dependency opting into the marketplace, no marketplace entry is created.
 
-        Edge case from AC-FUNC-003: default false / explicit false registers nothing.
+        Edge case from AC-FUNC-003: a dependency with no
+        ``KANON_SOURCE_<alias>_MARKETPLACE`` flag (absence == false) registers nothing.
         """
         fix = tmp_path / "fixtures"
         fix.mkdir()
@@ -260,7 +254,6 @@ class TestMarketplaceDirectCheckout:
         write_kanonenv(
             work_dir,
             sources=[("bp", mfst_bare.as_uri(), "main", manifest_filename)],
-            marketplace_install="false",
             extra_lines=[f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}"],
         )
 
@@ -276,7 +269,7 @@ class TestMarketplaceDirectCheckout:
         assert result.returncode == 0, (
             f"kanon install failed (exit {result.returncode})\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        # Marketplace dir should be empty -- no entries registered.
+
         mp_entries = list(marketplaces_dir.iterdir())
         assert mp_entries == [], f"Expected empty CLAUDE_MARKETPLACES_DIR but found: {mp_entries}"
 
@@ -294,7 +287,6 @@ class TestMarketplaceDirectCheckout:
         fix = tmp_path / "fixtures"
         fix.mkdir()
 
-        # A plain repo with no .claude-plugin/ at all.
         plain_name = "plain-package"
         plain_work = fix / f"{plain_name}.work"
         plain_bare = fix / f"{plain_name}.git"
@@ -330,7 +322,7 @@ class TestMarketplaceDirectCheckout:
         write_kanonenv(
             work_dir,
             sources=[("plain", mfst_bare.as_uri(), "main", "plain.xml")],
-            marketplace_install="true",
+            marketplace_aliases=["plain"],
             extra_lines=[f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}"],
         )
 
@@ -347,7 +339,7 @@ class TestMarketplaceDirectCheckout:
             f"kanon install should exit 0 for a plain (no marketplace) entry; "
             f"got {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        # No entries should be created in CLAUDE_MARKETPLACES_DIR.
+
         mp_entries = list(marketplaces_dir.iterdir())
         assert mp_entries == [], f"Expected empty CLAUDE_MARKETPLACES_DIR for plain entry but found: {mp_entries}"
 
@@ -392,7 +384,7 @@ class TestMarketplaceDirectCheckout:
         write_kanonenv(
             work_dir,
             sources=[("src", mfst_bare.as_uri(), revision, manifest_filename)],
-            marketplace_install="true",
+            marketplace_aliases=["src"],
             extra_lines=[f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}"],
         )
 

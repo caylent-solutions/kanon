@@ -39,7 +39,7 @@ def _run_kanon(
 def _fixture_dir() -> pathlib.Path:
     """Return the path to the broken-soft-spot-3 fixture directory."""
     here = pathlib.Path(__file__).parent
-    # tests/integration/ -> tests/fixtures/catalog/broken-soft-spot-3/
+
     return here.parent / "fixtures" / "catalog" / "broken-soft-spot-3"
 
 
@@ -117,7 +117,7 @@ class TestCatalogAuditEntryUniquenessSubprocess:
         """The colliding name for group A appears in the output."""
         fixture = _fixture_dir()
         result = _run_kanon(["catalog", "audit", str(fixture), "--check", "entry-name-uniqueness"])
-        # group-a fixtures use the entry name 'collision-name-alpha'
+
         assert "collision-name-alpha" in result.stdout, (
             f"Expected 'collision-name-alpha' in output.\nstdout: {result.stdout}"
         )
@@ -126,7 +126,7 @@ class TestCatalogAuditEntryUniquenessSubprocess:
         """The colliding name for group B appears in the output."""
         fixture = _fixture_dir()
         result = _run_kanon(["catalog", "audit", str(fixture), "--check", "entry-name-uniqueness"])
-        # group-b fixtures use the entry name 'collision-name-beta'
+
         assert "collision-name-beta" in result.stdout, (
             f"Expected 'collision-name-beta' in output.\nstdout: {result.stdout}"
         )
@@ -141,7 +141,7 @@ class TestCatalogAuditEntryUniquenessSubprocess:
         """Running --check entry-name-uniqueness does not emit metadata finding codes."""
         fixture = _fixture_dir()
         result = _run_kanon(["catalog", "audit", str(fixture), "--check", "entry-name-uniqueness"])
-        # Metadata codes (M001 etc.) must NOT appear when only uniqueness check is run.
+
         assert "M001" not in result.stdout, (
             f"Metadata finding codes must not appear in uniqueness-only output.\nstdout: {result.stdout}"
         )

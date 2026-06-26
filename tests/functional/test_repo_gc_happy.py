@@ -33,9 +33,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo GC Happy Test User"
 _GIT_USER_EMAIL = "repo-gc-happy@example.com"
@@ -46,21 +43,17 @@ _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "gc-happy-test-project"
 _MANIFEST_BARE_DIR_NAME = "manifest-bare.git"
 
-# Expected exit code for all happy-path invocations.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Phrase expected in stdout when gc runs on a fresh repo with no unused projects.
+
 _NOTHING_TO_CLEAN = "Nothing to clean up."
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
-_ERROR_PREFIX = "Error:"
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: import assertion -- helpers exist only in conftest
-# ---------------------------------------------------------------------------
+_ERROR_PREFIX = "Error:"
 
 
 @pytest.mark.functional
@@ -119,11 +112,6 @@ class TestSharedHelperImportability:
         import raises ImportError and this test fails at collection time.
         """
         assert callable(_setup_synced_repo), "_setup_synced_repo imported from conftest must be callable"
-
-
-# ---------------------------------------------------------------------------
-# AC-CODE-001: kanon repo gc with default args exits 0 in a valid initialized repo
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -226,11 +214,6 @@ class TestRepoGcHappyPathDefaultArgs:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoGcHappyChannelDiscipline:
     """AC-CHANNEL-001: stdout vs stderr channel discipline for 'kanon repo gc'.
@@ -321,11 +304,6 @@ class TestRepoGcHappyChannelDiscipline:
         assert _TRACEBACK_MARKER not in result.stderr, (
             f"Python traceback found in stderr of successful 'kanon repo gc'.\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo gc has a happy-path test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

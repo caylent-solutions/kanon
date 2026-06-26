@@ -67,7 +67,6 @@ class TestCheckLegacyCatalogDir:
         target.mkdir()
 
         if subdirs == ["__empty__"]:
-            # catalog/ present but contains no subdirectories
             (target / "catalog").mkdir()
         elif subdirs:
             catalog_dir = target / "catalog"
@@ -120,12 +119,12 @@ class TestCheckLegacyCatalogDir:
         )
 
     def test_message_contains_migration_doc_reference(self, tmp_path: pathlib.Path) -> None:
-        """The finding message references docs/migration-bootstrap-to-add.md. AC-FUNC-004."""
+        """The finding message references docs/migration-to-add.md. AC-FUNC-004."""
         target = tmp_path / "target"
         (target / "catalog" / "entry").mkdir(parents=True)
 
         findings = _check_legacy_catalog_dir(target, "1.0.0")
-        assert "docs/migration-bootstrap-to-add.md" in findings[0].message
+        assert "docs/migration-to-add.md" in findings[0].message
 
     def test_message_contains_catalog_dir_name(self, tmp_path: pathlib.Path) -> None:
         """The finding message mentions the 'catalog/' directory. AC-FUNC-004."""
@@ -145,7 +144,7 @@ class TestCheckLegacyCatalogDir:
         expected = (
             f"Legacy catalog/ directory detected; this directory is unused by "
             f"kanon >= {version} and should be deleted; "
-            "see docs/migration-bootstrap-to-add.md"
+            "see docs/migration-to-add.md"
         )
         assert findings[0].message == expected, (
             f"Spec message mismatch.\nExpected: {expected!r}\nGot: {findings[0].message!r}"
@@ -156,7 +155,7 @@ class TestCheckLegacyCatalogDir:
         target = tmp_path / "target"
         catalog_dir = target / "catalog"
         catalog_dir.mkdir(parents=True)
-        # Write files (not subdirectories) inside catalog/
+
         (catalog_dir / "README.md").write_text("content", encoding="utf-8")
         (catalog_dir / ".gitkeep").write_text("", encoding="utf-8")
 
@@ -209,7 +208,7 @@ class TestLegacyDirConstant:
         result = KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE.format(version="1.2.3")
         assert "1.2.3" in result
         assert "catalog/" in result
-        assert "docs/migration-bootstrap-to-add.md" in result
+        assert "docs/migration-to-add.md" in result
 
     def test_template_matches_spec_verbatim(self) -> None:
         """Template matches the spec Section 4.8 wording with {version} as the only placeholder."""
@@ -218,7 +217,7 @@ class TestLegacyDirConstant:
         expected = (
             f"Legacy catalog/ directory detected; this directory is unused by "
             f"kanon >= {version} and should be deleted; "
-            "see docs/migration-bootstrap-to-add.md"
+            "see docs/migration-to-add.md"
         )
         assert result == expected, f"Template format output mismatch.\nExpected: {expected!r}\nGot: {result!r}"
 
@@ -252,7 +251,7 @@ class TestAuditCommandLegacyDirIntegration:
         """audit_command emits legacy-dir WARN even when --check metadata is specified. AC-FUNC-005."""
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir()
-        # Create the legacy catalog/ directory tree to trigger the WARN.
+
         (tmp_path / "catalog" / "entry").mkdir(parents=True)
 
         args = _make_audit_args(target=str(tmp_path), check="metadata")
@@ -275,7 +274,6 @@ class TestAuditCommandLegacyDirIntegration:
         """audit_command emits no WARN when catalog/ is absent. AC-FUNC-001."""
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir()
-        # No catalog/ directory created.
 
         args = _make_audit_args(target=str(tmp_path), check="metadata")
         captured_output: list[str] = []

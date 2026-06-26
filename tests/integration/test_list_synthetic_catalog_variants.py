@@ -1,4 +1,4 @@
-"""Composition test: 9 ``kanon list`` variants against one shared 6-entry synthetic catalog.
+"""Composition test: 9 ``kanon search`` variants against one shared 6-entry synthetic catalog.
 
 Exercises all nine list variants (rows 7/8/9/11/16/17/18/19 in findings.md)
 against a single shared fixture built once at module scope so the composition
@@ -27,16 +27,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Git helper constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Marketplace XML template matching the shape used by _create_manifest_repo_with_tags
-# in test_add_core.py (spec §3.1).  All recommended fields are populated to
-# suppress recommended-field warnings on stderr.
+
 _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -53,11 +47,7 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     </manifest>
 """)
 
-# Six catalog entries used by the shared fixture.
-# Naming conventions chosen so that:
-#   - regex ``^alpha`` matches alpha-core and alpha-utils (2 entries)
-#   - positional substring ``beta`` matches beta-svc (1 entry)
-#   - ``--match-fields name`` + substring ``alpha`` matches alpha-core and alpha-utils (2 entries)
+
 _SIX_ENTRY_NAMES: list[str] = [
     "alpha-core",
     "alpha-utils",
@@ -67,13 +57,8 @@ _SIX_ENTRY_NAMES: list[str] = [
     "epsilon-pkg",
 ]
 
-# One PEP 440-valid tag applied to the initial commit.
+
 _CATALOG_TAG = "1.0.0"
-
-
-# ---------------------------------------------------------------------------
-# Low-level git helpers (self-contained copy matching test_add_core.py §3.1)
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -163,11 +148,6 @@ def _create_manifest_repo_with_tags(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Module-scope shared fixture
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(scope="module")
 def six_entry_synthetic_catalog(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
     """Build a 6-entry synthetic catalog once and share it across all 9 tests.
@@ -183,11 +163,6 @@ def six_entry_synthetic_catalog(tmp_path_factory: pytest.TempPathFactory) -> pat
     )
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -195,7 +170,7 @@ def _run_kanon(
     """Run kanon via the same Python interpreter and capture stdout/stderr.
 
     Args:
-        args: Arguments passed to kanon_cli (e.g. ``["list", "--format", "json"]``).
+        args: Arguments passed to kanon_cli (e.g. ``["search", "--format", "json"]``).
         extra_env: Environment variable overrides merged onto os.environ.
 
     Returns:
@@ -212,14 +187,9 @@ def _run_kanon(
     )
 
 
-# ---------------------------------------------------------------------------
-# 9-variant composition test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestListSyntheticCatalogVariants:
-    """9 kanon list variants against one shared 6-entry synthetic catalog.
+    """9 kanon search variants against one shared 6-entry synthetic catalog.
 
     Findings.md rows covered: 7, 8, 9, 11, 16, 17, 18, 19.
     Shape-level assertions only -- per-field detail is owned by the
@@ -230,12 +200,12 @@ class TestListSyntheticCatalogVariants:
         self,
         six_entry_synthetic_catalog: pathlib.Path,
     ) -> None:
-        """Default kanon list emits exactly 6 names, one per line, lexicographically sorted.
+        """Default kanon search emits exactly 6 names, one per line, lexicographically sorted.
 
         Covers findings.md row 7.
         """
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
-        result = _run_kanon(["list", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, (
             f"Expected exit 0; got {result.returncode}.\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
@@ -249,12 +219,12 @@ class TestListSyntheticCatalogVariants:
         self,
         six_entry_synthetic_catalog: pathlib.Path,
     ) -> None:
-        """kanon list --format json emits a valid 6-element JSON array.
+        """kanon search --format json emits a valid 6-element JSON array.
 
         Covers findings.md row 8.
         """
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
-        result = _run_kanon(["list", "--format", "json", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "--format", "json", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         parsed = json.loads(result.stdout)
@@ -265,15 +235,15 @@ class TestListSyntheticCatalogVariants:
         self,
         six_entry_synthetic_catalog: pathlib.Path,
     ) -> None:
-        """kanon list --detail emits 6 name-header records with indented field lines.
+        """kanon search --detail emits 6 name-header records with indented field lines.
 
         Covers findings.md row 9.
         """
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
-        result = _run_kanon(["list", "--detail", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "--detail", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
-        # Name-header lines are non-indented, non-empty lines.
+
         header_lines = [ln for ln in result.stdout.splitlines() if ln and not ln.startswith(" ")]
         assert len(header_lines) == 6, (
             f"Expected 6 name-header lines in --detail output; got {len(header_lines)}.\n  headers: {header_lines!r}"
@@ -281,7 +251,7 @@ class TestListSyntheticCatalogVariants:
         assert sorted(header_lines) == sorted(_SIX_ENTRY_NAMES), (
             f"Header names do not match expected entry names.\n  headers: {header_lines!r}"
         )
-        # Each detail record has 4 indented field lines: display-name, description, version, type.
+
         indented_lines = [ln for ln in result.stdout.splitlines() if ln.startswith("  ")]
         assert len(indented_lines) == 6 * 4, (
             f"Expected {6 * 4} indented field lines (6 entries x 4 fields); got {len(indented_lines)}."
@@ -291,18 +261,18 @@ class TestListSyntheticCatalogVariants:
         self,
         six_entry_synthetic_catalog: pathlib.Path,
     ) -> None:
-        """kanon list --tree emits one root line per entry (6 lines total) for simple XMLs.
+        """kanon search --tree emits one root line per entry (6 lines total) for simple XMLs.
 
         Simple marketplace XMLs (no <include> or <project>) render as a single
         root line each.  The 6-entry catalog therefore produces exactly 6 lines.
         """
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
-        result = _run_kanon(["list", "--tree", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "--tree", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
         assert len(lines) == 6, f"Expected 6 tree root lines (one per entry); got {len(lines)}.\n  lines: {lines!r}"
-        # Every line must begin with 'entry ' (the tree root-node prefix).
+
         for line in lines:
             assert line.startswith("entry "), f"Expected tree root line to start with 'entry '; got: {line!r}"
 
@@ -310,19 +280,19 @@ class TestListSyntheticCatalogVariants:
         self,
         six_entry_synthetic_catalog: pathlib.Path,
     ) -> None:
-        """kanon list --tree --max-depth 1 produces one root line per entry.
+        """kanon search --tree --max-depth 1 produces one root line per entry.
 
         For simple XMLs with no includes, max-depth 1 is the same as unlimited
         depth (no layer-b XML includes exist), so the output is still 6 lines.
         Covers findings.md row 11.
         """
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
-        result = _run_kanon(["list", "--tree", "--max-depth", "1", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "--tree", "--max-depth", "1", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
         assert len(lines) == 6, f"Expected 6 root lines with --max-depth 1; got {len(lines)}.\n  lines: {lines!r}"
-        # With max-depth 1, no project-level (+--) or continuation (|  ) lines appear.
+
         for line in lines:
             assert not line.startswith("+--") and not line.startswith("|"), (
                 f"Unexpected child-node line at max-depth 1: {line!r}"
@@ -332,16 +302,16 @@ class TestListSyntheticCatalogVariants:
         self,
         six_entry_synthetic_catalog: pathlib.Path,
     ) -> None:
-        """kanon list --regex ^alpha returns only the 2 entries whose names start with 'alpha'.
+        """kanon search --regex ^alpha returns only the 2 entries whose names start with 'alpha'.
 
         Covers findings.md row 16.
         """
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
-        result = _run_kanon(["list", "--regex", "^alpha", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "--regex", "^alpha", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         lines = result.stdout.strip().splitlines()
-        # alpha-core and alpha-utils start with 'alpha' in their name field.
+
         assert len(lines) == 2, f"Expected 2 entries matching '^alpha'; got {len(lines)}.\n  lines: {lines!r}"
         for name in lines:
             assert name.startswith("alpha"), f"Entry {name!r} does not start with 'alpha' -- regex filter leaked."
@@ -350,7 +320,7 @@ class TestListSyntheticCatalogVariants:
         self,
         six_entry_synthetic_catalog: pathlib.Path,
     ) -> None:
-        """kanon list alpha --match-fields name returns 2 entries whose name contains 'alpha'.
+        """kanon search alpha --match-fields name returns 2 entries whose name contains 'alpha'.
 
         Restricting the search to the name field means only entries whose
         <name> element contains 'alpha' match, which is alpha-core and alpha-utils.
@@ -359,7 +329,7 @@ class TestListSyntheticCatalogVariants:
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
         result = _run_kanon(
             [
-                "list",
+                "search",
                 "alpha",
                 "--match-fields",
                 "name",
@@ -378,13 +348,13 @@ class TestListSyntheticCatalogVariants:
         self,
         six_entry_synthetic_catalog: pathlib.Path,
     ) -> None:
-        """kanon list beta returns only entries containing 'beta' in the default match fields.
+        """kanon search beta returns only entries containing 'beta' in the default match fields.
 
         Of the 6 entries, only beta-svc has 'beta' in name/display-name/description/keywords.
         Covers findings.md row 18.
         """
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
-        result = _run_kanon(["list", "beta", "--catalog-source", catalog_source])
+        result = _run_kanon(["search", "beta", "--catalog-source", catalog_source])
 
         assert result.returncode == 0, f"Expected exit 0; got {result.returncode}.\n  stderr: {result.stderr!r}"
         lines = result.stdout.strip().splitlines()
@@ -397,7 +367,7 @@ class TestListSyntheticCatalogVariants:
         self,
         six_entry_synthetic_catalog: pathlib.Path,
     ) -> None:
-        """kanon list --format json --tree exits non-zero with the mutex-error on stderr.
+        """kanon search --format json --tree exits non-zero with the mutex-error on stderr.
 
         AC-FUNC-005: asserts both the non-zero exit code AND the documented
         stderr substring ('--format json and --tree are mutually exclusive').
@@ -406,7 +376,7 @@ class TestListSyntheticCatalogVariants:
         catalog_source = f"file://{six_entry_synthetic_catalog}@main"
         result = _run_kanon(
             [
-                "list",
+                "search",
                 "--format",
                 "json",
                 "--tree",

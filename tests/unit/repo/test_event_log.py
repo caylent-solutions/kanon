@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for event_log.py module."""
 
 import json
@@ -257,7 +243,7 @@ class TestNextEventId:
 
     def test_next_event_id_increments(self):
         """Test _NextEventId increments."""
-        # Reset the global
+
         from kanon_cli.repo import event_log
 
         event_log._EVENT_ID = None
@@ -275,6 +261,5 @@ class TestNextEventId:
 
         event_log._EVENT_ID = None
 
-        # Just verify it doesn't raise an exception
         id1 = _NextEventId()
         assert id1 >= 1

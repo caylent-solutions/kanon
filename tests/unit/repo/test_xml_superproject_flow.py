@@ -37,10 +37,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- mirrors the pattern used in other test_xml_superproject_* files
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -105,11 +101,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     repodir = _make_repo_dir(tmp_path)
     manifest_file = _write_manifest(repodir, xml_content)
     return _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: <superproject> with explicit remote parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -288,11 +279,6 @@ class TestSuperprojectExplicitRemoteFlow:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: <superproject> inheriting remote from <default> parses correctly
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSuperprojectInheritedRemoteFlow:
     """AC-TEST-002: <superproject> inheriting remote from <default> parses correctly.
@@ -452,11 +438,6 @@ class TestSuperprojectInheritedRemoteFlow:
             "AC-TEST-002: expected a non-empty ManifestParseError when no default remote "
             "is available for <superproject> inheritance but got an empty string"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <superproject> with tag revision parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -634,11 +615,6 @@ class TestSuperprojectTagRevisionFlow:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Superproject element parsed and integrated into manifest model
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSuperprojectManifestModelIntegration:
     """AC-FUNC-001: The superproject element is parsed and integrated into the manifest model.
@@ -756,11 +732,6 @@ class TestSuperprojectManifestModelIntegration:
             f"AC-FUNC-001: expected superproject.revision='refs/tags/android-14.0.0' but got: "
             f"{manifest.superproject.revision!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

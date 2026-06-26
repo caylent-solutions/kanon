@@ -22,6 +22,7 @@ Scenarios automated:
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pytest
@@ -37,16 +38,8 @@ from tests.scenarios.conftest import (
     xml_escape,
 )
 
-# ---------------------------------------------------------------------------
-# Tags that every package repo carries (mirrors the bash fixture)
-# ---------------------------------------------------------------------------
 
 _PK_TAGS = ("1.0.0", "1.0.1", "1.1.0", "1.2.0", "2.0.0", "2.1.0", "3.0.0")
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _build_pkg_repo(parent: pathlib.Path, name: str) -> pathlib.Path:
@@ -151,8 +144,10 @@ def _write_kanon(
     """Write a .kanon file for the ``pk`` source pointing at a manifest repo."""
     lines = [
         f"KANON_SOURCE_pk_URL={manifest_repo_url}",
-        f"KANON_SOURCE_pk_REVISION={revision}",
+        f"KANON_SOURCE_pk_REF={revision}",
         f"KANON_SOURCE_pk_PATH={manifest_path}",
+        "KANON_SOURCE_pk_NAME=pk",
+        f"KANON_SOURCE_pk_GITBASE={manifest_repo_url}",
     ]
     if extra_lines:
         lines.extend(extra_lines)
@@ -161,18 +156,13 @@ def _write_kanon(
     return p
 
 
-# ---------------------------------------------------------------------------
-# Assertion helpers
-# ---------------------------------------------------------------------------
-
-
-def _assert_symlink_exists(work_dir: pathlib.Path, pkg_name: str) -> None:
-    link = work_dir / ".packages" / pkg_name
+def _assert_symlink_exists(store_base: pathlib.Path, pkg_name: str) -> None:
+    link = store_base / ".packages" / pkg_name
     assert link.is_symlink(), f".packages/{pkg_name} is not a symlink -- install may have failed"
 
 
-def _assert_symlink_absent(work_dir: pathlib.Path, pkg_name: str) -> None:
-    link = work_dir / ".packages" / pkg_name
+def _assert_symlink_absent(store_base: pathlib.Path, pkg_name: str) -> None:
+    link = store_base / ".packages" / pkg_name
     assert not link.exists(), f".packages/{pkg_name} still exists after clean"
 
 
@@ -190,11 +180,6 @@ def _assert_clean_ok(result, work_dir: pathlib.Path) -> None:
     assert "kanon clean: done" in result.stdout, f"'kanon clean: done' not in stdout: {result.stdout!r}"
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestPK:
     def test_pk_01_basic_install_and_clean(self, tmp_path: pathlib.Path) -> None:
@@ -206,6 +191,7 @@ class TestPK:
         work_dir = tmp_path / "ws"
         work_dir.mkdir()
 
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _build_pkg_repo(pkg_dir, "pk01")
         xml = _manifest_xml_for(pkg_dir, [{"name": "pk01", "path": ".packages/pk01", "revision": "main"}])
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk01.xml": xml})
@@ -216,12 +202,12 @@ class TestPK:
             extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         _assert_install_ok(result, work_dir)
-        _assert_symlink_exists(work_dir, "pk01")
+        _assert_symlink_exists(store_base, "pk01")
 
         result = kanon_clean(work_dir)
         _assert_clean_ok(result, work_dir)
-        assert not (work_dir / ".packages").exists(), ".packages/ still exists after clean"
-        assert not (work_dir / ".kanon-data").exists(), ".kanon-data/ still exists after clean"
+        assert not (store_base / ".packages").exists(), ".packages/ still exists after clean"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ still exists after clean"
 
     def test_pk_02_pep440_tilde_equal_in_xml(self, tmp_path: pathlib.Path) -> None:
         """PK-02: PEP 440 `~=1.0.0` in XML revision resolves to 1.0.1."""
@@ -232,6 +218,7 @@ class TestPK:
         work_dir = tmp_path / "ws"
         work_dir.mkdir()
 
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _build_pkg_repo(pkg_dir, "pk02")
         xml = _manifest_xml_for(pkg_dir, [{"name": "pk02", "path": ".packages/pk02", "revision": "refs/tags/~=1.0.0"}])
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk02.xml": xml})
@@ -242,17 +229,16 @@ class TestPK:
             extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         _assert_install_ok(result, work_dir)
-        _assert_symlink_exists(work_dir, "pk02")
+        _assert_symlink_exists(store_base, "pk02")
 
-        # ~=1.0.0 means >=1.0.0, ==1.0.* -- highest compatible tag is 1.0.1
-        version_file = work_dir / ".packages" / "pk02" / "version.txt"
+        version_file = store_base / ".packages" / "pk02" / "version.txt"
         assert version_file.exists(), "version.txt missing inside installed package"
         resolved = version_file.read_text().strip()
         assert resolved == "1.0.1", f"Expected ~=1.0.0 to resolve to 1.0.1, got {resolved!r}"
 
         result = kanon_clean(work_dir)
         _assert_clean_ok(result, work_dir)
-        _assert_symlink_absent(work_dir, "pk02")
+        _assert_symlink_absent(store_base, "pk02")
 
     def test_pk_03_pep440_tilde_equal_in_kanon_revision(self, tmp_path: pathlib.Path) -> None:
         """PK-03: PEP 440 `~=1.0.0` in .kanon REVISION (XML revision=main) resolves correctly."""
@@ -263,10 +249,9 @@ class TestPK:
         work_dir = tmp_path / "ws"
         work_dir.mkdir()
 
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _build_pkg_repo(pkg_dir, "pk03")
-        # XML uses plain "main"; the PEP 440 constraint is in .kanon REVISION.
-        # The manifest repo must have tags so kanon can resolve the PEP 440
-        # constraint against the manifest source.
+
         xml = _manifest_xml_for(pkg_dir, [{"name": "pk03", "path": ".packages/pk03", "revision": "main"}])
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk03.xml": xml}, with_tags=True)
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk03.xml", revision="refs/tags/~=1.0.0")
@@ -276,11 +261,11 @@ class TestPK:
             extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         _assert_install_ok(result, work_dir)
-        _assert_symlink_exists(work_dir, "pk03")
+        _assert_symlink_exists(store_base, "pk03")
 
         result = kanon_clean(work_dir)
         _assert_clean_ok(result, work_dir)
-        _assert_symlink_absent(work_dir, "pk03")
+        _assert_symlink_absent(store_base, "pk03")
 
     def test_pk_04_pep440_in_both_xml_and_kanon(self, tmp_path: pathlib.Path) -> None:
         """PK-04: PEP 440 `>=1.0.0,<2.0.0` in both XML and .kanon resolves to 1.2.0."""
@@ -291,12 +276,13 @@ class TestPK:
         work_dir = tmp_path / "ws"
         work_dir.mkdir()
 
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _build_pkg_repo(pkg_dir, "pk04")
         xml = _manifest_xml_for(
             pkg_dir,
             [{"name": "pk04", "path": ".packages/pk04", "revision": "refs/tags/>=1.0.0,<2.0.0"}],
         )
-        # Manifest repo needs tags so PEP 440 in .kanon REVISION can be resolved.
+
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk04.xml": xml}, with_tags=True)
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk04.xml", revision="refs/tags/>=1.0.0,<2.0.0")
 
@@ -305,16 +291,16 @@ class TestPK:
             extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         _assert_install_ok(result, work_dir)
-        _assert_symlink_exists(work_dir, "pk04")
+        _assert_symlink_exists(store_base, "pk04")
 
-        version_file = work_dir / ".packages" / "pk04" / "version.txt"
+        version_file = store_base / ".packages" / "pk04" / "version.txt"
         assert version_file.exists(), "version.txt missing inside installed package"
         resolved = version_file.read_text().strip()
         assert resolved == "1.2.0", f"Expected >=1.0.0,<2.0.0 to resolve to 1.2.0, got {resolved!r}"
 
         result = kanon_clean(work_dir)
         _assert_clean_ok(result, work_dir)
-        _assert_symlink_absent(work_dir, "pk04")
+        _assert_symlink_absent(store_base, "pk04")
 
     def test_pk_05_clean_is_noop_when_nothing_installed(self, tmp_path: pathlib.Path) -> None:
         """PK-05: clean is a no-op when nothing was installed (exit 0, no error)."""
@@ -330,13 +316,12 @@ class TestPK:
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk05.xml": xml})
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk05.xml")
 
-        # Run clean without having installed first
         result = kanon_clean(work_dir)
         assert result.returncode == 0, (
             f"kanon clean exited {result.returncode} without prior install\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        # Confirm no error text about missing .kanon-data
+
         assert "error" not in result.stderr.lower() or ".kanon-data" not in result.stderr, (
             f"Unexpected error about .kanon-data in stderr: {result.stderr!r}"
         )
@@ -350,6 +335,7 @@ class TestPK:
         work_dir = tmp_path / "ws"
         work_dir.mkdir()
 
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _build_pkg_repo(pkg_dir, "pk06")
         xml = _manifest_xml_for(pkg_dir, [{"name": "pk06", "path": ".packages/pk06", "revision": "main"}])
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk06.xml": xml})
@@ -357,28 +343,24 @@ class TestPK:
         _cs = f"{mfst_bare.as_uri()}@main"
         _cs_env = {"KANON_CATALOG_SOURCE": _cs, "KANON_ALLOW_INSECURE_REMOTES": "1"}
 
-        # First install
         result = kanon_install(work_dir, extra_env=_cs_env)
         _assert_install_ok(result, work_dir)
-        _assert_symlink_exists(work_dir, "pk06")
+        _assert_symlink_exists(store_base, "pk06")
 
-        # First clean
         result = kanon_clean(work_dir)
         _assert_clean_ok(result, work_dir)
-        assert not (work_dir / ".packages").exists(), ".packages/ not removed by first clean"
+        assert not (store_base / ".packages").exists(), ".packages/ not removed by first clean"
 
-        # Second install
         result = kanon_install(work_dir, extra_env=_cs_env)
         _assert_install_ok(result, work_dir)
-        _assert_symlink_exists(work_dir, "pk06")
+        _assert_symlink_exists(store_base, "pk06")
 
-        # Second clean
         result = kanon_clean(work_dir)
         _assert_clean_ok(result, work_dir)
-        assert not (work_dir / ".packages").exists(), ".packages/ not removed by second clean"
+        assert not (store_base / ".packages").exists(), ".packages/ not removed by second clean"
 
     def test_pk_07_env_override_revision(self, tmp_path: pathlib.Path) -> None:
-        """PK-07: env override of KANON_SOURCE_pk_REVISION resolves to 2.1.0."""
+        """PK-07: env override of KANON_SOURCE_pk_REF resolves to 2.1.0."""
         pkg_dir = tmp_path / "repos"
         pkg_dir.mkdir()
         mfst_repos = tmp_path / "mfst-repos"
@@ -386,29 +368,24 @@ class TestPK:
         work_dir = tmp_path / "ws"
         work_dir.mkdir()
 
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _build_pkg_repo(pkg_dir, "pk07")
         xml = _manifest_xml_for(pkg_dir, [{"name": "pk07", "path": ".packages/pk07", "revision": "main"}])
-        # Manifest repo needs tags so the env-override PEP 440 constraint can be resolved.
+
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk07.xml": xml}, with_tags=True)
-        # .kanon says "main" -- env override should win
+
         _write_kanon(work_dir, mfst_bare.as_uri(), "pk07.xml", revision="main")
 
         result = kanon_install(
             work_dir,
             extra_env={
-                "KANON_SOURCE_pk_REVISION": "refs/tags/~=2.0.0",
+                "KANON_SOURCE_pk_REF": "refs/tags/~=2.0.0",
                 "KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main",
                 "KANON_ALLOW_INSECURE_REMOTES": "1",
             },
         )
         _assert_install_ok(result, work_dir)
-        _assert_symlink_exists(work_dir, "pk07")
-
-        # The env override caused the manifest source to be pinned to a ~=2.0.0
-        # compatible tag.  The package itself is fetched at the revision declared
-        # in the manifest ("main"), so the exact version.txt value is not the
-        # meaningful assertion here.  What matters is that the override was
-        # accepted and the install succeeded (symlink present above).
+        _assert_symlink_exists(store_base, "pk07")
 
         result = kanon_clean(work_dir)
         _assert_clean_ok(result, work_dir)
@@ -450,8 +427,9 @@ class TestPK:
         work_dir = tmp_path / "ws"
         work_dir.mkdir()
 
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _build_pkg_repo(pkg_dir, "pk09")
-        # Two separate path entries pointing at the same repo name
+
         xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
@@ -469,8 +447,8 @@ class TestPK:
             extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         _assert_install_ok(result, work_dir)
-        _assert_symlink_exists(work_dir, "pk09")
-        _assert_symlink_exists(work_dir, "pk09-extra")
+        _assert_symlink_exists(store_base, "pk09")
+        _assert_symlink_exists(store_base, "pk09-extra")
 
         result = kanon_clean(work_dir)
         _assert_clean_ok(result, work_dir)
@@ -484,7 +462,8 @@ class TestPK:
         work_dir = tmp_path / "ws"
         work_dir.mkdir()
 
-        # pk10 repo must have src/main.py to satisfy the linkfile src
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+
         _build_pkg_repo_with_src(pkg_dir, "pk10")
 
         xml = (
@@ -505,12 +484,11 @@ class TestPK:
             extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         _assert_install_ok(result, work_dir)
-        _assert_symlink_exists(work_dir, "pk10")
-        linkfile_target = work_dir / ".packages" / "pk10-main.py"
+        _assert_symlink_exists(store_base, "pk10")
+        linkfile_target = store_base / ".packages" / "pk10-main.py"
         assert linkfile_target.exists(), ".packages/pk10-main.py linkfile target missing after install"
 
-        # ~=2.0.0 means >=2.0.0, ==2.0.* -- only 2.0.0 qualifies from the tag set
-        version_file = work_dir / ".packages" / "pk10" / "version.txt"
+        version_file = store_base / ".packages" / "pk10" / "version.txt"
         if version_file.exists():
             resolved = version_file.read_text().strip()
             assert resolved == "2.0.0", f"Expected ~=2.0.0 to resolve to 2.0.0, got {resolved!r}"
@@ -527,10 +505,10 @@ class TestPK:
         work_dir = tmp_path / "ws"
         work_dir.mkdir()
 
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _build_pkg_repo(pkg_dir, "pk11a")
         _build_pkg_repo(pkg_dir, "pk11b")
 
-        # Single manifest with two projects at different PEP 440 constraints
         xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
@@ -548,8 +526,8 @@ class TestPK:
             extra_env={"KANON_CATALOG_SOURCE": f"{mfst_bare.as_uri()}@main", "KANON_ALLOW_INSECURE_REMOTES": "1"},
         )
         _assert_install_ok(result, work_dir)
-        _assert_symlink_exists(work_dir, "pk11a")
-        _assert_symlink_exists(work_dir, "pk11b")
+        _assert_symlink_exists(store_base, "pk11a")
+        _assert_symlink_exists(store_base, "pk11b")
 
         result = kanon_clean(work_dir)
         _assert_clean_ok(result, work_dir)
@@ -568,18 +546,22 @@ class TestPK:
             pkg_dir,
             [{"name": "pk12", "path": ".packages/pk12", "revision": "refs/tags/~=1.0.0"}],
         )
-        # Both sources a and b point at the same manifest declaring "pk12"
+
         mfst_a = _build_manifest_repo(mfst_repos, "mfst-a", {"pk12.xml": xml})
         mfst_b = _build_manifest_repo(mfst_repos, "mfst-b", {"pk12.xml": xml})
 
         kanon_file = work_dir / ".kanon"
         kanon_file.write_text(
             f"KANON_SOURCE_a_URL={mfst_a.as_uri()}\n"
-            "KANON_SOURCE_a_REVISION=main\n"
+            "KANON_SOURCE_a_REF=main\n"
             "KANON_SOURCE_a_PATH=pk12.xml\n"
+            "KANON_SOURCE_a_NAME=a\n"
+            f"KANON_SOURCE_a_GITBASE={mfst_a.as_uri()}\n"
             f"KANON_SOURCE_b_URL={mfst_b.as_uri()}\n"
-            "KANON_SOURCE_b_REVISION=main\n"
+            "KANON_SOURCE_b_REF=main\n"
             "KANON_SOURCE_b_PATH=pk12.xml\n"
+            "KANON_SOURCE_b_NAME=b\n"
+            f"KANON_SOURCE_b_GITBASE={mfst_b.as_uri()}\n"
         )
 
         result = kanon_install(
@@ -605,6 +587,7 @@ class TestPK:
         work_dir = tmp_path / "ws"
         work_dir.mkdir()
 
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _build_pkg_repo(pkg_dir, "pk13")
         xml = _manifest_xml_for(pkg_dir, [{"name": "pk13", "path": ".packages/pk13", "revision": "main"}])
         mfst_bare = _build_manifest_repo(mfst_repos, "mfst", {"pk13.xml": xml})
@@ -616,7 +599,7 @@ class TestPK:
         )
         _assert_install_ok(result, work_dir)
 
-        gitignore = work_dir / ".gitignore"
+        gitignore = store_base / ".gitignore"
         assert gitignore.exists(), ".gitignore not created by kanon install"
         text = gitignore.read_text()
         assert ".packages/" in text, f".gitignore missing '.packages/' entry:\n{text!r}"
@@ -625,7 +608,6 @@ class TestPK:
         result = kanon_clean(work_dir)
         _assert_clean_ok(result, work_dir)
 
-        # .gitignore must survive clean
         assert gitignore.exists(), ".gitignore removed by kanon clean"
         text_after = gitignore.read_text()
         assert ".packages/" in text_after, f".gitignore missing '.packages/' after clean:\n{text_after!r}"

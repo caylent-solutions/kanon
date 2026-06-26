@@ -105,7 +105,6 @@ def _classify_remote_url_scheme(url: str) -> RemoteUrlScheme:
     if lower.startswith("ssh://"):
         return RemoteUrlScheme.SSH_PROTOCOL
 
-    # SCP-style git@ shorthand (no scheme separator, but always starts with "git@")
     if lower.startswith("git@"):
         return RemoteUrlScheme.SSH_GIT_AT
 
@@ -146,11 +145,9 @@ def _enforce_remote_url_policy(
     """
     scheme = _classify_remote_url_scheme(url)
 
-    # HTTPS and SSH variants are always accepted -- return immediately.
     if scheme in (RemoteUrlScheme.HTTPS, RemoteUrlScheme.SSH_GIT_AT, RemoteUrlScheme.SSH_PROTOCOL):
         return None
 
-    # All other schemes require the override to proceed.
     if allow_insecure:
         return None
 

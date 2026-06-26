@@ -24,16 +24,11 @@ import pytest
 
 from kanon_cli.core.kanon_hash import kanon_hash
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     Lockfile,
     SourceEntry,
     write_lockfile,
 )
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 _GIT_USER_NAME = "Test User"
@@ -113,11 +108,6 @@ def _create_bare_repo(base: pathlib.Path, name: str) -> tuple[pathlib.Path, str]
     return bare_dir.resolve(), sha
 
 
-# ---------------------------------------------------------------------------
-# CLI runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     cwd: pathlib.Path | None = None,
@@ -134,7 +124,7 @@ def _run_kanon(
         CompletedProcess with returncode, stdout, stderr.
     """
     env = dict(os.environ)
-    env.pop("KANON_CATALOG_SOURCE", None)
+    env.pop("KANON_CATALOG_SOURCES", None)
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
@@ -144,11 +134,6 @@ def _run_kanon(
         env=env,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Workspace builder
-# ---------------------------------------------------------------------------
 
 
 def _build_workspace(
@@ -169,8 +154,10 @@ def _build_workspace(
     kanon_lines = []
     for s in sources:
         kanon_lines.append(f"KANON_SOURCE_{s['name']}_URL={s['url']}")
-        kanon_lines.append(f"KANON_SOURCE_{s['name']}_REVISION={s['revision_spec']}")
+        kanon_lines.append(f"KANON_SOURCE_{s['name']}_REF={s['revision_spec']}")
         kanon_lines.append(f"KANON_SOURCE_{s['name']}_PATH=repo-specs/meta.xml")
+        kanon_lines.append(f"KANON_SOURCE_{s['name']}_NAME={s['name']}")
+        kanon_lines.append(f"KANON_SOURCE_{s['name']}_GITBASE=https://example.com")
     kanon_lines.append("KANON_MARKETPLACE_INSTALL=false")
 
     kanon_path = workspace / ".kanon"
@@ -181,9 +168,10 @@ def _build_workspace(
 
     entries = [
         SourceEntry(
+            alias=s["name"],
             name=s["name"],
             url=s["url"],
-            revision_spec=s["revision_spec"],
+            ref_spec=s["revision_spec"],
             resolved_ref=s["revision_spec"],
             resolved_sha=s["resolved_sha"],
             path="repo-specs/meta.xml",
@@ -191,27 +179,15 @@ def _build_workspace(
         for s in sources
     ]
     lockfile = Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash=computed_hash,
-        catalog=CatalogBlock(
-            source="",
-            url="",
-            revision_spec="",
-            resolved_ref="",
-            resolved_sha="",
-        ),
         sources=entries,
     )
     lock_path = workspace / ".kanon.lock"
     write_lockfile(lockfile, lock_path)
     return kanon_path, lock_path
-
-
-# ---------------------------------------------------------------------------
-# Tests: AC-TEST-002 / AC-CYCLE-001 -- full CLI against real fixture git server
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -232,8 +208,10 @@ class TestDoctorRemoteReachabilityFullCli:
         kanon_path = tmp_path / ".kanon"
         kanon_path.write_text(
             "KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
-            "KANON_SOURCE_src_REVISION=main\n"
+            "KANON_SOURCE_src_REF=main\n"
             "KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+            "KANON_SOURCE_src_NAME=src\n"
+            "KANON_SOURCE_src_GITBASE=https://example.com\n"
             "KANON_MARKETPLACE_INSTALL=false\n",
             encoding="utf-8",
         )
@@ -266,7 +244,7 @@ class TestDoctorRemoteReachabilityFullCli:
 
         assert result.returncode == 0
         assert "REMOTE_UNREACHABLE" not in result.stderr
-        # No WARN for reachability
+
         assert not any("WARN:" in line and "unreachable" in line.lower() for line in result.stderr.splitlines())
 
     def test_one_unreachable_remote_exits_zero(self, tmp_path: pathlib.Path) -> None:
@@ -278,7 +256,7 @@ class TestDoctorRemoteReachabilityFullCli:
         base.mkdir()
         bare_path, sha = _create_bare_repo(base, "repo-a")
         reachable_url = f"file://{bare_path}"
-        # A non-existent path to simulate a removed remote.
+
         removed_url = f"file://{base}/removed-bare.git"
 
         kanon_path, lock_path = _build_workspace(
@@ -316,7 +294,7 @@ class TestDoctorRemoteReachabilityFullCli:
         )
 
         assert "WARN:" in result.stderr
-        # Must NOT be an error-level finding for this URL
+
         warn_lines = [line for line in result.stderr.splitlines() if "WARN:" in line and "unreachable" in line.lower()]
         assert len(warn_lines) >= 1
 
@@ -393,8 +371,6 @@ class TestDoctorRemoteReachabilityFullCli:
         base.mkdir()
         bare_path, sha = _create_bare_repo(base, "repo-base")
 
-        # Two source entries pointing at the same removed repo in different URL forms.
-        # Both file:// URLs are distinct strings but canonicalize to the same path.
         removed_path = base / "nonexistent-bare.git"
         url_a = f"file://{removed_path}"
         url_b = f"file://{removed_path}/"
@@ -417,5 +393,5 @@ class TestDoctorRemoteReachabilityFullCli:
         warn_unreachable_lines = [
             line for line in result.stderr.splitlines() if "WARN:" in line and "unreachable" in line.lower()
         ]
-        # Exactly one warning for the same canonicalized URL (deduplication).
+
         assert len(warn_unreachable_lines) == 1

@@ -79,16 +79,13 @@ def _write_stub_kanon(
     stub_dir.mkdir()
     call_log = tmp_path / "kanon_calls.log"
 
-    # Build the case statement for __resolve_entry_to_repo_url.
     resolve_cases = ""
     if resolve_responses:
         for entry_name, repo_url in resolve_responses.items():
-            # Write output to a temp file to avoid shell quoting issues.
             out_file = tmp_path / f"resolve_{entry_name}.txt"
             out_file.write_text(repo_url + "\n", encoding="utf-8")
             resolve_cases += f'            "{entry_name}") cat {out_file} ;;\n'
 
-    # Build the case statement for __complete_project_versions.
     project_cases = ""
     if complete_project_responses:
         for repo_url, versions in complete_project_responses.items():
@@ -96,14 +93,13 @@ def _write_stub_kanon(
             out_file.write_text(versions, encoding="utf-8")
             project_cases += f'            "{repo_url}") cat {out_file} ;;\n'
 
-    # Build the case statement for __complete_catalog_entries.
     catalog_cases = ""
     if complete_catalog_responses:
         for prefix, entries in complete_catalog_responses.items():
             out_file = tmp_path / f"catalog_{abs(hash(prefix))}.txt"
             out_file.write_text(entries, encoding="utf-8")
             catalog_cases += f'            "{prefix}") cat {out_file} ;;\n'
-        # Fallback: use "" key for any unmatched prefix.
+
         if "" in complete_catalog_responses:
             out_file = tmp_path / "catalog_default.txt"
             out_file.write_text(complete_catalog_responses[""], encoding="utf-8")
@@ -144,11 +140,6 @@ def _write_stub_kanon(
     return str(stub_dir), str(call_log)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: no-@ routes to _kanon_complete_catalog_entries
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_bash_no_at_routes_to_catalog_entries(tmp_path: Path) -> None:
     """AC-FUNC-001: 'foo' (no @) routes to _kanon_complete_catalog_entries."""
@@ -172,7 +163,7 @@ def test_bash_no_at_routes_to_catalog_entries(tmp_path: Path) -> None:
         """)
     result = _run_bash(script)
     assert result.returncode == 0, f"Script failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    # Verify routing to __complete_catalog_entries.
+
     call_log_content = Path(call_log).read_text(encoding="utf-8")
     assert "__complete_catalog_entries" in call_log_content, (
         f"Expected __complete_catalog_entries call, got: {call_log_content!r}"
@@ -180,11 +171,6 @@ def test_bash_no_at_routes_to_catalog_entries(tmp_path: Path) -> None:
     assert "__resolve_entry_to_repo_url" not in call_log_content, (
         "Must not call __resolve_entry_to_repo_url for no-@ token"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: foo@ routes to _kanon_complete_project_versions with empty spec
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -221,11 +207,6 @@ def test_bash_at_empty_spec_routes_to_project_versions(tmp_path: Path) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: foo@1 routes to project versions with spec = "1"
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_bash_at_spec_routes_to_project_versions_with_spec(tmp_path: Path) -> None:
     """AC-FUNC-003: 'foo@1' routes to _kanon_complete_project_versions with spec='1'."""
@@ -255,15 +236,10 @@ def test_bash_at_spec_routes_to_project_versions_with_spec(tmp_path: Path) -> No
     assert "__resolve_entry_to_repo_url" in call_log_content, (
         f"Expected __resolve_entry_to_repo_url call, got: {call_log_content!r}"
     )
-    # Verify the spec "1" was passed to __complete_project_versions.
+
     assert "__complete_project_versions" in call_log_content, (
         f"Expected __complete_project_versions call, got: {call_log_content!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: multiple @ -- LAST-@ split
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -283,18 +259,13 @@ def test_bash_multiple_at_splits_on_last(tmp_path: Path) -> None:
         """)
     result = _run_bash(script)
     assert result.returncode == 0, f"Script failed:\nstdout: {result.stdout}\nstderr: {result.stderr}"
-    # The stub was invoked with name="foo@bar" (LAST-@ split).
+
     call_log_content = Path(call_log).read_text(encoding="utf-8") if Path(call_log).exists() else ""
-    # If __resolve_entry_to_repo_url was called, it must have been with "foo@bar".
+
     if "__resolve_entry_to_repo_url" in call_log_content:
         assert "foo@bar" in call_log_content, (
             f"Expected LAST-@ split: name='foo@bar', got call log: {call_log_content!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: leading @ -- empty name -> empty COMPREPLY
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -317,11 +288,6 @@ def test_bash_leading_at_empty_name_produces_empty_compreply(tmp_path: Path) -> 
     assert "COMPREPLY_COUNT=0" in result.stdout, f"Expected empty COMPREPLY for '@1.0.0', got: {result.stdout!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: KANON_COMPLETION_ENABLED=0 -- no subprocess call
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_bash_disabled_skips_subprocess(tmp_path: Path) -> None:
     """AC-FUNC-007: KANON_COMPLETION_ENABLED=0 suppresses all subprocess calls."""
@@ -342,16 +308,11 @@ def test_bash_disabled_skips_subprocess(tmp_path: Path) -> None:
     assert "COMPREPLY_COUNT=0" in result.stdout, (
         f"Expected empty COMPREPLY when KANON_COMPLETION_ENABLED=0, got: {result.stdout!r}"
     )
-    # Verify the stub was NOT called.
+
     call_log_path = Path(call_log)
     if call_log_path.exists():
         calls = call_log_path.read_text(encoding="utf-8").strip()
         assert calls == "", f"Expected no kanon subprocess calls when KANON_COMPLETION_ENABLED=0, got: {calls!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001 (bash): end-to-end cycle
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

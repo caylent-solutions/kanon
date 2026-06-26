@@ -15,10 +15,6 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
@@ -39,30 +35,25 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
 """)
 
 _KANON_SINGLE_TEMPLATE = textwrap.dedent("""\
-    GITBASE=file:///unused
-    CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces
-    KANON_MARKETPLACE_INSTALL=false
     KANON_SOURCE_{name_upper}_URL={url}
-    KANON_SOURCE_{name_upper}_REVISION={revision}
+    KANON_SOURCE_{name_upper}_REF={revision}
     KANON_SOURCE_{name_upper}_PATH=./{name_lower}
+    KANON_SOURCE_{name_upper}_NAME={name_upper}
+    KANON_SOURCE_{name_upper}_GITBASE=https://example.com
 """)
 
 _KANON_TWO_SOURCES_TEMPLATE = textwrap.dedent("""\
-    GITBASE=file:///unused
-    CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces
-    KANON_MARKETPLACE_INSTALL=false
     KANON_SOURCE_{name_upper_a}_URL={url_a}
-    KANON_SOURCE_{name_upper_a}_REVISION={revision_a}
+    KANON_SOURCE_{name_upper_a}_REF={revision_a}
     KANON_SOURCE_{name_upper_a}_PATH=./{name_lower_a}
+    KANON_SOURCE_{name_upper_a}_NAME={name_upper_a}
+    KANON_SOURCE_{name_upper_a}_GITBASE=https://example.com
     KANON_SOURCE_{name_upper_b}_URL={url_b}
-    KANON_SOURCE_{name_upper_b}_REVISION={revision_b}
+    KANON_SOURCE_{name_upper_b}_REF={revision_b}
     KANON_SOURCE_{name_upper_b}_PATH=./{name_lower_b}
+    KANON_SOURCE_{name_upper_b}_NAME={name_upper_b}
+    KANON_SOURCE_{name_upper_b}_GITBASE=https://example.com
 """)
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -101,11 +92,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     """Clone work_dir into a bare repository and return the bare path."""
     _git(["clone", "--bare", str(work_dir), str(bare_dir)], cwd=work_dir.parent)
     return bare_dir.resolve()
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _create_project_repo_with_tags(
@@ -167,11 +153,6 @@ def _create_manifest_repo(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -188,7 +169,7 @@ def _run_kanon(
         The completed subprocess result.
     """
     env = dict(os.environ)
-    env.pop("KANON_CATALOG_SOURCE", None)
+    env.pop("KANON_CATALOG_SOURCES", None)
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
@@ -200,54 +181,37 @@ def _run_kanon(
     )
 
 
-# ---------------------------------------------------------------------------
-# Lockfile builder helper
-# ---------------------------------------------------------------------------
-
-
 def _write_lockfile(
     lock_file: pathlib.Path,
-    catalog_source: str,
-    catalog_url: str,
     sources: list[dict[str, str]],
 ) -> None:
-    """Write a minimal .kanon.lock file.
+    """Write a minimal schema-v4 .kanon.lock file.
+
+    Schema v4 removed the global [catalog] block; the lock is alias-keyed and
+    each [[sources]] entry carries the per-entry ref_spec field.
 
     Args:
         lock_file: Path to write the lockfile.
-        catalog_source: The full catalog source string (url@ref).
-        catalog_url: The bare catalog URL (without @ref).
-        sources: List of dicts with keys: name, url, revision_spec,
+        sources: List of dicts with keys: name, url, ref_spec,
             resolved_ref, resolved_sha, path.
     """
     lines = [
-        "schema_version = 1",
+        "schema_version = 5",
         'generated_at = "2026-01-01T00:00:00Z"',
         'generator = "kanon-cli/test"',
         f'kanon_hash = "sha256:{"a" * 64}"',
-        "",
-        "[catalog]",
-        f"source = {catalog_source!r}",
-        f"url = {catalog_url!r}",
-        'revision_spec = "main"',
-        'resolved_ref = "main"',
-        f'resolved_sha = "{"b" * 40}"',
     ]
     for source in sources:
         lines.append("")
         lines.append("[[sources]]")
+        lines.append(f"alias = {source['name']!r}")
         lines.append(f"name = {source['name']!r}")
         lines.append(f"url = {source['url']!r}")
-        lines.append(f"revision_spec = {source['revision_spec']!r}")
+        lines.append(f"ref_spec = {source['ref_spec']!r}")
         lines.append(f"resolved_ref = {source['resolved_ref']!r}")
         lines.append(f"resolved_sha = {source['resolved_sha']!r}")
         lines.append(f"path = {source['path']!r}")
     lock_file.write_text("\n".join(lines) + "\n")
-
-
-# ---------------------------------------------------------------------------
-# Integration tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -282,7 +246,6 @@ class TestOutdatedFailOnUpgradeFlag:
         )
         kanon_file.chmod(0o644)
 
-        # Lockfile pins to 1.0.0 so there is a patch upgrade available (1.0.1)
         sha_100 = _git_output(
             ["ls-remote", project_url, "refs/tags/1.0.0"],
             cwd=workspace,
@@ -290,13 +253,11 @@ class TestOutdatedFailOnUpgradeFlag:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "ALPHA",
                     "url": project_url,
-                    "revision_spec": ">=1.0.0,<1.1",
+                    "ref_spec": ">=1.0.0,<1.1",
                     "resolved_ref": "refs/tags/1.0.0",
                     "resolved_sha": sha_100,
                     "path": "./alpha",
@@ -321,7 +282,7 @@ class TestOutdatedFailOnUpgradeFlag:
             f"Expected exit 0 without --fail-on-upgrade even with upgrade available.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # Verify the upgrade IS present in the output (patch upgrade exists)
+
         assert "patch" in result.stdout, f"Expected 'patch' upgrade-type in output:\n{result.stdout}"
 
     def test_with_flag_exits_one_when_upgrade_available(self, tmp_path: pathlib.Path) -> None:
@@ -356,13 +317,11 @@ class TestOutdatedFailOnUpgradeFlag:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "BETA",
                     "url": project_url,
-                    "revision_spec": ">=1.0.0,<1.1",
+                    "ref_spec": ">=1.0.0,<1.1",
                     "resolved_ref": "refs/tags/1.0.0",
                     "resolved_sha": sha_100,
                     "path": "./beta",
@@ -414,7 +373,6 @@ class TestOutdatedFailOnUpgradeFlag:
         )
         kanon_file.chmod(0o644)
 
-        # Pin to 1.0.1 which IS the latest-matching-spec -> no upgrade -> exit 0
         sha_101 = _git_output(
             ["ls-remote", project_url, "refs/tags/1.0.1"],
             cwd=workspace,
@@ -422,13 +380,11 @@ class TestOutdatedFailOnUpgradeFlag:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "GAMMA",
                     "url": project_url,
-                    "revision_spec": ">=1.0.0,<1.1",
+                    "ref_spec": ">=1.0.0,<1.1",
                     "resolved_ref": "refs/tags/1.0.1",
                     "resolved_sha": sha_101,
                     "path": "./gamma",
@@ -461,11 +417,9 @@ class TestOutdatedFailOnUpgradeFlag:
         project_base = tmp_path / "project-repos"
         project_base.mkdir()
 
-        # Source A: at latest (no upgrade)
         bare_a = _create_project_repo_with_tags(project_base, "srcA", ["1.0.0", "1.0.1"])
         url_a = f"file://{bare_a}"
 
-        # Source B: upgradable (locked to 2.0.0, latest is 2.1.0)
         bare_b = _create_project_repo_with_tags(project_base, "srcB", ["2.0.0", "2.1.0"])
         url_b = f"file://{bare_b}"
 
@@ -497,13 +451,11 @@ class TestOutdatedFailOnUpgradeFlag:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "SRCA",
                     "url": url_a,
-                    "revision_spec": ">=1.0.0,<1.1",
+                    "ref_spec": ">=1.0.0,<1.1",
                     "resolved_ref": "refs/tags/1.0.1",
                     "resolved_sha": sha_a,
                     "path": "./srcA",
@@ -511,7 +463,7 @@ class TestOutdatedFailOnUpgradeFlag:
                 {
                     "name": "SRCB",
                     "url": url_b,
-                    "revision_spec": ">=2.0.0",
+                    "ref_spec": ">=2.0.0",
                     "resolved_ref": "refs/tags/2.0.0",
                     "resolved_sha": sha_b,
                     "path": "./srcB",
@@ -519,7 +471,6 @@ class TestOutdatedFailOnUpgradeFlag:
             ],
         )
 
-        # Without --fail-on-upgrade: exit 0
         result_no_flag = _run_kanon(
             [
                 "outdated",
@@ -536,7 +487,6 @@ class TestOutdatedFailOnUpgradeFlag:
             f"Expected exit 0 without flag.\nstdout: {result_no_flag.stdout!r}\nstderr: {result_no_flag.stderr!r}"
         )
 
-        # With --fail-on-upgrade: exit 1 because SRCB has a minor upgrade
         result_with_flag = _run_kanon(
             [
                 "outdated",
@@ -564,7 +514,7 @@ class TestOutdatedFailOnUpgradeFlag:
         """
         project_base = tmp_path / "project-repos"
         project_base.mkdir()
-        # 3-tag fixture: 1.0.0, 1.0.1, 1.0.2
+
         project_bare = _create_project_repo_with_tags(project_base, "delta", ["1.0.0", "1.0.1", "1.0.2"])
         project_url = f"file://{project_bare}"
 
@@ -586,7 +536,6 @@ class TestOutdatedFailOnUpgradeFlag:
         )
         kanon_file.chmod(0o644)
 
-        # Pin to oldest tag so a patch upgrade is available
         sha_100 = _git_output(
             ["ls-remote", project_url, "refs/tags/1.0.0"],
             cwd=workspace,
@@ -594,13 +543,11 @@ class TestOutdatedFailOnUpgradeFlag:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "DELTA",
                     "url": project_url,
-                    "revision_spec": ">=1.0.0,<1.1",
+                    "ref_spec": ">=1.0.0,<1.1",
                     "resolved_ref": "refs/tags/1.0.0",
                     "resolved_sha": sha_100,
                     "path": "./delta",
@@ -673,13 +620,11 @@ class TestOutdatedFailOnUpgradeFlag:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "LATA",
                     "url": url_a,
-                    "revision_spec": ">=1.0.0,<1.1",
+                    "ref_spec": ">=1.0.0,<1.1",
                     "resolved_ref": "refs/tags/1.0.1",
                     "resolved_sha": sha_a,
                     "path": "./latA",
@@ -687,7 +632,7 @@ class TestOutdatedFailOnUpgradeFlag:
                 {
                     "name": "LATB",
                     "url": url_b,
-                    "revision_spec": ">=2.0.0,<2.1",
+                    "ref_spec": ">=2.0.0,<2.1",
                     "resolved_ref": "refs/tags/2.0.1",
                     "resolved_sha": sha_b,
                     "path": "./latB",
@@ -715,11 +660,6 @@ class TestOutdatedFailOnUpgradeFlag:
         )
 
 
-# ---------------------------------------------------------------------------
-# FAIL-path class: 3-tag fixture pinned to oldest tag
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestFailOnUpgradeFail:
     """Tests that --fail-on-upgrade exits 1 when upgrades are available.
@@ -740,7 +680,7 @@ class TestFailOnUpgradeFail:
         """
         project_base = tmp_path / "project-repos"
         project_base.mkdir()
-        # 3-tag fixture: 1.0.0 (oldest, pinned), 1.1.0, 1.2.0 (two upgrades available)
+
         project_bare = _create_project_repo_with_tags(project_base, "epsilon", ["1.0.0", "1.1.0", "1.2.0"])
         project_url = f"file://{project_bare}"
 
@@ -762,7 +702,6 @@ class TestFailOnUpgradeFail:
         )
         kanon_file.chmod(0o644)
 
-        # Pin lockfile to oldest tag (1.0.0) so two upgrades (1.1.0, 1.2.0) are available
         sha_100 = _git_output(
             ["ls-remote", project_url, "refs/tags/1.0.0"],
             cwd=workspace,
@@ -770,13 +709,11 @@ class TestFailOnUpgradeFail:
         lock_file = workspace / ".kanon.lock"
         _write_lockfile(
             lock_file,
-            catalog_source=catalog_source,
-            catalog_url=f"file://{manifest_bare}",
             sources=[
                 {
                     "name": "EPSILON",
                     "url": project_url,
-                    "revision_spec": ">=1.0.0",
+                    "ref_spec": ">=1.0.0",
                     "resolved_ref": "refs/tags/1.0.0",
                     "resolved_sha": sha_100,
                     "path": "./epsilon",

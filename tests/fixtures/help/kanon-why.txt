@@ -7,34 +7,38 @@ Reads the .kanon file, resolves the full dependency tree
 the catalog), and prints every chain reaching the requested
 node.
 
-Argument matching (all three categories evaluated):
+Argument matching (all categories evaluated, grouped by identity):
   (a) <project> repo URL -- canonicalized via canonicalize_repo_url.
   (b) Transitive XML manifest path -- exact-string equality.
   (c) Top-level source name -- normalized via derive_source_name.
+  (d) Transitive include name -- normalized via derive_source_name.
+The same node reached by many chains prints all of them; only two or
+more distinct interpretations is an ambiguity.
 
 Chain format:
   <top-source> -> <xml-path>@<sha> -> ... -> <project>@<sha>
 
-Catalog source precedence: --catalog-source flag, then
-KANON_CATALOG_SOURCE env var. Required only when .kanon.lock
+Catalog source precedence: --catalog-source flag, then the single
+KANON_CATALOG_SOURCES env-var entry. Required only when .kanon.lock
 is absent (live-resolve path).
 
 positional arguments:
   <project-url-or-name>
-                        The project URL, XML manifest path, or source name to
-                        look up. Project URLs are canonicalized via
-                        canonicalize_repo_url before matching. XML manifest
-                        paths are matched by exact string equality. Source
-                        names are normalized via derive_source_name (case- and
+                        The project URL, XML manifest path, source name, or
+                        transitive include name to look up. Project URLs are
+                        canonicalized via canonicalize_repo_url before
+                        matching. XML manifest paths are matched by exact
+                        string equality. Source and include names are
+                        normalized via derive_source_name (case- and
                         separator-insensitive).
 
 options:
   -h, --help            show this help message and exit
   --catalog-source <git-url>@<ref>
                         Remote catalog source as '<git_url>@<ref>' where ref
-                        is a branch, tag, or 'latest'. Overrides
-                        KANON_CATALOG_SOURCE env var. Required when
-                        KANON_CATALOG_SOURCE is not set.
+                        is a branch, tag, or 'latest'. Overrides the
+                        KANON_CATALOG_SOURCES env var. Required when
+                        KANON_CATALOG_SOURCES configures no single source.
   --kanon-file <path>   Path to the .kanon file. Defaults to './.kanon'.
                         Overridden by the KANON_KANON_FILE environment
                         variable; the CLI flag takes precedence when both are

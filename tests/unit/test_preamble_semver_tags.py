@@ -18,10 +18,10 @@ import pytest
 
 INTEGRATION_TESTING_DOC = pathlib.Path(__file__).parent.parent.parent / "docs" / "integration-testing.md"
 
-# Semver tags required by KS-01..24, MK-04/05/08/10/11/18, PK-03/04/07.
+
 REQUIRED_TAGS = ("1.0.0", "1.0.1", "1.1.0", "1.2.0", "2.0.0", "2.1.0", "3.0.0")
 
-# Section headings that delimit each fixture block.
+
 KS_FIXTURE_HEADING = "### Fixture"
 KS_CATEGORY_HEADING = "## 17. Category 16:"
 
@@ -36,19 +36,19 @@ def _extract_category_fixture_block(content: str, category_heading: str, fixture
     """Return the fixture block inside a category section."""
     cat_idx = content.find(category_heading)
     assert cat_idx != -1, f"Category heading '{category_heading}' not found in {INTEGRATION_TESTING_DOC}."
-    # Narrow to the category section first.
+
     category_text = content[cat_idx:]
-    # Find the next top-level heading (##) to bound the category.
+
     next_cat_idx = category_text.find("\n## ", 1)
     if next_cat_idx != -1:
         category_text = category_text[:next_cat_idx]
-    # Now find the fixture heading inside the category.
+
     fix_idx = category_text.find(fixture_heading)
     assert fix_idx != -1, (
         f"Fixture heading '{fixture_heading}' not found inside '{category_heading}' in {INTEGRATION_TESTING_DOC}."
     )
     section = category_text[fix_idx:]
-    # Delimit to next ### heading.
+
     next_section_idx = section.find("\n### ", 1)
     if next_section_idx != -1:
         section = section[:next_section_idx]

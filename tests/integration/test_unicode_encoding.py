@@ -21,12 +21,6 @@ from kanon_cli.core.install import install
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.xml_validator import validate_manifest
 from kanon_cli.version import resolve_version
-from tests.conftest import DEFAULT_CATALOG_SOURCE
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 
 def _write_kanonenv(directory: pathlib.Path, content: str) -> pathlib.Path:
@@ -54,7 +48,11 @@ def _minimal_kanonenv_with_revision(revision: str) -> str:
         .kanon file body as a string.
     """
     return (
-        f"KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION={revision}\nKANON_SOURCE_s_PATH=m.xml\n"
+        f"KANON_SOURCE_s_URL=https://example.com/s.git\n"
+        f"KANON_SOURCE_s_REF={revision}\n"
+        f"KANON_SOURCE_s_PATH=m.xml\n"
+        f"KANON_SOURCE_s_NAME=s\n"
+        f"KANON_SOURCE_s_GITBASE=https://example.com\n"
     )
 
 
@@ -69,8 +67,10 @@ def _minimal_kanonenv_with_path(manifest_path: str) -> str:
     """
     return (
         "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-        "KANON_SOURCE_s_REVISION=main\n"
+        "KANON_SOURCE_s_REF=main\n"
         f"KANON_SOURCE_s_PATH={manifest_path}\n"
+        "KANON_SOURCE_s_NAME=s\n"
+        "KANON_SOURCE_s_GITBASE=https://example.com\n"
     )
 
 
@@ -101,20 +101,15 @@ def _install_patched(kanonenv: pathlib.Path) -> None:
         patch("kanon_cli.repo.repo_sync"),
         patch("kanon_cli.core.install.resolve_version", side_effect=lambda url, rev: rev),
     ):
-        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Unicode branch name in .kanon REVISION works
-# ---------------------------------------------------------------------------
+        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
 
 @pytest.mark.integration
 class TestUnicodeBranchRevision:
-    """AC-TEST-001: Unicode branch names in KANON_SOURCE_*_REVISION are parsed correctly.
+    """AC-TEST-001: Unicode branch names in KANON_SOURCE_*_REF are parsed correctly.
 
     The .kanon parser reads the file as UTF-8 and must preserve non-ASCII
-    characters in REVISION values without corruption or error.
+    characters in ref values without corruption or error.
     """
 
     @pytest.mark.parametrize(
@@ -134,8 +129,8 @@ class TestUnicodeBranchRevision:
         """
         kanonenv = _write_kanonenv(tmp_path, _minimal_kanonenv_with_revision(revision))
         result = parse_kanonenv(kanonenv)
-        assert result["sources"]["s"]["revision"] == revision, (
-            f"Expected revision {revision!r} but got {result['sources']['s']['revision']!r}"
+        assert result["sources"]["s"]["ref"] == revision, (
+            f"Expected revision {revision!r} but got {result['sources']['s']['ref']!r}"
         )
 
     def test_ascii_revision_unchanged(self, tmp_path: pathlib.Path) -> None:
@@ -146,7 +141,7 @@ class TestUnicodeBranchRevision:
         """
         kanonenv = _write_kanonenv(tmp_path, _minimal_kanonenv_with_revision("main"))
         result = parse_kanonenv(kanonenv)
-        assert result["sources"]["s"]["revision"] == "main"
+        assert result["sources"]["s"]["ref"] == "main"
 
     def test_unicode_revision_install_passes_to_repo_init(self, tmp_path: pathlib.Path) -> None:
         """Unicode REVISION is forwarded as-is to repo_init during install.
@@ -157,8 +152,10 @@ class TestUnicodeBranchRevision:
         unicode_revision = "feature/日本語-branch"
         content = (
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-            f"KANON_SOURCE_s_REVISION={unicode_revision}\n"
+            f"KANON_SOURCE_s_REF={unicode_revision}\n"
             "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n"
         )
         kanonenv = _write_kanonenv(tmp_path, content)
 
@@ -176,17 +173,12 @@ class TestUnicodeBranchRevision:
                 side_effect=lambda url, rev: rev,
             ),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(captured_revision) == 1, "repo_init must be called exactly once"
         assert captured_revision[0] == unicode_revision, (
             f"Expected repo_init revision {unicode_revision!r} but got {captured_revision[0]!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unicode tag revision resolves correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -225,7 +217,7 @@ class TestUnicodeTagResolution:
         revision = "release/日本語-v2"
         kanonenv = _write_kanonenv(tmp_path, _minimal_kanonenv_with_revision(revision))
         parsed = parse_kanonenv(kanonenv)
-        parsed_revision = parsed["sources"]["s"]["revision"]
+        parsed_revision = parsed["sources"]["s"]["ref"]
         resolved = resolve_version("https://example.com/repo.git", parsed_revision)
         assert resolved == revision, f"Expected resolved revision {revision!r} but got {resolved!r}"
 
@@ -247,11 +239,6 @@ class TestUnicodeTagResolution:
             tags = _list_tags("https://example.com/repo.git")
 
         assert unicode_tag in tags, f"Unicode tag {unicode_tag!r} must appear in parsed ls-remote output"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Unicode path in manifest parses and installs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -305,7 +292,7 @@ class TestUnicodeManifestPath:
                 side_effect=lambda url, rev: rev,
             ),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(captured_path) == 1, "repo_init must be called exactly once"
         assert captured_path[0] == manifest_path, (
@@ -319,21 +306,20 @@ class TestUnicodeManifestPath:
         parsing. The resulting value must match the original without the BOM byte.
         """
         content = (
-            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_URL=https://example.com/s.git\n"
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n"
         )
         kanonenv = tmp_path / ".kanon"
-        # Write with explicit BOM prefix (UTF-8 BOM = 0xEF, 0xBB, 0xBF)
+
         kanonenv.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
         result = parse_kanonenv(kanonenv.resolve())
         assert result["sources"]["s"]["path"] == "m.xml", (
             "BOM-prefixed .kanon file must be parsed without BOM corruption"
         )
-        assert result["sources"]["s"]["revision"] == "main"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Unicode project name in XML parses and installs
-# ---------------------------------------------------------------------------
+        assert result["sources"]["s"]["ref"] == "main"
 
 
 @pytest.mark.integration
@@ -388,7 +374,7 @@ class TestUnicodeXmlProjectName:
         """)
         manifest_file = _write_xml_manifest(tmp_path / "repo-specs" / "manifest.xml", manifest_xml)
         errors = validate_manifest(manifest_file, tmp_path)
-        # The name attribute is present and non-empty; no "missing attribute" error.
+
         missing_name_errors = [e for e in errors if "'name'" in e and "missing" in e]
         assert missing_name_errors == [], (
             f"Unicode project name must not be treated as missing; got: {missing_name_errors}"
@@ -414,11 +400,6 @@ class TestUnicodeXmlProjectName:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: UTF-8 end-to-end throughout the CLI and parser
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestUtf8EndToEnd:
     """AC-FUNC-001: UTF-8 values flow correctly end-to-end through the kanon pipeline.
@@ -435,15 +416,21 @@ class TestUtf8EndToEnd:
         url = "https://example.com/repo-日本.git"
         revision = "feature/été"
         path = "specs/要約.xml"
-        content = f"KANON_SOURCE_s_URL={url}\nKANON_SOURCE_s_REVISION={revision}\nKANON_SOURCE_s_PATH={path}\n"
+        content = (
+            f"KANON_SOURCE_s_URL={url}\n"
+            f"KANON_SOURCE_s_REF={revision}\n"
+            f"KANON_SOURCE_s_PATH={path}\n"
+            f"KANON_SOURCE_s_NAME=s\n"
+            f"KANON_SOURCE_s_GITBASE=https://example.com\n"
+        )
         kanonenv = _write_kanonenv(tmp_path, content)
         result = parse_kanonenv(kanonenv)
 
         assert result["sources"]["s"]["url"] == url, (
             f"Unicode URL {url!r} must be preserved; got {result['sources']['s']['url']!r}"
         )
-        assert result["sources"]["s"]["revision"] == revision, (
-            f"Unicode REVISION {revision!r} must be preserved; got {result['sources']['s']['revision']!r}"
+        assert result["sources"]["s"]["ref"] == revision, (
+            f"Unicode REVISION {revision!r} must be preserved; got {result['sources']['s']['ref']!r}"
         )
         assert result["sources"]["s"]["path"] == path, (
             f"Unicode PATH {path!r} must be preserved; got {result['sources']['s']['path']!r}"
@@ -458,8 +445,10 @@ class TestUtf8EndToEnd:
         content = (
             f"GITBASE={unicode_value}\n"
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-            "KANON_SOURCE_s_REVISION=main\n"
+            "KANON_SOURCE_s_REF=main\n"
             "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n"
         )
         kanonenv = _write_kanonenv(tmp_path, content)
         result = parse_kanonenv(kanonenv)
@@ -476,23 +465,22 @@ class TestUtf8EndToEnd:
         """
         content = (
             "KANON_SOURCE_alpha_URL=https://日本.example.com/a.git\n"
-            "KANON_SOURCE_alpha_REVISION=feature/été\n"
+            "KANON_SOURCE_alpha_REF=feature/été\n"
             "KANON_SOURCE_alpha_PATH=specs/要約-alpha.xml\n"
+            "KANON_SOURCE_alpha_NAME=alpha\n"
+            "KANON_SOURCE_alpha_GITBASE=https://example.com\n"
             "KANON_SOURCE_bravo_URL=https://example.com/b.git\n"
-            "KANON_SOURCE_bravo_REVISION=main\n"
+            "KANON_SOURCE_bravo_REF=main\n"
             "KANON_SOURCE_bravo_PATH=m.xml\n"
+            "KANON_SOURCE_bravo_NAME=bravo\n"
+            "KANON_SOURCE_bravo_GITBASE=https://example.com\n"
         )
         kanonenv = _write_kanonenv(tmp_path, content)
         result = parse_kanonenv(kanonenv)
         assert result["KANON_SOURCES"] == ["alpha", "bravo"], (
             f"Sources must be sorted alphabetically; got {result['KANON_SOURCES']!r}"
         )
-        assert result["sources"]["alpha"]["revision"] == "feature/été"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
+        assert result["sources"]["alpha"]["ref"] == "feature/été"
 
 
 @pytest.mark.integration
@@ -512,8 +500,10 @@ class TestChannelDiscipline:
         """
         content = (
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-            "KANON_SOURCE_s_REVISION=feature/日本語\n"
+            "KANON_SOURCE_s_REF=feature/日本語\n"
             "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n"
         )
         kanonenv = _write_kanonenv(tmp_path, content)
         _install_patched(kanonenv)
@@ -530,8 +520,10 @@ class TestChannelDiscipline:
         """
         content = (
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-            "KANON_SOURCE_s_REVISION=feature/日本語\n"
+            "KANON_SOURCE_s_REF=feature/日本語\n"
             "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n"
         )
         kanonenv = _write_kanonenv(tmp_path, content)
         _install_patched(kanonenv)

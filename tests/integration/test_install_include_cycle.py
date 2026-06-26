@@ -23,7 +23,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.include_walker import IncludeCycleError
-from kanon_cli.core.install import install
+from kanon_cli.core.install import install, resolve_workspace_base_dir
 
 
 def _write_manifest(path: pathlib.Path, includes: list[str]) -> None:
@@ -40,8 +40,10 @@ def _write_kanonenv(directory: pathlib.Path, manifest_path: str) -> pathlib.Path
     kanonenv.write_text(
         "KANON_MARKETPLACE_INSTALL=false\n"
         "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-        "KANON_SOURCE_test_REVISION=main\n"
+        "KANON_SOURCE_test_REF=main\n"
         f"KANON_SOURCE_test_PATH={manifest_path}\n"
+        "KANON_SOURCE_test_NAME=test\n"
+        "KANON_SOURCE_test_GITBASE=https://example.com\n"
     )
     return kanonenv.resolve()
 
@@ -65,14 +67,9 @@ def _run_install_with_fixture_sync(
         patch("kanon_cli.repo.repo_envsubst"),
         patch("kanon_cli.repo.repo_sync"),
     ):
-        # A dummy catalog_source is required so install() does not raise
-        # MissingCatalogSourceError before reaching the include-walk step.
-        # The conftest autouse fixture mocks _resolve_ref_to_sha so the
-        # catalog URL is never actually queried.
         install(
             kanonenv,
             lock_file_path=kanonenv.parent / ".kanon.lock",
-            catalog_source="https://example.com/catalog.git@main",
         )
 
 
@@ -83,21 +80,25 @@ class TestInstallIncludeCycleTriangle:
     def _build_triangle_fixture(
         self,
         base: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> tuple[pathlib.Path, pathlib.Path]:
         """Create .kanon and triangle XML files; return (kanonenv, source_dir).
 
         The source dir is the directory that simulates the post-sync checkout.
-        install() creates it under .kanon-data/sources/test/ in base.
-        We pre-populate it so that when _walk_includes runs, it finds the files.
+        In the 3.0.0 store model (spec Section 7.1 / FR-15) install materialises
+        it under ``<KANON_HOME>/store/.kanon-data/sources/test/``. KANON_HOME is
+        pinned to ``base/home`` and the fixture XML files are pre-populated there
+        so that when _walk_includes runs it finds the triangle cycle.
         """
-        # Write the .kanon file.
+
         kanonenv = _write_kanonenv(base, manifest_path="a.xml")
 
-        # Pre-populate the manifest checkout directory that install() will use.
-        # After real repo init + repo sync, manifests live at
-        # source_dir/.repo/manifests/; pre-populate that path so _walk_includes
-        # finds the fixture files in the same location the production code expects.
-        source_dir = base / ".kanon-data" / "sources" / "test"
+        kanon_home = base / "home"
+        kanon_home.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+        store = resolve_workspace_base_dir()
+
+        source_dir = store / ".kanon-data" / "sources" / "test"
         manifest_repo = source_dir / ".repo" / "manifests"
         manifest_repo.mkdir(parents=True, exist_ok=True)
 
@@ -107,15 +108,17 @@ class TestInstallIncludeCycleTriangle:
 
         return kanonenv, source_dir
 
-    def test_triangle_raises_include_cycle_error(self, tmp_path: pathlib.Path) -> None:
+    def test_triangle_raises_include_cycle_error(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """install() raises IncludeCycleError on a triangle-cycle fixture."""
-        kanonenv, source_dir = self._build_triangle_fixture(tmp_path)
+        kanonenv, source_dir = self._build_triangle_fixture(tmp_path, monkeypatch)
         with pytest.raises(IncludeCycleError):
             _run_install_with_fixture_sync(kanonenv, source_dir)
 
-    def test_triangle_error_message_contains_all_nodes(self, tmp_path: pathlib.Path) -> None:
+    def test_triangle_error_message_contains_all_nodes(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """IncludeCycleError from install() names every node in the triangle."""
-        kanonenv, source_dir = self._build_triangle_fixture(tmp_path)
+        kanonenv, source_dir = self._build_triangle_fixture(tmp_path, monkeypatch)
         with pytest.raises(IncludeCycleError) as exc_info:
             _run_install_with_fixture_sync(kanonenv, source_dir)
         msg = str(exc_info.value)
@@ -123,40 +126,42 @@ class TestInstallIncludeCycleTriangle:
         assert "b.xml" in msg
         assert "c.xml" in msg
 
-    def test_triangle_error_message_prefix(self, tmp_path: pathlib.Path) -> None:
+    def test_triangle_error_message_prefix(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """IncludeCycleError message from install() starts with 'include cycle:'."""
-        kanonenv, source_dir = self._build_triangle_fixture(tmp_path)
+        kanonenv, source_dir = self._build_triangle_fixture(tmp_path, monkeypatch)
         with pytest.raises(IncludeCycleError) as exc_info:
             _run_install_with_fixture_sync(kanonenv, source_dir)
         assert str(exc_info.value).startswith("include cycle:")
 
-    def test_triangle_error_message_closes_cycle(self, tmp_path: pathlib.Path) -> None:
+    def test_triangle_error_message_closes_cycle(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """IncludeCycleError from install() renders the closing edge (a.xml appears twice)."""
-        kanonenv, source_dir = self._build_triangle_fixture(tmp_path)
+        kanonenv, source_dir = self._build_triangle_fixture(tmp_path, monkeypatch)
         with pytest.raises(IncludeCycleError) as exc_info:
             _run_install_with_fixture_sync(kanonenv, source_dir)
         msg = str(exc_info.value)
         assert msg.count("a.xml") >= 2
 
-    def test_triangle_error_uses_repo_relative_paths(self, tmp_path: pathlib.Path) -> None:
+    def test_triangle_error_uses_repo_relative_paths(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """IncludeCycleError from install() uses repo-relative paths, not absolute paths."""
-        kanonenv, source_dir = self._build_triangle_fixture(tmp_path)
+        kanonenv, source_dir = self._build_triangle_fixture(tmp_path, monkeypatch)
         with pytest.raises(IncludeCycleError) as exc_info:
             _run_install_with_fixture_sync(kanonenv, source_dir)
         msg = str(exc_info.value)
         assert str(tmp_path) not in msg
 
-    def test_triangle_arrow_separator(self, tmp_path: pathlib.Path) -> None:
+    def test_triangle_arrow_separator(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """IncludeCycleError from install() separates path nodes with ' -> '."""
-        kanonenv, source_dir = self._build_triangle_fixture(tmp_path)
+        kanonenv, source_dir = self._build_triangle_fixture(tmp_path, monkeypatch)
         with pytest.raises(IncludeCycleError) as exc_info:
             _run_install_with_fixture_sync(kanonenv, source_dir)
         msg = str(exc_info.value)
         assert " -> " in msg
 
-    def test_triangle_no_lockfile_written(self, tmp_path: pathlib.Path) -> None:
+    def test_triangle_no_lockfile_written(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """install() writes no lockfile when IncludeCycleError is raised."""
-        kanonenv, source_dir = self._build_triangle_fixture(tmp_path)
+        kanonenv, source_dir = self._build_triangle_fixture(tmp_path, monkeypatch)
         with pytest.raises(IncludeCycleError):
             _run_install_with_fixture_sync(kanonenv, source_dir)
         lockfile_path = tmp_path / ".kanon.lock"
@@ -167,10 +172,13 @@ class TestInstallIncludeCycleTriangle:
 class TestInstallIncludeSelfCycle:
     """Self-cycle fixture exercising install() end-to-end: A -> A."""
 
-    def test_self_cycle_raises(self, tmp_path: pathlib.Path) -> None:
+    def test_self_cycle_raises(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """install() raises IncludeCycleError for a self-referencing include."""
         kanonenv = _write_kanonenv(tmp_path, manifest_path="a.xml")
-        source_dir = tmp_path / ".kanon-data" / "sources" / "test"
+        kanon_home = tmp_path / "home"
+        kanon_home.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+        source_dir = resolve_workspace_base_dir() / ".kanon-data" / "sources" / "test"
         manifest_repo = source_dir / ".repo" / "manifests"
         manifest_repo.mkdir(parents=True, exist_ok=True)
         _write_manifest(manifest_repo / "a.xml", includes=["a.xml"])

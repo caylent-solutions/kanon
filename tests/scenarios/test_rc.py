@@ -5,10 +5,10 @@ path -- subprocess ``kanon install`` against local ``file://`` fixtures (no
 network) -- for the reconcile contract introduced to fix the
 ``install-orphan-rescue-crash-and-lock-corruption`` bug:
 
-- RC-01: ``remove A + add B`` then a plain ``kanon install`` reconciles npm-style
-  (lock = the new source set, the install succeeds with no internal ``BUG:`` and
-  no traceback) and a second plain install is idempotent (CONSISTENT replay, lock
-  byte-stable).
+- RC-01: ``remove A + add B`` -- a plain ``kanon install`` fails fast on the drift
+  (exit 1, no ``BUG:``, lock unmutated); ``kanon install --reconcile`` reconciles
+  npm-style (lock = the new source set, no internal ``BUG:`` and no traceback) and
+  a second plain install is idempotent (CONSISTENT replay, lock byte-stable).
 - RC-02: ``kanon install --strict-lock`` (npm ci) errors cleanly on drift WITHOUT
   mutating the lockfile (read the lock bytes before/after; assert equal).
 
@@ -18,17 +18,51 @@ truth).  ``KANON_ALLOW_INSECURE_REMOTES=1`` is set per-run for ``file://`` URLs.
 
 from __future__ import annotations
 
+import os
 import pathlib
+import subprocess
+import sys
 
 import pytest
 
 from kanon_cli.core.lockfile import read_lockfile
 from tests.scenarios.test_lockfile_lifecycle import (
-    _build_catalog_bare,
     _build_manifest_repo_with_tags,
     _run_install,
 )
 from tests.scenarios.conftest import make_bare_repo_with_tags
+
+
+def _run_install_reconcile(project_dir: pathlib.Path) -> subprocess.CompletedProcess:
+    """Invoke ``kanon install --reconcile`` as a subprocess against ``file://`` fixtures.
+
+    The lenient npm-install reconcile (prune orphans, re-resolve added/changed
+    sources, replay the rest) is opt-in via ``--reconcile``; a plain
+    ``kanon install`` on a drifted lock instead fails fast without mutating it.
+    ``KANON_ALLOW_INSECURE_REMOTES=1`` lets the ``file://`` fixture URLs pass the
+    HTTPS gate, and ``KANON_CATALOG_SOURCE`` is scrubbed because install is
+    hermetic.
+
+    Args:
+        project_dir: Working directory for the subprocess.
+
+    Returns:
+        The completed subprocess result.
+    """
+    cmd = [sys.executable, "-m", "kanon_cli", "install", "--reconcile"]
+    env = {
+        **os.environ,
+        "KANON_ALLOW_INSECURE_REMOTES": "1",
+    }
+    env.pop("KANON_CATALOG_SOURCE", None)
+    return subprocess.run(
+        cmd,
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
 
 
 def _write_kanon_two_optional(
@@ -46,13 +80,15 @@ def _write_kanon_two_optional(
     """
     lines = [
         "GITBASE=https://unused.example.com",
-        "CLAUDE_MARKETPLACES_DIR=/tmp/kanon-test-mktplc",
+        f"CLAUDE_MARKETPLACES_DIR={project_dir / 'kanon-test-mktplc'}",
         "KANON_MARKETPLACE_INSTALL=false",
     ]
     for name, url, revision in sources:
         lines.append(f"KANON_SOURCE_{name}_URL={url}")
-        lines.append(f"KANON_SOURCE_{name}_REVISION={revision}")
+        lines.append(f"KANON_SOURCE_{name}_REF={revision}")
         lines.append(f"KANON_SOURCE_{name}_PATH=manifest.xml")
+        lines.append(f"KANON_SOURCE_{name}_NAME={name}")
+        lines.append(f"KANON_SOURCE_{name}_GITBASE={url}")
     kanon_path = project_dir / ".kanon"
     kanon_path.write_text("\n".join(lines) + "\n")
     kanon_path.chmod(0o600)
@@ -78,14 +114,15 @@ class TestRcReconcile:
     """RC family: npm-like reconcile and strict-lock-on-drift scenarios."""
 
     def test_rc_01_remove_add_reconciles_and_is_idempotent(self, tmp_path: pathlib.Path) -> None:
-        """RC-01: remove A + add B + plain install reconciles to B; second install is idempotent.
+        """RC-01: remove A + add B; plain install fails fast, --reconcile reconciles to B, then idempotent.
 
         Reproduces the wedged-workspace bug scenario at the operator boundary:
         the lockfile has A (an orphan after removal) while ``.kanon`` declares only
-        B (a new source).  Plain ``kanon install`` must prune A, resolve B fresh,
-        write a valid lock = {B}, and never emit an internal ``BUG:`` or a
-        traceback.  A second plain install must be idempotent (CONSISTENT replay,
-        byte-stable lockfile).
+        B (a new source).  A plain ``kanon install`` now fails fast on this drift
+        (exit 1) without mutating the lock; ``kanon install --reconcile`` must prune
+        A, resolve B fresh, write a valid lock = {B}, and never emit an internal
+        ``BUG:`` or a traceback.  A second plain install (now CONSISTENT) must be
+        idempotent (replay, byte-stable lockfile).
         """
         fixtures = tmp_path / "fixtures"
         fixtures.mkdir()
@@ -94,34 +131,42 @@ class TestRcReconcile:
 
         url_a = _build_source(fixtures, "alpha")
         url_b = _build_source(fixtures, "beta")
-        catalog_bare = _build_catalog_bare(fixtures / "catalog")
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
         lock_path = project / ".kanon.lock"
 
-        # Install A only -> lock = {ALPHA}.
         _write_kanon_two_optional(project, [("ALPHA", url_a, "==1.0.0")])
-        r1 = _run_install(project, catalog_uri)
+        r1 = _run_install(project)
         assert r1.returncode == 0, f"initial install failed:\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         assert sorted(e.name for e in read_lockfile(lock_path).sources) == ["ALPHA"]
+        lock_before_drift = lock_path.read_bytes()
 
-        # Remove A, add B (orphan + addition).
         _write_kanon_two_optional(project, [("BETA", url_b, "==1.0.0")])
-        r2 = _run_install(project, catalog_uri)
-        assert r2.returncode == 0, (
-            f"reconcile install must succeed (no BUG/traceback):\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
+        r2 = _run_install(project)
+        assert r2.returncode != 0, (
+            f"plain install on a drifted lock must fail fast:\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
         )
         assert "BUG:" not in r2.stdout and "BUG:" not in r2.stderr, (
-            f"reconcile must never emit an internal BUG: line.\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
+            f"the drift error must never emit an internal BUG: line.\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
         )
-        assert "Traceback" not in r2.stderr, f"reconcile must not raise a traceback.\nstderr={r2.stderr!r}"
+        assert "Traceback" not in r2.stderr, f"the drift error must not raise a traceback.\nstderr={r2.stderr!r}"
+        assert lock_path.read_bytes() == lock_before_drift, (
+            "a plain install that fails fast on drift must NOT mutate the lockfile"
+        )
+
+        r3 = _run_install_reconcile(project)
+        assert r3.returncode == 0, (
+            f"reconcile install must succeed (no BUG/traceback):\nstdout={r3.stdout!r}\nstderr={r3.stderr!r}"
+        )
+        assert "BUG:" not in r3.stdout and "BUG:" not in r3.stderr, (
+            f"reconcile must never emit an internal BUG: line.\nstdout={r3.stdout!r}\nstderr={r3.stderr!r}"
+        )
+        assert "Traceback" not in r3.stderr, f"reconcile must not raise a traceback.\nstderr={r3.stderr!r}"
         assert sorted(e.name for e in read_lockfile(lock_path).sources) == ["BETA"], (
             "reconcile must drop the orphaned ALPHA entry and add the new BETA entry"
         )
         lock_after_reconcile = lock_path.read_bytes()
 
-        # Second plain install: CONSISTENT, byte-stable lockfile.
-        r3 = _run_install(project, catalog_uri)
-        assert r3.returncode == 0, f"second install failed:\nstdout={r3.stdout!r}\nstderr={r3.stderr!r}"
+        r4 = _run_install(project)
+        assert r4.returncode == 0, f"second install failed:\nstdout={r4.stdout!r}\nstderr={r4.stderr!r}"
         assert lock_path.read_bytes() == lock_after_reconcile, (
             "second plain install must be idempotent (CONSISTENT replay); lockfile must not change"
         )
@@ -141,19 +186,16 @@ class TestRcReconcile:
 
         url_a = _build_source(fixtures, "alpha")
         url_b = _build_source(fixtures, "beta")
-        catalog_bare = _build_catalog_bare(fixtures / "catalog")
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
         lock_path = project / ".kanon.lock"
 
         _write_kanon_two_optional(project, [("ALPHA", url_a, "==1.0.0")])
-        r1 = _run_install(project, catalog_uri)
+        r1 = _run_install(project)
         assert r1.returncode == 0, f"initial install failed:\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         lock_before = lock_path.read_bytes()
 
-        # Drift: remove ALPHA, add BETA.
         _write_kanon_two_optional(project, [("BETA", url_b, "==1.0.0")])
 
-        r2 = _run_install(project, catalog_uri, strict_lock=True)
+        r2 = _run_install(project, strict_lock=True)
         assert r2.returncode != 0, f"--strict-lock must error on drift.\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
         combined = r2.stdout + r2.stderr
         assert "BUG:" not in combined, f"--strict-lock must not emit an internal BUG: line.\n{combined!r}"

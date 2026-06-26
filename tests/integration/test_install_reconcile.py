@@ -31,17 +31,10 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.install import (
-    KanonHashMismatchError,
-    OrphanedLockEntryError,
     _RefResolution,
     install,
 )
-from kanon_cli.core.lockfile import read_lockfile
-
-
-# ---------------------------------------------------------------------------
-# Override autouse conftest fixtures: this module uses real local git repos.
-# ---------------------------------------------------------------------------
+from kanon_cli.core.lockfile import LockfileConsistencyError, read_lockfile
 
 
 @pytest.fixture(autouse=True)
@@ -54,11 +47,6 @@ def _mock_resolve_ref_to_sha():
 def _mock_check_sha_reachable():
     """Override: let the test's own subprocess.run patches handle reachability."""
     yield
-
-
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(*args: str, cwd: pathlib.Path) -> str:
@@ -119,8 +107,10 @@ def _source_block(name: str, url: str, revision: str) -> str:
         url = f"file://{url}"
     return (
         f"KANON_SOURCE_{name}_URL={url}\n"
-        f"KANON_SOURCE_{name}_REVISION={revision}\n"
+        f"KANON_SOURCE_{name}_REF={revision}\n"
         f"KANON_SOURCE_{name}_PATH=manifest.xml\n"
+        f"KANON_SOURCE_{name}_NAME={name}\n"
+        f"KANON_SOURCE_{name}_GITBASE=https://example.com\n"
     )
 
 
@@ -144,12 +134,17 @@ def _run_install_mocked(
     catalog_source: str = _CATALOG_SOURCE,
     *,
     strict_lock: bool = False,
+    reconcile: bool = False,
 ) -> None:
     """Call ``install()`` with repo tool calls mocked out.
 
     ``_resolve_ref_to_sha`` is patched only for the catalog URL; calls for real
     local source repos pass through so the recorded SHAs are genuine.  Raises
     whatever ``install()`` raises (callers use ``pytest.raises`` as needed).
+
+    ``reconcile`` opts in to the lenient npm-install reconcile (prune orphans,
+    re-resolve added/changed sources, replay the rest); without it a drifted lock
+    fails fast before resolving (the new default).
     """
     import kanon_cli.core.install as _install_mod
 
@@ -170,8 +165,8 @@ def _run_install_mocked(
         install(
             kanon_path,
             lock_file_path=kanon_path.parent / ".kanon.lock",
-            catalog_source=catalog_source,
             strict_lock=strict_lock,
+            reconcile=reconcile,
         )
 
 
@@ -189,22 +184,21 @@ def _locked_names(lock_path: pathlib.Path) -> list[str]:
     return sorted(e.name for e in read_lockfile(lock_path).sources)
 
 
-# ===========================================================================
-# Default (npm install) reconcile
-# ===========================================================================
-
-
 @pytest.mark.integration
 class TestPlainInstallReconcile:
-    """Plain ``kanon install`` reconciles ``.kanon`` <-> lock without crashing."""
+    """``kanon install --reconcile`` reconciles ``.kanon`` <-> lock without crashing.
+
+    A plain ``kanon install`` on a drifted lock now fails fast; the lenient
+    npm-install reconcile is opt-in via ``--reconcile`` (``reconcile=True``).
+    """
 
     def test_remove_a_add_b_reconciles_to_b_only(self, tmp_path: pathlib.Path) -> None:
-        """remove A + add B + plain install -> lock ends with B only, succeeds, no BUG.
+        """remove A + add B + install --reconcile -> lock ends with B only, succeeds, no BUG.
 
         This is the exact wedged-workspace scenario from the bug report: the lock
         has A (now an orphan) while .kanon declares only B (a new source). The
         old code wrote a corrupt lock and raised the internal ``BUG:`` assertion.
-        Reconcile must prune A, resolve B fresh, and write a valid lock = {B}.
+        ``--reconcile`` must prune A, resolve B fresh, and write a valid lock = {B}.
         """
         fixtures = tmp_path / "fixtures"
         fixtures.mkdir()
@@ -215,16 +209,13 @@ class TestPlainInstallReconcile:
         project.mkdir()
         lock_path = project / ".kanon.lock"
 
-        # First install with A only -> lock = {alpha}.
         kanon_path = _write_kanon(project, _source_block("alpha", str(repo_a), "==1.0.0"))
         _run_install_mocked(kanon_path)
         assert _locked_names(lock_path) == ["alpha"]
 
-        # Remove A, add B (now .kanon has only beta; lock still has alpha orphan).
         _write_kanon(project, _source_block("beta", str(repo_b), "==1.0.0"))
 
-        # Plain install must reconcile: prune alpha, resolve beta fresh.
-        _run_install_mocked(kanon_path)
+        _run_install_mocked(kanon_path, reconcile=True)
 
         assert _locked_names(lock_path) == ["beta"], (
             "reconcile must drop the orphaned alpha entry and add the new beta entry"
@@ -232,7 +223,7 @@ class TestPlainInstallReconcile:
         assert _locked_sha(lock_path, "beta") == sha_b
 
     def test_second_plain_install_is_idempotent_consistent(self, tmp_path: pathlib.Path) -> None:
-        """After a reconcile, a second plain install is CONSISTENT (no re-resolve, lock byte-stable)."""
+        """After --reconcile, a plain install is CONSISTENT (no re-resolve, lock byte-stable)."""
         fixtures = tmp_path / "fixtures"
         fixtures.mkdir()
         repo_a, _sha_a = _build_repo_with_tag(fixtures, "repo-a", "1.0.0")
@@ -246,10 +237,9 @@ class TestPlainInstallReconcile:
         _run_install_mocked(kanon_path)
 
         _write_kanon(project, _source_block("beta", str(repo_b), "==1.0.0"))
-        _run_install_mocked(kanon_path)  # reconcile
+        _run_install_mocked(kanon_path, reconcile=True)
         lock_after_reconcile = lock_path.read_bytes()
 
-        # Second plain install: CONSISTENT replay, no re-resolve, no lock mutation.
         resolve_calls: list[str] = []
         original_resolve = __import__("kanon_cli.version", fromlist=["resolve_version"]).resolve_version
 
@@ -263,7 +253,7 @@ class TestPlainInstallReconcile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.resolve_version", side_effect=_capturing_resolve),
         ):
-            install(kanon_path, lock_file_path=lock_path, catalog_source=_CATALOG_SOURCE)
+            install(kanon_path, lock_file_path=lock_path)
 
         assert resolve_calls == [], f"second plain install must be CONSISTENT (no re-resolve); got {resolve_calls!r}"
         assert lock_path.read_bytes() == lock_after_reconcile, "CONSISTENT install must not mutate the lockfile"
@@ -285,13 +275,11 @@ class TestPlainInstallReconcile:
         a_sha_before = _locked_sha(lock_path, "alpha")
         assert a_sha_before == sha_a
 
-        # Advance repo-a's tag to prove A is REPLAYED (not re-resolved) after adding B.
         new_a_sha = _add_tag(repo_a, "2.0.0")
         assert new_a_sha != sha_a
 
-        # Add B alongside the unchanged A.
         _write_kanon(project, block_a, _source_block("beta", str(repo_b), "==1.0.0"))
-        _run_install_mocked(kanon_path)
+        _run_install_mocked(kanon_path, reconcile=True)
 
         assert _locked_names(lock_path) == ["alpha", "beta"]
         assert _locked_sha(lock_path, "alpha") == a_sha_before, (
@@ -318,9 +306,8 @@ class TestPlainInstallReconcile:
         b_sha_before = _locked_sha(lock_path, "beta")
         assert b_sha_before == sha_b
 
-        # Bump A's revision spec; B unchanged.
         _write_kanon(project, _source_block("alpha", str(repo_a), "==2.0.0"), block_b)
-        _run_install_mocked(kanon_path)
+        _run_install_mocked(kanon_path, reconcile=True)
 
         assert _locked_sha(lock_path, "alpha") == sha_a_v2, (
             "A's changed revision spec must be re-resolved to the new pin"
@@ -346,12 +333,10 @@ class TestPlainInstallReconcile:
         assert _locked_names(lock_path) == ["alpha", "beta"]
         a_sha_before = _locked_sha(lock_path, "alpha")
 
-        # Advance A's tag to prove A is replayed, not re-resolved, after pruning B.
         assert _add_tag(repo_a, "2.0.0") != sha_a
 
-        # Remove beta only.
         _write_kanon(project, block_a)
-        _run_install_mocked(kanon_path)
+        _run_install_mocked(kanon_path, reconcile=True)
 
         assert _locked_names(lock_path) == ["alpha"]
         assert _locked_sha(lock_path, "alpha") == a_sha_before, (
@@ -385,23 +370,24 @@ class TestPlainInstallReconcile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.resolve_version", side_effect=_capturing_resolve),
         ):
-            install(kanon_path, lock_file_path=lock_path, catalog_source=_CATALOG_SOURCE)
+            install(kanon_path, lock_file_path=lock_path)
 
         assert resolve_calls == [], f"unchanged .kanon must replay (no re-resolve); got {resolve_calls!r}"
         assert lock_path.read_bytes() == lock_before, "CONSISTENT install must not mutate the lockfile"
 
 
-# ===========================================================================
-# --strict-lock (npm ci): clean error, lock never mutated
-# ===========================================================================
-
-
 @pytest.mark.integration
 class TestStrictLockOnDrift:
-    """``--strict-lock`` errors cleanly on ANY drift and never mutates the lock."""
+    """A drifted lock errors cleanly before resolving and never mutates the lock.
+
+    The default install runs the ``.kanon`` <-> ``.kanon.lock`` consistency check
+    before resolving, so a drifted pair raises ``LockfileConsistencyError`` and the
+    lock is left byte-for-byte unchanged (``--strict-lock`` keeps the same fail-fast
+    contract; reconciliation is opt-in via ``--reconcile``).
+    """
 
     def test_orphan_only_drift_errors_and_lock_unchanged(self, tmp_path: pathlib.Path) -> None:
-        """orphan-only drift under --strict-lock -> OrphanedLockEntryError; lock byte-for-byte unchanged."""
+        """orphan-only drift -> LockfileConsistencyError (alias sets differ); lock unchanged."""
         fixtures = tmp_path / "fixtures"
         fixtures.mkdir()
         repo_a, _sha_a = _build_repo_with_tag(fixtures, "repo-a", "1.0.0")
@@ -416,16 +402,18 @@ class TestStrictLockOnDrift:
         _run_install_mocked(kanon_path)
         lock_before = lock_path.read_bytes()
 
-        # Remove beta -> orphan-only drift.
         _write_kanon(project, block_a)
 
-        with pytest.raises(OrphanedLockEntryError) as exc_info:
+        with pytest.raises(LockfileConsistencyError) as exc_info:
             _run_install_mocked(kanon_path, strict_lock=True)
-        assert "beta" in str(exc_info.value)
-        assert lock_path.read_bytes() == lock_before, "--strict-lock must not mutate the lockfile on drift"
+        message = str(exc_info.value)
+        assert "alias sets differ" in message
+        assert "beta" in message
+        assert "BUG:" not in message
+        assert lock_path.read_bytes() == lock_before, "a drifted lock must not be mutated"
 
     def test_orphan_plus_addition_drift_errors_and_lock_unchanged(self, tmp_path: pathlib.Path) -> None:
-        """orphan+addition drift under --strict-lock -> clean error (no BUG); lock unchanged."""
+        """orphan+addition drift -> LockfileConsistencyError (alias sets differ); lock unchanged."""
         fixtures = tmp_path / "fixtures"
         fixtures.mkdir()
         repo_a, _sha_a = _build_repo_with_tag(fixtures, "repo-a", "1.0.0")
@@ -439,16 +427,17 @@ class TestStrictLockOnDrift:
         _run_install_mocked(kanon_path)
         lock_before = lock_path.read_bytes()
 
-        # Remove A, add B -> orphan (alpha) + addition (beta).
         _write_kanon(project, _source_block("beta", str(repo_b), "==1.0.0"))
 
-        # Strict-lock must raise an InstallError subclass cleanly (never the BUG assertion).
-        with pytest.raises((OrphanedLockEntryError, KanonHashMismatchError)):
+        with pytest.raises(LockfileConsistencyError) as exc_info:
             _run_install_mocked(kanon_path, strict_lock=True)
-        assert lock_path.read_bytes() == lock_before, "--strict-lock must not mutate the lockfile on drift"
+        message = str(exc_info.value)
+        assert "alias sets differ" in message
+        assert "BUG:" not in message
+        assert lock_path.read_bytes() == lock_before, "a drifted lock must not be mutated"
 
     def test_changed_spec_drift_errors_and_lock_unchanged(self, tmp_path: pathlib.Path) -> None:
-        """changed-spec drift (no orphan) under --strict-lock -> KanonHashMismatchError; lock unchanged."""
+        """changed-spec drift (no orphan) -> LockfileConsistencyError (ref-specs differ); lock unchanged."""
         fixtures = tmp_path / "fixtures"
         fixtures.mkdir()
         repo_a, _sha_a = _build_repo_with_tag(fixtures, "repo-a", "1.0.0")
@@ -462,10 +451,12 @@ class TestStrictLockOnDrift:
         _run_install_mocked(kanon_path)
         lock_before = lock_path.read_bytes()
 
-        # Bump A's spec -> hash mismatch with no orphan.
         _write_kanon(project, _source_block("alpha", str(repo_a), "==2.0.0"))
 
-        with pytest.raises(KanonHashMismatchError) as exc_info:
+        with pytest.raises(LockfileConsistencyError) as exc_info:
             _run_install_mocked(kanon_path, strict_lock=True)
-        assert "--refresh-lock" in str(exc_info.value)
-        assert lock_path.read_bytes() == lock_before, "--strict-lock must not mutate the lockfile on drift"
+        message = str(exc_info.value)
+        assert "ref-specs differ" in message
+        assert "--refresh-lock" in message
+        assert "BUG:" not in message
+        assert lock_path.read_bytes() == lock_before, "a drifted lock must not be mutated"

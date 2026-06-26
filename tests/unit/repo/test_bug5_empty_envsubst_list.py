@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 5: empty envsubst file list silently ignored.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 5 -- when glob.glob() returns
@@ -33,21 +19,11 @@ import pytest
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_cmd():
     """Return an Envsubst instance without invoking __init__ parent chain."""
     cmd = Envsubst.__new__(Envsubst)
     cmd.manifest = mock.MagicMock()
     return cmd
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Warning is logged when glob returns empty list
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -77,11 +53,6 @@ def test_warning_logged_when_glob_returns_empty(caplog):
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Command returns success (no exception) on empty match
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_command_returns_success_on_empty_glob():
     """AC-TEST-002: Execute() must return normally (not raise) when glob returns [].
@@ -97,5 +68,4 @@ def test_command_returns_success_on_empty_glob():
 
     with mock.patch("glob.glob", return_value=[]):
         with mock.patch("builtins.print"):
-            # Must not raise -- empty match is not a failure.
             cmd.Execute(mock.MagicMock(), [])

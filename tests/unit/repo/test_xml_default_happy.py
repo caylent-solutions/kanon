@@ -33,10 +33,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -146,11 +142,6 @@ def _build_manifest_with_remote_and_default(
         f"  <default {default_attrs} />\n"
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <default> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -304,11 +295,6 @@ class TestDefaultMinimumAttributes:
         assert manifest.default.revisionExpr == revision, (
             f"Expected default.revisionExpr='{revision}' but got: {manifest.default.revisionExpr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <default> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -554,11 +540,6 @@ class TestDefaultAllDocumentedAttributes:
         assert manifest.default.sync_j == sync_j_value, (
             f"Expected default.sync_j={sync_j_value} but got: {manifest.default.sync_j!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <default> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

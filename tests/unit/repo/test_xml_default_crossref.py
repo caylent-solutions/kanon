@@ -56,10 +56,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- same pattern as other test_xml_*_crossref.py files
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -124,11 +120,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     repodir = _make_repo_dir(tmp_path)
     manifest_file = _write_manifest(repodir, xml_content)
     return _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Cross-element reference validation for <default>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -384,11 +375,6 @@ class TestDefaultCrossElementReferences:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Duplicate-element rules for <default> surface clear errors
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDefaultDuplicateElementRules:
     """AC-TEST-002: Duplicate-element rules for <default> surface clear errors.
@@ -629,11 +615,6 @@ class TestDefaultDuplicateElementRules:
             m.Load()
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <default> in an unexpected parent raises or is ignored per spec
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDefaultUnexpectedParent:
     """AC-TEST-003: <default> in an unexpected parent raises or is ignored per spec.
@@ -800,11 +781,6 @@ class TestDefaultUnexpectedParent:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Parser enforces cross-element and uniqueness rules at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDefaultCrossRefParseTimeEnforcement:
     """AC-FUNC-001: All cross-element and uniqueness rules are enforced at parse time.
@@ -912,11 +888,6 @@ class TestDefaultCrossRefParseTimeEnforcement:
             f"AC-FUNC-001: expected default.revisionExpr='refs/heads/stable' after m.Load() but got: {d.revisionExpr!r}"
         )
         assert d.sync_j == 2, f"AC-FUNC-001: expected default.sync_j=2 after m.Load() but got: {d.sync_j!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

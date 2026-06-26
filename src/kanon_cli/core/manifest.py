@@ -41,7 +41,7 @@ from kanon_cli.core.remote_url import RemoteUrlScheme, _classify_remote_url_sche
 if TYPE_CHECKING:
     from xml.etree.ElementTree import Element
 
-# Alias for the XML parse error type from defusedxml.
+
 XMLParseError = ET.ParseError
 
 
@@ -99,7 +99,6 @@ def walk_includes_collecting_remotes(
     visited: set[pathlib.Path] = set()
 
     def _visit(path: pathlib.Path) -> None:
-        # Canonicalize to avoid revisiting the same file via different paths.
         canonical = path.resolve()
 
         if canonical in visited:
@@ -109,19 +108,15 @@ def walk_includes_collecting_remotes(
         tree = ET.parse(str(path))
         root = cast("Element", tree.getroot())
 
-        # Collect <remote name="..." fetch="..."> definitions from this file.
         for remote_el in root.iter("remote"):
             name = remote_el.get("name")
             fetch = remote_el.get("fetch")
             if name and fetch and name not in remotes:
                 remotes[name] = fetch
 
-        # Recurse into <include name="..."> children.
         for include_el in root.iter("include"):
             include_name = include_el.get("name")
             if not include_name:
-                # Malformed include -- skip silently for the remote-url check;
-                # the validate command is responsible for flagging structural errors.
                 continue
             child_path = manifest_repo / include_name
             _visit(child_path)
@@ -130,7 +125,29 @@ def walk_includes_collecting_remotes(
     return remotes
 
 
-# Regex that matches any remaining ${VAR} or $VAR placeholder after expansion.
+def join_project_repo_url(fetch_url: str, project_name: str) -> str:
+    """Join a remote ``fetch`` base URL with a ``<project name>`` repo path.
+
+    A repo-tool manifest declares a ``<remote fetch="...">`` base (typically the
+    GITBASE org URL, e.g. ``https://github.com/caylent``) and a
+    ``<project name="...">`` whose ``name`` is the repo path beneath that base.
+    The actual repository URL a project resolves to is the base joined to the
+    project name with a single ``/`` separator.
+
+    This is the single canonical construction for that join; both the live
+    ``why`` resolver and the marketplace revision-existence check call it so the
+    URL passed to ``git ls-remote`` / ``git clone`` is the same shape (DRY).
+
+    Args:
+        fetch_url: The resolved remote ``fetch`` base URL (already expanded).
+        project_name: The ``<project name>`` repo path beneath the base.
+
+    Returns:
+        ``<fetch_url without trailing slash>/<project_name>``.
+    """
+    return f"{fetch_url.rstrip('/')}/{project_name}"
+
+
 _PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}|\$[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -171,14 +188,13 @@ def _literal_prefix_has_insecure_scheme(url: str) -> bool:
         True if the literal prefix carries a non-HTTPS/non-SSH scheme, meaning
         the URL should yield R002 regardless of whether placeholders are resolved.
     """
-    # Find where the first placeholder begins; examine only the literal prefix.
+
     match = _PLACEHOLDER_RE.search(url)
     literal_prefix = url[: match.start()] if match else url
     if not literal_prefix:
         return False
     scheme = _classify_remote_url_scheme(literal_prefix)
-    # UNKNOWN / OTHER scheme on the prefix means the prefix alone cannot
-    # determine the scheme (e.g. the prefix is just "" or "${VAR}") -- not insecure.
+
     return scheme in (RemoteUrlScheme.HTTP, RemoteUrlScheme.FILE)
 
 
@@ -217,33 +233,22 @@ def collect_remote_url_findings(
     findings: list[RawFinding] = []
 
     for xml_file in find_catalog_entry_files(target_path):
-        # Build the remote-name -> fetch-URL map for this file and its includes.
         try:
             remote_map = walk_includes_collecting_remotes(xml_file, target_path)
         except (XMLParseError, FileNotFoundError, OSError):
-            # Malformed XML or missing include files are the validate check's
-            # responsibility; skip silently here.
             continue
 
-        # Re-parse the marketplace file itself to find <project remote="X"> elements.
-        # The file was already successfully parsed by walk_includes_collecting_remotes
-        # above; a parse failure here is not expected, but let the exception propagate
-        # so callers see the real error rather than silently skipping the file.
         tree = ET.parse(str(xml_file))
         root = cast("Element", tree.getroot())
 
         for project_el in root.iter("project"):
             remote_attr = project_el.get("remote")
             if not remote_attr:
-                # <project> with no remote attribute uses the manifest default;
-                # we cannot resolve it without a <default remote="..."> lookup,
-                # so skip to avoid false positives.
                 continue
 
             fetch_url = remote_map.get(remote_attr)
 
             if fetch_url is None:
-                # R001: unresolvable remote.
                 project_name = project_el.get("name", "<unnamed>")
                 findings.append(
                     RawFinding(
@@ -263,9 +268,6 @@ def collect_remote_url_findings(
                 )
                 continue
 
-            # R003: URL with query string or fragment (checked before R002 because
-            # a query-stringed HTTPS URL must still fail even with
-            # KANON_ALLOW_INSECURE_REMOTES=1).
             if "?" in fetch_url or "#" in fetch_url:
                 findings.append(
                     RawFinding(
@@ -284,13 +286,6 @@ def collect_remote_url_findings(
                 )
                 continue
 
-            # Expand ${VAR} placeholders before the R002 scheme check.
-            # safe_substitute leaves unresolved variables in-place; if any
-            # remain after expansion the URL is a templated token.
-            #
-            # Exception: if the literal prefix before the first placeholder
-            # already carries a recognizably insecure scheme (e.g. http://${HOST})
-            # we still emit R002 -- the scheme is known to be non-HTTPS.
             resolved_url, has_unresolved = _expand_fetch_url(fetch_url, env)
 
             if has_unresolved and not _literal_prefix_has_insecure_scheme(fetch_url):
@@ -313,10 +308,6 @@ def collect_remote_url_findings(
                 )
                 continue
 
-            # R002: non-HTTPS/SSH scheme when not opted out (checked against the
-            # resolved URL so that a ${VAR} that expands to https:// passes, and
-            # a mixed http://${HOST} URL uses the literal scheme from fetch_url
-            # when resolved_url still has placeholders).
             url_for_scheme_check = fetch_url if has_unresolved else resolved_url
             scheme = _classify_remote_url_scheme(url_for_scheme_check)
             is_secure = scheme in (

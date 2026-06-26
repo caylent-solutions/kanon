@@ -1,17 +1,3 @@
-# Copyright (C) 2025 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the subcmds/help.py module."""
 
 import optparse
@@ -33,7 +19,6 @@ class TestHelpOptions:
         cmd._Options(p)
         opts, args = p.parse_args([])
 
-        # Verify default option values
         assert opts.show_all is None
 
     def test_options_all(self):
@@ -84,7 +69,7 @@ class TestHelpExecute:
 
         with mock.patch("builtins.print") as mock_print:
             cmd.Execute(opt, [])
-            # Should print something
+
             assert mock_print.called
 
     def test_execute_with_show_all(self):
@@ -113,9 +98,7 @@ class TestHelpExecute:
         opt.show_all = False
         opt.show_all_help = False
 
-        # Help prints to stdout directly via OptionParser
         with mock.patch("sys.stdout"):
-            # Should not raise with existing command
             cmd.Execute(opt, ["sync"])
 
 

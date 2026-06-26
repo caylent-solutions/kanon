@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F6-S1-T2: linkfile errors silently swallowed.
 
 Bug reference: E0-F6-S1-T2 -- project.py _LinkFile.__linkIt contained a bare
@@ -47,11 +33,6 @@ from kanon_cli.repo import platform_utils
 from kanon_cli.repo.project import _LinkFile
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_link_file(worktree, src_rel, topdir, dest_rel):
     """Return a _LinkFile instance for the given paths.
 
@@ -65,11 +46,6 @@ def _make_link_file(worktree, src_rel, topdir, dest_rel):
         A _LinkFile instance configured with the provided paths.
     """
     return _LinkFile(worktree, src_rel, topdir, dest_rel)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Regression: OSError propagates; bare except does not swallow
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -119,11 +95,6 @@ def test_linkfile_oserror_propagates_not_swallowed(tmp_path):
                 "The OSError must propagate so callers are not silently left with a "
                 "missing symlink."
             )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Regression: exact E0-F6-S1-T2 bug condition triggered
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -181,11 +152,6 @@ def test_exact_bug_condition_all_oserror_variants_propagate(
             lf._Link()
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- Guard: raise-with-chaining is structurally present in source
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_linkfile_raise_with_chaining_present_in_source():
     """AC-TEST-003: The raise-with-chaining OSError guard is in _LinkFile.__linkIt source.
@@ -228,11 +194,6 @@ def test_linkfile_raise_with_chaining_present_in_source():
         "making it harder to diagnose the root filesystem failure. Restore the "
         "'raise OSError(...) from e' pattern in src/kanon_cli/repo/project.py."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- Guard: PermissionError propagates with exception chaining
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -345,11 +306,6 @@ def test_linkfile_error_message_contains_source_and_dest_paths(tmp_path):
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- No stdout leakage on OSError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_linkfile_oserror_does_not_leak_to_stdout(tmp_path, capsys):
     """AC-CHANNEL-001: OSError from _LinkFile._Link() must not produce stdout output.
@@ -397,11 +353,6 @@ def test_linkfile_oserror_does_not_leak_to_stdout(tmp_path, capsys):
     )
 
 
-# ---------------------------------------------------------------------------
-# Integration: real read-only directory confirms end-to-end behavior
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_linkfile_real_readonly_directory_raises_oserror(tmp_path):
     """AC-FUNC-001 / real filesystem: symlink into a read-only directory raises OSError.
@@ -425,7 +376,6 @@ def test_linkfile_real_readonly_directory_raises_oserror(tmp_path):
     src_file = worktree / "data.txt"
     src_file.write_text("data", encoding="utf-8")
 
-    # Make topdir read-only so the symlink creation fails with PermissionError.
     topdir.chmod(stat.S_IRUSR | stat.S_IXUSR)
 
     lf = _make_link_file(str(worktree), "data.txt", str(topdir), "linked-data.txt")
@@ -434,7 +384,6 @@ def test_linkfile_real_readonly_directory_raises_oserror(tmp_path):
         with pytest.raises(OSError) as exc_info:
             lf._Link()
     finally:
-        # Restore write permission so tmp_path cleanup succeeds.
         topdir.chmod(stat.S_IRWXU)
 
     raised = exc_info.value

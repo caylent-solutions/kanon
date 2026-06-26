@@ -16,12 +16,10 @@ import pytest
 
 from kanon_cli.repo.subcmds import all_commands
 
-# The minimum number of entries expected in all_commands.
-# 27 command .py files produce 27 named entries, and subcmds/__init__.py adds
-# one alias ("branch" -> "branches"), yielding 28 total dictionary entries.
+
 MIN_COMMAND_COUNT = 27
 
-# The subcommand key used to retrieve the Init command class from all_commands.
+
 INIT_COMMAND_KEY = "init"
 
 

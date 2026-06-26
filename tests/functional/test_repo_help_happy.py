@@ -33,54 +33,38 @@ from tests.functional.conftest import (
     _run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no hard-coded domain literals in test logic
-# ---------------------------------------------------------------------------
 
-# CLI token for the help subcommand
 _CLI_TOKEN_HELP = "help"
 
-# A representative subcommand name used for the positional-arg happy-path test.
-# 'sync' is universally supported and always present in the command listing.
+
 _CLI_TOKEN_SYNC = "sync"
 
-# Composed CLI command phrase for diagnostic messages
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_HELP}"
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT = 0
 
-# Phrase that must appear in the default 'repo help' listing.
-# The phrase is part of the documented usage line emitted by the embedded tool.
+
 _HELP_LISTING_PHRASE = "repo COMMAND"
 
-# Phrase that must appear when 'repo help <command>' is invoked for 'sync'.
+
 _SYNC_HELP_PHRASE = "repo sync"
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
+
 _ERROR_PREFIX = "Error:"
 
-# Subdirectory name used as the --repo-dir target in all tests.
-# The embedded help handler does not consult .repo state, so the directory
-# need not exist.
+
 _NONEXISTENT_REPO_SUBDIR = "nonexistent-repo"
 
-# Parametrize variants for AC-TEST-002: the optional positional argument forms.
-# Form 1: no positional argument (default) -- shows the command listing.
-# Form 2: positional argument is a known subcommand name -- shows its help.
+
 _POSITIONAL_ARG_FORMS = [
     pytest.param((), _HELP_LISTING_PHRASE, id="no-positional-arg"),
     pytest.param((_CLI_TOKEN_SYNC,), _SYNC_HELP_PHRASE, id="subcommand-name"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001 / AC-TEST-002: all positional-arg happy-path forms
-# (the no-positional-arg variant also covers AC-TEST-001 / AC-FUNC-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -153,11 +137,6 @@ class TestRepoHelpPositionalArgHappyPath:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

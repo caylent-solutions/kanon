@@ -30,7 +30,7 @@ kanon outdated [--catalog-source <git-url>@<ref>]
 ### outdated -- How it works
 
 `kanon outdated` resolves the catalog identified by `--catalog-source`
-(or `KANON_CATALOG_SOURCE`), then reads every
+(or `KANON_CATALOG_SOURCES`), then reads every
 `KANON_SOURCE_<name>_*` block from the `.kanon` file and compares the
 currently-installed version against what the catalog now offers.
 
@@ -38,7 +38,7 @@ Steps:
 
 1. Resolve the catalog source (required -- no lockfile fallback for
    this command; see [docs/configuration.md](configuration.md) for
-   the `KANON_CATALOG_SOURCE` env var).
+   the `KANON_CATALOG_SOURCES` env var).
 2. Read the `.kanon` file.
 3. For each source block:
    - Determine the **current** resolved version from `.kanon.lock`
@@ -63,7 +63,7 @@ Steps:
 | `--no-color` | auto | Disable ANSI color. |
 
 Environment variable overrides: `--catalog-source` =
-`KANON_CATALOG_SOURCE`, `--kanon-file` = `KANON_KANON_FILE`,
+`KANON_CATALOG_SOURCES`, `--kanon-file` = `KANON_KANON_FILE`,
 `--lock-file` = `KANON_LOCK_FILE`, `--format` =
 `KANON_OUTDATED_FORMAT`. See
 [docs/configuration.md](configuration.md) for details.
@@ -89,47 +89,53 @@ operator opts in with `--fail-on-upgrade`.
 
 ### outdated -- Output format: table (default)
 
+The table is preceded by one alias-render line per source
+(`<alias> -> <source-name> from <url>@<ref>`); columns are joined with ` | `
+and the separator row uses `-+-`:
+
 ```text
 $ kanon outdated \
     --catalog-source \
     https://example.com/org/manifest-repo.git@main
 
-name       current  latest-spec  latest-avail  upgrade-type
----------  -------  -----------  ------------  ------------
-package-a  1.2.0    1.2.1        2.0.0         patch/minor
-package-b  3.0.0    3.0.0        3.1.0         --
-package-c  main     a1b2c3d4e5f6 a1b2c3d4e5f6  drift
+package-a -> package_a from https://example.com/org/manifest-repo.git@~=1.2.0
+package-b -> package_b from https://example.com/org/manifest-repo.git@==3.0.0
+package-c -> package_c from https://example.com/org/manifest-repo.git@main
+name      | current      | latest-matching-spec | latest-available | upgrade-type
+----------+--------------+----------------------+------------------+-------------
+package-a | 1.2.0        | 1.2.1                | 2.0.0            | patch
+package-b | 3.0.0        | 3.0.0                | 3.1.0            | none
+package-c | a1b2c3d4e5f6 | f6e5d4c3b2a1         | f6e5d4c3b2a1     | drift
 ```
 
 Column definitions:
 
 | Column | Description |
 | ------ | ----------- |
-| `name` | Source name from `KANON_SOURCE_<name>_*`. |
-| `current` | Version or SHA prefix currently in `.kanon.lock`. |
-| `latest-spec` | Highest version satisfying the PEP 440 constraint. |
-| `latest-avail` | Highest version ignoring the constraint. |
-| `upgrade-type` | `patch/minor`, `major`, `drift`, or `--`. |
+| `name` | Source name (normalized alias) from `KANON_SOURCE_<alias>_*`. |
+| `current` | Version or 12-char SHA currently in `.kanon.lock`. |
+| `latest-matching-spec` | Highest version satisfying the PEP 440 constraint. |
+| `latest-available` | Highest version ignoring the constraint. |
+| `upgrade-type` | One of `none`, `patch`, `minor`, `major`, or `drift`. |
 
 ### outdated -- Branch-pinned source drift column
 
-When a source's `REVISION` is a branch name (e.g., `main`, `develop`)
-rather than a PEP 440 tag, version comparison is not applicable.
-Instead:
+When a source's `KANON_SOURCE_<alias>_REF` value is a branch name (e.g.,
+`main`, `develop`) rather than a PEP 440 tag, version comparison is not
+applicable. Instead:
 
-- Both `latest-spec` and `latest-avail` display the current HEAD SHA
-  of that branch, truncated to 12 characters.
-- `upgrade-type` reads `drift` when the SHA in `.kanon.lock` differs
-  from the branch HEAD.
-- `upgrade-type` reads `--` when the locked SHA matches the branch
-  HEAD.
+- Both `latest-matching-spec` and `latest-available` display the current HEAD
+  SHA of that branch, truncated to 12 characters.
+- `upgrade-type` reads `drift` when the SHA in `.kanon.lock` differs from the
+  branch HEAD.
+- `upgrade-type` reads `none` when the locked SHA matches the branch HEAD.
 
 Example -- `package-c` has drifted from the locked commit:
 
 ```text
-name       current       latest-spec   latest-avail  upgrade-type
----------  ------------  ------------  ------------  ------------
-package-c  a1b2c3d4e5f6  f6e5d4c3b2a1  f6e5d4c3b2a1  drift
+name      | current      | latest-matching-spec | latest-available | upgrade-type
+----------+--------------+----------------------+------------------+-------------
+package-c | a1b2c3d4e5f6 | f6e5d4c3b2a1         | f6e5d4c3b2a1     | drift
 ```
 
 Operators who want deterministic installs should switch branch-pinned
@@ -137,30 +143,41 @@ sources to tag-based pinning with a PEP 440 constraint.
 
 ### outdated -- Output format: --format json
 
+The JSON payload is a top-level object with two keys: `aliases` (the
+alias-render strings) and `sources` (one object per source). Each source
+object has exactly five hyphenated string keys:
+
 ```json
-[
-  {
-    "name": "package-a",
-    "current": "1.2.0",
-    "latest_matching_spec": "1.2.1",
-    "latest_available": "2.0.0",
-    "upgrade_type": "patch/minor"
-  },
-  {
-    "name": "package-b",
-    "current": "3.0.0",
-    "latest_matching_spec": "3.0.0",
-    "latest_available": "3.1.0",
-    "upgrade_type": "--"
-  },
-  {
-    "name": "package-c",
-    "current": "a1b2c3d4e5f6",
-    "latest_matching_spec": "f6e5d4c3b2a1",
-    "latest_available": "f6e5d4c3b2a1",
-    "upgrade_type": "drift"
-  }
-]
+{
+  "aliases": [
+    "package-a -> package_a from https://example.com/org/manifest-repo.git@~=1.2.0",
+    "package-b -> package_b from https://example.com/org/manifest-repo.git@==3.0.0",
+    "package-c -> package_c from https://example.com/org/manifest-repo.git@main"
+  ],
+  "sources": [
+    {
+      "name": "package-a",
+      "current": "1.2.0",
+      "latest-matching-spec": "1.2.1",
+      "latest-available": "2.0.0",
+      "upgrade-type": "patch"
+    },
+    {
+      "name": "package-b",
+      "current": "3.0.0",
+      "latest-matching-spec": "3.0.0",
+      "latest-available": "3.1.0",
+      "upgrade-type": "none"
+    },
+    {
+      "name": "package-c",
+      "current": "a1b2c3d4e5f6",
+      "latest-matching-spec": "f6e5d4c3b2a1",
+      "latest-available": "f6e5d4c3b2a1",
+      "upgrade-type": "drift"
+    }
+  ]
+}
 ```
 
 ### outdated -- Error scenarios
@@ -168,30 +185,34 @@ sources to tag-based pinning with a PEP 440 constraint.
 #### Missing catalog source
 
 ```text
-ERROR: catalog source is not configured.
-Set --catalog-source <url>@<ref> or export KANON_CATALOG_SOURCE=<url>@<ref>.
+ERROR: kanon outdated requires a catalog source.
+Provide one of:
+  --catalog-source <git-url>@<ref>       # e.g. --catalog-source https://example.com/org/manifest-repo.git@main
+  KANON_CATALOG_SOURCES=<git-url>@<ref>  # set as env var (one entry per line), then re-run
+
+The CLI flag takes precedence when both are set.
+A catalog source identifies a manifest repo (a git repository whose
+repo-specs/ directory exposes installable kanon dependencies).
+See docs/catalogs-explained.md for what a manifest repo is and how to find one.
+See docs/configuration.md for the full configuration reference.
 ```
 
 #### Manifest repo with no PEP 440 tags
 
-When the manifest repo for a source contains only tags whose last path
-component is not a valid PEP 440 version (e.g., `v1.0.0`,
-`release-2024`), the `latest-spec` and `latest-avail` columns display
-a loud error marker instead of a version, and the command exits
-non-zero after printing all rows:
+When a tag-pinned source resolves against a manifest repo whose tags all have
+a last path component that is not a valid PEP 440 version (e.g., `v1.0.0`,
+`release-2024`), the version resolver raises a loud error. `kanon outdated`
+prints it to stderr and exits non-zero immediately on that source (before the
+table is printed):
 
 ```text
-name       current  latest-spec              latest-avail             upgrade-type
----------  -------  -----------------------  -----------------------  ------------
-package-d  1.0.0    ERROR: no PEP 440 tags   ERROR: no PEP 440 tags   --
-
-ERROR: one or more sources have no PEP 440-parseable tags.
-Skipped tags for source 'package-d': v1.0.0, release-2024.
-Ask the catalog author to publish PEP 440-compliant release tags,
-or run:
-  kanon catalog audit --check tag-format \
-      --catalog-source \
-      https://example.com/org/manifest-repo.git@main
+ERROR: No PEP 440-parseable version tags found under '<prefix>'.
+Skipped 2 tag(s) whose last path component is not a valid PEP 440 version:
+  - refs/tags/release-2024
+  - refs/tags/v1.0.0
+Run 'kanon catalog audit --check tag-format' against the manifest repo
+to identify every non-PEP-440 tag, then ask the catalog author to rename
+them to PEP 440 form (e.g., 'release-1.0.0' -> '1.0.0').
 ```
 
 ---
@@ -229,6 +250,7 @@ The single positional argument is matched in the following precedence:
 | Source URL | `https://example.com/org/catalog-repo.git` |
 | Root manifest path | `repo-specs/package-a-marketplace.xml` |
 | Transitive XML manifest path | `repo-specs/network/remote.xml` |
+| Transitive include name | `remote` |
 | Entry name | `package-a` |
 | Source name | `package_a` |
 
@@ -244,6 +266,14 @@ Notes:
 - **Root manifest path** -- the `KANON_SOURCE_<name>_PATH` value (e.g.
   `repo-specs/package-a-marketplace.xml`) -- resolves to the owning source
   on the live-resolve path.
+- **Transitive include name** -- the `name` of an `<include>` node, normalized
+  via `derive_source_name`, resolves to that include wherever it appears in the
+  tree (queryable interchangeably with its manifest path).
+- Matched nodes are grouped by logical identity. When a single logical node is
+  reached by many chains (for example a transitive include pulled in by several
+  sources), every chain is printed. An ambiguity error is raised only when the
+  argument matches two or more **distinct** interpretations (different kinds, or
+  different logical nodes).
 
 ### why -- Placeholder fetch URLs on the live-resolve path
 
@@ -281,6 +311,7 @@ The annotation form differs by query type:
 | Root manifest path | `matched xml_path 'repo-specs/package-a-marketplace.xml'` |
 | Transitive XML path | `matched xml_path 'repo-specs/network/remote.xml'` |
 | Source name | `matched source_name 'package_a'` |
+| Transitive include name | `matched include_name 'remote'` |
 
 The annotation is emitted on the first output line. The chain line(s)
 follow unchanged. The annotation is omitted on error paths (miss,
@@ -304,6 +335,10 @@ package-a -> repo-specs/base.xml@a1b2c3d4e5f6 \
 ```
 
 Each node in the chain is annotated with its resolved SHA.
+
+When the requested node is reached by multiple chains -- for example a
+transitive include pulled in by several top-level sources, or a diamond in the
+include graph -- every chain is printed under the single match annotation.
 
 ### why -- Cycle detection
 
@@ -333,16 +368,18 @@ package-a -> repo-specs/extra.xml@e5f6a1b2c3d4 \
 
 ### why -- Ambiguity behaviour
 
-If the argument matches in more than one category simultaneously (for
-example, a string that is both a valid source name and a valid XML
-path), `kanon why` exits with a hard error listing all matching
-interpretations:
+`kanon why` raises an ambiguity error only when the argument matches two or
+more **distinct** interpretations -- different kinds (for example a string that
+is both a valid source name and a valid XML path), or different logical nodes.
+The same logical node reached by many chains is **not** an ambiguity; all of its
+chains are printed. On a genuine ambiguity the command exits non-zero, listing
+each distinct interpretation:
 
 ```text
-ERROR: 'shared' is ambiguous. It matches:
-  source name : shared (KANON_SOURCE_shared_*)
-  XML path    : repo-specs/shared.xml
-Disambiguate by passing the full XML path or the exact source name.
+ERROR: argument 'shared' is ambiguous: it matches 2 distinct interpretations:
+  source name: shared
+  XML manifest path: repo-specs/shared.xml
+Disambiguate by passing one of the exact tokens above.
 ```
 
 ### why -- Not-found behaviour
@@ -385,7 +422,7 @@ configurable via environment variables; see
 | `--no-color` | auto | Disable ANSI color. |
 
 Environment variable overrides: `--catalog-source` =
-`KANON_CATALOG_SOURCE`, `--kanon-file` = `KANON_KANON_FILE`,
+`KANON_CATALOG_SOURCES`, `--kanon-file` = `KANON_KANON_FILE`,
 `--lock-file` = `KANON_LOCK_FILE`, `--format` = `KANON_WHY_FORMAT`.
 See [docs/configuration.md](configuration.md) for details.
 
@@ -488,7 +525,7 @@ jobs:
   check-outdated:
     runs-on: ubuntu-latest
     env:
-      KANON_CATALOG_SOURCE: >-
+      KANON_CATALOG_SOURCES: >-
         https://example.com/org/manifest-repo.git@main
     steps:
       - uses: actions/checkout@v4
@@ -518,7 +555,7 @@ jobs:
 
 Key points:
 
-- `KANON_CATALOG_SOURCE` is set as a job-level env var so all steps
+- `KANON_CATALOG_SOURCES` is set as a job-level env var so all steps
   inherit it without repeating the flag.
 - `set +e` prevents the shell from exiting before `$GITHUB_OUTPUT` is
   written.
@@ -534,7 +571,7 @@ agents, Makefile targets), use a plain shell conditional:
 #!/usr/bin/env bash
 set -euo pipefail
 
-export KANON_CATALOG_SOURCE="https://example.com/org/manifest-repo.git@main"
+export KANON_CATALOG_SOURCES="https://example.com/org/manifest-repo.git@main"
 
 echo "Checking for kanon dependency upgrades..."
 
@@ -566,7 +603,7 @@ and a new lock is committed.
   `KANON_WHY_JSON_INDENT`, `KANON_WHY_SUGGEST_MAX_DISTANCE`,
   `KANON_WHY_SUGGEST_TOP_N`).
 - [docs/list-and-add.md](list-and-add.md) -- the related read/write
-  commands (`kanon list`, `kanon add`, `kanon remove`).
+  commands (`kanon search`, `kanon add`, `kanon remove`).
 - [docs/exit-codes.md](exit-codes.md) -- the full exit-code table for
   all kanon commands.
 - [docs/lockfile.md](lockfile.md) -- lockfile format and how both

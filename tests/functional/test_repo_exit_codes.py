@@ -17,27 +17,12 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Exit Code Test User"
 _GIT_USER_EMAIL = "exit-code-test@example.com"
 _MANIFEST_FILENAME = "default.xml"
 _CONTENT_FILE_NAME = "README.md"
 _CONTENT_FILE_TEXT = "hello from exit-code test content"
-
-
-# ---------------------------------------------------------------------------
-# NOTE: _git is imported from tests.functional.conftest (canonical definition).
-#
-# The five helpers below (_init_git_work_dir, _clone_as_bare,
-# _create_bare_content_repo, _create_manifest_repo, _create_minimal_repo_dot_dir)
-# are near-duplicates of same-named functions in test_kanon_repo_cli.py.
-# Consolidating them into a shared module requires touching that file, which is
-# outside this task's Changes Manifest. This duplication is tracked as a
-# follow-up DRY cleanup.
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -199,11 +184,6 @@ def _setup_init_env(
     return checkout_dir, repo_dir
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: exit-code propagation through kanon repo
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoExitCodePropagation:
     """AC-TEST-001: Exit codes from repo subcommands propagate unchanged through kanon repo.
@@ -316,11 +296,6 @@ class TestRepoExitCodePropagation:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: '--' sentinel forwards trailing argv to underlying repo
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestSentinelForwarding:
     """AC-TEST-002: '--' sentinel forwards trailing argv to the underlying repo tool."""
@@ -428,11 +403,6 @@ class TestSentinelForwarding:
         assert project_dir.is_dir(), (
             f"Project directory {project_dir!r} was not created after 'kanon repo -- sync --jobs=1'."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: unknown subcommand exits 1 with "is not a repo command"
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -557,11 +527,6 @@ class TestUnknownSubcommandErrorMessage:
         assert expected_phrase in result.stderr, (
             f"Expected phrase {expected_phrase!r} in stderr for {bad_cmd!r}.\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

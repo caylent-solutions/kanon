@@ -1,17 +1,3 @@
-# Copyright (C) 2026 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests verifying git-precondition and stderr-capture doc blocks in
 docs/integration-testing.md.
 
@@ -29,17 +15,9 @@ import re
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Path constants
-# ---------------------------------------------------------------------------
 
 _REPO_ROOT = pathlib.Path(__file__).parent.parent.parent.parent
 _INTEGRATION_TESTING_DOC = _REPO_ROOT / "docs" / "integration-testing.md"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _extract_scenario_block(content: str, scenario_id: str) -> str:
@@ -79,11 +57,6 @@ def _read_doc() -> str:
     """
     assert _INTEGRATION_TESTING_DOC.is_file(), f"docs/integration-testing.md not found at {_INTEGRATION_TESTING_DOC}."
     return _INTEGRATION_TESTING_DOC.read_text(encoding="utf-8")
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: TC-validate-01 git-checkout precondition
-# ---------------------------------------------------------------------------
 
 
 class TestTcValidate01GitPrecondition:
@@ -131,11 +104,6 @@ class TestTcValidate01GitPrecondition:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: UJ-12 cd step
-# ---------------------------------------------------------------------------
-
-
 class TestUj12GitPrecondition:
     """AC-TEST-001: UJ-12 documents the required ``cd`` step.
 
@@ -179,11 +147,6 @@ class TestUj12GitPrecondition:
             "git checkout before calling 'kanon validate xml'.\n"
             f"Block content:\n{block}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: RP-wrap-04 stderr capture and exit code
-# ---------------------------------------------------------------------------
 
 
 class TestRpWrap04StderrCapture:

@@ -21,11 +21,15 @@ from packaging.version import InvalidVersion, Version
 
 from kanon_cli.constants import (
     BRANCH_SHA_TRUNCATION_LENGTH,
+    KANON_GIT_LS_REMOTE_TIMEOUT,
     PEP440_OPERATORS,
     SHA1_HEX_LENGTH,
     SHA256_HEX_LENGTH,
+    SYMREF_HEADS_PREFIX,
+    SYMREF_LINE_PREFIX,
     TAG_ERROR_DISPLAY_CAP,
 )
+from kanon_cli.core.git_runner import run_git_ls_remote
 
 
 def is_version_constraint(rev_spec: str) -> bool:
@@ -66,14 +70,9 @@ def is_version_constraint(rev_spec: str) -> bool:
         if last_component.startswith(op):
             return True
 
-    # Detect malformed single-equals constraints (e.g. ``=*``, ``=1.0.0``).
-    # The single ``=`` operator is not valid PEP 440; ``==`` is the equality
-    # operator. Treat these as constraint attempts so the caller receives
-    # ``invalid version constraint`` instead of a misleading git error.
     if last_component.startswith("=") and not last_component.startswith("=="):
         return True
 
-    # Range constraints: comma-separated specifiers (e.g. ">=1.0.0,<2.0.0").
     if "," in last_component:
         parts = last_component.split(",")
         return any(part.lstrip().startswith(op) for part in parts for op in PEP440_OPERATORS)
@@ -129,6 +128,41 @@ def resolve_version(url: str, rev_spec: str) -> str:
         sys.exit(1)
 
 
+def is_pep440_version(component: str) -> bool:
+    """Return True if *component* parses cleanly as a PEP 440 version.
+
+    This is the single PEP 440 grammar definition shared by the resolver in
+    this module and the marketplace validator
+    (``kanon_cli.core.marketplace_validator``). Both call this predicate so the
+    accepted version grammar is defined once (DRY), via the same
+    ``packaging.version.Version`` parse the resolver already uses, rather than a
+    duplicated ``\\d+\\.\\d+\\.\\d+`` regex.
+
+    The full PEP 440 grammar is accepted (no SemVer floor): 1-/2-part releases
+    (``1``, ``1.2``), three-part releases (``1.0.0``), pre-releases
+    (``1.0.0a1``, ``1.0.0rc1``), calendar versions (``2024.6``), epochs
+    (``1!2.0.0``), post-releases (``1.0.0.post1``), dev-releases
+    (``1.0.0.dev0``), and local versions (``1.0.0+local``). PEP 440 wins over
+    SemVer on any conflict.
+
+    The *component* must be a single version token; it is parsed verbatim and is
+    NOT split on ``/``. Callers validating a ``refs/tags/<path>/<pep440>`` tag
+    split on the last ``/`` themselves and pass only the trailing component.
+
+    Args:
+        component: A single version token (e.g. ``1.0.0a1``, ``2024.6``).
+
+    Returns:
+        True if *component* parses cleanly as a ``packaging.version.Version``;
+        False if ``packaging`` raises ``InvalidVersion``.
+    """
+    try:
+        Version(component)
+        return True
+    except InvalidVersion:
+        return False
+
+
 def _is_bare_pep440_version(spec: str) -> bool:
     """Return True if spec parses as a PEP 440 Version and contains no '/'.
 
@@ -136,6 +170,9 @@ def _is_bare_pep440_version(spec: str) -> bool:
     ``1.0.0+local``) that should be normalized to ``refs/tags/<spec>``.
     Inputs containing ``/`` are never bare versions -- they are either
     already-prefixed refs or monorepo-prefixed tags.
+
+    Delegates the PEP 440 parse to :func:`is_pep440_version` (the shared
+    grammar) after rejecting any input containing ``/``.
 
     Args:
         spec: A revision string with no leading whitespace.
@@ -146,11 +183,7 @@ def _is_bare_pep440_version(spec: str) -> bool:
     """
     if "/" in spec:
         return False
-    try:
-        Version(spec)
-        return True
-    except InvalidVersion:
-        return False
+    return is_pep440_version(spec)
 
 
 def _normalize_bare_semver_to_tag(rev_spec: str) -> str:
@@ -276,7 +309,6 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
     if not revision or not revision.strip():
         raise ValueError(f"revision must not be empty; received {revision!r}")
 
-    # Split revision into prefix and constraint at the last '/'.
     if "/" in revision:
         prefix, constraint_str = revision.rsplit("/", 1)
         tag_prefix = prefix + "/"
@@ -289,8 +321,6 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
     if not candidate_tags:
         raise ValueError(f"No tags found under prefix '{prefix}' for the given revision")
 
-    # Parse version from the last path component of each candidate.
-    # Collect skipped non-PEP-440 tag names for the loud error if needed.
     versions = []
     skipped: list[str] = []
     for tag in candidate_tags:
@@ -304,18 +334,9 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
         display_prefix = prefix if prefix is not None else "refs/tags"
         raise ValueError(_format_zero_pep440_tags_error(display_prefix, skipped))
 
-    # Wildcard or 'latest': return highest version. The literal ``latest``
-    # is treated as an alias for ``*`` so that ``refs/tags/latest`` and the
-    # bare form ``latest`` both resolve to the highest available semver
-    # tag, matching the catalog-source contract in
-    # ``kanon_cli.core.catalog``.
     if constraint_str in ("*", "latest"):
         return max(versions, key=lambda pair: pair[1])[0]
 
-    # Strip standalone wildcard parts from compound constraints.
-    # A bare * combined with range specifiers (e.g. >=1.0.0,<2.0.0,*) is
-    # redundant -- it means "any version" within the range -- but is not a
-    # valid PEP 440 specifier for SpecifierSet. Remove it before parsing.
     if "," in constraint_str:
         parts = [p.strip() for p in constraint_str.split(",")]
         filtered_parts = [p for p in parts if p != "*"]
@@ -369,22 +390,20 @@ def _classify_revision_shape(revision: str) -> RevisionShape:
     3. Otherwise it is BRANCH-pinned.
 
     Args:
-        revision: The REVISION string from a KANON_SOURCE_<name>_REVISION
+        revision: The ref string from a KANON_SOURCE_<alias>_REF
             environment variable (e.g. ``main``, ``>=1.0.0``, ``a3b4c5...``).
 
     Returns:
         A :class:`RevisionShape` member describing the revision kind.
     """
-    # SHA check: exactly 40 or 64 hex characters
+
     hex_chars = frozenset("0123456789abcdefABCDEF")
     if len(revision) in (SHA1_HEX_LENGTH, SHA256_HEX_LENGTH) and all(c in hex_chars for c in revision):
         return RevisionShape.SHA
 
-    # Tag check: PEP 440 constraint or explicit refs/tags/ prefix
     if is_version_constraint(revision) or revision.startswith("refs/tags/"):
         return RevisionShape.TAG
 
-    # Default: branch-pinned
     return RevisionShape.BRANCH
 
 
@@ -453,6 +472,50 @@ def _list_branch_head(url: str, branch: str) -> str:
         f"ERROR: Branch '{branch}' ({ref}) not found on remote {url!r}.\n"
         f"Check that the branch name is correct and that the remote is accessible."
     )
+
+
+def _resolve_symref_default_branch(url: str) -> str | None:
+    """Resolve the default branch advertised by a remote's HEAD symref.
+
+    Runs ``git ls-remote --symref <url> HEAD`` through the shared
+    :func:`kanon_cli.core.git_runner.run_git_ls_remote` runner (so the retry and
+    ``KANON_GIT_LS_REMOTE_TIMEOUT`` policy are not duplicated, spec Section 3 /
+    FR-27) and parses the advertised symref line of the form::
+
+        ref: refs/heads/<branch>\\tHEAD
+
+    The ``<branch>`` component is returned (the ``refs/heads/`` prefix stripped).
+
+    Args:
+        url: Git repository URL (any scheme accepted by ``git ls-remote``).
+
+    Returns:
+        The bare default-branch name advertised by the remote HEAD symref, or
+        ``None`` when the remote advertises no ``ref: refs/heads/...`` symref
+        line (the caller fails fast with the actionable symref-absent error).
+
+    Raises:
+        RuntimeError: If ``git ls-remote --symref`` exits with a non-zero return
+            code; the message names the URL and the git stderr.
+    """
+    returncode, stdout, stderr = run_git_ls_remote(
+        ["git", "ls-remote", "--symref", url, "HEAD"],
+        timeout=KANON_GIT_LS_REMOTE_TIMEOUT,
+        retry_count=1,
+    )
+    if returncode != 0:
+        raise RuntimeError(f"ERROR: git ls-remote --symref failed for {url!r}: {stderr.strip()}")
+
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith(SYMREF_LINE_PREFIX):
+            continue
+
+        symref_target = stripped[len(SYMREF_LINE_PREFIX) :].split("\t", 1)[0].strip()
+        if symref_target.startswith(SYMREF_HEADS_PREFIX):
+            return symref_target[len(SYMREF_HEADS_PREFIX) :]
+
+    return None
 
 
 def _list_tags(url: str) -> list[str]:

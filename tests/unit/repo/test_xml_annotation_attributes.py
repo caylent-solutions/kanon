@@ -44,10 +44,6 @@ from kanon_cli.repo.error import ManifestParseError
 from kanon_cli.repo.project import Annotation
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- mirrors pattern used in test_xml_copyfile_attributes.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -201,11 +197,6 @@ def _get_remote_annotation(manifest: manifest_xml.XmlManifest, remote_name: str)
         The first Annotation model object attached to the remote.
     """
     return manifest.remotes[remote_name].annotations[0]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every documented attribute of <annotation>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -370,11 +361,6 @@ class TestAnnotationKeepValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Invalid-value tests for every documented attribute
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestAnnotationKeepInvalidValues:
     """AC-TEST-002 -- invalid values for the keep attribute raise ManifestParseError.
@@ -433,11 +419,6 @@ class TestAnnotationKeepInvalidValues:
         xml_content = _manifest_with_project_annotation('name="k" value="v" keep="invalid"')
         with pytest.raises(ManifestParseError):
             _write_and_load(tmp_path, xml_content)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Required attribute omission raises with message naming the attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -554,11 +535,6 @@ class TestAnnotationRequiredAttributeOmission:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Every documented attribute is validated at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestAnnotationParseTimeValidation:
     """AC-FUNC-001 -- every documented attribute is validated during manifest load.
@@ -645,11 +621,6 @@ class TestAnnotationParseTimeValidation:
         manifest = _write_and_load(tmp_path, xml_content)
         annotation = _get_project_annotation(manifest, "platform/core")
         assert isinstance(annotation, Annotation), f"Expected Annotation instance but got: {type(annotation)!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

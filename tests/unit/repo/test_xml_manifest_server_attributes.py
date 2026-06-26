@@ -42,10 +42,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- mirrors the pattern used in test_xml_superproject_attributes.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -120,11 +116,6 @@ def _manifest_without_server() -> str:
         '  <default revision="main" remote="origin" />\n'
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: valid-value tests -- one per documented <manifest-server> attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -257,11 +248,6 @@ class TestManifestServerValidValues:
         assert manifest.manifest_server == url, (
             f"AC-TEST-001: expected manifest_server={url!r} but got: {manifest.manifest_server!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: invalid-value tests -- one per documented <manifest-server> attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -457,11 +443,6 @@ class TestManifestServerInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Required attribute omission raises with message naming the attribute
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestManifestServerRequiredAttributeOmission:
     """AC-TEST-003: omitting a required attribute raises ManifestParseError naming it.
@@ -599,11 +580,6 @@ class TestManifestServerRequiredAttributeOmission:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: every documented attribute validated at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestManifestServerAttributeValidatedAtParseTime:
     """AC-FUNC-001: every documented attribute is validated at parse time (on Load()).
@@ -701,11 +677,6 @@ class TestManifestServerAttributeValidatedAtParseTime:
         assert manifest.manifest_server is None, (
             f"AC-FUNC-001: expected manifest_server=None when element absent but got: {manifest.manifest_server!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

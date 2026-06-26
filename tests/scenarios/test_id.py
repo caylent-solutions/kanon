@@ -12,6 +12,7 @@ Scenarios automated:
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pytest
@@ -22,10 +23,6 @@ from tests.scenarios.conftest import (
     make_plain_repo,
     write_kanonenv,
 )
-
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_fixtures(parent: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
@@ -76,11 +73,6 @@ def _write_primary_kanonenv(
     )
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestID:
     def test_id_01_double_install_succeeds(
@@ -92,6 +84,7 @@ class TestID:
         fixtures.mkdir()
         working = tmp_path / "workspace"
         working.mkdir()
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         _content_repo, manifest_bare = _make_fixtures(fixtures)
         _write_primary_kanonenv(working, manifest_bare)
@@ -119,10 +112,10 @@ class TestID:
             f"ID-01: second install stdout missing 'kanon install: done': {second.stdout!r}"
         )
 
-        pkg_alpha_link = working / ".packages" / "pkg-alpha"
+        pkg_alpha_link = store_base / ".packages" / "pkg-alpha"
         assert pkg_alpha_link.is_symlink(), (
             f"ID-01: .packages/pkg-alpha symlink missing after second install; "
-            f".packages/ contents: {sorted(str(p) for p in (working / '.packages').iterdir()) if (working / '.packages').exists() else 'directory absent'!r}"
+            f".packages/ contents: {sorted(str(p) for p in (store_base / '.packages').iterdir()) if (store_base / '.packages').exists() else 'directory absent'!r}"
         )
 
     def test_id_02_clean_without_prior_install_succeeds(
@@ -134,6 +127,7 @@ class TestID:
         fixtures.mkdir()
         working = tmp_path / "workspace"
         working.mkdir()
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         _content_repo, manifest_bare = _make_fixtures(fixtures)
         _write_primary_kanonenv(working, manifest_bare)
@@ -144,10 +138,10 @@ class TestID:
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
         assert "kanon clean: done" in result.stdout, f"ID-02: stdout missing 'kanon clean: done': {result.stdout!r}"
-        assert not (working / ".packages").exists(), (
+        assert not (store_base / ".packages").exists(), (
             "ID-02: .packages/ should not exist after clean on never-installed dir"
         )
-        assert not (working / ".kanon-data").exists(), (
+        assert not (store_base / ".kanon-data").exists(), (
             "ID-02: .kanon-data/ should not exist after clean on never-installed dir"
         )
 
@@ -160,6 +154,7 @@ class TestID:
         fixtures.mkdir()
         working = tmp_path / "workspace"
         working.mkdir()
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         _content_repo, manifest_bare = _make_fixtures(fixtures)
         _write_primary_kanonenv(working, manifest_bare)
@@ -185,5 +180,5 @@ class TestID:
             f"ID-03: second clean failed (rc={second_clean.returncode})\n"
             f"stdout={second_clean.stdout!r}\nstderr={second_clean.stderr!r}"
         )
-        assert not (working / ".packages").exists(), "ID-03: .packages/ should not exist after second clean"
-        assert not (working / ".kanon-data").exists(), "ID-03: .kanon-data/ should not exist after second clean"
+        assert not (store_base / ".packages").exists(), "ID-03: .packages/ should not exist after second clean"
+        assert not (store_base / ".kanon-data").exists(), "ID-03: .kanon-data/ should not exist after second clean"

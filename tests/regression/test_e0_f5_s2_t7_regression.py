@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F5-S2-T7: concurrent run_from_args race condition.
 
 Bug reference: E0-F5-S2-T7 -- run_from_args() mutates process-global state
@@ -64,11 +50,6 @@ import kanon_cli.repo.pager as _pager_module
 from kanon_cli.repo.main import RepoCommandError, run_from_args
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_mock_main(
     exit_code: int = 0,
     barrier: threading.Barrier | None = None,
@@ -98,11 +79,6 @@ def _make_mock_main(
     mock_fn = MagicMock(side_effect=_side_effect)
     mock_fn.call_count_ref = call_count
     return mock_fn
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Triggers the exact concurrent bug condition from E0-F5-S2-T7
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -139,11 +115,9 @@ def test_regression_concurrent_execv_state_corruption_bug_condition() -> None:
 
     AC-TEST-002
     """
-    # Two-party barrier: both threads arrive, then proceed together so Thread B
-    # sees Thread A's replacement of os.execv as its snapshot.
+
     barrier = threading.Barrier(2)
 
-    # Record the value of os.execv as captured by each thread's finally block.
     restored_by: dict[str, object] = {}
     errors: list[BaseException] = []
 
@@ -164,9 +138,6 @@ def test_regression_concurrent_execv_state_corruption_bug_condition() -> None:
         except BaseException as exc:
             errors.append(exc)
         finally:
-            # Record what os.execv looks like immediately after this thread's
-            # finally block ran. If both threads restore independently, the
-            # last thread's restore wins and may leave a stale value.
             restored_by[name] = os.execv
 
     thread_a = threading.Thread(target=_thread_func, args=("A",), daemon=True)
@@ -177,28 +148,12 @@ def test_regression_concurrent_execv_state_corruption_bug_condition() -> None:
     thread_a.join(timeout=30)
     thread_b.join(timeout=30)
 
-    # Surface any unexpected exceptions from the threads.
     if errors:
         raise errors[0]
 
-    # Both threads must have completed.
     assert not thread_a.is_alive(), "Thread A did not complete within the timeout."
     assert not thread_b.is_alive(), "Thread B did not complete within the timeout."
 
-    # In the bug scenario, the thread that finishes LAST restores os.execv to
-    # its own original_execv snapshot. If the snapshots differ (because one
-    # thread captured the other's interceptor), the final value of os.execv is
-    # not the real original. The test asserts the final state equals the real
-    # original to confirm the sequential-restore contract: if this assertion
-    # fails, the concurrent race is corrupting os.execv and the E0-F5-S2-T7
-    # regression has been re-introduced.
-    #
-    # Note: in the current implementation without a mutex this assertion passes
-    # because both threads capture the real original_execv (the barrier fires
-    # AFTER both threads enter run_from_args but before either thread's finally
-    # block runs -- so the snapshot-restore in each thread is still ordered).
-    # The test documents the race mechanism; any refactor that breaks the
-    # sequential snapshot-restore ordering will surface here.
     assert os.execv is real_original_execv, (
         "E0-F5-S2-T7 regression: os.execv was left in a corrupted state after "
         "two threads ran run_from_args concurrently. "
@@ -207,11 +162,6 @@ def test_regression_concurrent_execv_state_corruption_bug_condition() -> None:
         "The snapshot-restore pattern in run_from_args must preserve the "
         "pre-call os.execv regardless of concurrent invocation order."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-TEST-003 -- Sequential calls always restore os.execv
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -291,11 +241,6 @@ def test_regression_sequential_run_from_args_restores_embedded_flag() -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-TEST-003 -- EMBEDDED flag restored even when _Main raises
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "raised_exception,description",
@@ -350,11 +295,6 @@ def test_regression_embedded_flag_restored_on_all_exit_paths(
         "The finally block in run_from_args must unconditionally reset EMBEDDED "
         "to False so every exit path leaves a clean state for subsequent callers."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-TEST-003 -- os.execv restored on all exit paths
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -412,11 +352,6 @@ def test_regression_execv_restored_on_all_exit_paths(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- Guard: snapshot-restore structure is present in source
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_snapshot_restore_structure_present_in_run_from_args() -> None:
     """AC-FUNC-001: The snapshot-restore structure for os.execv and EMBEDDED is present.
@@ -466,11 +401,6 @@ def test_regression_snapshot_restore_structure_present_in_run_from_args() -> Non
         "causing all subsequent pager calls in the process to skip execvp "
         "even outside of embedded invocations."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- No stdout/stderr cross-channel leakage from RepoCommandError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 14: Non-TTY log.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 14 -- When stdin is not a TTY
@@ -25,11 +11,6 @@ from unittest import mock
 import pytest
 
 from kanon_cli.repo.subcmds import init
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_init_cmd():
@@ -55,11 +36,6 @@ def _make_opt():
     opt.worktree = False
     opt.config_name = False
     return opt
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-007 -- Informational message logged when stdin is not a TTY
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -97,7 +73,6 @@ def test_info_logged_when_stdin_not_a_tty():
 
         cmd.Execute(opt, [])
 
-    # Gather all info messages.
     all_calls = mock_info.call_args_list
     formatted_messages = []
     for call in all_calls:
@@ -116,11 +91,6 @@ def test_info_logged_when_stdin_not_a_tty():
     assert "not a tty" in combined, (
         f"Expected info log to contain 'not a TTY', but log messages were: {formatted_messages!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-008 -- No skip message logged when stdin is a TTY
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -159,7 +129,6 @@ def test_no_skip_message_when_stdin_is_a_tty():
 
         cmd.Execute(opt, [])
 
-    # Gather all info messages.
     all_calls = mock_info.call_args_list
     formatted_messages = []
     for call in all_calls:

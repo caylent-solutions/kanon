@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 20: Glob linkfile silently skipped when dest is a file.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 20 -- When processing glob
@@ -29,19 +15,9 @@ from kanon_cli.repo import project
 from kanon_cli.repo.error import ManifestInvalidPathError
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_link_file(worktree, src_rel, topdir, dest_rel):
     """Return a _LinkFile instance for the given paths."""
     return project._LinkFile(str(worktree), src_rel, str(topdir), dest_rel)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005 -- Exception raised when glob destination is an existing file
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -63,12 +39,10 @@ def test_glob_dest_file_raises_exception(tmp_path):
     topdir = tmp_path / "checkout"
     topdir.mkdir()
 
-    # Create source directory with matching files.
     src_dir = worktree / "configs"
     src_dir.mkdir()
     (src_dir / "app.xml").write_text("<config/>", encoding="utf-8")
 
-    # Create dest as a regular file (not a directory) -- this is the bug condition.
     dest_file = topdir / "dest_as_file"
     dest_file.write_text("I am a file, not a directory", encoding="utf-8")
 
@@ -76,11 +50,6 @@ def test_glob_dest_file_raises_exception(tmp_path):
 
     with pytest.raises((ManifestInvalidPathError, FileExistsError, ValueError, OSError)):
         lf._Link()
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-006 -- Error message includes the destination path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -101,12 +70,10 @@ def test_glob_dest_file_error_includes_dest_path(tmp_path):
     topdir = tmp_path / "checkout"
     topdir.mkdir()
 
-    # Create source directory with matching files.
     src_dir = worktree / "templates"
     src_dir.mkdir()
     (src_dir / "base.xml").write_text("<template/>", encoding="utf-8")
 
-    # Destination as a regular file -- triggers the bug.
     dest_file = topdir / "my_dest_path"
     dest_file.write_text("blocking file content", encoding="utf-8")
     expected_dest_path = str(dest_file)
@@ -120,11 +87,6 @@ def test_glob_dest_file_error_includes_dest_path(tmp_path):
     assert expected_dest_path in error_message or "my_dest_path" in error_message, (
         f"Expected the error message to include the destination path {expected_dest_path!r}, but got: {error_message!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Regression: directory destination works normally (no exception)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -144,18 +106,15 @@ def test_glob_dest_directory_does_not_raise(tmp_path):
     topdir = tmp_path / "checkout"
     topdir.mkdir()
 
-    # Create source directory with matching files.
     src_dir = worktree / "configs"
     src_dir.mkdir()
     (src_dir / "app.xml").write_text("<config/>", encoding="utf-8")
 
-    # Create dest as a directory -- the valid case.
     dest_dir = topdir / "dest_dir"
     dest_dir.mkdir()
 
     lf = _make_link_file(worktree, "configs/*.xml", topdir, "dest_dir")
 
-    # Must not raise -- directory dest is valid for glob src.
     lf._Link()
 
 
@@ -173,13 +132,10 @@ def test_glob_nonexistent_dest_does_not_raise(tmp_path):
     topdir = tmp_path / "checkout"
     topdir.mkdir()
 
-    # Create source directory with matching files.
     src_dir = worktree / "configs"
     src_dir.mkdir()
     (src_dir / "app.xml").write_text("<config/>", encoding="utf-8")
 
-    # dest_dir does NOT exist -- _Link() should create it.
     lf = _make_link_file(worktree, "configs/*.xml", topdir, "new_dest_dir")
 
-    # Must not raise -- a new dest directory is a valid case.
     lf._Link()

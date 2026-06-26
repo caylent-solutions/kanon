@@ -34,10 +34,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- mirrors the pattern used in test_xml_superproject_flow.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -102,11 +98,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     repodir = _make_repo_dir(tmp_path)
     manifest_file = _write_manifest(repodir, xml_content)
     return _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: <manifest-server url=...> parses and URL is accessible from model
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -229,11 +220,6 @@ class TestManifestServerUrlParseFlow:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Missing url attribute raises ManifestParseError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestManifestServerMissingUrlRaises:
     """AC-TEST-002: Missing url attribute on <manifest-server> raises ManifestParseError.
@@ -341,11 +327,6 @@ class TestManifestServerMissingUrlRaises:
             "AC-TEST-002: expected ManifestParseError when url attribute is absent "
             "but the parse completed without error"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Duplicate <manifest-server> raises ManifestParseError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -495,11 +476,6 @@ class TestManifestServerDuplicateRaises:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: manifest-server is opt-in and well-scoped
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestManifestServerOptInAndWellScoped:
     """AC-FUNC-001: manifest-server element is opt-in and well-scoped.
@@ -584,11 +560,6 @@ class TestManifestServerOptInAndWellScoped:
         assert len(manifest.projects) == 1, (
             f"AC-FUNC-001: expected exactly 1 project after parsing but got: {len(manifest.projects)}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

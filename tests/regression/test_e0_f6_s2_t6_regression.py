@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F6-S2-T6: selfupdate incompatible with embedded mode.
 
 Bug reference: E0-F6-S2-T6 / Bug 10 -- selfupdate subcommand incompatible
@@ -47,11 +33,6 @@ import kanon_cli.repo.pager as repo_pager
 from kanon_cli.constants import SELFUPDATE_EMBEDDED_MESSAGE
 from kanon_cli.repo.subcmds import selfupdate as selfupdate_mod
 from kanon_cli.repo.subcmds.selfupdate import Selfupdate
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_selfupdate_instance() -> Selfupdate:
@@ -91,11 +72,6 @@ def _make_opt(repo_upgraded: bool = False, repo_verify: bool = True) -> MagicMoc
     return opt
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- selfupdate prints embedded mode informational message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_selfupdate_embedded_prints_informational_message(
     monkeypatch: pytest.MonkeyPatch,
@@ -131,11 +107,6 @@ def test_regression_selfupdate_embedded_prints_informational_message(
         f"but stderr was: {output!r}. "
         "The embedded-mode message guard in selfupdate.py Execute() is missing or broken."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- selfupdate triggers the exact bug condition (no sync calls)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -244,11 +215,6 @@ def test_regression_selfupdate_embedded_does_not_call_post_sync_functions(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- selfupdate exits with non-zero status in embedded mode
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_selfupdate_embedded_returns_one(
     monkeypatch: pytest.MonkeyPatch,
@@ -280,11 +246,6 @@ def test_regression_selfupdate_embedded_returns_one(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- structural guard: embedded-mode branch present in source
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_embedded_guard_present_in_selfupdate_source() -> None:
     """AC-FUNC-001: The embedded-mode guard branch is present in selfupdate.py.
@@ -312,11 +273,6 @@ def test_regression_embedded_guard_present_in_selfupdate_source() -> None:
         "Restore the print(SELFUPDATE_EMBEDDED_MESSAGE, file=sys.stderr) call "
         "in src/kanon_cli/repo/subcmds/selfupdate.py."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

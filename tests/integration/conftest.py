@@ -25,7 +25,7 @@ import pytest
 from kanon_cli.core.include_walker import _walk_includes as _real_walk_includes
 from kanon_cli.core.install import _RefResolution
 
-# Deterministic dummy values returned by the autouse mocks.
+
 _MOCK_RESOLVED_SHA = "a" * 40
 _MOCK_RESOLVED_REF = "refs/heads/main"
 

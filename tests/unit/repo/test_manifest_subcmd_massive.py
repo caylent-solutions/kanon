@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for subcmds/manifest.py coverage."""
 
 from unittest import mock
@@ -44,7 +30,6 @@ def test_options():
     parser = mock.MagicMock()
     cmd._Options(parser)
 
-    # Should add multiple options
     assert parser.add_option.call_count >= 8
 
 
@@ -155,7 +140,6 @@ def test_output_json_pretty():
         with mock.patch("builtins.open", mock.mock_open()):
             cmd._Output(opt)
 
-            # Should call ToDict with pretty formatting
             manifest.ToDict.assert_called_once()
 
 
@@ -205,7 +189,6 @@ def test_output_with_path_prefix():
     with mock.patch("builtins.open", mock.mock_open()) as mock_file:
         cmd._Output(opt)
 
-        # Should modify output filename with path prefix
         expected_file = "/tmp/manifest.xml:sub%2fpath"
         mock_file.assert_called_once_with(expected_file, "w")
 
@@ -231,7 +214,6 @@ def test_output_with_peg_rev():
     with mock.patch("sys.stdout"):
         cmd._Output(opt)
 
-        # Should pass peg_rev=True
         manifest.Save.assert_called_once_with(
             mock.ANY,
             peg_rev=True,
@@ -369,7 +351,6 @@ def test_output_multiple_manifests():
     with mock.patch("builtins.open", mock.mock_open()):
         cmd._Output(opt)
 
-        # Should save both manifests
         assert manifest1.Save.call_count == 1
         assert manifest2.Save.call_count == 1
 

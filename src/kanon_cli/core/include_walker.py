@@ -50,11 +50,6 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 
 
-# ---------------------------------------------------------------------------
-# Base exception (defined here to avoid circular imports with install.py)
-# ---------------------------------------------------------------------------
-
-
 class InstallError(Exception):
     """Base class for all install state-machine hard errors.
 
@@ -67,11 +62,6 @@ class InstallError(Exception):
     ``include_walker``.  ``install.py`` imports ``InstallError`` from here
     and re-exports it so existing call-sites continue to work.
     """
-
-
-# ---------------------------------------------------------------------------
-# Exceptions
-# ---------------------------------------------------------------------------
 
 
 class MalformedIncludeError(InstallError):
@@ -124,11 +114,6 @@ class IncludeCycleError(InstallError):
         return "include cycle: " + " -> ".join(self.cycle_path)
 
 
-# ---------------------------------------------------------------------------
-# IncludeTree dataclass
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class IncludeTree:
     """A node in the resolved ``<include>`` tree.
@@ -144,11 +129,6 @@ class IncludeTree:
 
     path: pathlib.Path
     includes: list[IncludeTree] = field(default_factory=list)
-
-
-# ---------------------------------------------------------------------------
-# Canonicalisation helper
-# ---------------------------------------------------------------------------
 
 
 def _canonicalize_include_path(path: pathlib.Path, manifest_repo: pathlib.Path) -> pathlib.Path:
@@ -171,11 +151,6 @@ def _canonicalize_include_path(path: pathlib.Path, manifest_repo: pathlib.Path) 
     relative = path.relative_to(manifest_repo)
     normalised = os.path.normpath(str(relative))
     return pathlib.Path(normalised)
-
-
-# ---------------------------------------------------------------------------
-# Walker
-# ---------------------------------------------------------------------------
 
 
 def _walk_includes(start_xml_path: pathlib.Path, manifest_repo: pathlib.Path) -> IncludeTree:
@@ -205,32 +180,23 @@ def _walk_includes(start_xml_path: pathlib.Path, manifest_repo: pathlib.Path) ->
             exist under ``manifest_repo``.
         xml.etree.ElementTree.ParseError: If any XML file is malformed.
     """
-    # ``active_path``: ordered list of canonical repo-relative paths on the
-    # current DFS branch. Used for cycle detection (O(depth) membership check
-    # is acceptable because include chains are shallow in practice).
+
     active_path: list[pathlib.Path] = []
 
-    # ``done``: set of canonical repo-relative paths whose subtrees have been
-    # fully processed. Used for diamond deduplication (O(1) lookup).
     done: set[pathlib.Path] = set()
 
     def _visit(abs_path: pathlib.Path) -> IncludeTree:
         canonical = _canonicalize_include_path(abs_path, manifest_repo)
 
-        # Cycle check: is this node already on the active DFS branch?
         if canonical in active_path:
-            # Build the cycle path starting from the repeated node up to itself.
             cycle_start_idx = active_path.index(canonical)
             cycle_nodes = active_path[cycle_start_idx:]
-            # Append the closing edge (the repeated node) so the operator sees
-            # where the loop closes: p0 -> ... -> pn -> p0.
+
             cycle_strs = [str(p) for p in cycle_nodes] + [str(canonical)]
             raise IncludeCycleError(cycle_path=cycle_strs)
 
-        # Push onto the active path and recurse.
         active_path.append(canonical)
 
-        # Parse the XML to find child <include> elements.
         tree = ET.parse(str(abs_path))
         root = tree.getroot()
 
@@ -238,23 +204,17 @@ def _walk_includes(start_xml_path: pathlib.Path, manifest_repo: pathlib.Path) ->
         for include_el in root.findall("include"):
             include_name = include_el.get("name")
             if include_name is None:
-                # Fail fast: a missing 'name' attribute is a hard error.
-                # The operator must fix the malformed element before install can proceed.
                 raise MalformedIncludeError(xml_file=abs_path)
-            # Resolve the include path relative to the manifest repo root.
-            # <include name=...> values are always relative to the repo root,
-            # not to the directory of the including file.
+
             child_abs_path = manifest_repo / include_name
             child_canonical = _canonicalize_include_path(child_abs_path, manifest_repo)
 
-            # If the child is already in 'done', it is a diamond -- skip.
             if child_canonical in done:
                 continue
 
             child_node = _visit(child_abs_path)
             child_nodes.append(child_node)
 
-        # Pop from the active path and mark as done.
         active_path.pop()
         done.add(canonical)
 

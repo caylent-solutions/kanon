@@ -54,7 +54,7 @@ from kanon_cli.constants import (
     REVISION_REF_PREFIX_TAGS,
     REVISION_REF_PREFIXES,
 )
-from kanon_cli.core.catalog import _parse_catalog_source
+from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.lockfile import read_lockfile
@@ -66,11 +66,6 @@ from kanon_cli.version import (
     _resolve_constraint_from_tags,
     _truncate_sha,
 )
-
-
-# ---------------------------------------------------------------------------
-# Revision normalization errors
-# ---------------------------------------------------------------------------
 
 
 class RevisionParseError(ValueError):
@@ -88,11 +83,6 @@ class RevisionParseError(ValueError):
             f"ERROR: cannot parse revision {revision!r}: {reason}\n"
             "Supply a PEP 440 version (e.g., `1.0.0`) or a `refs/...`-prefixed git ref."
         )
-
-
-# ---------------------------------------------------------------------------
-# Revision normalization helper (DEFECT-007 fix)
-# ---------------------------------------------------------------------------
 
 
 def _normalize_revision_for_constraint(rev: str) -> tuple[str | None, str]:
@@ -121,7 +111,7 @@ def _normalize_revision_for_constraint(rev: str) -> tuple[str | None, str]:
     classifications for forward-compatibility.
 
     Args:
-        rev: The raw REVISION string from a ``KANON_SOURCE_<name>_REVISION``
+        rev: The raw ref string from a ``KANON_SOURCE_<alias>_REF``
             entry.
 
     Returns:
@@ -146,18 +136,15 @@ def _normalize_revision_for_constraint(rev: str) -> tuple[str | None, str]:
             bare = rev[len(prefix) :]
             break
 
-    # Attempt PEP 440 version parse on the bare component.
     try:
         Version(bare)
         return (bare, REVISION_CLASSIFICATION_VERSION)
     except InvalidVersion:
         pass
 
-    # Branch-shaped prefix: refs/heads/ or refs/remotes/origin/
     if matched_prefix in (REVISION_REF_PREFIX_HEADS, REVISION_REF_PREFIX_REMOTES):
         return (None, REVISION_CLASSIFICATION_BRANCH)
 
-    # Plain branch name (no prefix, no slash): forward-compatible branch pass-through.
     if matched_prefix is None and "/" not in rev:
         return (None, REVISION_CLASSIFICATION_BRANCH)
 
@@ -193,8 +180,6 @@ def _normalize_tag_revision_to_constraint(revision: str) -> str:
 
     bare = revision[len(REVISION_REF_PREFIX_TAGS) :]
 
-    # If the bare component is itself a valid PEP 440 version (not a specifier),
-    # convert to an exact-match constraint.
     try:
         Version(bare)
         return REVISION_REF_PREFIX_TAGS + "==" + bare
@@ -202,17 +187,12 @@ def _normalize_tag_revision_to_constraint(revision: str) -> str:
         return revision
 
 
-# ---------------------------------------------------------------------------
-# Public dataclass -- the typed row returned by _build_row
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class OutdatedRow:
     """One row in the 'kanon outdated' table output.
 
     Attributes:
-        name: The KANON_SOURCE_<name> key (lowercased from the env-var name).
+        name: The source alias (the ``<alias>`` token in the KANON_SOURCE_<alias>_* keys).
         current: The version string for the currently installed ref (from
             lockfile when present, or live-resolved).
         latest_matching_spec: The highest available version satisfying the
@@ -228,11 +208,6 @@ class OutdatedRow:
     latest_matching_spec: str
     latest_available: str
     upgrade_type: str
-
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
 
 
 def _extract_version_from_ref(ref: str) -> str:
@@ -310,9 +285,9 @@ def _build_row(
       ``upgrade-type`` is always ``none``.
 
     Args:
-        name: The source name (e.g. ``FOO``).
+        name: The source alias (e.g. ``FOO``).
         source: The source dict from ``parse_kanonenv`` with keys ``url``,
-            ``revision``, and ``path``.
+            ``ref``, and ``path``.
         available_tags: Full list of tag refs fetched from the source's git URL.
             Used only for tag-pinned sources; ignored for branch- and SHA-pinned.
         lock_ref: The resolved_ref stored in the lockfile for this source, or
@@ -330,7 +305,7 @@ def _build_row(
         RuntimeError: If the ``git`` binary is not found or ``git ls-remote``
             exits with a non-zero return code (branch-pinned path).
     """
-    revision = source["revision"]
+    revision = source["ref"]
     url = source["url"]
     shape = _classify_revision_shape(revision)
 
@@ -338,34 +313,18 @@ def _build_row(
         return _build_row_sha_pinned(name=name, revision=revision, lock_ref=lock_ref)
 
     if shape is RevisionShape.BRANCH:
-        # Detect prefixed branch refs (refs/heads/main, refs/remotes/origin/main)
-        # and strip the prefix before dispatching (DEFECT-007 branch-shaped ref fix).
-        # For prefixed-ref forms, _normalize_revision_for_constraint is used to
-        # classify and confirm the branch classification; the bare branch name is
-        # then displayed in all version columns per spec D5.
-        # Plain branch names (e.g. "main", "feature/foo") have no refs/ prefix
-        # and go directly to _build_row_branch_pinned unchanged.
         branch_prefix: str | None = None
         for prefix in (p for p in REVISION_REF_PREFIXES if p != REVISION_REF_PREFIX_TAGS):
             if revision.startswith(prefix):
                 branch_prefix = prefix
                 break
         if branch_prefix is not None:
-            # Prefixed ref: use _normalize_revision_for_constraint to classify.
-            # This call returns (None, REVISION_CLASSIFICATION_BRANCH) for valid
-            # branch-shaped refs; RevisionParseError is raised (and propagated)
-            # for malformed refs that slip through the classification filter.
             _, classification = _normalize_revision_for_constraint(revision)
             if classification == REVISION_CLASSIFICATION_BRANCH:
                 bare_branch = revision[len(branch_prefix) :]
                 return _build_row_refs_branch_pinned(name=name, url=url, bare_branch=bare_branch, lock_ref=lock_ref)
         return _build_row_branch_pinned(name=name, url=url, branch=revision, lock_ref=lock_ref)
 
-    # Tag-pinned (default T1 path).
-    # When the REVISION is a bare refs/tags/<version> ref (e.g. refs/tags/1.0.0),
-    # normalize it to an exact-match PEP 440 constraint (refs/tags/==<version>)
-    # so _resolve_constraint_from_tags can evaluate it via SpecifierSet
-    # (DEFECT-007 refs/tags-shaped ref fix).
     normalized_revision = _normalize_tag_revision_to_constraint(revision)
     return _build_row_tag_pinned(
         name=name,
@@ -396,12 +355,10 @@ def _build_row_tag_pinned(
     Returns:
         A populated :class:`OutdatedRow`.
     """
-    # latest-matching-spec: highest ref satisfying the source's REVISION constraint
+
     latest_matching_ref = _resolve_constraint_from_tags(revision, available_tags)
     latest_matching_ver = _extract_version_from_ref(latest_matching_ref)
 
-    # latest-available: highest ref under the prefix ignoring the constraint (wildcard)
-    # Build a wildcard constraint by replacing the last path component with "*"
     if "/" in revision:
         prefix_parts = revision.rsplit("/", 1)[0]
         wildcard_revision = prefix_parts + "/*"
@@ -411,7 +368,6 @@ def _build_row_tag_pinned(
     latest_available_ref = _resolve_constraint_from_tags(wildcard_revision, available_tags)
     latest_available_ver = _extract_version_from_ref(latest_available_ref)
 
-    # current: from lockfile when present, else live-resolve against the constraint
     if lock_ref is not None:
         current_ver = _extract_version_from_ref(lock_ref)
     else:
@@ -458,12 +414,10 @@ def _build_row_branch_pinned(
     head_sha_12 = _truncate_sha(head_sha)
 
     if lock_ref is not None:
-        # Locked SHA may be a full 40-char SHA or a short form; compare prefix
         locked_sha_12 = _truncate_sha(lock_ref)
         upgrade_type = "drift" if locked_sha_12 != head_sha_12 else "none"
         current = locked_sha_12
     else:
-        # No lockfile: live-resolve equals HEAD; no drift possible
         current = head_sha_12
         upgrade_type = "none"
 
@@ -577,10 +531,8 @@ def _format_table(rows: list[OutdatedRow]) -> str:
     """
     headers = ["name", "current", "latest-matching-spec", "latest-available", "upgrade-type"]
 
-    # Map rows to tuples of string cells in display order
     cells = [(row.name, row.current, row.latest_matching_spec, row.latest_available, row.upgrade_type) for row in rows]
 
-    # Compute column widths from header and data
     col_widths = [len(h) for h in headers]
     for row_cells in cells:
         for i, cell in enumerate(row_cells):
@@ -732,11 +684,6 @@ def _resolve_lock_sha(name: str, lock_file_path: pathlib.Path | None) -> str | N
     return None
 
 
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
-
-
 def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
     """Register the 'outdated' subcommand on the top-level argparse subparsers.
 
@@ -755,8 +702,8 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "live-resolved against the catalog when absent.\n\n"
             "Exit code is always 0 unless --fail-on-upgrade is set, in which\n"
             "case the command exits 1 when any source has an available upgrade.\n\n"
-            "Catalog source precedence: --catalog-source flag, then\n"
-            "KANON_CATALOG_SOURCE env var. Both being absent is a hard error."
+            "Catalog source precedence: --catalog-source flag, then the single\n"
+            "KANON_CATALOG_SOURCES env-var entry. Both being absent is a hard error."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -825,11 +772,6 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     parser.set_defaults(func=run)
 
 
-# ---------------------------------------------------------------------------
-# Command entry point
-# ---------------------------------------------------------------------------
-
-
 def run(args: argparse.Namespace) -> int:
     """Execute the 'kanon outdated' command.
 
@@ -850,8 +792,9 @@ def run(args: argparse.Namespace) -> int:
         is False (the default). 1 when ``fail_on_upgrade`` is True and at least
         one row has an upgrade-type other than ``none``.
     """
-    # -- Validate catalog source (AC-FUNC-009) --
-    if not args.catalog_source:
+
+    catalog_source: str | None = args.catalog_source or resolve_env_catalog_source()
+    if not catalog_source:
         print(
             MISSING_CATALOG_ERROR_TEMPLATE.format(command="kanon outdated"),
             file=sys.stderr,
@@ -859,7 +802,6 @@ def run(args: argparse.Namespace) -> int:
         )
         sys.exit(1)
 
-    # -- Validate .kanon file existence (AC-FUNC-010) --
     kanon_path = pathlib.Path(args.kanon_file)
     if not kanon_path.exists():
         print(
@@ -869,40 +811,35 @@ def run(args: argparse.Namespace) -> int:
         )
         sys.exit(1)
 
-    # -- Parse .kanon file --
     kanonenv = parse_kanonenv(kanon_path)
 
-    # -- Validate catalog source format (raises hard error on malformed input) --
     try:
-        _parse_catalog_source(args.catalog_source)
+        _parse_catalog_source(catalog_source)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    # -- Determine lockfile path --
     if args.lock_file is not None:
         lock_file_path: pathlib.Path | None = pathlib.Path(args.lock_file)
     else:
         derived = _derive_lock_file_path(args.kanon_file)
         lock_file_path = derived if derived.exists() else None
 
-    # -- Build rows for each source --
     rows: list[OutdatedRow] = []
+    alias_renders: list[str] = []
     for name in kanonenv["KANON_SOURCES"]:
         source = kanonenv["sources"][name]
         url = source["url"]
-        revision = source["revision"]
+        revision = source["ref"]
 
-        # Fetch tags only for tag-pinned sources; branch- and SHA-pinned sources
-        # do not use the tag list so fetching it would be a wasted network call.
+        alias_renders.append(f"{name} -> {source['name']} from {url}@{revision}")
+
         shape = _classify_revision_shape(revision)
         if shape is RevisionShape.TAG:
             available_tags = _list_tags(url)
         else:
             available_tags = []
 
-        # For branch-pinned sources, the locked value is the commit SHA (resolved_sha),
-        # not the ref name (resolved_ref). For tag-pinned sources, the ref name is used.
         if shape is RevisionShape.BRANCH:
             lock_ref = _resolve_lock_sha(name, lock_file_path)
         else:
@@ -911,7 +848,7 @@ def run(args: argparse.Namespace) -> int:
         try:
             row = _build_row(
                 name=name,
-                source={"url": url, "revision": revision, "path": source["path"]},
+                source={"url": url, "ref": revision, "path": source["path"]},
                 available_tags=available_tags,
                 lock_ref=lock_ref,
             )
@@ -921,15 +858,19 @@ def run(args: argparse.Namespace) -> int:
 
         rows.append(row)
 
-    # -- Emit output --
     if args.format == KANON_OUTDATED_FORMAT_JSON:
         from kanon_cli.cli import _emit_json_payload
 
-        _emit_json_payload(_build_outdated_payload(rows), sort_keys=False, indent=KANON_OUTDATED_JSON_INDENT)
+        payload = {
+            "aliases": alias_renders,
+            "sources": _build_outdated_payload(rows),
+        }
+        _emit_json_payload(payload, sort_keys=False, indent=KANON_OUTDATED_JSON_INDENT)
     else:
+        for alias_render in alias_renders:
+            print(alias_render)
         print(_format_table(rows), end="")
 
-    # -- Exit code gate (AC-FUNC-002 / AC-FUNC-004) --
     if args.fail_on_upgrade:
         outdated_names = [row.name for row in rows if row.upgrade_type != "none"]
         if outdated_names:

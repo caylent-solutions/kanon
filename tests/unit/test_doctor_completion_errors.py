@@ -17,11 +17,6 @@ import pathlib
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_log(log_file: pathlib.Path, lines: list[str]) -> None:
     """Write lines to a log file, one per line.
 
@@ -30,11 +25,6 @@ def _write_log(log_file: pathlib.Path, lines: list[str]) -> None:
         lines: Lines to write (without trailing newlines).
     """
     log_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-# ---------------------------------------------------------------------------
-# Tests: _check_completion_errors_report
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -49,7 +39,6 @@ class TestCheckCompletionErrorsReportAbsent:
         """
         from kanon_cli.commands.doctor import _check_completion_errors_report
 
-        # No log file created in tmp_path
         finding = _check_completion_errors_report(tmp_path, limit=5)
 
         assert finding is not None
@@ -191,7 +180,6 @@ class TestCheckCompletionErrorsReportFull:
 
         finding = _check_completion_errors_report(tmp_path, limit=5)
 
-        # Last 5 lines must appear
         for line in all_lines[-5:]:
             assert line in finding.message, f"Expected last 5 lines to appear. Missing: {line!r}"
 
@@ -209,7 +197,6 @@ class TestCheckCompletionErrorsReportFull:
 
         finding = _check_completion_errors_report(tmp_path, limit=5)
 
-        # First 2 lines must NOT appear in the message
         for line in all_lines[:2]:
             assert line not in finding.message, f"Expected first lines to be omitted but found: {line!r}"
 
@@ -319,10 +306,10 @@ class TestCheckCompletionErrorsReportLimitParametrized:
     @pytest.mark.parametrize(
         "total_lines, limit, expected_count",
         [
-            (3, 5, 3),  # fewer than limit -- return all
-            (5, 5, 5),  # exactly the limit -- return all
-            (7, 5, 5),  # more than limit -- return last N
-            (10, 3, 3),  # much more than limit -- return last N
+            (3, 5, 3),
+            (5, 5, 5),
+            (7, 5, 5),
+            (10, 3, 3),
         ],
         ids=["fewer_than_limit", "exactly_limit", "more_than_limit", "much_more"],
     )
@@ -356,18 +343,14 @@ class TestCheckCompletionErrorsReportLimitParametrized:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: End-to-end cycle
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDoctorCommandEndToEndCycle:
     """AC-CYCLE-001: doctor_command emits errors log findings AND staleness warnings.
 
     Writes a completion-errors.log with seven lines AND an out-of-date bash
-    completion script under tmp_path. Sets KANON_CACHE_DIR to tmp_path and
-    runs doctor_command with a completion_generator that returns fresh content.
+    completion script under tmp_path. Sets KANON_HOME to tmp_path (the cache,
+    where doctor reads the log, resolves to <KANON_HOME>/cache) and runs
+    doctor_command with a completion_generator that returns fresh content.
     Asserts:
     - stderr contains the last five log lines.
     - stderr contains a staleness warning for bash.
@@ -390,7 +373,6 @@ class TestDoctorCommandEndToEndCycle:
 
         from kanon_cli.commands.doctor import doctor_command
 
-        # -- Arrange workspace files --
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
@@ -400,27 +382,25 @@ class TestDoctorCommandEndToEndCycle:
             encoding="utf-8",
         )
 
-        # -- Create completion-errors.log with 7 lines --
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
+        cache_dir_path = tmp_path / "cache"
+        cache_dir_path.mkdir(parents=True, exist_ok=True)
+
         log_lines = [f"2026-01-01T00:00:0{i}Z __complete_sources ValueError: msg {i}" for i in range(7)]
-        log_file = tmp_path / "completion-errors.log"
+        log_file = cache_dir_path / "completion-errors.log"
         _write_log(log_file, log_lines)
 
-        # -- Create an out-of-date bash completion script --
         stale_bash_content = "# OLD STALE bash completion script\n"
         fresh_bash_content = "# NEW FRESH bash completion script\n"
         bash_script = tmp_path / "kanon_completion.bash"
         bash_script.write_text(stale_bash_content, encoding="utf-8")
 
-        # Point KANON_CACHE_DIR at tmp_path
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-
-        # -- Build a minimal args namespace (no lockfile => subcheck 1 returns NO_LOCKFILE) --
         args = argparse.Namespace(
             kanon_file=str(kanon_file),
             lock_file=None,
             strict_drift=False,
             refresh_completion_cache=False,
-            catalog_source=object(),  # _UNSET sentinel equivalent
+            catalog_source=object(),
         )
 
         def _fresh_generator(shell: str) -> str:
@@ -434,8 +414,6 @@ class TestDoctorCommandEndToEndCycle:
             """
             return fresh_bash_content
 
-        # Patch KANON_STATIC_COMPLETION_SEARCH_PATHS on the doctor module so
-        # doctor_command discovers the stale bash script at tmp_path.
         import kanon_cli.commands.doctor as doctor_module
 
         monkeypatch.setattr(
@@ -444,7 +422,6 @@ class TestDoctorCommandEndToEndCycle:
             (("bash", str(bash_script)),),
         )
 
-        # Invoke doctor_command with injected completion_generator
         result = doctor_command(
             args,
             completion_generator=_fresh_generator,
@@ -453,19 +430,15 @@ class TestDoctorCommandEndToEndCycle:
         captured = capsys.readouterr()
         stderr = captured.err
 
-        # -- Assert last 5 log lines appear in stderr --
         for line in log_lines[-5:]:
             assert line in stderr, f"Expected last-5 log line {line!r} to appear in stderr.\nstderr: {stderr!r}"
 
-        # -- Assert first 2 log lines are NOT in stderr --
         for line in log_lines[:2]:
             assert line not in stderr, f"Expected early log line {line!r} to be absent from stderr.\nstderr: {stderr!r}"
 
-        # -- Assert staleness warning for bash appears in stderr (via doctor_command) --
         assert "bash" in stderr, f"Expected 'bash' in stderr staleness warning.\nstderr: {stderr!r}"
         assert str(bash_script) in stderr, (
             f"Expected stale bash script path {str(bash_script)!r} in stderr staleness warning.\nstderr: {stderr!r}"
         )
 
-        # -- doctor exits 0 (no error-level findings, only warn) --
         assert result == 0

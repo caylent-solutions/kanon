@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for subcmds/list.py coverage."""
 
 from unittest import mock
@@ -37,7 +23,6 @@ def test_options():
     parser = mock.MagicMock()
     cmd._Options(parser)
 
-    # Should add multiple options
     assert parser.add_option.call_count >= 7
 
 
@@ -50,7 +35,6 @@ def test_validate_options_fullpath_and_name_only():
     opt.name_only = True
     opt.relative_to = None
 
-    # Mock the OptionParser property
     mock_parser = mock.MagicMock()
     with mock.patch.object(type(cmd), "OptionParser", new_callable=mock.PropertyMock) as mock_optparser:
         mock_optparser.return_value = mock_parser
@@ -97,7 +81,6 @@ def test_execute_default_output():
     with mock.patch("builtins.print") as mock_print:
         cmd.Execute(opt, [])
 
-        # Should print path : name
         mock_print.assert_called_once()
         output = str(mock_print.call_args[0][0])
         assert "myproject" in output
@@ -267,7 +250,6 @@ def test_execute_sorted_output():
     with mock.patch("builtins.print") as mock_print:
         cmd.Execute(opt, [])
 
-        # Should print sorted
         output = mock_print.call_args[0][0]
         assert "alpha" in output
         assert output.index("alpha") < output.index("zebra")

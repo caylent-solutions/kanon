@@ -17,13 +17,9 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.cli import main
+from kanon_cli.core.install import resolve_workspace_base_dir
 from kanon_cli.repo import RepoCommandError
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 _SOURCE_URL_TEMPLATE = "https://example.com/{name}.git"
 
@@ -56,8 +52,10 @@ def _valid_single_source_content(source_name: str = "primary") -> str:
     return (
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL={url}\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n"
     )
 
 
@@ -76,37 +74,37 @@ def _valid_two_source_content(source_alpha: str = "alpha", source_bravo: str = "
     return (
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_alpha}_URL={url_alpha}\n"
-        f"KANON_SOURCE_{source_alpha}_REVISION=main\n"
+        f"KANON_SOURCE_{source_alpha}_REF=main\n"
         f"KANON_SOURCE_{source_alpha}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_alpha}_NAME={source_alpha}\n"
+        f"KANON_SOURCE_{source_alpha}_GITBASE=https://example.com\n"
         f"KANON_SOURCE_{source_bravo}_URL={url_bravo}\n"
-        f"KANON_SOURCE_{source_bravo}_REVISION=main\n"
+        f"KANON_SOURCE_{source_bravo}_REF=main\n"
         f"KANON_SOURCE_{source_bravo}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{source_bravo}_NAME={source_bravo}\n"
+        f"KANON_SOURCE_{source_bravo}_GITBASE=https://example.com\n"
     )
 
 
 def _populate_source_package(
-    base_dir: pathlib.Path,
     source_name: str,
     package_name: str,
 ) -> None:
-    """Create a package directory under .kanon-data/sources/<name>/.packages/.
+    """Create a package directory under the store's .kanon-data/sources/<name>/.packages/.
 
-    Simulates what repo sync would place on disk so aggregate_symlinks
-    has real directories to process.
+    Simulates what repo sync would place on disk so aggregate_symlinks has real
+    directories to process. In the 3.0.0 store model (spec Section 7.1 / FR-15)
+    the source workspaces live under ``<KANON_HOME>/store/.kanon-data/``, so the
+    package is created there (KANON_HOME must be set by the caller).
 
     Args:
-        base_dir: Project root directory.
         source_name: Name of the source that owns the package.
         package_name: Name of the package directory to create.
     """
-    pkg_dir = base_dir / ".kanon-data" / "sources" / source_name / ".packages" / package_name
+    store = resolve_workspace_base_dir()
+    pkg_dir = store / ".kanon-data" / "sources" / source_name / ".packages" / package_name
     pkg_dir.mkdir(parents=True, exist_ok=True)
     (pkg_dir / "README.md").write_text(f"# {package_name}\n")
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: parse failure in .kanon exits 1 with parse error message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -132,7 +130,7 @@ class TestParseFailureExitsOne:
         kanonenv = _write_kanonenv(tmp_path, "KANON_MARKETPLACE_INSTALL=false\n")
 
         with pytest.raises(SystemExit) as exc_info:
-            main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+            main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 when no sources are defined; got code {exc_info.value.code}"
@@ -148,9 +146,9 @@ class TestParseFailureExitsOne:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture,
     ) -> None:
-        """A .kanon source missing KANON_SOURCE_<name>_REVISION causes exit code 1.
+        """A .kanon source missing KANON_SOURCE_<name>_REF causes exit code 1.
 
-        An incomplete source definition (URL and PATH defined, REVISION absent)
+        An incomplete source definition (URL and PATH defined, REF absent)
         fails validation. The CLI must exit 1 with a clear error on stderr naming
         the missing variable.
         """
@@ -162,15 +160,13 @@ class TestParseFailureExitsOne:
         kanonenv = _write_kanonenv(tmp_path, content)
 
         with pytest.raises(SystemExit) as exc_info:
-            main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+            main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1, (
-            f"install must exit 1 when source REVISION is missing; got code {exc_info.value.code}"
+            f"install must exit 1 when source REF is missing; got code {exc_info.value.code}"
         )
         captured = capsys.readouterr()
-        assert "Error" in captured.err, (
-            f"stderr must contain 'Error' for a missing REVISION; got stderr={captured.err!r}"
-        )
+        assert "Error" in captured.err, f"stderr must contain 'Error' for a missing REF; got stderr={captured.err!r}"
 
     def test_missing_path_variable_exits_1_with_parse_error(
         self,
@@ -179,18 +175,18 @@ class TestParseFailureExitsOne:
     ) -> None:
         """A .kanon source missing KANON_SOURCE_<name>_PATH causes exit code 1.
 
-        An incomplete source definition (URL and REVISION defined, PATH absent)
+        An incomplete source definition (URL and REF defined, PATH absent)
         fails validation. The CLI must exit 1 with an error on stderr.
         """
         content = (
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_incomplete_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_incomplete_REVISION=main\n"
+            "KANON_SOURCE_incomplete_REF=main\n"
         )
         kanonenv = _write_kanonenv(tmp_path, content)
 
         with pytest.raises(SystemExit) as exc_info:
-            main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+            main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 when source PATH is missing; got code {exc_info.value.code}"
@@ -201,8 +197,8 @@ class TestParseFailureExitsOne:
     @pytest.mark.parametrize(
         "missing_suffix,kept_suffixes",
         [
-            ("_REVISION", ("_URL", "_PATH")),
-            ("_PATH", ("_URL", "_REVISION")),
+            ("_REF", ("_URL", "_PATH")),
+            ("_PATH", ("_URL", "_REF")),
         ],
     )
     def test_parse_error_output_goes_to_stderr_not_stdout(
@@ -221,14 +217,14 @@ class TestParseFailureExitsOne:
             var = f"KANON_SOURCE_src{suffix}"
             if suffix == "_URL":
                 lines.append(f"{var}=https://example.com/repo.git\n")
-            elif suffix == "_REVISION":
+            elif suffix == "_REF":
                 lines.append(f"{var}=main\n")
             elif suffix == "_PATH":
                 lines.append(f"{var}=repo-specs/manifest.xml\n")
         kanonenv = _write_kanonenv(tmp_path, "".join(lines))
 
         with pytest.raises(SystemExit) as exc_info:
-            main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+            main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
@@ -236,11 +232,6 @@ class TestParseFailureExitsOne:
         assert "Error" not in captured.out, (
             f"Error must not appear on stdout (AC-CHANNEL-001); got stdout={captured.out!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: git sync failure exits 1 with actionable message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -274,7 +265,7 @@ class TestGitSyncFailureExitsOne:
                     side_effect=RepoCommandError("network timeout"),
                 ),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1, f"install must exit 1 on repo_sync failure; got code {exc_info.value.code}"
 
@@ -299,7 +290,7 @@ class TestGitSyncFailureExitsOne:
                     side_effect=RepoCommandError("remote: authentication required"),
                 ),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         captured = capsys.readouterr()
         assert "Error" in captured.err, f"stderr must contain 'Error' when repo_sync fails; got stderr={captured.err!r}"
@@ -325,7 +316,7 @@ class TestGitSyncFailureExitsOne:
                     side_effect=RepoCommandError("connection refused"),
                 ),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         captured = capsys.readouterr()
         assert "Error" not in captured.out, (
@@ -354,7 +345,7 @@ class TestGitSyncFailureExitsOne:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1, f"install must exit 1 on repo_init failure; got code {exc_info.value.code}"
         captured = capsys.readouterr()
@@ -393,16 +384,11 @@ class TestGitSyncFailureExitsOne:
                     side_effect=RepoCommandError(error_message),
                 ),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 for error {error_message!r}; got code {exc_info.value.code}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: duplicate path collision across sources exits 1 with diagnostic
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -415,6 +401,18 @@ class TestDuplicatePathCollisionExitsOne:
     sources.
     """
 
+    @pytest.fixture(autouse=True)
+    def _isolated_store(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Pin KANON_HOME to a per-test store so populated packages and install agree.
+
+        In the 3.0.0 store model install materialises source workspaces under
+        ``<KANON_HOME>/store``; this fixture pins KANON_HOME so
+        ``_populate_source_package`` writes where install reads.
+        """
+        kanon_home = tmp_path / "home"
+        kanon_home.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+
     def test_collision_between_two_sources_exits_1(
         self,
         tmp_path: pathlib.Path,
@@ -426,8 +424,8 @@ class TestDuplicatePathCollisionExitsOne:
         this collision and exit 1, not silently overwrite the first symlink.
         """
         kanonenv = _write_kanonenv(tmp_path, _valid_two_source_content("alpha", "bravo"))
-        _populate_source_package(tmp_path, "alpha", "shared-pkg")
-        _populate_source_package(tmp_path, "bravo", "shared-pkg")
+        _populate_source_package("alpha", "shared-pkg")
+        _populate_source_package("bravo", "shared-pkg")
 
         with pytest.raises(SystemExit) as exc_info:
             with (
@@ -435,7 +433,7 @@ class TestDuplicatePathCollisionExitsOne:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1, f"install must exit 1 on package collision; got code {exc_info.value.code}"
 
@@ -450,8 +448,8 @@ class TestDuplicatePathCollisionExitsOne:
         from the error message alone.
         """
         kanonenv = _write_kanonenv(tmp_path, _valid_two_source_content("alpha", "bravo"))
-        _populate_source_package(tmp_path, "alpha", "collision-pkg")
-        _populate_source_package(tmp_path, "bravo", "collision-pkg")
+        _populate_source_package("alpha", "collision-pkg")
+        _populate_source_package("bravo", "collision-pkg")
 
         with pytest.raises(SystemExit):
             with (
@@ -459,7 +457,7 @@ class TestDuplicatePathCollisionExitsOne:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         captured = capsys.readouterr()
         assert "collision-pkg" in captured.err, (
@@ -477,8 +475,8 @@ class TestDuplicatePathCollisionExitsOne:
         .kanon source definitions to reconcile.
         """
         kanonenv = _write_kanonenv(tmp_path, _valid_two_source_content("alpha", "bravo"))
-        _populate_source_package(tmp_path, "alpha", "conflict-tool")
-        _populate_source_package(tmp_path, "bravo", "conflict-tool")
+        _populate_source_package("alpha", "conflict-tool")
+        _populate_source_package("bravo", "conflict-tool")
 
         with pytest.raises(SystemExit):
             with (
@@ -486,7 +484,7 @@ class TestDuplicatePathCollisionExitsOne:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         captured = capsys.readouterr()
         assert "alpha" in captured.err, f"Diagnostic must name source 'alpha'; got stderr={captured.err!r}"
@@ -503,8 +501,8 @@ class TestDuplicatePathCollisionExitsOne:
         output only.
         """
         kanonenv = _write_kanonenv(tmp_path, _valid_two_source_content("alpha", "bravo"))
-        _populate_source_package(tmp_path, "alpha", "channel-test-pkg")
-        _populate_source_package(tmp_path, "bravo", "channel-test-pkg")
+        _populate_source_package("alpha", "channel-test-pkg")
+        _populate_source_package("bravo", "channel-test-pkg")
 
         with pytest.raises(SystemExit):
             with (
@@ -512,7 +510,7 @@ class TestDuplicatePathCollisionExitsOne:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         captured = capsys.readouterr()
         assert "channel-test-pkg" in captured.err, (
@@ -542,8 +540,8 @@ class TestDuplicatePathCollisionExitsOne:
         regardless of the specific package name.
         """
         kanonenv = _write_kanonenv(tmp_path, _valid_two_source_content("alpha", "bravo"))
-        _populate_source_package(tmp_path, "alpha", colliding_pkg)
-        _populate_source_package(tmp_path, "bravo", colliding_pkg)
+        _populate_source_package("alpha", colliding_pkg)
+        _populate_source_package("bravo", colliding_pkg)
 
         with pytest.raises(SystemExit) as exc_info:
             with (
@@ -551,7 +549,7 @@ class TestDuplicatePathCollisionExitsOne:
                 patch("kanon_cli.repo.repo_envsubst"),
                 patch("kanon_cli.repo.repo_sync"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 for collision on '{colliding_pkg}'; got code {exc_info.value.code}"

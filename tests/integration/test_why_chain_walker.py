@@ -22,7 +22,7 @@ import textwrap
 import pytest
 
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     IncludeEntry,
     Lockfile,
     ProjectEntry,
@@ -32,27 +32,17 @@ from kanon_cli.core.lockfile import (
 from kanon_cli.core.url import canonicalize_repo_url
 
 
-# ---------------------------------------------------------------------------
-# Fixture constants
-# ---------------------------------------------------------------------------
-
 _SOURCE_NAME = "FOO"
 _PROJECT_NAME = "baz"
 _PROJECT_URL = "https://github.com/org/baz"
 _INCLUDE_NAME = "bar"
 _INCLUDE_PATH = "repo-specs/bar.xml"
 
-# Fixed SHAs used throughout the fixture -- 40 hex chars each
+
 _SOURCE_SHA = "a" * 40
 _INCLUDE_SHA = "c" * 40
 _PROJECT_SHA = "b" * 40
-_CATALOG_SHA = "f" * 40
 _KANON_HASH = "sha256:" + "a" * 64
-
-
-# ---------------------------------------------------------------------------
-# Override conftest autouse fixtures (not needed for this test)
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)
@@ -65,11 +55,6 @@ def _mock_resolve_ref_to_sha():
 def _mock_check_sha_reachable():
     """Override: this test does not install anything -- no git calls needed."""
     yield
-
-
-# ---------------------------------------------------------------------------
-# Fixture: .kanon and .kanon.lock in a tmp directory
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
@@ -88,33 +73,26 @@ def why_fixture(tmp_path: pathlib.Path):
     """
     kanon_file = tmp_path / ".kanon"
     kanon_content = textwrap.dedent(f"""\
-        GITBASE=https://github.com
-        CLAUDE_MARKETPLACES_DIR=/tmp/mkts
-        KANON_MARKETPLACE_INSTALL=false
         KANON_SOURCE_{_SOURCE_NAME}_URL=https://github.com/org/catalog
-        KANON_SOURCE_{_SOURCE_NAME}_REVISION=main
+        KANON_SOURCE_{_SOURCE_NAME}_REF=main
         KANON_SOURCE_{_SOURCE_NAME}_PATH=./foo
+        KANON_SOURCE_{_SOURCE_NAME}_NAME={_SOURCE_NAME}
+        KANON_SOURCE_{_SOURCE_NAME}_GITBASE=https://example.com
     """)
     kanon_file.write_text(kanon_content)
     kanon_file.chmod(0o644)
 
     lockfile = Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash=_KANON_HASH,
-        catalog=CatalogBlock(
-            source="https://github.com/org/catalog@main",
-            url="https://github.com/org/catalog",
-            revision_spec="main",
-            resolved_ref="refs/heads/main",
-            resolved_sha=_CATALOG_SHA,
-        ),
         sources=[
             SourceEntry(
+                alias=_SOURCE_NAME,
                 name=_SOURCE_NAME,
                 url="https://github.com/org/catalog",
-                revision_spec="main",
+                ref_spec="main",
                 resolved_ref="refs/heads/main",
                 resolved_sha=_SOURCE_SHA,
                 path="./foo",
@@ -132,7 +110,7 @@ def why_fixture(tmp_path: pathlib.Path):
                         name=_PROJECT_NAME,
                         url=_PROJECT_URL,
                         canonical_url=canonicalize_repo_url(_PROJECT_URL),
-                        revision_spec="main",
+                        ref_spec="main",
                         resolved_ref="refs/heads/main",
                         resolved_sha=_PROJECT_SHA,
                     )
@@ -153,11 +131,6 @@ def why_fixture(tmp_path: pathlib.Path):
         "include_path": _INCLUDE_PATH,
         "source_name": _SOURCE_NAME,
     }
-
-
-# ---------------------------------------------------------------------------
-# End-to-end tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -196,11 +169,12 @@ class TestWhyChainWalkerIntegration:
         )
 
     def test_single_chain_via_subprocess(self, why_fixture: dict) -> None:
-        """kanon why <project-url> prints annotation line + one chain line (AC-TEST-002, AC-TEST-003).
+        """kanon why <project-url> prints annotation + alias-render + one chain line (AC-TEST-002, AC-TEST-003).
 
-        After the match-annotation enhancement the output is two non-empty lines:
+        After the match-annotation and alias-render enhancements the output is three non-empty lines:
           Line 1: matched <category> '<token>'
-          Line 2: <chain>
+          Line 2: <alias> -> <name> from <url>@<ref>
+          Line 3: <chain>
         """
         result = self._run_why(why_fixture)
 
@@ -209,22 +183,25 @@ class TestWhyChainWalkerIntegration:
         )
 
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) == 2, f"Expected 2 output lines (annotation + chain), got {len(lines)}: {lines!r}"
+        assert len(lines) == 3, (
+            f"Expected 3 output lines (annotation + alias-render + chain), got {len(lines)}: {lines!r}"
+        )
         assert lines[0].startswith("matched "), (
             f"First line must be the match annotation starting with 'matched ', got: {lines[0]!r}"
         )
 
     def test_chain_contains_source_name(self, why_fixture: dict) -> None:
-        """Output chain line (second line) must start with the top-level source name (AC-FUNC-002).
+        """Output chain line (last line) must start with the top-level source name (AC-FUNC-002).
 
-        The first output line is the match annotation; the second is the chain.
+        The first output line is the match annotation, then one alias-render line
+        (<alias> -> <name> from <url>@<ref>), and the last line is the chain.
         """
         result = self._run_why(why_fixture)
 
         assert result.returncode == 0
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) >= 2, f"Expected annotation + chain line, got: {lines!r}"
-        chain_line = lines[1]
+        assert len(lines) >= 3, f"Expected annotation + alias-render + chain line, got: {lines!r}"
+        chain_line = lines[-1]
         assert chain_line.startswith(why_fixture["source_name"]), (
             f"Chain line must start with source name {why_fixture['source_name']!r}, got: {chain_line!r}"
         )
@@ -267,9 +244,10 @@ class TestWhyChainWalkerIntegration:
     def test_scp_url_canonicalization_matches(self, why_fixture: dict) -> None:
         """SCP shorthand git@github.com:org/baz.git matches the https:// project URL (AC-FUNC-003).
 
-        After the match-annotation enhancement the output is two non-empty lines:
+        After the match-annotation and alias-render enhancements the output is three non-empty lines:
           Line 1: matched <category> '<token>'
-          Line 2: <chain>
+          Line 2: <alias> -> <name> from <url>@<ref>
+          Line 3: <chain>
         """
         scp_url = "git@github.com:org/baz.git"
         result = self._run_why(why_fixture, url=scp_url)
@@ -278,7 +256,7 @@ class TestWhyChainWalkerIntegration:
             f"kanon why with SCP URL must exit 0\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) == 2, f"Expected annotation + chain line, got {len(lines)}: {lines!r}"
+        assert len(lines) == 3, f"Expected annotation + alias-render + chain line, got {len(lines)}: {lines!r}"
         assert lines[0].startswith("matched "), f"First line must be the match annotation, got: {lines[0]!r}"
 
     def test_full_ac_cycle_001(self, why_fixture: dict) -> None:
@@ -288,9 +266,10 @@ class TestWhyChainWalkerIntegration:
         sha=ccc...) and project baz (sha=bbb...) in its lockfile entry.
         .kanon references FOO. .kanon.lock pins every node.
         Invoke: kanon why <baz-url>.
-        Assert: stdout contains exactly two non-empty lines:
+        Assert: stdout contains exactly three non-empty lines:
           Line 1: match annotation (e.g. "matched url '<canonical-url>'")
-          Line 2: the full include-node chain FOO -> repo-specs/bar.xml@<sha> -> baz@<sha>
+          Line 2: alias-render "FOO -> FOO from <url>@<ref>"
+          Line 3: the full include-node chain FOO -> repo-specs/bar.xml@<sha> -> baz@<sha>
         with exit code 0.
         """
         result = self._run_why(why_fixture)
@@ -298,33 +277,32 @@ class TestWhyChainWalkerIntegration:
         assert result.returncode == 0, f"Exit code must be 0\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
 
         lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-        assert len(lines) == 2, f"Expected annotation + chain line (2 lines), got: {lines!r}"
+        assert len(lines) == 3, f"Expected annotation + alias-render + chain line (3 lines), got: {lines!r}"
 
-        # Line 0 is the match annotation
         annotation_line = lines[0]
         assert annotation_line.startswith("matched "), (
             f"First line must be the match annotation, got: {annotation_line!r}"
         )
 
-        # Line 1 is the chain
-        chain_line = lines[1]
+        alias_render_line = lines[1]
+        assert alias_render_line.startswith(f"{_SOURCE_NAME} -> "), (
+            f"Second line must be the alias-render for {_SOURCE_NAME!r}, got: {alias_render_line!r}"
+        )
 
-        # Source at start
+        chain_line = lines[2]
+
         assert chain_line.startswith(_SOURCE_NAME), f"Chain must start with '{_SOURCE_NAME}', got: {chain_line!r}"
 
-        # Include node segment: <include-path>@<include-sha>
         expected_include_segment = f"{_INCLUDE_PATH}@{why_fixture['include_sha']}"
         assert expected_include_segment in chain_line, (
             f"Chain line must contain include-node segment '{expected_include_segment}', got: {chain_line!r}"
         )
 
-        # Project name with its SHA at end
         expected_project_segment = f"{_PROJECT_NAME}@{_PROJECT_SHA}"
         assert chain_line.endswith(expected_project_segment), (
             f"Chain must end with '{expected_project_segment}', got: {chain_line!r}"
         )
 
-        # Full chain shape: FOO -> repo-specs/bar.xml@<sha> -> baz@<sha>
         expected_chain = (
             f"{_SOURCE_NAME} -> {_INCLUDE_PATH}@{why_fixture['include_sha']} -> {_PROJECT_NAME}@{_PROJECT_SHA}"
         )

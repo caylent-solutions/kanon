@@ -1,17 +1,3 @@
-# Copyright (C) 2008 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the command.py module."""
 
 import optparse
@@ -274,7 +260,6 @@ class TestCommandOptions(unittest.TestCase):
         cmd = command.Command()
         parser = optparse.OptionParser()
 
-        # Should not raise
         cmd._Options(parser)
 
 
@@ -439,7 +424,6 @@ class TestCommandValidateOptions(unittest.TestCase):
         cmd = command.Command()
         mock_opt = mock.Mock()
 
-        # Should not raise
         cmd.ValidateOptions(mock_opt, [])
 
 
@@ -518,7 +502,6 @@ class TestCommandInitParallelWorker(unittest.TestCase):
         """Test _InitParallelWorker without initializer."""
         test_context = {}
 
-        # Should not raise
         command.Command._InitParallelWorker(test_context, None)
 
 
@@ -929,8 +912,6 @@ class TestCommandGetProjects(unittest.TestCase):
         mock_manifest.GetGroupsStr.return_value = "default"
         cmd.manifest = mock_manifest
 
-        # When MatchesGroups returns False, the project is filtered out in the
-        # list comprehension, so NoSuchProjectError is raised (not InvalidProjectGroupsError)
         with self.assertRaises(NoSuchProjectError):
             cmd.GetProjects(["project1"])
 

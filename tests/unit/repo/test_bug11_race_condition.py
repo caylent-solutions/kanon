@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 11: Race condition on concurrent git ls-remote.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 11 -- Race condition on
@@ -69,11 +55,6 @@ def _make_success_result(tags=("refs/tags/dev/concurrent/2.0.0", "refs/tags/dev/
     return result
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Transient concurrent failure is retried and succeeds
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_concurrent_transient_failure_is_retried(monkeypatch):
     """AC-TEST-001: Transient failure during concurrent access is retried.
@@ -95,10 +76,6 @@ def test_concurrent_transient_failure_is_retried(monkeypatch):
 
     project = _make_project()
 
-    # Simulate transient concurrent access failure (e.g., connection reset
-    # due to another process holding the git lock).
-    # revisionExpr is ~=2.0.0 (3-part compatible release: >=2.0.0, ==2.0.*).
-    # Both 2.0.0 and 2.1.0 are available; only 2.0.0 satisfies ~=2.0.0.
     concurrent_failure = _make_failure_result("Connection reset by peer: concurrent access conflict")
     success = _make_success_result()
 
@@ -114,11 +91,6 @@ def test_concurrent_transient_failure_is_retried(monkeypatch):
         f"Expected subprocess.run to be called exactly 2 times (1 failure + 1 success "
         f"to handle concurrent transient error), but got {mock_run.call_count}."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Retry log message is produced on concurrent transient failure
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -155,7 +127,6 @@ def test_retry_log_message_produced_on_concurrent_failure(monkeypatch):
         "failure retry, but it was never called."
     )
 
-    # Build formatted messages from all warning calls.
     all_calls = mock_warning.call_args_list
     formatted_messages = []
     for call in all_calls:

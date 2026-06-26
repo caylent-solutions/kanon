@@ -19,20 +19,10 @@ from kanon_cli.cli import build_parser
 from kanon_cli.commands.completion import handle, register
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_subparsers() -> "argparse._SubParsersAction[argparse.ArgumentParser]":
     """Return a fresh subparsers action on a minimal ArgumentParser."""
     parent = argparse.ArgumentParser(prog="kanon")
     return parent.add_subparsers(dest="command")
-
-
-# ---------------------------------------------------------------------------
-# register() -- structural tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -87,11 +77,6 @@ def test_register_rejects_missing_shell() -> None:
     assert exc_info.value.code != 0
 
 
-# ---------------------------------------------------------------------------
-# handle() -- output contract tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize("shell", ["bash", "zsh"])
 def test_handle_writes_non_empty_script_to_stdout(shell: str) -> None:
@@ -103,7 +88,6 @@ def test_handle_writes_non_empty_script_to_stdout(shell: str) -> None:
     with patch("sys.stdout", captured):
         result = handle(args)
 
-    # Returns None on success (consistent with other command handlers)
     assert result is None
     output = captured.getvalue()
     assert len(output) > 0, f"Expected non-empty output for shell={shell!r}"
@@ -151,5 +135,5 @@ def test_handle_output_contains_shell_keyword(shell: str) -> None:
         handle(args)
 
     output = captured.getvalue()
-    # shtab-generated scripts include the shell name in the header/function names
+
     assert shell in output.lower(), f"Expected shell={shell!r} to appear in output"

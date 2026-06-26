@@ -29,10 +29,6 @@ import pytest
 from kanon_cli.repo import manifest_xml
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern in test_xml_copyfile_roundtrip.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -103,10 +99,6 @@ def _get_project(manifest: manifest_xml.XmlManifest, project_name: str):
     return projects_by_name[project_name]
 
 
-# ---------------------------------------------------------------------------
-# Fixture XML content for <linkfile> round-trip tests
-# ---------------------------------------------------------------------------
-
 _FIXTURE_XML = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     "<manifest>\n"
@@ -140,11 +132,6 @@ _FIXTURE_LINKFILE_WITH_EXCLUDE_XML = (
     "  </project>\n"
     "</manifest>\n"
 )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 + AC-FINAL-010: Real parse + model verification
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -285,11 +272,6 @@ def test_linkfile_with_exclude_stores_correct_members(tmp_path: pathlib.Path) ->
     linkfile = project.linkfiles[0]
     assert ".git" in linkfile.exclude, f"Expected '.git' in linkfile.exclude but got: {linkfile.exclude!r}"
     assert "build" in linkfile.exclude, f"Expected 'build' in linkfile.exclude but got: {linkfile.exclude!r}"
-
-
-# ---------------------------------------------------------------------------
-# Round-trip: parse + ToXml preserves structural elements
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

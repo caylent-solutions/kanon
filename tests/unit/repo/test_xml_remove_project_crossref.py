@@ -37,10 +37,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- same pattern as other test_xml_remove_project_*.py files
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -108,11 +104,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     repodir = _make_repo_dir(tmp_path)
     manifest_file = _write_manifest(repodir, xml_content)
     return _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Cross-element reference validation for <remove-project>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -434,11 +425,6 @@ class TestRemoveProjectCrossElementReferences:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Duplicate-element rules for <remove-project>
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRemoveProjectDuplicateRules:
     """AC-TEST-002: Duplicate-element rules for <remove-project> surface clear errors.
@@ -659,11 +645,6 @@ class TestRemoveProjectDuplicateRules:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <remove-project> in an unexpected parent raises or is ignored
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRemoveProjectUnexpectedParent:
     """AC-TEST-003: <remove-project> in unexpected context raises or is ignored per spec.
@@ -871,11 +852,6 @@ class TestRemoveProjectUnexpectedParent:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Parser enforces all cross-element and uniqueness rules at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRemoveProjectCrossRefParseTimeEnforcement:
     """AC-FUNC-001: All cross-element and uniqueness rules are enforced at parse time.
@@ -1010,11 +986,6 @@ class TestRemoveProjectCrossRefParseTimeEnforcement:
                 '  <remove-project name="platform/core" />\n'
                 "</manifest>\n",
             )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

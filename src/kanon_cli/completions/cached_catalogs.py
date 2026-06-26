@@ -9,7 +9,7 @@ Public API::
 
 Resolution chain:
 1. If KANON_COMPLETION_ENABLED=0, return [] immediately.
-2. Resolve ${KANON_CACHE_DIR} and check for catalogs/ subdirectory.
+2. Resolve the cache directory (<KANON_HOME>/cache) and check for a catalogs/ subdirectory.
 3. If catalogs/ does not exist, return [] (first-run / empty cache -- not an error).
 4. Enumerate immediate subdirectories of catalogs/; for each read origin.txt.
 5. Malformed origin.txt entries (empty, no '@') are skipped with a structured log entry.
@@ -35,11 +35,6 @@ from kanon_cli.constants import KANON_COMPLETION_ENABLED
 _COMPLETER_NAME = "__complete_cached_catalogs"
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
 def _read_origin(origin_path: Path) -> str | None:
     """Read and validate origin.txt for a single catalog cache entry.
 
@@ -54,7 +49,7 @@ def _read_origin(origin_path: Path) -> str | None:
     Returns:
         The stripped url@ref string if valid, or None if malformed.
     """
-    content = origin_path.read_text().strip()
+    content = origin_path.read_text(encoding="utf-8").strip()
     if not content:
         return None
     if "@" not in content:
@@ -89,7 +84,6 @@ def _walk_catalogs(catalogs_dir: Path) -> tuple[list[str], list[str]]:
             continue
         origin_path = sha_dir / "origin.txt"
         if not origin_path.is_file():
-            # No origin.txt -- silently skip (spec: only origin.txt is read)
             continue
         try:
             value = _read_origin(origin_path)
@@ -106,17 +100,12 @@ def _walk_catalogs(catalogs_dir: Path) -> tuple[list[str], list[str]]:
     return sorted(origins), malformed
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def complete(current_token: str) -> list[str]:
     """Return cached catalog url@ref strings that start with current_token.
 
     Resolution contract:
     1. KANON_COMPLETION_ENABLED=0 -> return [].
-    2. Resolve ${KANON_CACHE_DIR}/catalogs/ directory.
+    2. Resolve the <KANON_HOME>/cache/catalogs/ directory.
     3. Missing or empty catalogs/ -> return [] (not an error; no log entry).
     4. Walk immediate sha-named subdirs; read origin.txt from each.
     5. Malformed origin.txt -> skip + log.
@@ -142,11 +131,6 @@ def complete(current_token: str) -> list[str]:
         )
 
     return [o for o in origins if o.startswith(current_token)]
-
-
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
 
 
 def register(

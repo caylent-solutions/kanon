@@ -19,7 +19,7 @@ Fixture design
   ``refs/tags/<expected_tag>`` in its output.
 
 Verification: after ``kanon install`` resolves a ``.kanon``
-``KANON_SOURCE_pep_REVISION=<constraint>`` to a KS-fixture tag, running
+``KANON_SOURCE_pep_REF=<constraint>`` to a KS-fixture tag, running
 ``kanon repo manifest --revision-as-tag`` inside the synced source dir
 produces XML with ``revision="refs/tags/<expected_tag>"`` for the catalog
 project.
@@ -55,6 +55,7 @@ Scenarios automated:
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pytest
@@ -69,18 +70,8 @@ from tests.scenarios.conftest import (
     xml_escape,
 )
 
-# ---------------------------------------------------------------------------
-# Fixture constants
-# ---------------------------------------------------------------------------
 
-# The 7-tag set shared by both the KS-fixture manifest repo and the catalog
-# content repo.  Every test resolves its .kanon constraint to one of these.
 _KS_TAGS = ("1.0.0", "1.0.1", "1.1.0", "1.2.0", "2.0.0", "2.1.0", "3.0.0")
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _make_ks_catalog_repo(parent: pathlib.Path) -> pathlib.Path:
@@ -99,9 +90,9 @@ def _make_ks_catalog_repo(parent: pathlib.Path) -> pathlib.Path:
         (work / "version.txt").write_text(tag)
         run_git(["add", "version.txt"], work)
         run_git(["commit", "-m", f"version {tag}"], work)
-        # Annotated tag: enables ``git describe --exact-match HEAD``.
+
         run_git(["tag", "-a", "-m", f"release {tag}", tag], work)
-        # Branch with the tag name: enables plain ``revision="1.0.0"`` forms.
+
         run_git(["branch", tag], work)
     return clone_as_bare(work, bare)
 
@@ -136,11 +127,9 @@ def _make_ks_fix_repo(
         (work / "default.xml").write_text(default_xml)
         run_git(["add", "default.xml"], work)
         run_git(["commit", "-m", f"version {tag}"], work)
-        # Annotated tag: enables ``git describe --exact-match HEAD`` on the
-        # KS-fixture source itself (used when kanon checks out the manifest).
+
         run_git(["tag", "-a", "-m", f"release {tag}", tag], work)
-        # Branch with tag name: lets plain REVISION strings like ``1.0.0``
-        # resolve as ``refs/heads/1.0.0`` in the KS-fixture source.
+
         run_git(["branch", tag], work)
 
     return clone_as_bare(work, bare)
@@ -166,16 +155,11 @@ def _build_ks_fixtures(base: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     manifest_dir.mkdir()
 
     catalog_bare = _make_ks_catalog_repo(content_dir)
-    # repo appends ``<project-name>.git`` to the fetch URL.
+
     catalog_fetch_url = content_dir.as_uri()
     ks_fix_bare = _make_ks_fix_repo(manifest_dir, catalog_fetch_url)
 
     return ks_fix_bare, catalog_bare
-
-
-# ---------------------------------------------------------------------------
-# Core run helper
-# ---------------------------------------------------------------------------
 
 
 def _run_ks(
@@ -206,7 +190,8 @@ def _run_ks(
         f"kanon install exited {install_result.returncode}\n"
         f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
     )
-    source_dir = work_dir / ".kanon-data" / "sources" / "pep"
+    store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+    source_dir = store_base / ".kanon-data" / "sources" / "pep"
     assert source_dir.is_dir(), f"source dir missing: {source_dir}"
     manifest_result = run_kanon("repo", "manifest", "--revision-as-tag", cwd=source_dir)
     combined = manifest_result.stdout + manifest_result.stderr
@@ -217,21 +202,11 @@ def _run_ks(
     )
 
 
-# ---------------------------------------------------------------------------
-# Class-scoped fixture
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture(scope="class")
 def ks_repos(tmp_path_factory: pytest.TempPathFactory) -> tuple[pathlib.Path, pathlib.Path]:
     """Class-scoped (ks_fix_bare, catalog_bare) built once for all TestKS methods."""
     base = tmp_path_factory.mktemp("ks_fixtures")
     return _build_ks_fixtures(base)
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario
@@ -372,9 +347,9 @@ class TestKS:
     def test_ks_24_env_var_override_revision(
         self, tmp_path: pathlib.Path, ks_repos: tuple[pathlib.Path, pathlib.Path]
     ) -> None:
-        """KS-24: env-var KANON_SOURCE_pep_REVISION overrides the .kanon file value.
+        """KS-24: env-var KANON_SOURCE_pep_REF overrides the .kanon file value.
 
-        The .kanon declares ``REVISION=main``; the env var supplies
+        The .kanon declares ``REF=main``; the env var supplies
         ``refs/tags/~=1.0.0`` which resolves to 1.0.1.  Pass criteria:
         ``kanon install`` exits 0 and ``--revision-as-tag`` shows
         ``refs/tags/1.0.1``.
@@ -390,7 +365,7 @@ class TestKS:
         install_result = kanon_install(
             work_dir,
             extra_env={
-                "KANON_SOURCE_pep_REVISION": "refs/tags/~=1.0.0",
+                "KANON_SOURCE_pep_REF": "refs/tags/~=1.0.0",
                 "KANON_CATALOG_SOURCE": catalog_source,
                 "KANON_ALLOW_INSECURE_REMOTES": "1",
             },
@@ -399,7 +374,8 @@ class TestKS:
             f"kanon install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
-        source_dir = work_dir / ".kanon-data" / "sources" / "pep"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        source_dir = store_base / ".kanon-data" / "sources" / "pep"
         assert source_dir.is_dir(), f"source dir missing: {source_dir}"
         manifest_result = run_kanon("repo", "manifest", "--revision-as-tag", cwd=source_dir)
         combined = manifest_result.stdout + manifest_result.stderr
@@ -414,7 +390,7 @@ class TestKS:
     ) -> None:
         """KS-25: undefined shell variable in REVISION causes non-zero exit naming the var.
 
-        The .kanon stores ``REVISION=${UNDEFINED_KS_VAR}``.  Pass criteria:
+        The .kanon stores ``REF=${UNDEFINED_KS_VAR}``.  Pass criteria:
         non-zero exit code; ``UNDEFINED_KS_VAR`` appears in stderr.
         """
         ks_fix, _ = ks_repos
@@ -422,7 +398,7 @@ class TestKS:
         work_dir.mkdir()
         (work_dir / ".kanon").write_text(
             f"KANON_SOURCE_pep_URL={ks_fix.as_uri()}\n"
-            "KANON_SOURCE_pep_REVISION=${UNDEFINED_KS_VAR}\n"
+            "KANON_SOURCE_pep_REF=${UNDEFINED_KS_VAR}\n"
             "KANON_SOURCE_pep_PATH=default.xml\n"
         )
         catalog_source = f"{ks_fix.as_uri()}@main"

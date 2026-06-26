@@ -1,4 +1,4 @@
-"""Integration tests for `kanon list --all-versions` malformed-revision resilience.
+"""Integration tests for `kanon search -A/--all` malformed-revision resilience.
 
 Covers DEFECT-006: `_walk_all_versions` aborts on the first malformed
 historical revision (raises CatalogMetadataParseError and exits 1) instead of
@@ -34,14 +34,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Git helper constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Well-formed marketplace XML template -- all required fields present.
+
 _WELL_FORMED_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -58,8 +54,7 @@ _WELL_FORMED_XML_TEMPLATE = textwrap.dedent("""\
     </manifest>
 """)
 
-# Malformed marketplace XML -- <name> element is omitted so _parse_catalog_metadata
-# raises CatalogMetadataParseError("... <name> is missing or whitespace-only ...").
+
 _MALFORMED_XML_NO_NAME_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -75,15 +70,8 @@ _MALFORMED_XML_NO_NAME_TEMPLATE = textwrap.dedent("""\
     </manifest>
 """)
 
-# Genuinely non-well-formed XML -- the parser raises XMLParseError (not just a
-# missing-name validation error). This template triggers the skip-with-warning
-# path regardless of any name-derivation logic.
+
 _UNPARSEABLE_XML_CONTENT = "<catalog-metadata><<not valid xml at all>>"
-
-
-# ---------------------------------------------------------------------------
-# Low-level git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -124,11 +112,6 @@ def _commit_and_tag(work_dir: pathlib.Path, tag: str, message: str) -> None:
     _git(["add", "-A"], cwd=work_dir)
     _git(["commit", "--allow-empty", "-m", message], cwd=work_dir)
     _git(["tag", "-a", tag, "-m", f"Release {tag}"], cwd=work_dir)
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _build_three_tag_repo_middle_malformed(
@@ -298,7 +281,7 @@ def _run_list_all_versions(
     bare_repo: pathlib.Path,
     extra_args: list[str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run `kanon list --all-versions` against a bare repo and return the process.
+    """Run `kanon search -A/--all` against a bare repo and return the process.
 
     KANON_ALLOW_INSECURE_REMOTES is set by the autouse fixture
     _default_allow_insecure_remotes so it is not set here.
@@ -315,8 +298,8 @@ def _run_list_all_versions(
         sys.executable,
         "-m",
         "kanon_cli",
-        "list",
-        "--all-versions",
+        "search",
+        "--all",
         "--no-limit",
         "--catalog-source",
         catalog_source,
@@ -334,14 +317,9 @@ def _run_list_all_versions(
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestAllVersionsResilience:
-    """DEFECT-006: `kanon list --all-versions` must tolerate genuinely unparseable revisions.
+    """DEFECT-006: `kanon search -A/--all` must tolerate genuinely unparseable revisions.
 
     A revision is considered malformed only when its XML is non-well-formed
     (the parser raises XMLParseError). Missing <name> is no longer malformed;
@@ -422,14 +400,9 @@ class TestAllVersionsResilience:
         )
 
 
-# ---------------------------------------------------------------------------
-# Tests: legacy flat-metadata exclusion and unparseable XML handling
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestAllVersionsLegacyExclusion:
-    """Legacy flat-metadata exclusion contract for kanon list --all-versions (E58-F1-S1-T1).
+    """Legacy flat-metadata exclusion contract for kanon search -A/--all (E58-F1-S1-T1).
 
     Old-scheme XMLs (lacking <catalog-metadata><name>) are SKIPPED from the per-entry
     version list.  A single diagnostic NOTE is emitted to stderr for each revision that

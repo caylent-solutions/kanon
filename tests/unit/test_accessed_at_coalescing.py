@@ -13,7 +13,7 @@ Parametrized cases covering every coalescing rule from spec Section 11.4:
 Mtime assertions use os.stat().st_mtime_ns (nanosecond granularity) to
 verify that the no-write case leaves the file physically untouched.
 
-All tests set KANON_CACHE_DIR to tmp_path so that _mkdir_secure's chmod
+All tests set KANON_HOME to tmp_path so that _mkdir_secure's chmod
 walk terminates at the tmp dir (which the test process owns), preventing
 PermissionError on /tmp.
 """
@@ -28,28 +28,16 @@ import pytest
 from kanon_cli.completions.cache import maybe_update_accessed_at
 
 
-# ---------------------------------------------------------------------------
-# Parametrized cases for every coalescing rule
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "prior_content, now, window, expected_return, expect_write",
     [
-        # AC-FUNC-001: missing file -> write + True
         (None, 1000, 60, True, True),
-        # AC-FUNC-002: within window: now - prior < window -> no write + False
         ("1000\n", 1030, 60, False, False),
-        # AC-FUNC-003: at exactly the window boundary: now - prior == window -> write + True
         ("1000\n", 1060, 60, True, True),
-        # AC-FUNC-004: past window: now - prior > window -> write + True
         ("1000\n", 1200, 60, True, True),
-        # AC-FUNC-005: clock skew: prior > now -> rewrite to now + True
         ("2000\n", 1000, 60, True, True),
-        # AC-FUNC-006: non-numeric content -> treated as missing, write + True
         ("not-a-number\n", 1000, 60, True, True),
-        # AC-FUNC-006: empty content -> treated as missing, write + True
         ("", 1000, 60, True, True),
     ],
 )
@@ -63,7 +51,7 @@ def test_maybe_update_accessed_at_parametrized(
     expect_write: bool,
 ) -> None:
     """maybe_update_accessed_at() follows the coalescing rules for each scenario."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     accessed_at_path = tmp_path / "accessed_at.txt"
@@ -79,23 +67,16 @@ def test_maybe_update_accessed_at_parametrized(
     assert result == expected_return
 
     if expect_write:
-        # File must exist and contain the new value.
         assert accessed_at_path.exists()
         written_value = int(accessed_at_path.read_text().strip())
         assert written_value == now
     else:
-        # File must NOT have been modified; mtime_ns must be unchanged.
         assert mtime_before is not None, "no-write case requires a pre-existing file"
         mtime_after = os.stat(accessed_at_path).st_mtime_ns
         assert mtime_after == mtime_before, (
             f"File mtime changed: before={mtime_before}, after={mtime_after} -- "
             "the coalescing rule should have suppressed the write"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: two back-to-back calls with the same `now` value
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -106,14 +87,13 @@ def test_two_back_to_back_calls_same_now(
     """AC-FUNC-007: first call writes (first-touch); second call with same now
     is within the coalesce window (delta == 0) and returns False without writing.
     """
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     accessed_at_path = tmp_path / "accessed_at.txt"
     now = 1000
     window = 60
 
-    # First call: file is missing -> should write and return True.
     result1 = maybe_update_accessed_at(accessed_at_path, now=now, coalesce_window_seconds=window)
     assert result1 is True
     assert accessed_at_path.exists()
@@ -121,17 +101,11 @@ def test_two_back_to_back_calls_same_now(
 
     mtime_after_first = os.stat(accessed_at_path).st_mtime_ns
 
-    # Second call with the same `now`: delta == 0 < window -> no write, False.
     result2 = maybe_update_accessed_at(accessed_at_path, now=now, coalesce_window_seconds=window)
     assert result2 is False
 
     mtime_after_second = os.stat(accessed_at_path).st_mtime_ns
     assert mtime_after_second == mtime_after_first, "Second back-to-back call should not have modified the file"
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: end-to-end cycle
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -143,25 +117,22 @@ def test_end_to_end_cycle(
     now=1000 then now=1030 (window=60); assert first wrote, second did not;
     then call with now=1100 and assert write happened.
     """
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
 
     accessed_at_path = tmp_path / "accessed_at.txt"
     window = 60
 
-    # Step 1: first call, file missing -> write 1000, return True.
     r1 = maybe_update_accessed_at(accessed_at_path, now=1000, coalesce_window_seconds=window)
     assert r1 is True
     assert int(accessed_at_path.read_text().strip()) == 1000
 
     mtime_after_1000 = os.stat(accessed_at_path).st_mtime_ns
 
-    # Step 2: second call, delta = 30 < 60 -> no write, return False.
     r2 = maybe_update_accessed_at(accessed_at_path, now=1030, coalesce_window_seconds=window)
     assert r2 is False
     assert os.stat(accessed_at_path).st_mtime_ns == mtime_after_1000
 
-    # Step 3: third call, delta = 100 >= 60 -> write 1100, return True.
     r3 = maybe_update_accessed_at(accessed_at_path, now=1100, coalesce_window_seconds=window)
     assert r3 is True
     assert int(accessed_at_path.read_text().strip()) == 1100

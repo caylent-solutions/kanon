@@ -1,5 +1,8 @@
+import sys
+
 import pytest
 
+import kanon_cli
 from kanon_cli.constants import (
     EXIT_CODE_DEPRECATED,
     KANON_LIST_LIMIT,
@@ -10,6 +13,29 @@ from kanon_cli.constants import (
     TAG_ERROR_DISPLAY_CAP,
 )
 
+_CONSTANTS_MODULE = "kanon_cli.constants"
+
+
+@pytest.fixture(autouse=True)
+def restore_constants_module():
+    """Restore the original kanon_cli.constants module object after each test.
+
+    Several tests here delete kanon_cli.constants from sys.modules and re-import
+    it to pick up environment-driven values, which installs a fresh module
+    object. Modules that bound ``import kanon_cli.constants as constants`` at
+    import time (for example kanon_cli.core.cli_args) keep their reference to
+    the original object, so the fresh one leaks a divergent constants module
+    into later tests in the same pytest-xdist worker (under loadscope grouping),
+    making writes through the stale reference invisible. Snapshot the original
+    object and put it back in both sys.modules and the parent package attribute
+    so the swap cannot escape this test.
+    """
+    original = sys.modules.get(_CONSTANTS_MODULE)
+    yield
+    if original is not None:
+        sys.modules[_CONSTANTS_MODULE] = original
+        kanon_cli.constants = original
+
 
 @pytest.mark.unit
 class TestTagErrorDisplayCap:
@@ -19,6 +45,38 @@ class TestTagErrorDisplayCap:
 
     def test_tag_error_display_cap_value(self):
         assert TAG_ERROR_DISPLAY_CAP == 10
+
+
+@pytest.mark.unit
+class TestPinnableRevisionRejectsWildcard:
+    """AC-54: <project revision> is pinnable (tag/branch-ref/sha) -- the wildcard token is rejected.
+
+    The permissive _is_valid_revision mode (and its REVISION_WILDCARD constant)
+    are removed: the marketplace validator now accepts only a pinnable revision
+    (an exact refs/tags/<path>/<pep440> tag, a refs/heads/<name> branch ref, or a
+    40-hex commit SHA), rejecting the wildcard outright (spec Section 4.5 /
+    Section 6 / FR-22, AMENDED 2026-06-25).
+    """
+
+    def test_revision_wildcard_constant_is_removed(self) -> None:
+        import kanon_cli.constants as constants
+
+        assert not hasattr(constants, "REVISION_WILDCARD"), (
+            "REVISION_WILDCARD must be removed with the permissive revision mode."
+        )
+
+    def test_validator_rejects_wildcard_revisions(self) -> None:
+        from kanon_cli.core.marketplace_validator import _is_pinnable_revision
+
+        assert _is_pinnable_revision("*") is False
+        assert _is_pinnable_revision("refs/tags/ex/proj/*") is False
+
+    def test_validator_accepts_pinnable_revisions(self) -> None:
+        from kanon_cli.core.marketplace_validator import _is_pinnable_revision
+
+        assert _is_pinnable_revision("refs/tags/ex/proj/1.0.0") is True
+        assert _is_pinnable_revision("refs/heads/main") is True
+        assert _is_pinnable_revision("a" * 40) is True
 
 
 @pytest.mark.unit
@@ -46,7 +104,6 @@ class TestNoColorConstants:
 
         import kanon_cli.constants as constants
 
-        # Reload the module to get the initial default state
         importlib.reload(constants)
         assert constants._NO_COLOR_ACTIVE is False
 
@@ -91,7 +148,7 @@ class TestRecommendedCharRe:
             "foo!bar",
             "\u03b1pkg",
             "has#hash",
-            "foo\n",  # trailing newline: re.match() with $ would silently accept this
+            "foo\n",
         ],
     )
     def test_non_recommended_chars_produce_no_match(self, value: str) -> None:
@@ -106,7 +163,7 @@ class TestRecommendedCharRe:
 
     def test_pattern_anchored_at_start_and_end(self) -> None:
         """fullmatch() ensures the entire string is checked, so a bad char anywhere rejects the value."""
-        # A value that is clean at start but has a bad char later must not match
+
         assert RECOMMENDED_CHAR_RE.fullmatch("good.bad") is None
 
 
@@ -192,7 +249,6 @@ class TestKanonTreeNoFilterThreshold:
 
         import kanon_cli.constants as constants
 
-        # Ensure no override env var is set before checking the default.
         saved = os.environ.pop("KANON_TREE_NO_FILTER_THRESHOLD", None)
         importlib.reload(constants)
         try:
@@ -320,24 +376,44 @@ class TestKanonAddConstants:
         assert isinstance(KANON_HEADER_CLAUDE_MARKETPLACES_DIR, str)
         assert "${HOME}/.claude-marketplaces" in KANON_HEADER_CLAUDE_MARKETPLACES_DIR
 
-    def test_kanon_header_marketplace_install_exists(self) -> None:
-        """KANON_HEADER_MARKETPLACE_INSTALL constant exists and contains the template placeholder."""
-        from kanon_cli.constants import KANON_HEADER_MARKETPLACE_INSTALL
+    def test_global_marketplace_install_header_constant_removed(self) -> None:
+        """The global KANON_HEADER_MARKETPLACE_INSTALL constant is removed (spec
+        Section 0 item 8 / FR-17): marketplace install is now a per-dependency
+        KANON_SOURCE_<alias>_MARKETPLACE flag, so the global header template no
+        longer exists.
+        """
+        import kanon_cli.constants as constants
 
-        assert isinstance(KANON_HEADER_MARKETPLACE_INSTALL, str)
-        assert "<true|false>" in KANON_HEADER_MARKETPLACE_INSTALL
+        assert not hasattr(constants, "KANON_HEADER_MARKETPLACE_INSTALL")
+
+    def test_per_dependency_marketplace_constants_exist(self) -> None:
+        """The per-dependency marketplace constants replace the global header
+        (spec Section 4.2 / 5.1 / FR-17).
+        """
+        from kanon_cli.constants import (
+            CATALOG_TYPE_CLAUDE_MARKETPLACE,
+            MARKETPLACE_FLAG_TRUE,
+            SOURCE_MARKETPLACE_KEY,
+            SOURCE_MARKETPLACE_SUFFIX,
+            SOURCE_SUFFIXES,
+        )
+
+        assert SOURCE_MARKETPLACE_SUFFIX == "_MARKETPLACE"
+        assert SOURCE_MARKETPLACE_KEY == "marketplace"
+        assert MARKETPLACE_FLAG_TRUE == "true"
+        assert CATALOG_TYPE_CLAUDE_MARKETPLACE == "claude-marketplace"
+
+        assert SOURCE_MARKETPLACE_SUFFIX not in SOURCE_SUFFIXES
 
     def test_header_constants_are_non_empty(self) -> None:
-        """All three standard-header constants are non-empty strings."""
+        """The remaining standard-header constants are non-empty strings."""
         from kanon_cli.constants import (
             KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
             KANON_HEADER_GITBASE,
-            KANON_HEADER_MARKETPLACE_INSTALL,
         )
 
         assert len(KANON_HEADER_GITBASE) > 0
         assert len(KANON_HEADER_CLAUDE_MARKETPLACES_DIR) > 0
-        assert len(KANON_HEADER_MARKETPLACE_INSTALL) > 0
 
     def test_gitbase_line_starts_with_gitbase(self) -> None:
         """KANON_HEADER_GITBASE starts with 'GITBASE=' per the .kanon template."""
@@ -350,12 +426,6 @@ class TestKanonAddConstants:
         from kanon_cli.constants import KANON_HEADER_CLAUDE_MARKETPLACES_DIR
 
         assert KANON_HEADER_CLAUDE_MARKETPLACES_DIR.startswith("CLAUDE_MARKETPLACES_DIR=")
-
-    def test_marketplace_install_line_starts_with_key(self) -> None:
-        """KANON_HEADER_MARKETPLACE_INSTALL starts with 'KANON_MARKETPLACE_INSTALL='."""
-        from kanon_cli.constants import KANON_HEADER_MARKETPLACE_INSTALL
-
-        assert KANON_HEADER_MARKETPLACE_INSTALL.startswith("KANON_MARKETPLACE_INSTALL=")
 
 
 @pytest.mark.unit
@@ -1032,26 +1102,107 @@ class TestKanonCompletionErrorsReportLimitConstant:
 
 
 @pytest.mark.unit
-class TestKanonCacheDirEnvConstant:
-    """Tests for KANON_CACHE_DIR_ENV constant (E5-F1-S1-T3 AC-FUNC-008)."""
+class TestKanonHomeConstants:
+    """Tests for the shared KANON_HOME store constants + resolver (E5-F1-S1-T1 AC-23).
 
-    def test_constant_exists_and_is_importable(self) -> None:
-        """KANON_CACHE_DIR_ENV constant exists in kanon_cli.constants."""
-        from kanon_cli.constants import KANON_CACHE_DIR_ENV
+    These replace the removed KANON_CACHE_DIR_ENV / KANON_CACHE_DIR_DEFAULT and
+    WORKSPACE_DIR_ENV_VAR constants, which were subsumed by the single KANON_HOME
+    root (spec Section 7.1 / Section 8 / FR-15, FR-16).
+    """
 
-        assert isinstance(KANON_CACHE_DIR_ENV, str)
+    def test_home_env_var_name(self) -> None:
+        """KANON_HOME_ENV_VAR names the KANON_HOME environment variable."""
+        from kanon_cli.constants import KANON_HOME_ENV_VAR
 
-    def test_constant_value_is_kanon_cache_dir(self) -> None:
-        """KANON_CACHE_DIR_ENV equals the string 'KANON_CACHE_DIR'."""
-        from kanon_cli.constants import KANON_CACHE_DIR_ENV
+        assert KANON_HOME_ENV_VAR == "KANON_HOME"
 
-        assert KANON_CACHE_DIR_ENV == "KANON_CACHE_DIR"
+    def test_home_dir_name_default(self) -> None:
+        """KANON_HOME_DIR_NAME is the relative default '.kanon' (joined onto $HOME)."""
+        from kanon_cli.constants import KANON_HOME_DIR_NAME
 
-    def test_constant_is_non_empty(self) -> None:
-        """KANON_CACHE_DIR_ENV is a non-empty string."""
-        from kanon_cli.constants import KANON_CACHE_DIR_ENV
+        assert KANON_HOME_DIR_NAME == ".kanon"
 
-        assert len(KANON_CACHE_DIR_ENV) > 0
+    def test_store_and_cache_subdir_names(self) -> None:
+        """The store and cache live in distinct, non-empty subdirs of the home root."""
+        from kanon_cli.constants import KANON_HOME_CACHE_SUBDIR, KANON_HOME_STORE_SUBDIR
+
+        assert KANON_HOME_STORE_SUBDIR == "store"
+        assert KANON_HOME_CACHE_SUBDIR == "cache"
+        assert KANON_HOME_STORE_SUBDIR != KANON_HOME_CACHE_SUBDIR
+
+    def test_store_publish_subdir_names_are_distinct_and_non_empty(self) -> None:
+        """The store entries, lock, and temp subdirs are distinct non-empty names.
+
+        publish_store_entry writes content into the temp subdir, atomically
+        renames into the entries subdir, and guards each address with a lock root
+        under the lock subdir; clean prunes all three. The three names must be
+        distinct so the trees never collide (spec Section 3.5).
+        """
+        from kanon_cli.constants import (
+            KANON_HOME_STORE_ENTRIES_SUBDIR,
+            KANON_HOME_STORE_LOCKS_SUBDIR,
+            KANON_HOME_STORE_TMP_SUBDIR,
+        )
+
+        names = {
+            KANON_HOME_STORE_ENTRIES_SUBDIR,
+            KANON_HOME_STORE_LOCKS_SUBDIR,
+            KANON_HOME_STORE_TMP_SUBDIR,
+        }
+        assert len(names) == 3, "the three store publish subdir names must be distinct"
+        assert all(name for name in names), "no store publish subdir name may be empty"
+        assert "/" not in "".join(names), "store publish subdir names must be single path components"
+
+    def test_store_gitignore_entry_ignores_everything(self) -> None:
+        """KANON_HOME_STORE_GITIGNORE_ENTRY ignores the whole store ('*')."""
+        from kanon_cli.constants import KANON_HOME_STORE_GITIGNORE_ENTRY
+
+        assert KANON_HOME_STORE_GITIGNORE_ENTRY == "*", "the store .gitignore safety net must ignore everything"
+
+    def test_resolve_kanon_home_default_is_under_real_home(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """With KANON_HOME unset, the home resolves to $HOME/.kanon (env-derived, not hard-coded)."""
+        import pathlib
+
+        from kanon_cli.constants import KANON_HOME_DIR_NAME, resolve_kanon_home
+
+        monkeypatch.delenv("KANON_HOME", raising=False)
+        assert resolve_kanon_home() == pathlib.Path.home() / KANON_HOME_DIR_NAME
+
+    def test_resolve_kanon_home_env_override_wins(self, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A set KANON_HOME env value overrides the default."""
+        import pathlib
+
+        from kanon_cli.constants import resolve_kanon_home
+
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
+        assert resolve_kanon_home() == pathlib.Path(str(tmp_path))
+
+    def test_resolve_kanon_home_empty_env_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An empty KANON_HOME value is treated as unset and resolves to the default."""
+        import pathlib
+
+        from kanon_cli.constants import KANON_HOME_DIR_NAME, resolve_kanon_home
+
+        monkeypatch.setenv("KANON_HOME", "")
+        assert resolve_kanon_home() == pathlib.Path.home() / KANON_HOME_DIR_NAME
+
+    def test_removed_cache_dir_env_constant_is_gone(self) -> None:
+        """KANON_CACHE_DIR_ENV must no longer exist in constants (subsumed by KANON_HOME)."""
+        import kanon_cli.constants as constants
+
+        assert not hasattr(constants, "KANON_CACHE_DIR_ENV")
+
+    def test_removed_cache_dir_default_constant_is_gone(self) -> None:
+        """KANON_CACHE_DIR_DEFAULT must no longer exist in constants (subsumed by KANON_HOME)."""
+        import kanon_cli.constants as constants
+
+        assert not hasattr(constants, "KANON_CACHE_DIR_DEFAULT")
+
+    def test_removed_workspace_dir_env_var_constant_is_gone(self) -> None:
+        """WORKSPACE_DIR_ENV_VAR must no longer exist in constants (subsumed by KANON_HOME)."""
+        import kanon_cli.constants as constants
+
+        assert not hasattr(constants, "WORKSPACE_DIR_ENV_VAR")
 
 
 @pytest.mark.unit
@@ -1166,11 +1317,6 @@ class TestKanonStaleCompletionScriptWarningConstant:
         assert "/usr/local/share/bash-completion/completions/kanon" in rendered
 
 
-# ---------------------------------------------------------------------------
-# Doctor cache-management constants (subchecks 8 + 10, E5-F1-S1-T4)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonCachePruneAgeDays:
     """KANON_CACHE_PRUNE_AGE_DAYS is a positive integer defaulting to 30."""
@@ -1188,7 +1334,6 @@ class TestKanonCachePruneAgeDays:
         import os
         import sys
 
-        # Remove any existing instance to force reload without the env var.
         for mod_name in list(sys.modules.keys()):
             if "kanon_cli.constants" in mod_name:
                 del sys.modules[mod_name]
@@ -1201,7 +1346,7 @@ class TestKanonCachePruneAgeDays:
         finally:
             if env_backup is not None:
                 os.environ["KANON_CACHE_PRUNE_AGE_DAYS"] = env_backup
-            # Reload to restore normal module state.
+
             for mod_name in list(sys.modules.keys()):
                 if "kanon_cli.constants" in mod_name:
                     del sys.modules[mod_name]
@@ -1520,11 +1665,6 @@ class TestKanonDoctorRemoteStderrPreviewChars:
         importlib.reload(constants)
 
 
-# ---------------------------------------------------------------------------
-# Tests for the new catalog-audit constants (E5-F2-S1-T1 changes to constants.py)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonCatalogAuditValidChecks:
     """KANON_CATALOG_AUDIT_VALID_CHECKS contains the five expected check names."""
@@ -1781,11 +1921,6 @@ class TestKanonCatalogMetadataFieldLists:
         assert required.isdisjoint(recommended)
 
 
-# ---------------------------------------------------------------------------
-# KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE (E5-F2-S1-T3 AC-FUNC-006)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonCatalogEntryNameAllowedCharsRe:
     """KANON_CATALOG_ENTRY_NAME_ALLOWED_CHARS_RE is a compiled regex in constants.py.
@@ -2006,7 +2141,7 @@ class TestKanonCatalogAuditLegacyDirWarningTemplate:
         expected = (
             "Legacy catalog/ directory detected; this directory is unused by "
             "kanon >= 0.99.0 and should be deleted; "
-            "see docs/migration-bootstrap-to-add.md"
+            "see docs/migration-to-add.md"
         )
         assert rendered == expected
 
@@ -2015,7 +2150,7 @@ class TestKanonCatalogAuditLegacyDirWarningTemplate:
         from kanon_cli.constants import KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE
 
         rendered = KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE.format(version="2.0.0")
-        assert "docs/migration-bootstrap-to-add.md" in rendered
+        assert "docs/migration-to-add.md" in rendered
 
 
 @pytest.mark.unit
@@ -2098,26 +2233,16 @@ class TestExitCodeDeprecated:
         assert EXIT_CODE_DEPRECATED != 2
 
 
-# ---------------------------------------------------------------------------
-# E7-F3-S1-T1: completion cache constants (AC-FUNC-008)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompletionCacheConstants:
     """TDD-paired test for the cache constants added to constants.py by E7-F3-S1-T1."""
 
-    def test_kanon_cache_dir_env_is_string(self) -> None:
-        from kanon_cli.constants import KANON_CACHE_DIR_ENV
+    def test_kanon_home_cache_subdir_is_string(self) -> None:
+        """The cache now lives under the KANON_HOME cache subdir, not a standalone env var."""
+        from kanon_cli.constants import KANON_HOME_CACHE_SUBDIR
 
-        assert isinstance(KANON_CACHE_DIR_ENV, str)
-        assert KANON_CACHE_DIR_ENV == "KANON_CACHE_DIR"
-
-    def test_kanon_cache_dir_default_is_string(self) -> None:
-        from kanon_cli.constants import KANON_CACHE_DIR_DEFAULT
-
-        assert isinstance(KANON_CACHE_DIR_DEFAULT, str)
-        assert KANON_CACHE_DIR_DEFAULT == "~/.cache/kanon"
+        assert isinstance(KANON_HOME_CACHE_SUBDIR, str)
+        assert KANON_HOME_CACHE_SUBDIR == "cache"
 
     def test_kanon_completion_cache_ttl_is_int(self) -> None:
         from kanon_cli.constants import KANON_COMPLETION_CACHE_TTL
@@ -2244,23 +2369,266 @@ class TestCompletionSanitizationConstants:
 
 
 @pytest.mark.unit
-class TestWorkspaceDirEnvVar:
-    """Tests for WORKSPACE_DIR_ENV_VAR constant (E58-F4-S1-T1 AC-1..AC-4)."""
+class TestKanonGitLsRemoteTimeoutConstant:
+    """KANON_GIT_LS_REMOTE_TIMEOUT constant is defined in constants.py via _env_int."""
 
-    def test_workspace_dir_env_var_exists(self) -> None:
-        """WORKSPACE_DIR_ENV_VAR constant exists in kanon_cli.constants."""
-        from kanon_cli.constants import WORKSPACE_DIR_ENV_VAR
+    def test_constant_is_importable(self) -> None:
+        """KANON_GIT_LS_REMOTE_TIMEOUT is importable from kanon_cli.constants."""
+        from kanon_cli.constants import KANON_GIT_LS_REMOTE_TIMEOUT
 
-        assert isinstance(WORKSPACE_DIR_ENV_VAR, str)
+        assert KANON_GIT_LS_REMOTE_TIMEOUT is not None
 
-    def test_workspace_dir_env_var_value(self) -> None:
-        """WORKSPACE_DIR_ENV_VAR must be exactly 'KANON_WORKSPACE_DIR'."""
-        from kanon_cli.constants import WORKSPACE_DIR_ENV_VAR
+    def test_constant_is_positive_integer(self) -> None:
+        """KANON_GIT_LS_REMOTE_TIMEOUT is a positive integer."""
+        from kanon_cli.constants import KANON_GIT_LS_REMOTE_TIMEOUT
 
-        assert WORKSPACE_DIR_ENV_VAR == "KANON_WORKSPACE_DIR"
+        assert isinstance(KANON_GIT_LS_REMOTE_TIMEOUT, int)
+        assert KANON_GIT_LS_REMOTE_TIMEOUT > 0
 
-    def test_workspace_dir_env_var_is_non_empty(self) -> None:
-        """WORKSPACE_DIR_ENV_VAR must not be empty."""
-        from kanon_cli.constants import WORKSPACE_DIR_ENV_VAR
+    def test_constant_default_is_30(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_GIT_LS_REMOTE_TIMEOUT defaults to 30 when env var is unset."""
+        import importlib
 
-        assert len(WORKSPACE_DIR_ENV_VAR) > 0
+        import kanon_cli.constants as constants
+
+        monkeypatch.delenv("KANON_GIT_LS_REMOTE_TIMEOUT", raising=False)
+        importlib.reload(constants)
+
+        assert constants.KANON_GIT_LS_REMOTE_TIMEOUT == 30
+
+    def test_constant_reads_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_GIT_LS_REMOTE_TIMEOUT reflects the KANON_GIT_LS_REMOTE_TIMEOUT env var."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_GIT_LS_REMOTE_TIMEOUT", "45")
+        importlib.reload(constants)
+
+        assert constants.KANON_GIT_LS_REMOTE_TIMEOUT == 45
+
+
+@pytest.mark.unit
+class TestKanonWorkspaceLockTimeoutSeconds:
+    """Tests for KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS constant (E2-F1-S1-T1).
+
+    This constant controls the fail-fast acquisition timeout used by
+    kanon_workspace_lock. It is routed through _env_int (no hard-coded literal
+    in concurrency.py) and is overridable via the
+    KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS environment variable. Default is 30.
+    """
+
+    def test_constant_exists_and_is_importable(self) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS constant exists in kanon_cli.constants."""
+        from kanon_cli.constants import KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS
+
+        assert isinstance(KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS, int)
+
+    def test_constant_is_positive_integer(self) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS is a positive integer."""
+        from kanon_cli.constants import KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS
+
+        assert KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS > 0
+
+    def test_constant_default_is_30(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS defaults to 30 when env var is unset."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.delenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", raising=False)
+        importlib.reload(constants)
+
+        assert constants.KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS == 30
+
+    def test_constant_reads_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS reflects the env var override."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", "5")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS == 5
+        finally:
+            monkeypatch.delenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", raising=False)
+            importlib.reload(constants)
+
+    def test_env_override_non_int_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS set to a non-integer raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", "not-a-number")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", raising=False)
+        importlib.reload(constants)
+
+    def test_env_override_zero_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS set to 0 raises SystemExit (must be positive)."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", "0")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", raising=False)
+        importlib.reload(constants)
+
+    def test_env_override_negative_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS set to a negative integer raises SystemExit."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", "-1")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS", raising=False)
+        importlib.reload(constants)
+
+
+@pytest.mark.unit
+class TestUpdateCheckConstants:
+    """Tests for the update-available alert constants (spec Section 7.1 / FR-29).
+
+    The PyPI endpoint, upgrade command, TTL, connect/read timeouts, and body-size
+    cap are all defined in constants.py so update_check.py holds no operative
+    literal. The integer knobs route through _env_int and are env-overridable.
+    """
+
+    def test_pypi_endpoint_and_command_locked_values(self) -> None:
+        """The endpoint and upgrade command match the locked spec source values."""
+        from kanon_cli.constants import (
+            KANON_PYPI_JSON_URL,
+            KANON_PYPI_PROJECT_NAME,
+            KANON_UPDATE_UPGRADE_COMMAND,
+        )
+
+        assert KANON_PYPI_PROJECT_NAME == "kanon-cli"
+        assert KANON_PYPI_JSON_URL == "https://pypi.org/pypi/kanon-cli/json"
+        assert KANON_UPDATE_UPGRADE_COMMAND == "pipx upgrade kanon-cli"
+
+    def test_default_ttl_is_86400(self) -> None:
+        """KANON_UPDATE_CHECK_TTL default is 86400 (24h)."""
+        import importlib
+        import os
+
+        import kanon_cli.constants as constants
+
+        saved = os.environ.pop("KANON_UPDATE_CHECK_TTL", None)
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_UPDATE_CHECK_TTL == 86400
+        finally:
+            if saved is not None:
+                os.environ["KANON_UPDATE_CHECK_TTL"] = saved
+            importlib.reload(constants)
+
+    def test_default_timeouts_and_cap(self) -> None:
+        """The connect/read timeouts default to 2s/3s and the body cap to 200KB."""
+        import importlib
+        import os
+
+        import kanon_cli.constants as constants
+
+        saved = {
+            key: os.environ.pop(key, None)
+            for key in (
+                "KANON_UPDATE_CONNECT_TIMEOUT",
+                "KANON_UPDATE_READ_TIMEOUT",
+                "KANON_UPDATE_BODY_SIZE_CAP",
+            )
+        }
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_UPDATE_CONNECT_TIMEOUT == 2
+            assert constants.KANON_UPDATE_READ_TIMEOUT == 3
+            assert constants.KANON_UPDATE_BODY_SIZE_CAP == 200 * 1024
+        finally:
+            for key, value in saved.items():
+                if value is not None:
+                    os.environ[key] = value
+            importlib.reload(constants)
+
+    def test_ttl_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_UPDATE_CHECK_TTL env var overrides the default via _env_int."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_UPDATE_CHECK_TTL", "3600")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_UPDATE_CHECK_TTL == 3600
+        finally:
+            monkeypatch.delenv("KANON_UPDATE_CHECK_TTL", raising=False)
+            importlib.reload(constants)
+
+    def test_connect_timeout_env_override_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_UPDATE_CONNECT_TIMEOUT env var overrides the default."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_UPDATE_CONNECT_TIMEOUT", "5")
+        importlib.reload(constants)
+        try:
+            assert constants.KANON_UPDATE_CONNECT_TIMEOUT == 5
+        finally:
+            monkeypatch.delenv("KANON_UPDATE_CONNECT_TIMEOUT", raising=False)
+            importlib.reload(constants)
+
+    def test_ttl_non_integer_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A non-integer KANON_UPDATE_CHECK_TTL fails fast with SystemExit (_env_int guard)."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_UPDATE_CHECK_TTL", "not-a-number")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_UPDATE_CHECK_TTL", raising=False)
+        importlib.reload(constants)
+
+    def test_ttl_zero_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """KANON_UPDATE_CHECK_TTL set to 0 raises SystemExit (must be positive)."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_UPDATE_CHECK_TTL", "0")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_UPDATE_CHECK_TTL", raising=False)
+        importlib.reload(constants)
+
+    def test_body_size_cap_negative_raises_system_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A negative KANON_UPDATE_BODY_SIZE_CAP raises SystemExit (must be positive)."""
+        import importlib
+
+        import kanon_cli.constants as constants
+
+        monkeypatch.setenv("KANON_UPDATE_BODY_SIZE_CAP", "-1")
+        with pytest.raises(SystemExit):
+            importlib.reload(constants)
+        monkeypatch.delenv("KANON_UPDATE_BODY_SIZE_CAP", raising=False)
+        importlib.reload(constants)
+
+    def test_skip_env_and_cache_layout_constants(self) -> None:
+        """The skip-env name, cache subdir, and version filename constants exist."""
+        from kanon_cli.constants import (
+            KANON_SKIP_UPDATE_CHECK_ENV,
+            KANON_SKIP_UPDATE_CHECK_TRUE,
+            KANON_UPDATE_CHECK_CACHE_SUBDIR,
+            KANON_UPDATE_CHECK_VERSION_FILENAME,
+        )
+
+        assert KANON_SKIP_UPDATE_CHECK_ENV == "KANON_SKIP_UPDATE_CHECK"
+        assert KANON_SKIP_UPDATE_CHECK_TRUE == "1"
+        assert KANON_UPDATE_CHECK_CACHE_SUBDIR
+        assert KANON_UPDATE_CHECK_VERSION_FILENAME

@@ -38,9 +38,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Grep Happy Test User"
 _GIT_USER_EMAIL = "repo-grep-happy@example.com"
@@ -48,32 +45,26 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "grep-happy-test-project"
 
-# CLI token constants -- every token that appears in subprocess argv
+
 _CMD_REPO = "repo"
 _FLAG_REPO_DIR = "--repo-dir"
 _SUBCMD_GREP = "grep"
 _FLAG_E = "-e"
 
-# Pattern that matches the default content file written by _setup_synced_repo.
-# The conftest helper writes "hello from shared conftest helper" to README.md.
+
 _MATCH_PATTERN = "hello"
 
-# Filename written into each project by _setup_synced_repo.
+
 _CONTENT_FILENAME = "README.md"
 
-# Expected exit code for all happy-path invocations where the pattern matches.
+
 _EXPECTED_EXIT = 0
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _build_grep_args(repo_dir: pathlib.Path, *extra: str) -> tuple[str, ...]:
@@ -90,11 +81,6 @@ def _build_grep_args(repo_dir: pathlib.Path, *extra: str) -> tuple[str, ...]:
         A tuple of string arguments suitable for passing to _run_kanon.
     """
     return (_CMD_REPO, _FLAG_REPO_DIR, str(repo_dir), _SUBCMD_GREP) + extra
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo grep with default positional pattern exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -197,15 +183,6 @@ class TestRepoGrepHappyPathDefaultArgs:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo grep has a happy-path test
-#
-# Positional arguments for 'repo grep':
-#   1. PATTERN -- the search pattern (first positional when -e is not used)
-#   2. [<project>...] -- optional project name or path filter(s)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -350,11 +327,6 @@ class TestRepoGrepPositionalArgHappyPath:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

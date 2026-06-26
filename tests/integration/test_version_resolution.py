@@ -12,11 +12,6 @@ import pytest
 from kanon_cli.version import _list_tags, is_version_constraint, resolve_version
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: Version resolution integration tests (20 tests)
-# ---------------------------------------------------------------------------
-
-
 def _mock_ls_remote(tags: list[str]) -> MagicMock:
     """Build a mock subprocess.run result for git ls-remote."""
     output = "\n".join(f"abc123\t{t}" for t in tags)

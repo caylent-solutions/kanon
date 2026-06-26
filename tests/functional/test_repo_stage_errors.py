@@ -42,78 +42,53 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# NOTE: _run_kanon is imported from tests.functional.conftest (canonical
-# definition). No _git helper or repo-init setup is needed because all tests
-# here exercise argument-parsing and subcommand precondition failures that do
-# not require a fully initialized .repo directory.
-# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
-
-# CLI structural tokens -- extracted so no inline literals appear in test bodies.
 _CMD_REPO = "repo"
 _CMD_STAGE = "stage"
 _OPT_REPO_DIR = "--repo-dir"
 _FLAG_HELP = "--help"
 
-# Composed command prefix used in f-string diagnostics.
+
 _CMD_PREFIX = f"kanon {_CMD_REPO} {_CMD_STAGE}"
 
-# Nonexistent repo-dir path used in argument-parser tests.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-stage-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-stage-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-stage-option-99"
 
-# Flag with unexpected inline value exercised in AC-TEST-003.
-# 'repo stage' defines --interactive as a boolean store_true flag; the optparse
-# parser rejects '--interactive=unexpected' because boolean flags cannot accept
-# an inline value, producing exit 2 with '--interactive option does not take a value'.
+
 _BOOL_FLAG_WITH_VALUE = "--interactive=unexpected"
 _BOOL_FLAG_WITH_VALUE_ALT_A = "--outer-manifest=badvalue"
 _BOOL_FLAG_WITH_VALUE_ALT_B = "--this-manifest-only=nope"
 
-# Option name extracted from the bool-flag-with-value token, for use in
-# the assertion that the error message names the offending flag.
+
 _BOOL_FLAG_BASE_NAME = "--interactive"
 
-# Phrase produced by optparse when a boolean flag is supplied with an
-# inline value (AC-TEST-003).
+
 _BOOL_FLAG_VALUE_PHRASE = "does not take a value"
 
-# Phrase expected in stderr when an unknown option is supplied (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
+
 _HELP_USAGE_PHRASE = "repo stage"
 
-# Phrase expected in stderr when the .repo directory is absent and '-i' is
-# supplied (AC-TEST-004). The embedded repo tool prints "error parsing manifest"
-# to stderr when the .repo/manifest.xml file cannot be found.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest filename the embedded repo tool names in stderr for precondition
-# failures (AC-TEST-004).
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# The '-i' / '--interactive' flag required to exercise the precondition path.
+
 _FLAG_INTERACTIVE = "-i"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo stage --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -264,11 +239,6 @@ class TestRepoStageHelp:
             f"  first:  {result_a.stdout!r}\n"
             f"  second: {result_b.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -448,11 +418,6 @@ class TestRepoStageUnknownFlag:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Boolean flag with inline value produces exit 2
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoStageMissingRequiredArg:
     """AC-TEST-003: Boolean flag with inline value produces exit 2.
@@ -612,11 +577,6 @@ class TestRepoStageMissingRequiredArg:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoPreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message.
@@ -765,11 +725,6 @@ class TestRepoPreconditionFailure:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

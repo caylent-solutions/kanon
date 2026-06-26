@@ -1,17 +1,3 @@
-# Copyright 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Comprehensive tests to boost coverage for remaining uncovered lines."""
 
 import http.client
@@ -22,18 +8,13 @@ from unittest import mock
 
 import pytest
 
-# Import modules to test
+
 from kanon_cli.repo import color
 from kanon_cli.repo import git_config
 from kanon_cli.repo import main
 from kanon_cli.repo import manifest_xml
 from kanon_cli.repo import progress
 from kanon_cli.repo.error import GitError, ManifestParseError, UploadError
-
-
-# ============================================================================
-# git_config.py tests (106 lines missing)
-# ============================================================================
 
 
 @pytest.mark.unit
@@ -76,7 +57,6 @@ class TestGitConfigReadJson:
         json_file.write_text('{"key": ["value"]}')
         config_file.write_text("")
 
-        # Make config file modification time later
         os.utime(
             config_file,
             (
@@ -98,7 +78,6 @@ class TestGitConfigReadJson:
         config_file.write_text("")
         json_file.write_text("{invalid json")
 
-        # Make JSON file modification time later
         os.utime(
             json_file,
             (
@@ -122,14 +101,12 @@ class TestGitConfigReadJson:
 
         gc = git_config.GitConfig(configfile=str(config_file), jsonFile=str(json_file))
 
-        # Try to save something that can't be JSON serialized
         class Unserializable:
             pass
 
         cache = {"key": Unserializable()}
         gc._SaveJson(cache)
 
-        # Should not raise, and file should not exist
         assert not json_file.exists()
 
 
@@ -301,7 +278,6 @@ class TestGetUrlCookieFile:
                 mock_for_user.return_value = mock_config
 
                 with git_config.GetUrlCookieFile("persistent-https://example.com", quiet=True) as (cookiefile, proxy):
-                    # Should silently continue
                     pass
 
 
@@ -319,7 +295,6 @@ class TestBranchSave:
         branch = git_config.Branch(gc, "testbranch")
         branch.merge = "refs/heads/main"
 
-        # Mock the remote
         remote = mock.Mock()
         remote.name = "origin"
         branch.remote = remote
@@ -344,7 +319,6 @@ class TestRemoteSave:
 
         gc = git_config.GitConfig(configfile=str(config_file))
 
-        # Create a remote with pushUrl
         with mock.patch.object(gc, "_do", return_value=""):
             gc._cache_dict = {}
             remote = git_config.Remote(gc, "origin")
@@ -355,11 +329,6 @@ class TestRemoteSave:
             remote.fetch = []
 
             remote.Save()
-
-
-# ============================================================================
-# manifest_xml.py tests (151 lines missing)
-# ============================================================================
 
 
 @pytest.mark.unit
@@ -405,7 +374,7 @@ class TestXmlManifestToXml:
             fetch="https://example.com",
             manifestUrl="https://manifest.com",
         )
-        # Just verify the resolved URL is computed
+
         assert remote.resolvedFetchUrl is not None
 
 
@@ -416,9 +385,7 @@ class TestManifestXmlLoad:
     @pytest.mark.unit
     def test_load_local_manifests_osserror_caught(self):
         """Test _Load catches OSError when listing local_manifests."""
-        # This tests line 1219-1220 (OSError catch in _Load)
-        # The OSError exception handling just passes, so we test the pass logic
-        # by verifying we can parse a simple manifest_xml without issue
+
         assert manifest_xml.XmlBool is not None
 
 
@@ -429,15 +396,8 @@ class TestManifestParseXml:
     @pytest.mark.unit
     def test_parse_manifest_xml_with_parse_error(self):
         """Test _ParseManifestXml catches XML parse errors."""
-        # Tests lines 1285-1286
-        # These lines catch XML parsing errors and re-raise as ManifestParseError
-        # The logic is tested via actual manifest parsing tests elsewhere
+
         assert manifest_xml.ManifestParseError is not None
-
-
-# ============================================================================
-# subcmds/help.py tests (13 lines missing)
-# ============================================================================
 
 
 @pytest.mark.unit
@@ -449,7 +409,6 @@ class TestHelpCommand:
         """Test _PrintCommands with command without helpSummary."""
         from kanon_cli.repo.subcmds.help import Help
 
-        # Create a mock command without helpSummary
         mock_cmd_class = type("MockCommand", (), {})
         mock_cmd = mock_cmd_class()
 
@@ -471,7 +430,6 @@ class TestHelpCommand:
         help_cmd.client = mock.Mock()
         help_cmd.client.globalConfig = mock.Mock()
 
-        # Create a command with empty description
         cmd = mock.Mock()
         cmd.NAME = "test"
         cmd.helpSummary = "Test"
@@ -494,7 +452,6 @@ class TestHelpCommand:
         help_cmd.client = mock.Mock()
         help_cmd.client.globalConfig = mock.Mock()
 
-        # Create a command with None description
         cmd = mock.Mock()
         cmd.NAME = "test"
         cmd.helpSummary = "Test"
@@ -558,11 +515,6 @@ class TestHelpCommand:
             help_cmd.Execute(opt, ["cmd1", "cmd2"])
 
 
-# ============================================================================
-# subcmds/status.py tests (9 lines missing)
-# ============================================================================
-
-
 @pytest.mark.unit
 class TestStatusCommand:
     """Test Status command edge cases."""
@@ -570,7 +522,7 @@ class TestStatusCommand:
     @pytest.mark.unit
     def test_status_find_orphans_edge_cases(self, tmp_path):
         """Test _FindOrphans with various cases."""
-        # Lines 139-145, 173-174
+
         from kanon_cli.repo.subcmds.status import Status
 
         test_file = tmp_path / "orphan.txt"
@@ -587,7 +539,7 @@ class TestStatusCommand:
     @pytest.mark.unit
     def test_find_orphans_is_file(self, tmp_path):
         """Test _FindOrphans with a file."""
-        # Lines 173-174
+
         test_file = tmp_path / "orphan.txt"
         test_file.write_text("content")
 
@@ -602,11 +554,6 @@ class TestStatusCommand:
         assert "orphan.txt" in outstring[0]
 
 
-# ============================================================================
-# subcmds/start.py tests (5 lines missing)
-# ============================================================================
-
-
 @pytest.mark.unit
 class TestStartCommand:
     """Test Start command validation."""
@@ -617,18 +564,13 @@ class TestStartCommand:
         from kanon_cli.repo.subcmds.start import Start
 
         cmd = Start()
-        # Mock the Usage method which is called when no args
+
         cmd.Usage = mock.Mock(side_effect=SystemExit)
 
         opt = mock.Mock()
 
         with pytest.raises(SystemExit):
             cmd.ValidateOptions(opt, [])
-
-
-# ============================================================================
-# subcmds/rebase.py tests (6 lines missing)
-# ============================================================================
 
 
 @pytest.mark.unit
@@ -638,7 +580,7 @@ class TestRebaseCommand:
     @pytest.mark.unit
     def test_rebase_detached_head_single_project(self):
         """Test rebase with detached HEAD on single project."""
-        # Line 128
+
         from kanon_cli.repo.subcmds.rebase import Rebase
 
         manifest = mock.Mock()
@@ -670,7 +612,7 @@ class TestRebaseCommand:
     @pytest.mark.unit
     def test_rebase_no_remote_single_project(self):
         """Test rebase without remote tracking on single project."""
-        # Line 160
+
         from kanon_cli.repo.subcmds.rebase import Rebase
 
         manifest = mock.Mock()
@@ -706,7 +648,7 @@ class TestRebaseCommand:
     @pytest.mark.unit
     def test_rebase_with_stash_failure(self):
         """Test rebase with auto-stash that fails."""
-        # Lines 188-189
+
         from kanon_cli.repo.subcmds.rebase import Rebase
 
         manifest = mock.Mock()
@@ -737,12 +679,11 @@ class TestRebaseCommand:
         opt.onto_manifest = False
         opt.auto_stash = True
 
-        # Mock GitCommand to fail on stash
         with mock.patch("kanon_cli.repo.subcmds.rebase.GitCommand") as mock_git:
             mock_git.return_value.Wait.side_effect = [
                 1,
                 1,
-            ]  # First call succeeds (update-index), second fails (stash)
+            ]
 
             result = cmd.Execute(opt, ["project1"])
             assert result > 0
@@ -750,7 +691,7 @@ class TestRebaseCommand:
     @pytest.mark.unit
     def test_rebase_stash_pop_failure(self):
         """Test rebase with stash pop failure."""
-        # Line 199
+
         from kanon_cli.repo.subcmds.rebase import Rebase
 
         manifest = mock.Mock()
@@ -781,17 +722,11 @@ class TestRebaseCommand:
         opt.onto_manifest = False
         opt.auto_stash = True
 
-        # Mock GitCommand: update-index fails (needs stash), stash succeeds, rebase succeeds, pop fails
         with mock.patch("kanon_cli.repo.subcmds.rebase.GitCommand") as mock_git:
             mock_git.return_value.Wait.side_effect = [1, 0, 0, 1]
 
             result = cmd.Execute(opt, ["project1"])
             assert result > 0
-
-
-# ============================================================================
-# subcmds/grep.py tests (6 lines missing)
-# ============================================================================
 
 
 @pytest.mark.unit
@@ -801,7 +736,7 @@ class TestGrepCommand:
     @pytest.mark.unit
     def test_grep_cached_with_revision_error(self):
         """Test grep with --cached and --revision raises error."""
-        # Lines 317-320, 322
+
         from kanon_cli.repo.subcmds.grep import Grep, InvalidArgumentsError
 
         manifest = mock.Mock()
@@ -823,7 +758,7 @@ class TestGrepCommand:
     @pytest.mark.unit
     def test_grep_no_pattern_usage(self):
         """Test grep without pattern shows usage."""
-        # Line 356
+
         from kanon_cli.repo.subcmds.grep import Grep
 
         manifest = mock.Mock()
@@ -839,11 +774,6 @@ class TestGrepCommand:
             cmd.Execute(opt, [])
 
 
-# ============================================================================
-# subcmds/diffmanifests.py tests (10 lines missing)
-# ============================================================================
-
-
 @pytest.mark.unit
 class TestDiffManifestsCommand:
     """Test DiffManifests command edge cases."""
@@ -851,20 +781,13 @@ class TestDiffManifestsCommand:
     @pytest.mark.unit
     def test_diff_manifests_invalid_xml(self):
         """Test diffmanifests handles invalid XML."""
-        # Lines 172-181 - actually testing manifest XML error paths
-        # This is testing the error handling, not diffmanifests specifically
+
         import xml.parsers.expat
 
         with pytest.raises((ManifestParseError, xml.parsers.expat.ExpatError)):
-            # Try to parse invalid XML
             import xml.dom.minidom
 
             xml.dom.minidom.parseString("<?xml version='1.0'?><invalid>")
-
-
-# ============================================================================
-# progress.py tests (7 lines missing)
-# ============================================================================
 
 
 @pytest.mark.unit
@@ -874,7 +797,7 @@ class TestProgress:
     @pytest.mark.unit
     def test_progress_end_with_no_total(self, capsys):
         """Test progress.end() with total <= 0."""
-        # Lines 223-231
+
         with mock.patch("kanon_cli.repo.progress._TTY", True):
             with mock.patch("kanon_cli.repo.progress.IsTraceToStderr", return_value=False):
                 prog = progress.Progress("Testing", total=0, quiet=False, delay=False)
@@ -885,11 +808,6 @@ class TestProgress:
                 assert "done in" in captured.err
 
 
-# ============================================================================
-# main.py tests (17 lines missing)
-# ============================================================================
-
-
 @pytest.mark.unit
 class TestMainPythonVersion:
     """Test main.py Python version checks."""
@@ -897,9 +815,7 @@ class TestMainPythonVersion:
     @pytest.mark.unit
     def test_python_version_soft_warning(self):
         """Test Python version soft warning is shown."""
-        # Lines 92-97, 99
-        # This test verifies the warning path exists
-        # The actual check happens at module import time
+
         assert main.MIN_PYTHON_VERSION_SOFT is not None
         assert main.MIN_PYTHON_VERSION_HARD is not None
 
@@ -911,17 +827,12 @@ class TestMainGlobalOptions:
     @pytest.mark.unit
     def test_global_options_exist(self):
         """Test global options are defined."""
-        # Lines 336-341, 350
+
         assert main.global_options is not None
-        # Options should be parseable
+
         opts, args = main.global_options.parse_args(["--help-all"])
-        # Check the option exists (it's added to the parser)
+
         assert hasattr(opts, "show_all_help") or hasattr(opts, "help")
-
-
-# ============================================================================
-# Additional coverage tests for specific uncovered branches
-# ============================================================================
 
 
 @pytest.mark.unit
@@ -931,7 +842,7 @@ class TestGitConfigEdgeCases:
     @pytest.mark.unit
     def test_get_string_all_keys_with_defaults(self, tmp_path):
         """Test GetString with all_keys=True and defaults."""
-        # Line 246
+
         config1 = tmp_path / "config1"
         config1.write_text("[section]\n\tkey = value1\n\tkey = value2\n")
 
@@ -947,7 +858,7 @@ class TestGitConfigEdgeCases:
     @pytest.mark.unit
     def test_has_section_not_exists(self, tmp_path):
         """Test HasSection with non-existent section."""
-        # Lines 333-334
+
         config_file = tmp_path / "config"
         config_file.write_text("")
 
@@ -958,20 +869,19 @@ class TestGitConfigEdgeCases:
     @pytest.mark.unit
     def test_url_instead_of(self, tmp_path):
         """Test UrlInsteadOf with no match."""
-        # Line 342
+
         config_file = tmp_path / "config"
         config_file.write_text('[url "https://example.com/"]\n\tinsteadof = git://old.com/\n')
 
         gc = git_config.GitConfig(configfile=str(config_file))
 
-        # URL that doesn't match
         result = gc.UrlInsteadOf("https://other.com/repo")
         assert result == "https://other.com/repo"
 
     @pytest.mark.unit
     def test_do_system_config(self):
         """Test _do with system config."""
-        # Lines 426
+
         gc = git_config.GitConfig(configfile=git_config.GitConfig._SYSTEM_CONFIG)
 
         with mock.patch("kanon_cli.repo.git_config.GitCommand") as mock_cmd:
@@ -986,7 +896,7 @@ class TestGitConfigEdgeCases:
     @pytest.mark.unit
     def test_do_failure(self, tmp_path):
         """Test _do with git command failure."""
-        # Line 435
+
         config_file = tmp_path / "config"
         config_file.write_text("")
 
@@ -1009,7 +919,7 @@ class TestManifestXmlMoreEdgeCases:
     @pytest.mark.unit
     def test_manifest_contact_info_custom(self, tmp_path):
         """Test manifest with custom contact info."""
-        # Line 787
+
         repodir = tmp_path / ".repo"
         repodir.mkdir()
         manifest_dir = repodir / "manifests"
@@ -1026,13 +936,13 @@ class TestManifestXmlMoreEdgeCases:
         (repodir / "manifests.git").mkdir()
 
         client = manifest_xml.RepoClient(str(repodir), str(manifest_file))
-        # This would parse contactinfo
+
         assert client is not None
 
     @pytest.mark.unit
     def test_xml_int_with_empty_value(self):
         """Test XmlInt with empty attribute returns default."""
-        # Line 112
+
         node = mock.Mock()
         node.getAttribute = mock.Mock(return_value="")
 
@@ -1144,10 +1054,9 @@ class TestColorEdgeCases:
     @pytest.mark.unit
     def test_color_default_reset(self):
         """Test that color.DEFAULT can be reset."""
-        # This verifies the conftest fixture works
+
         color.DEFAULT = "test"
         assert color.DEFAULT == "test"
-        # Fixture should restore it
 
 
 @pytest.mark.unit
@@ -1161,7 +1070,6 @@ class TestProgressMoreEdgeCases:
             prog = progress.Progress("Testing", total=10, quiet=False)
             prog.update(1)
             prog.end()
-            # Should not raise
 
 
 @pytest.mark.unit
@@ -1243,9 +1151,6 @@ class TestSyncAnalysisState:
         assert state is not None
 
 
-# Run a few more comprehensive integration-style tests
-
-
 @pytest.mark.unit
 class TestGitConfigIntegration:
     """Integration tests for git_config."""
@@ -1263,11 +1168,9 @@ class TestGitConfigIntegration:
         gc = git_config.GitConfig(configfile=str(config_file))
         remote = gc.GetRemote("origin")
 
-        # Test ID
         result = remote.ToLocal("1234567890abcdef1234567890abcdef12345678")
         assert result == "1234567890abcdef1234567890abcdef12345678"
 
-        # Test branch
         result = remote.ToLocal("refs/heads/main")
         assert result == "refs/remotes/origin/main"
 
@@ -1309,7 +1212,6 @@ class TestManifestXmlIntegration:
         result = manifest_xml.normalize_url(url)
         assert result == "ssh://git@github.com/user/repo"
 
-        # Regular URL should be unchanged (minus trailing slash)
         url = "https://github.com/user/repo/"
         result = manifest_xml.normalize_url(url)
         assert result == "https://github.com/user/repo"

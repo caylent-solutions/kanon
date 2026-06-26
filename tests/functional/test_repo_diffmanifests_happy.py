@@ -35,9 +35,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no inline literals in test bodies
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Diffmanifests Happy Test User"
 _GIT_USER_EMAIL = "repo-diffmanifests-happy@example.com"
@@ -47,7 +44,7 @@ _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "diffmanifests-test-project"
 _ALT_PROJECT_PATH = "diffmanifests-alt-project"
 
-# CLI tokens
+
 _CMD_REPO = "repo"
 _CMD_DIFFMANIFESTS = "diffmanifests"
 _OPT_REPO_DIR = "--repo-dir"
@@ -55,23 +52,23 @@ _FLAG_RAW = "--raw"
 _FLAG_NO_COLOR = "--no-color"
 _FLAG_PRETTY_FORMAT = "--pretty-format"
 
-# Pretty-format sentinel value -- uses a valid git log format string
+
 _PRETTY_FORMAT_VALUE = "%h"
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT_CODE = 0
 
-# Phrases expected in stdout when two manifests differ
+
 _PHRASE_ADDED_PROJECTS = "added projects"
 _PHRASE_REMOVED_PROJECTS = "removed projects"
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
+
 _ERROR_PREFIX = "Error:"
 
-# Empty string sentinel for combined-output checks
+
 _EMPTY_OUTPUT = ""
 
 
@@ -95,11 +92,6 @@ def _write_alt_manifest(manifests_dir: pathlib.Path, fetch_base: str) -> None:
         "</manifest>\n"
     )
     (manifests_dir / _ALT_MANIFEST_FILENAME).write_text(alt_xml, encoding="utf-8")
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo diffmanifests with one manifest exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -230,11 +222,6 @@ class TestRepoDiffmanifestsHappyPathOneManifest:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo diffmanifests has a happy-path test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -400,11 +387,6 @@ class TestRepoDiffmanifestsTwoManifestArgs:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

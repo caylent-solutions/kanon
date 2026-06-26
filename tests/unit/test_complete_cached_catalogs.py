@@ -21,11 +21,6 @@ from kanon_cli.completions.cached_catalogs import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_catalog(cache_dir: Path, sha: str, origin: str) -> Path:
     """Create catalogs/<sha>/origin.txt with the given content."""
     entry = cache_dir / "catalogs" / sha
@@ -33,11 +28,6 @@ def _make_catalog(cache_dir: Path, sha: str, origin: str) -> Path:
     origin_file = entry / "origin.txt"
     origin_file.write_text(origin)
     return origin_file
-
-
-# ---------------------------------------------------------------------------
-# _read_origin
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -87,11 +77,6 @@ class TestReadOrigin:
         assert result == "git@c.example.com:org/m.git@develop"
 
 
-# ---------------------------------------------------------------------------
-# _walk_catalogs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestWalkCatalogs:
     """_walk_catalogs() walks catalogs/<sha>/origin.txt files."""
@@ -126,7 +111,7 @@ class TestWalkCatalogs:
     def test_malformed_origin_skipped_and_error_logged(self, tmp_path: Path) -> None:
         """Malformed origin.txt is skipped; its sha is included in errors list."""
         _make_catalog(tmp_path, "sha_good", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha_bad", "")  # empty = malformed
+        _make_catalog(tmp_path, "sha_bad", "")
         result, errors = _walk_catalogs(tmp_path / "catalogs")
         assert result == ["https://a.example.com/m.git@main"]
         assert "sha_bad" in errors
@@ -136,7 +121,7 @@ class TestWalkCatalogs:
         entry = tmp_path / "catalogs" / "sha1"
         entry.mkdir(parents=True)
         (entry / "origin.txt").write_text("https://a.example.com/m.git@main\n")
-        # Create a nested subdirectory with its own origin.txt -- should be ignored
+
         nested = entry / "nested"
         nested.mkdir()
         (nested / "origin.txt").write_text("https://nested.example.com/m.git@main\n")
@@ -148,7 +133,7 @@ class TestWalkCatalogs:
         """A sha directory that has no origin.txt is silently skipped."""
         entry = tmp_path / "catalogs" / "sha1"
         entry.mkdir(parents=True)
-        # No origin.txt created -- just the directory
+
         result, errors = _walk_catalogs(tmp_path / "catalogs")
         assert result == []
         assert errors == []
@@ -157,10 +142,10 @@ class TestWalkCatalogs:
         """A regular file (not a directory) inside catalogs/ is silently skipped."""
         catalogs_dir = tmp_path / "catalogs"
         catalogs_dir.mkdir(parents=True)
-        # Place a file directly in catalogs/ (not a sha directory)
+
         stale_file = catalogs_dir / "some-file.txt"
         stale_file.write_text("not a sha directory\n")
-        # Also add a valid entry
+
         _make_catalog(tmp_path, "sha_valid", "https://a.example.com/m.git@main\n")
         result, errors = _walk_catalogs(catalogs_dir)
         assert result == ["https://a.example.com/m.git@main"]
@@ -173,7 +158,7 @@ class TestWalkCatalogs:
         catalogs_dir = tmp_path / "catalogs"
         _make_catalog(tmp_path, "sha_good", "https://a.example.com/m.git@main\n")
         _make_catalog(tmp_path, "sha_bad", "https://b.example.com/m.git@main\n")
-        # Make origin.txt of sha_bad unreadable to trigger OSError
+
         bad_origin = catalogs_dir / "sha_bad" / "origin.txt"
         bad_origin.chmod(0)
         try:
@@ -181,7 +166,6 @@ class TestWalkCatalogs:
             assert result == ["https://a.example.com/m.git@main"]
             assert "sha_bad" in errors
         finally:
-            # Restore permissions so tmp_path cleanup works
             bad_origin.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
     @pytest.mark.parametrize(
@@ -200,23 +184,18 @@ class TestWalkCatalogs:
         assert errors == []
 
 
-# ---------------------------------------------------------------------------
-# complete() -- KANON_COMPLETION_ENABLED=0 short-circuit
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteDisabled:
     """KANON_COMPLETION_ENABLED=0 causes complete() to return [] immediately."""
 
     def test_disabled_returns_empty(self, tmp_path: Path) -> None:
         """KANON_COMPLETION_ENABLED=0 -> empty list (AC-FUNC-006)."""
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "0",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -225,22 +204,17 @@ class TestCompleteDisabled:
     def test_disabled_does_not_write_log(self, tmp_path: Path) -> None:
         """KANON_COMPLETION_ENABLED=0 does not touch completion-errors.log (AC-FUNC-006)."""
         log_path = tmp_path / "completion-errors.log"
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "0",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
             complete("")
         assert not log_path.exists()
-
-
-# ---------------------------------------------------------------------------
-# complete() -- happy path (AC-FUNC-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -249,14 +223,14 @@ class TestCompleteHappyPath:
 
     def test_three_catalogs_no_prefix(self, tmp_path: Path) -> None:
         """AC-FUNC-001: three origin.txt files, empty prefix -> all three sorted."""
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha2", "https://b.example.com/m.git@v1.0.0\n")
-        _make_catalog(tmp_path, "sha3", "git@c.example.com:org/m.git@develop\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha2", "https://b.example.com/m.git@v1.0.0\n")
+        _make_catalog(tmp_path / "cache", "sha3", "git@c.example.com:org/m.git@develop\n")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -268,14 +242,14 @@ class TestCompleteHappyPath:
 
     def test_prefix_https_narrows(self, tmp_path: Path) -> None:
         """AC-FUNC-005: prefix 'https' returns only the two https URLs."""
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha2", "https://b.example.com/m.git@v1.0.0\n")
-        _make_catalog(tmp_path, "sha3", "git@c.example.com:org/m.git@develop\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha2", "https://b.example.com/m.git@v1.0.0\n")
+        _make_catalog(tmp_path / "cache", "sha3", "git@c.example.com:org/m.git@develop\n")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("https")
@@ -286,14 +260,14 @@ class TestCompleteHappyPath:
 
     def test_prefix_git_at_narrows(self, tmp_path: Path) -> None:
         """AC-FUNC-005: prefix 'git@' returns only the ssh URL."""
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha2", "https://b.example.com/m.git@v1.0.0\n")
-        _make_catalog(tmp_path, "sha3", "git@c.example.com:org/m.git@develop\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha2", "https://b.example.com/m.git@v1.0.0\n")
+        _make_catalog(tmp_path / "cache", "sha3", "git@c.example.com:org/m.git@develop\n")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("git@")
@@ -319,23 +293,18 @@ class TestCompleteHappyPath:
     )
     def test_prefix_filter_parametrized(self, tmp_path: Path, prefix: str, expected: list[str]) -> None:
         """Parametrized prefix-filter coverage (AC-FUNC-005)."""
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha2", "https://b.example.com/m.git@v1.0.0\n")
-        _make_catalog(tmp_path, "sha3", "git@c.example.com:org/m.git@develop\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha2", "https://b.example.com/m.git@v1.0.0\n")
+        _make_catalog(tmp_path / "cache", "sha3", "git@c.example.com:org/m.git@develop\n")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete(prefix)
         assert result == expected
-
-
-# ---------------------------------------------------------------------------
-# complete() -- empty catalogs directory (AC-FUNC-002)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -344,14 +313,14 @@ class TestCompleteEmptyCatalogsDir:
 
     def test_empty_dir_returns_empty(self, tmp_path: Path) -> None:
         """AC-FUNC-002: empty catalogs/ dir -> empty stdout."""
-        catalogs_dir = tmp_path / "catalogs"
-        catalogs_dir.mkdir()
+        catalogs_dir = tmp_path / "cache" / "catalogs"
+        catalogs_dir.mkdir(parents=True)
         log_path = tmp_path / "completion-errors.log"
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
@@ -361,24 +330,19 @@ class TestCompleteEmptyCatalogsDir:
 
     def test_empty_dir_no_log_entry(self, tmp_path: Path) -> None:
         """AC-FUNC-002: empty dir is NOT an error -- no log entry written."""
-        catalogs_dir = tmp_path / "catalogs"
-        catalogs_dir.mkdir()
+        catalogs_dir = tmp_path / "cache" / "catalogs"
+        catalogs_dir.mkdir(parents=True)
         log_path = tmp_path / "completion-errors.log"
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
             complete("")
         assert not log_path.exists()
-
-
-# ---------------------------------------------------------------------------
-# complete() -- missing KANON_CACHE_DIR (AC-FUNC-003)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -393,7 +357,7 @@ class TestCompleteMissingCacheDir:
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(missing_dir),
+                "KANON_HOME": str(missing_dir),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
@@ -409,17 +373,12 @@ class TestCompleteMissingCacheDir:
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(missing_dir),
+                "KANON_HOME": str(missing_dir),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
             complete("")
         assert not log_path.exists()
-
-
-# ---------------------------------------------------------------------------
-# complete() -- malformed origin.txt (AC-FUNC-004)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -428,13 +387,13 @@ class TestCompleteMalformedOrigin:
 
     def test_malformed_skipped_valid_returned(self, tmp_path: Path) -> None:
         """AC-FUNC-004: malformed origin.txt is skipped; valid entries returned."""
-        _make_catalog(tmp_path, "sha_good", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha_bad", "")  # empty = malformed
+        _make_catalog(tmp_path / "cache", "sha_good", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha_bad", "")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -442,14 +401,14 @@ class TestCompleteMalformedOrigin:
 
     def test_malformed_writes_log_entry(self, tmp_path: Path) -> None:
         """AC-FUNC-004: malformed origin.txt writes structured log entry with sha."""
-        _make_catalog(tmp_path, "sha_good", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha_bad", "no-at-sign")  # invalid shape
+        _make_catalog(tmp_path / "cache", "sha_good", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha_bad", "no-at-sign")
         log_path = tmp_path / "completion-errors.log"
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
@@ -470,24 +429,19 @@ class TestCompleteMalformedOrigin:
     )
     def test_parametrized_malformed_shapes(self, tmp_path: Path, bad_content: str) -> None:
         """Parametrized malformed origin.txt shapes all produce log entries."""
-        _make_catalog(tmp_path, "sha_bad", bad_content)
+        _make_catalog(tmp_path / "cache", "sha_bad", bad_content)
         log_path = tmp_path / "completion-errors.log"
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
                 "KANON_COMPLETION_LOG": str(log_path),
             },
         ):
             result = complete("")
         assert result == []
         assert log_path.exists()
-
-
-# ---------------------------------------------------------------------------
-# _handle() -- argparse entry point
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -498,14 +452,14 @@ class TestHandle:
         """_handle() with three-catalog setup prints sorted urls to stdout."""
         import argparse
 
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha2", "git@b.example.com:org/m.git@develop\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha2", "git@b.example.com:org/m.git@develop\n")
         args = argparse.Namespace(current_token="")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = _handle(args)
@@ -523,7 +477,7 @@ class TestHandle:
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(missing_dir),
+                "KANON_HOME": str(missing_dir),
             },
         ):
             result = _handle(args)
@@ -533,14 +487,14 @@ class TestHandle:
         """_handle() with prefix 'https' outputs only https URLs."""
         import argparse
 
-        _make_catalog(tmp_path, "sha1", "https://a.example.com/m.git@main\n")
-        _make_catalog(tmp_path, "sha2", "git@b.example.com:org/m.git@develop\n")
+        _make_catalog(tmp_path / "cache", "sha1", "https://a.example.com/m.git@main\n")
+        _make_catalog(tmp_path / "cache", "sha2", "git@b.example.com:org/m.git@develop\n")
         args = argparse.Namespace(current_token="https")
         with patch.dict(
             os.environ,
             {
                 "KANON_COMPLETION_ENABLED": "1",
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             _handle(args)

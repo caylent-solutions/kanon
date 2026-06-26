@@ -30,10 +30,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern used in test_xml_manifest_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -115,11 +111,6 @@ def _build_notice_manifest(
         f'  <default revision="{default_revision}" remote="{remote_name}" />\n'
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <notice> with minimum required content parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -222,11 +213,6 @@ class TestNoticeMinimumRequired:
             f"Expected manifest.notice to be set for notice_text={notice_text!r} but got None"
         )
         assert manifest.notice == notice_text, f"Expected notice={notice_text!r} but got: {manifest.notice!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <notice> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -404,11 +390,6 @@ class TestNoticeAllDocumentedAttributes:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <notice> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestNoticeDefaultBehavior:
     """Verify that the default behavior of <notice> is as documented.
@@ -516,11 +497,6 @@ class TestNoticeDefaultBehavior:
         assert manifest.notice is not None, (
             f"Expected manifest.notice to be non-None for text={notice_text!r} but got None"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

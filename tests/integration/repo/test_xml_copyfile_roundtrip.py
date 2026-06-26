@@ -22,10 +22,6 @@ import pytest
 from kanon_cli.repo import manifest_xml
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern in test_xml_project_roundtrip.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -96,10 +92,6 @@ def _get_project(manifest: manifest_xml.XmlManifest, project_name: str):
     return projects_by_name[project_name]
 
 
-# ---------------------------------------------------------------------------
-# Fixture XML content for <copyfile> round-trip tests
-# ---------------------------------------------------------------------------
-
 _FIXTURE_XML = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     "<manifest>\n"
@@ -122,11 +114,6 @@ _FIXTURE_MULTI_COPYFILE_XML = (
     "  </project>\n"
     "</manifest>\n"
 )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 + AC-FINAL-010: Real parse + model verification
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -232,11 +219,6 @@ def test_copyfile_model_matches_xml_fully(tmp_path: pathlib.Path) -> None:
     copyfile = project.copyfiles[0]
     assert copyfile.src == "VERSION", f"Expected copyfile.src='VERSION' but got: {copyfile.src!r}"
     assert copyfile.dest == "out/VERSION", f"Expected copyfile.dest='out/VERSION' but got: {copyfile.dest!r}"
-
-
-# ---------------------------------------------------------------------------
-# Round-trip: parse + ToXml preserves structural elements
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

@@ -1,17 +1,3 @@
-# Copyright 2021 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the platform_utils.py module."""
 
 import os
@@ -32,14 +18,11 @@ class RemoveTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "test")
 
-            # Should not fail.
             platform_utils.remove(path, missing_ok=True)
 
-            # Should fail.
             self.assertRaises(OSError, platform_utils.remove, path)
             self.assertRaises(OSError, platform_utils.remove, path, missing_ok=False)
 
-            # Should not fail if it exists.
             open(path, "w").close()
             platform_utils.remove(path, missing_ok=True)
             self.assertFalse(os.path.exists(path))
@@ -94,7 +77,7 @@ class SymlinkTests(unittest.TestCase):
         with mock.patch("kanon_cli.repo.platform_utils.isWindows", return_value=True):
             with mock.patch("kanon_cli.repo.platform_utils._validate_winpath") as mock_validate:
                 with mock.patch("kanon_cli.repo.platform_utils.isdir", return_value=False):
-                    with mock.patch("sys.modules", {"platform_utils_win32": mock.Mock()}):
+                    with mock.patch.dict("sys.modules", {"kanon_cli.repo.platform_utils_win32": mock.Mock()}):
                         mock_validate.return_value = "valid_path"
                         platform_utils.symlink("target", "link")
                         self.assertEqual(mock_validate.call_count, 2)
@@ -161,7 +144,6 @@ class MakelongpathTests(unittest.TestCase):
             result = platform_utils._makelongpath(long_path)
             self.assertTrue(result.startswith("\\\\?\\"))
         else:
-            # On non-Windows, long paths are returned unchanged
             long_path = "/path/" + "x" * 250
             result = platform_utils._makelongpath(long_path)
             self.assertEqual(result, long_path)
@@ -305,7 +287,7 @@ class RemoveExtendedTests(unittest.TestCase):
                     error = OSError()
                     error.errno = errno.EROFS
                     mock_remove.side_effect = error
-                    # Should not raise
+
                     platform_utils.remove("/path", missing_ok=True)
 
     def test_remove_raises_erofs_when_file_exists(self):
@@ -400,7 +382,7 @@ class IslinkTests(unittest.TestCase):
             with mock.patch("kanon_cli.repo.platform_utils._makelongpath", side_effect=lambda x: x):
                 mock_win32 = mock.Mock()
                 mock_win32.islink.return_value = False
-                with mock.patch.dict("sys.modules", {"platform_utils_win32": mock_win32}):
+                with mock.patch.dict("sys.modules", {"kanon_cli.repo.platform_utils_win32": mock_win32}):
                     result = platform_utils.islink("C:\\path")
                     mock_win32.islink.assert_called_once()
                     self.assertFalse(result)
@@ -425,7 +407,7 @@ class ReadlinkTests(unittest.TestCase):
             with mock.patch("kanon_cli.repo.platform_utils._makelongpath", side_effect=lambda x: x):
                 mock_win32 = mock.Mock()
                 mock_win32.readlink.return_value = "C:\\target"
-                with mock.patch.dict("sys.modules", {"platform_utils_win32": mock_win32}):
+                with mock.patch.dict("sys.modules", {"kanon_cli.repo.platform_utils_win32": mock_win32}):
                     result = platform_utils.readlink("C:\\link")
                     mock_win32.readlink.assert_called_once()
                     self.assertEqual(result, "C:\\target")

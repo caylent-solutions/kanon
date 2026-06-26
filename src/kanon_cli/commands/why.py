@@ -7,18 +7,23 @@ at the requested node, and prints one chain per line.
 Chain format (text mode):
   <top-source> -> <include-path>@<sha> -> ... -> <project>@<sha>
 
-Argument matching (spec Section 4.5 step 2):
-  All three categories are evaluated before deciding. No early-exit on first hit.
+Argument matching:
+  All categories are evaluated before deciding. No early-exit on first hit. Matched
+  nodes are grouped by logical identity, so the same logical node reached by many
+  chains (e.g. a transitive include pulled in by many sources) resolves to one
+  identity and every chain is printed.
   (a) <project> repo URL -- canonicalized via canonicalize_repo_url. Match against
       every <project> node's canonicalized URL.
   (b) Transitive XML manifest path -- exact-string equality against every <include>
       node's path_in_repo (ref) value.
   (c) Top-level source name -- normalized via derive_source_name so that case and
       dash/underscore differences are treated as equivalent.
+  (d) Transitive include name -- normalized via derive_source_name, matched against
+      every <include> node's name.
 
-Ambiguity (spec Section 4.5 step 3):
-  If two or more categories match, a hard error is raised naming every interpretation
-  so the operator knows how to disambiguate.
+Ambiguity:
+  Only when two or more DISTINCT logical interpretations match is a hard error
+  raised, naming each distinct interpretation so the operator can disambiguate.
 
 Spec reference: spec/kanon-list-add-lock-features-spec.md Section 4.5
 behaviour steps 1-3, 5 (text format). Section 7 for KANON_WHY_FORMAT.
@@ -54,21 +59,17 @@ from kanon_cli.constants import (
     WHY_SCOPE_TRANSITIVE,
 )
 from kanon_cli.utils.levenshtein import levenshtein_distance
+from kanon_cli.core.catalog import resolve_env_catalog_source
 from kanon_cli.core.cli_args import add_catalog_source_arg
 from kanon_cli.core.include_walker import IncludeTree, _walk_includes
 from kanon_cli.core.install import _resolve_ref_to_sha
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.lockfile import Lockfile, IncludeEntry, read_lockfile
-from kanon_cli.core.manifest import walk_includes_collecting_remotes
+from kanon_cli.core.manifest import join_project_repo_url, walk_includes_collecting_remotes
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.core.remote_url import _enforce_remote_url_policy
 from kanon_cli.core.url import canonicalize_repo_url
 from kanon_cli.utils.lock_file_path import derive_lock_file_path
-
-
-# ---------------------------------------------------------------------------
-# Data structures
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -110,11 +111,6 @@ class ResolvedTree:
     """
 
     sources: list[ChainNode]
-
-
-# ---------------------------------------------------------------------------
-# Lockfile-to-tree conversion
-# ---------------------------------------------------------------------------
 
 
 def _include_entry_to_node(entry: IncludeEntry) -> ChainNode:
@@ -201,12 +197,10 @@ def _build_tree_from_lockfile(lockfile: Lockfile) -> ResolvedTree:
             scope=WHY_SCOPE_TOP_LEVEL,
         )
 
-        # Build include subtree (recursive)
         include_chain_roots: list[ChainNode] = []
         for inc in source_entry.includes:
             include_chain_roots.append(_include_entry_to_node(inc))
 
-        # Build project leaf nodes
         project_nodes: list[ChainNode] = [
             ChainNode(
                 kind="project",
@@ -220,17 +214,12 @@ def _build_tree_from_lockfile(lockfile: Lockfile) -> ResolvedTree:
         ]
 
         if include_chain_roots:
-            # Attach includes as direct children of the source
             for inc_node in include_chain_roots:
                 source_node.children.append(inc_node)
 
-            # Place project nodes under every leaf include so the chain output
-            # contains the intermediate include segment:
-            #   <source> -> <include-path>@<sha> -> <project>@<sha>
             leaf_includes = _collect_leaf_include_nodes(include_chain_roots)
             for leaf in leaf_includes:
                 for proj_node in project_nodes:
-                    # Each leaf gets its own ChainNode instance to avoid sharing
                     leaf.children.append(
                         ChainNode(
                             kind="project",
@@ -242,18 +231,12 @@ def _build_tree_from_lockfile(lockfile: Lockfile) -> ResolvedTree:
                         )
                     )
         else:
-            # No includes: projects are direct children of the source node
             for proj_node in project_nodes:
                 source_node.children.append(proj_node)
 
         sources.append(source_node)
 
     return ResolvedTree(sources=sources)
-
-
-# ---------------------------------------------------------------------------
-# Live tree resolution
-# ---------------------------------------------------------------------------
 
 
 class LiveResolveError(Exception):
@@ -362,9 +345,6 @@ def _substitute_fetch_url(
     if "${" not in fetch_url:
         return fetch_url
 
-    # Temporarily inject globals into os.environ so os.path.expandvars resolves
-    # ${VAR} patterns.  Save and restore any keys we overwrite so the process
-    # environment is unchanged after this call.
     overwritten: dict[str, str | None] = {}
     for key, value in globals_map.items():
         overwritten[key] = os.environ.get(key)
@@ -459,19 +439,12 @@ def _build_project_nodes_from_xml(
         remote_attr = project_el.get("remote")
         project_name = project_el.get("name", "")
         if not remote_attr or not project_name:
-            # Skip projects with no remote attribute or empty name -- these
-            # cannot be resolved to a canonical URL without a <default> lookup.
             continue
 
         raw_fetch = remote_map.get(remote_attr)
         if raw_fetch is None:
-            # Remote is unresolvable; skip rather than hard-fail so that
-            # valid projects in the same manifest still produce chain nodes.
-            # The audit command (kanon catalog audit) surfaces R001 for these.
             continue
 
-        # Substitute ${VAR} placeholders (e.g. ${GITBASE}) from .kanon globals
-        # before canonicalization.  Fails fast when a placeholder has no match.
         fetch_url = _substitute_fetch_url(
             raw_fetch,
             resolved_globals,
@@ -479,12 +452,10 @@ def _build_project_nodes_from_xml(
             resolved_kanon_file,
         )
 
-        raw_url = f"{fetch_url.rstrip('/')}/{project_name}"
+        raw_url = join_project_repo_url(fetch_url, project_name)
         try:
             canonical = canonicalize_repo_url(raw_url)
         except ValueError:
-            # URL is genuinely unresolvable after substitution (e.g. non-URL
-            # value in fetch that is not a ${VAR} placeholder); skip.
             continue
 
         project_nodes.append(
@@ -523,7 +494,7 @@ def _clone_source_repo(
     Raises:
         LiveResolveError: If ``git clone`` exits non-zero.
     """
-    # Strip canonical ref prefixes so git receives a plain name.
+
     branch_or_tag = revision
     for prefix in ("refs/tags/", "refs/heads/"):
         if revision.startswith(prefix):
@@ -617,9 +588,6 @@ def _populate_source_children_from_manifest(
         kanon_file=kanon_file,
     )
 
-    # Attach children mirroring _build_tree_from_lockfile (~215-240):
-    # includes as direct children of the source; projects under every leaf
-    # include, or directly under the source when no includes are present.
     if include_roots:
         for inc_node in include_roots:
             source_node.children.append(inc_node)
@@ -692,7 +660,7 @@ def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> Resolve
         for source_name in kanonenv["KANON_SOURCES"]:
             source_data = kanonenv["sources"][source_name]
             url: str = source_data["url"]
-            revision: str = source_data["revision"]
+            revision: str = source_data["ref"]
             manifest_path: str = source_data["path"]
 
             try:
@@ -735,11 +703,6 @@ def _live_resolve_tree(kanon_file: pathlib.Path, catalog_source: str) -> Resolve
     return ResolvedTree(sources=source_nodes)
 
 
-# ---------------------------------------------------------------------------
-# Chain walking (DFS)
-# ---------------------------------------------------------------------------
-
-
 def _walk_chains(tree: ResolvedTree, target_canonical_url: str) -> list[list[ChainNode]]:
     """Walk the resolved tree depth-first and collect all chains ending at the target.
 
@@ -759,12 +722,10 @@ def _walk_chains(tree: ResolvedTree, target_canonical_url: str) -> list[list[Cha
     def _dfs(node: ChainNode, path: list[ChainNode]) -> None:
         current_path = path + [node]
 
-        # Check if this node is the target project
         if node.kind == "project" and node.canonical_url == target_canonical_url:
             found_chains.append(current_path)
             return
 
-        # Recurse into children
         for child in node.children:
             _dfs(child, current_path)
 
@@ -818,9 +779,6 @@ def _walk_chains_from_node(tree: ResolvedTree, target_node: ChainNode) -> list[l
             found_chains.append(current_path)
             return
         if not node.children:
-            # Source or include node with no nested children: the node itself
-            # is the leaf of the chain (e.g. a live-resolved source with no
-            # projects, or a top-level source that is the match target).
             found_chains.append(current_path)
             return
         for child in node.children:
@@ -830,11 +788,9 @@ def _walk_chains_from_node(tree: ResolvedTree, target_node: ChainNode) -> list[l
         """Walk the tree looking for target_node; once found, collect chains."""
         if node is target_node:
             if node.scope == WHY_SCOPE_TOP_LEVEL:
-                # Top-level source match: return a single-node chain. The source is
-                # the terminal point; no need to descend into includes or projects.
                 found_chains.append([node])
                 return
-            # Transitive include or unscoped (live-resolve) node: collect all leaves.
+
             _dfs_collect_all_leaves(node, path)
             return
         for child in node.children:
@@ -844,11 +800,6 @@ def _walk_chains_from_node(tree: ResolvedTree, target_node: ChainNode) -> list[l
         _dfs_find(source_node, [])
 
     return found_chains
-
-
-# ---------------------------------------------------------------------------
-# Three-category argument matchers
-# ---------------------------------------------------------------------------
 
 
 def _match_by_url(tree: ResolvedTree, argument: str) -> list[ChainNode]:
@@ -879,7 +830,6 @@ def _match_by_url(tree: ResolvedTree, argument: str) -> list[ChainNode]:
 
     matches: list[ChainNode] = []
 
-    # Check top-level source nodes by their URL.
     for source_node in tree.sources:
         if source_node.url is not None:
             try:
@@ -920,7 +870,6 @@ def _match_by_xml_path(tree: ResolvedTree, argument: str) -> list[ChainNode]:
     """
     matches: list[ChainNode] = []
 
-    # Check top-level source nodes by their root manifest path (ref).
     for source_node in tree.sources:
         if source_node.ref is not None and source_node.ref == argument:
             matches.append(source_node)
@@ -956,9 +905,57 @@ def _match_by_source_name(tree: ResolvedTree, argument: str) -> list[ChainNode]:
     return [source for source in tree.sources if derive_source_name(source.name) == normalized_arg]
 
 
-# ---------------------------------------------------------------------------
-# Ambiguity-aware match resolution
-# ---------------------------------------------------------------------------
+def _match_by_include_name(tree: ResolvedTree, argument: str) -> list[ChainNode]:
+    """Match the argument against transitive include nodes by normalized name.
+
+    The argument and each include node's name are normalized via derive_source_name
+    (warn=False) before comparison, mirroring source-name matching so case and
+    dash/underscore differences are equivalent. Includes nest at any depth, so the
+    whole tree is walked.
+
+    Args:
+        tree: The fully resolved dependency tree.
+        argument: The raw argument string from the CLI.
+
+    Returns:
+        List of include ChainNode objects whose normalized name equals the
+        normalized argument. Empty when no match.
+    """
+    normalized_arg = derive_source_name(argument, warn=False)
+    matches: list[ChainNode] = []
+
+    def _collect_includes(node: ChainNode) -> None:
+        if node.kind == "include" and derive_source_name(node.name, warn=False) == normalized_arg:
+            matches.append(node)
+        for child in node.children:
+            _collect_includes(child)
+
+    for source_node in tree.sources:
+        _collect_includes(source_node)
+
+    return matches
+
+
+def _node_identity(node: ChainNode) -> tuple[str, ...]:
+    """Return the value-based logical-identity key for a matched node.
+
+    Two matched nodes with equal identity are the same logical dependency, so the
+    command prints all of their chains together; two nodes with different identity
+    are distinct interpretations and trigger the ambiguity error. Keys are
+    namespaced by node.kind so a source and an include can never collide, and they
+    are value-based because the lockfile tree builder clones project and include
+    nodes (object identity would over-count the same logical node).
+
+    Identity per kind:
+      - project: (kind, canonical_url)
+      - include: (kind, path_in_repo, sha) -- include url is always None
+      - source:  (kind, normalized name)
+    """
+    if node.kind == "project":
+        return (node.kind, node.canonical_url or "")
+    if node.kind == "include":
+        return (node.kind, node.ref or "", node.sha)
+    return (node.kind, derive_source_name(node.name, warn=False))
 
 
 @dataclass
@@ -976,58 +973,104 @@ class _MatchHit:
     node: ChainNode
 
 
-def _resolve_match(tree: ResolvedTree, argument: str) -> _MatchHit:
-    """Evaluate all three matching categories and return the single unambiguous hit.
+@dataclass
+class _ResolvedIdentity:
+    """One logical match identity and every node that realizes it.
 
-    All three categories (URL, XML path, source name) are evaluated. The strategy
-    is NOT stop-at-first-match -- every category is checked regardless of prior hits.
+    Two matched nodes with the same _node_identity are the same logical thing: the
+    command prints all of their chains under one match annotation. Two nodes with
+    different identity are distinct interpretations and raise the ambiguity error.
 
-    When zero matches are found, the not-found error message includes a closest-match
+    Attributes:
+        category: The category token for the annotation and JSON payload. One of
+            'url', 'xml_path', 'source_name', 'include_name'.
+        token: The single canonical token shown to the user (canonical URL, XML
+            manifest path, or normalized source/include name), derived from the
+            identity rather than the raw argument.
+        nodes: Every matched ChainNode sharing this identity (at least one).
+    """
+
+    category: str
+    token: str
+    nodes: list[ChainNode]
+
+
+def _identity_token(hit: _MatchHit) -> str:
+    """Return the canonical token to display for a matched identity.
+
+    The token is the user-facing canonical form of what matched: the canonical
+    project URL or source URL, the exact XML manifest path, or the include/source
+    name. It is derived from the matched node, never from the raw argument.
+    """
+    node = hit.node
+    if hit.category == "url":
+        if node.kind == "source":
+            return node.url or ""
+        return node.canonical_url or ""
+    if hit.category == "xml_path":
+        return node.ref or ""
+    return node.name
+
+
+def _identity_label(hit: _MatchHit) -> str:
+    """Return the human-readable interpretation label for the ambiguity message."""
+    if hit.category == "url":
+        return "source URL" if hit.node.kind == "source" else "project URL"
+    if hit.category == "xml_path":
+        return "XML manifest path"
+    if hit.category == "source_name":
+        return "source name"
+    return "include name"
+
+
+def _resolve_match(tree: ResolvedTree, argument: str) -> _ResolvedIdentity:
+    """Evaluate every matching category and resolve to a single logical identity.
+
+    All four categories are evaluated (URL, XML path, source name, include name);
+    there is no stop-at-first-match. Matched nodes are grouped by value-based
+    logical identity (see _node_identity), so the same logical thing matched many
+    times -- e.g. a transitive include pulled in by many top-level sources --
+    collapses to one identity and resolves successfully: every chain is printed.
+    Only two or more distinct identities is an ambiguity.
+
+    When zero matches are found, the not-found error includes a closest-match
     suggestion list (up to KANON_WHY_SUGGEST_TOP_N candidates within
-    KANON_WHY_SUGGEST_MAX_DISTANCE Levenshtein edit distance). When no candidates are
-    within the threshold, the message states that no close matches were found.
+    KANON_WHY_SUGGEST_MAX_DISTANCE Levenshtein edit distance).
 
     Args:
         tree: The fully resolved dependency tree.
         argument: The raw argument string from the CLI.
 
     Returns:
-        The single _MatchHit when exactly one category produces a result.
+        The single _ResolvedIdentity when all matches share one logical identity.
 
     Raises:
-        SystemExit(1): When zero matches are found across all categories (not-found).
-        SystemExit(1): When two or more matches are found across categories (ambiguity).
+        SystemExit(1): When zero matches are found (not-found).
+        SystemExit(1): When two or more distinct identities match (ambiguity).
     """
     hits: list[_MatchHit] = []
 
-    # (a) URL category
-    url_nodes = _match_by_url(tree, argument)
-    for node in url_nodes:
+    for node in _match_by_url(tree, argument):
         if node.kind == "source":
-            # Source nodes matched by URL use the raw source URL as the label.
             url_label = node.url or argument
+            label = f"source URL '{url_label}'"
         else:
             assert node.canonical_url is not None, (
                 f"project node {node.name!r} matched by URL but has no canonical_url (internal invariant)"
             )
-            url_label = node.canonical_url
-        hits.append(
-            _MatchHit(
-                category="url", label=f"{'source' if node.kind == 'source' else 'project'} URL '{url_label}'", node=node
-            )
-        )
+            label = f"project URL '{node.canonical_url}'"
+        hits.append(_MatchHit(category="url", label=label, node=node))
 
-    # (b) XML path category
-    xml_nodes = _match_by_xml_path(tree, argument)
-    for node in xml_nodes:
+    for node in _match_by_xml_path(tree, argument):
         hits.append(_MatchHit(category="xml_path", label=f"XML manifest path '{node.ref}'", node=node))
 
-    # (c) Source name category
-    src_nodes = _match_by_source_name(tree, argument)
-    for node in src_nodes:
+    for node in _match_by_source_name(tree, argument):
         hits.append(_MatchHit(category="source_name", label=f"source name '{node.name}'", node=node))
 
-    if len(hits) == 0:
+    for node in _match_by_include_name(tree, argument):
+        hits.append(_MatchHit(category="include_name", label=f"include name '{node.name}'", node=node))
+
+    if not hits:
         universe = _build_suggestion_universe(tree)
         suggestions = _suggest_closest_matches(
             argument,
@@ -1048,23 +1091,75 @@ def _resolve_match(tree: ResolvedTree, argument: str) -> _MatchHit:
             )
         sys.exit(1)
 
-    if len(hits) >= 2:
-        interpretations = "; ".join(h.label for h in hits)
+    groups: dict[tuple[str, ...], list[_MatchHit]] = {}
+    for hit in hits:
+        groups.setdefault(_node_identity(hit.node), []).append(hit)
+
+    if len(groups) >= 2:
+        interpretations = "\n".join(
+            f"  {_identity_label(group[0])}: {_identity_token(group[0])}" for group in groups.values()
+        )
         print(
-            f"ERROR: argument '{argument}' is ambiguous -- matches multiple categories: {interpretations}.\n"
-            "Pass the argument in its canonical form to disambiguate (e.g., use the full "
-            "canonical project URL for URL matching, or the exact XML manifest path for "
-            "XML-path matching, or the exact source name token for source-name matching).",
+            f"ERROR: argument '{argument}' is ambiguous: it matches {len(groups)} distinct interpretations:\n"
+            f"{interpretations}\n"
+            "Disambiguate by passing one of the exact tokens above.",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    return hits[0]
+    representative_hits = next(iter(groups.values()))
+    representative = representative_hits[0]
+
+    deduped_nodes: list[ChainNode] = []
+    seen_ids: set[int] = set()
+    for hit in representative_hits:
+        if id(hit.node) not in seen_ids:
+            seen_ids.add(id(hit.node))
+            deduped_nodes.append(hit.node)
+
+    return _ResolvedIdentity(
+        category=representative.category,
+        token=_identity_token(representative),
+        nodes=deduped_nodes,
+    )
 
 
-# ---------------------------------------------------------------------------
-# Closest-match suggestion (spec Section 4.5 step 5)
-# ---------------------------------------------------------------------------
+def _collect_chains_for_identity(tree: ResolvedTree, identity: _ResolvedIdentity) -> list[list[ChainNode]]:
+    """Collect the union of all chains reaching any node of the matched identity.
+
+    A project URL identity delegates to _walk_chains once (it already traverses the
+    whole tree and finds every chain ending at the canonical URL). Include, source,
+    and source-URL identities call _walk_chains_from_node per matched node and
+    concatenate, de-duplicating by a value signature so diamond includes and cloned
+    nodes collapse to one chain while first-seen order is preserved.
+
+    Args:
+        tree: The fully resolved dependency tree.
+        identity: The resolved match identity (one or more nodes of one kind).
+
+    Returns:
+        The list of chains to render. Empty when no chain reaches the identity.
+    """
+    project_nodes = [node for node in identity.nodes if node.kind == "project"]
+    if identity.category == "url" and project_nodes:
+        target_canonical = project_nodes[0].canonical_url
+        if target_canonical is None:
+            print(
+                f"ERROR: matched project node '{project_nodes[0].name}' has no canonical URL (internal error)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        return _walk_chains(tree, target_canonical)
+
+    collected: list[list[ChainNode]] = []
+    seen_signatures: set[tuple[tuple[str, str, str | None, str], ...]] = set()
+    for node in identity.nodes:
+        for chain in _walk_chains_from_node(tree, node):
+            signature = tuple((member.kind, member.name, member.ref, member.sha) for member in chain)
+            if signature not in seen_signatures:
+                seen_signatures.add(signature)
+                collected.append(chain)
+    return collected
 
 
 def _build_suggestion_universe(tree: ResolvedTree) -> list[str]:
@@ -1072,7 +1167,7 @@ def _build_suggestion_universe(tree: ResolvedTree) -> list[str]:
 
     The universe is the union of:
     - Every top-level source name (as stored in the tree, not normalized).
-    - Every include node's path_in_repo value (XML manifest paths).
+    - Every include node's path_in_repo value (XML manifest paths) and name.
     - Every project node's canonical_url value.
 
     Args:
@@ -1087,8 +1182,10 @@ def _build_suggestion_universe(tree: ResolvedTree) -> list[str]:
     def _collect(node: ChainNode) -> None:
         if node.kind == "source":
             candidates.append(node.name)
-        elif node.kind == "include" and node.ref is not None:
-            candidates.append(node.ref)
+        elif node.kind == "include":
+            if node.ref is not None:
+                candidates.append(node.ref)
+            candidates.append(node.name)
         elif node.kind == "project" and node.canonical_url is not None:
             candidates.append(node.canonical_url)
         for child in node.children:
@@ -1133,11 +1230,6 @@ def _suggest_closest_matches(
     return [candidate for _, candidate in scored[:top_n]]
 
 
-# ---------------------------------------------------------------------------
-# Text rendering
-# ---------------------------------------------------------------------------
-
-
 def _node_display(node: ChainNode) -> str:
     """Format a single node for the text-format chain display.
 
@@ -1157,8 +1249,69 @@ def _node_display(node: ChainNode) -> str:
     if node.kind == "include":
         label = node.ref if node.ref else node.name
         return f"{label}@{node.sha}"
-    # project
+
     return f"{node.name}@{node.sha}"
+
+
+def _build_alias_renders(kanon_path: pathlib.Path) -> dict[str, str]:
+    """Build the alias -> render-string map from the parsed ``.kanon`` file.
+
+    For each source block the render string is ``alias -> name from <url>@<ref>``
+    (spec Section 5.1 / FR-59, FR-6), where ``name`` is the per-dependency
+    ``KANON_SOURCE_<alias>_NAME`` value (the original catalog manifest name) and
+    ``ref`` is the verbatim ``KANON_SOURCE_<alias>_REF`` spec. The map is keyed by
+    the alias so callers can render only the aliases that appear in the resolved
+    chains.
+
+    Args:
+        kanon_path: Path to the ``.kanon`` file.
+
+    Returns:
+        Dict mapping each source alias to its ``alias -> name from <url>@<ref>``
+        render string.
+
+    Raises:
+        ValueError: From ``parse_kanonenv`` when the ``.kanon`` file is malformed
+            or missing required source variables.
+    """
+    kanonenv = parse_kanonenv(kanon_path)
+    renders: dict[str, str] = {}
+    for alias in kanonenv["KANON_SOURCES"]:
+        source = kanonenv["sources"][alias]
+        renders[alias] = f"{alias} -> {source['name']} from {source['url']}@{source['ref']}"
+    return renders
+
+
+def _alias_renders_for_chains(
+    chains: list[list[ChainNode]],
+    alias_renders: dict[str, str],
+) -> list[str]:
+    """Return the alias-render strings for every source node present in the chains.
+
+    Walks each chain's leading source node, looks its name up in
+    ``alias_renders`` (the alias -> ``alias -> name from <url>@<ref>`` map), and
+    returns the render strings in first-seen order with no duplicates. Source
+    aliases that have no entry in ``alias_renders`` (e.g. live-resolve-only
+    sources not present in the parsed ``.kanon`` map) are skipped without error.
+
+    Args:
+        chains: The resolved chains; each chain begins with a source node.
+        alias_renders: The alias -> render-string map from ``_build_alias_renders``.
+
+    Returns:
+        The ordered, de-duplicated list of render strings for the chains' sources.
+    """
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for chain in chains:
+        if not chain:
+            continue
+        source_alias = chain[0].name
+        if source_alias in seen or source_alias not in alias_renders:
+            continue
+        seen.add(source_alias)
+        ordered.append(alias_renders[source_alias])
+    return ordered
 
 
 def _render_text(chains: list[list[ChainNode]]) -> list[str]:
@@ -1178,11 +1331,6 @@ def _render_text(chains: list[list[ChainNode]]) -> list[str]:
         parts = [_node_display(node) for node in chain]
         lines.append(" -> ".join(parts))
     return lines
-
-
-# ---------------------------------------------------------------------------
-# JSON rendering
-# ---------------------------------------------------------------------------
 
 
 def _chain_to_node_dicts(chain: list[ChainNode]) -> list[dict[str, object]]:
@@ -1207,8 +1355,6 @@ def _chain_to_node_dicts(chain: list[ChainNode]) -> list[dict[str, object]]:
     """
     result: list[dict[str, object]] = []
     for node in chain:
-        # For project nodes, emit the canonicalized URL so the JSON output
-        # matches the text-renderer and the spec (Section 4.5 step 4).
         if node.kind == "project":
             url_value: object = node.canonical_url
         else:
@@ -1259,11 +1405,6 @@ def _render_json(chains: list[list[ChainNode]]) -> str:
     return json.dumps(_build_why_payload(chains), sort_keys=False, indent=KANON_WHY_JSON_INDENT) + "\n"
 
 
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
-
-
 def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") -> None:
     """Register the 'why' subcommand on the top-level argparse subparsers.
 
@@ -1279,14 +1420,17 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "(from .kanon.lock when present, else live-resolves against\n"
             "the catalog), and prints every chain reaching the requested\n"
             "node.\n\n"
-            "Argument matching (all three categories evaluated):\n"
+            "Argument matching (all categories evaluated, grouped by identity):\n"
             "  (a) <project> repo URL -- canonicalized via canonicalize_repo_url.\n"
             "  (b) Transitive XML manifest path -- exact-string equality.\n"
-            "  (c) Top-level source name -- normalized via derive_source_name.\n\n"
+            "  (c) Top-level source name -- normalized via derive_source_name.\n"
+            "  (d) Transitive include name -- normalized via derive_source_name.\n"
+            "The same node reached by many chains prints all of them; only two or\n"
+            "more distinct interpretations is an ambiguity.\n\n"
             "Chain format:\n"
             "  <top-source> -> <xml-path>@<sha> -> ... -> <project>@<sha>\n\n"
-            "Catalog source precedence: --catalog-source flag, then\n"
-            "KANON_CATALOG_SOURCE env var. Required only when .kanon.lock\n"
+            "Catalog source precedence: --catalog-source flag, then the single\n"
+            "KANON_CATALOG_SOURCES env-var entry. Required only when .kanon.lock\n"
             "is absent (live-resolve path)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1296,10 +1440,10 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         "target",
         metavar="<project-url-or-name>",
         help=(
-            "The project URL, XML manifest path, or source name to look up. "
+            "The project URL, XML manifest path, source name, or transitive include name to look up. "
             "Project URLs are canonicalized via canonicalize_repo_url before matching. "
             "XML manifest paths are matched by exact string equality. "
-            "Source names are normalized via derive_source_name (case- and separator-insensitive)."
+            "Source and include names are normalized via derive_source_name (case- and separator-insensitive)."
         ),
     )
 
@@ -1349,11 +1493,6 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     parser.set_defaults(func=run)
 
 
-# ---------------------------------------------------------------------------
-# Command entry point
-# ---------------------------------------------------------------------------
-
-
 def run(args: argparse.Namespace) -> int:
     """Execute the 'kanon why' command.
 
@@ -1376,7 +1515,7 @@ def run(args: argparse.Namespace) -> int:
     Returns:
         0 on success. Non-zero on error (but most errors call sys.exit directly).
     """
-    # -- Validate .kanon file existence --
+
     kanon_path = pathlib.Path(args.kanon_file)
     if not kanon_path.exists():
         print(
@@ -1386,66 +1525,45 @@ def run(args: argparse.Namespace) -> int:
         )
         sys.exit(1)
 
-    # -- Determine lockfile path --
-    # Use the shared three-tier derivation: CLI flag > KANON_LOCK_FILE env > derived default.
     resolved_lock_path = derive_lock_file_path(
         cli_lock_file=pathlib.Path(args.lock_file) if args.lock_file else None,
         env_lock_file=os.environ.get(KANON_LOCK_FILE),
         kanon_file_path=kanon_path,
     )
-    # Fail fast when the user explicitly specifies --lock-file and the path does not exist.
+
     if args.lock_file is not None and not resolved_lock_path.exists():
         print(
             f"ERROR: lock file not found: {args.lock_file}",
             file=sys.stderr,
         )
         sys.exit(1)
-    # Only treat the path as present when the file actually exists.
+
     if resolved_lock_path.exists():
         lock_file_path: pathlib.Path | None = resolved_lock_path
     else:
         lock_file_path = None
 
-    # -- Resolve the tree --
     if lock_file_path is not None and lock_file_path.exists():
-        # Lockfile path: no network calls, read SHAs from lockfile directly.
         lockfile = read_lockfile(lock_file_path)
         tree = _build_tree_from_lockfile(lockfile)
     else:
-        # Live-resolve path: requires catalog source.
-        if not args.catalog_source:
+        catalog_source: str | None = args.catalog_source or resolve_env_catalog_source()
+        if not catalog_source:
             print(
                 MISSING_CATALOG_ERROR_TEMPLATE.format(command="kanon why"),
                 file=sys.stderr,
                 end="",
             )
             sys.exit(1)
-        # Delegate to live resolver.
+
         try:
-            tree = _live_resolve_tree(kanon_path, args.catalog_source)
+            tree = _live_resolve_tree(kanon_path, catalog_source)
         except LiveResolveError as exc:
             print(str(exc), file=sys.stderr)
             sys.exit(1)
 
-    # -- Resolve the match (all three categories; ambiguity detection) --
-    # _resolve_match calls sys.exit(1) on zero matches (not-found) or
-    # two-or-more matches (ambiguity). Returns a single _MatchHit on success.
-    hit = _resolve_match(tree, args.target)
-
-    # -- Walk all chains from the matched node --
-    if hit.category == "url" and hit.node.kind == "project":
-        # Project URL match: target_canonical is stored on the project node.
-        target_canonical = hit.node.canonical_url
-        if target_canonical is None:
-            print(
-                f"ERROR: matched project node '{hit.node.name}' has no canonical URL (internal error)",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        chains = _walk_chains(tree, target_canonical)
-    else:
-        # XML path, source name, or source-URL match: walk from the matched node itself.
-        chains = _walk_chains_from_node(tree, hit.node)
+    identity = _resolve_match(tree, args.target)
+    chains = _collect_chains_for_identity(tree, identity)
 
     if not chains:
         print(
@@ -1454,25 +1572,24 @@ def run(args: argparse.Namespace) -> int:
         )
         sys.exit(1)
 
-    # -- Extract the matched token from hit.label for the match annotation --
-    # hit.label has the form: '<category description> '<token>''
-    # e.g. "project URL 'https://github.com/org/baz'" or "XML manifest path 'repo-specs/bar.xml'"
-    # The token is enclosed in the first and last single-quote in the label.
-    first_quote = hit.label.index("'")
-    last_quote = hit.label.rindex("'")
-    matched_token = hit.label[first_quote + 1 : last_quote]
+    matched_token = identity.token
 
-    # -- Render and emit output --
+    alias_renders_map = _build_alias_renders(kanon_path)
+    chain_alias_renders = _alias_renders_for_chains(chains, alias_renders_map)
+
     if args.format == KANON_WHY_FORMAT_JSON:
         from kanon_cli.cli import _emit_json_payload
 
         why_payload = {
-            "matched": {"category": hit.category, "token": matched_token},
+            "matched": {"category": identity.category, "token": matched_token},
+            "aliases": chain_alias_renders,
             "chains": _build_why_payload(chains),
         }
         _emit_json_payload(why_payload, sort_keys=False, indent=KANON_WHY_JSON_INDENT)
     else:
-        print(f"matched {hit.category} '{matched_token}'")
+        print(f"matched {identity.category} '{matched_token}'")
+        for alias_render in chain_alias_renders:
+            print(alias_render)
         lines = _render_text(chains)
         for line in lines:
             print(line)

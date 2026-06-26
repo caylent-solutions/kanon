@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for subcmds/selfupdate.py coverage."""
 
 from unittest import mock
@@ -140,7 +126,6 @@ def test_execute_calls_presync():
     with mock.patch("kanon_cli.repo.subcmds.selfupdate._PostRepoFetch"):
         cmd.Execute(opt, args)
 
-        # PreSync should be called before Sync_NetworkHalf
         call_order = [call[0] for call in rp.method_calls]
         presync_idx = call_order.index("PreSync")
         sync_idx = call_order.index("Sync_NetworkHalf")
@@ -184,7 +169,6 @@ def test_execute_verbose_flag():
     with mock.patch("kanon_cli.repo.subcmds.selfupdate._PostRepoFetch") as mock_post_fetch:
         cmd.Execute(opt, args)
 
-        # Check that verbose=True was passed
         call_args = mock_post_fetch.call_args
         assert call_args[1]["verbose"] is True
 
@@ -209,11 +193,10 @@ def test_execute_upgrade_path():
     with mock.patch("kanon_cli.repo.subcmds.selfupdate._PostRepoUpgrade") as mock_post_upgrade:
         cmd.Execute(opt, args)
 
-        # Should not call Sync_NetworkHalf in upgrade path
         rp.Sync_NetworkHalf.assert_not_called()
-        # Should not call gc in upgrade path
+
         rp.bare_git.gc.assert_not_called()
-        # Should call PostRepoUpgrade
+
         mock_post_upgrade.assert_called_once()
 
 
@@ -235,5 +218,4 @@ def test_execute_aggregate_errors():
     with pytest.raises(SelfupdateError) as exc_info:
         cmd.Execute(opt, args)
 
-    # Check that the error was included
     assert exc_info.value is not None

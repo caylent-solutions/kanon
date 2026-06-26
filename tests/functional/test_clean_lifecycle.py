@@ -1,4 +1,11 @@
-"""Full clean lifecycle with mocked uninstall."""
+"""Full clean lifecycle with mocked uninstall.
+
+3.0.0 store model (spec Section 7.1 / FR-15): ``clean`` removes the install
+artifacts (``.packages/`` and ``.kanon-data/``) from the shared ``KANON_HOME``
+store at ``<KANON_HOME>/store``, the same location ``install`` writes them, not
+from the project directory. Each test sets ``KANON_HOME`` to an isolated temp
+dir and resolves the store base via ``resolve_workspace_base_dir``.
+"""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -6,6 +13,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.clean import clean
+from kanon_cli.core.install import resolve_workspace_base_dir
 
 
 def _write_kanonenv(path: Path, content: str) -> Path:
@@ -13,25 +21,40 @@ def _write_kanonenv(path: Path, content: str) -> Path:
     return path
 
 
+def _isolated_store(monkeypatch: pytest.MonkeyPatch, kanon_home: Path) -> Path:
+    """Point KANON_HOME at ``kanon_home`` and return the resolved store base.
+
+    The store base is ``<KANON_HOME>/store`` -- the single location shared by
+    install and clean for the ``.packages/`` and ``.kanon-data/`` artifacts.
+    """
+    kanon_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("KANON_HOME", str(kanon_home))
+    return resolve_workspace_base_dir()
+
+
 @pytest.mark.functional
 class TestCleanLifecycle:
-    def test_clean_removes_packages_and_kanon(self, tmp_path: Path) -> None:
+    def test_clean_removes_packages_and_kanon(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        store = _isolated_store(monkeypatch, tmp_path / "home")
         kanonenv = _write_kanonenv(
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_REF=main\n"
                 "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
-        (tmp_path / ".packages" / "pkg").mkdir(parents=True)
-        (tmp_path / ".kanon-data" / "sources" / "build").mkdir(parents=True, exist_ok=True)
+        (store / ".packages" / "pkg").mkdir(parents=True)
+        (store / ".kanon-data" / "sources" / "build").mkdir(parents=True, exist_ok=True)
 
         clean(kanonenv)
 
-        assert not (tmp_path / ".packages").exists()
+        assert not (store / ".packages").exists()
 
-    def test_clean_with_marketplace_runs_uninstall(self, tmp_path: Path) -> None:
+    def test_clean_with_marketplace_runs_uninstall(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        store = _isolated_store(monkeypatch, tmp_path / "home")
         mp_dir = tmp_path / "marketplaces"
         mp_dir.mkdir()
         (mp_dir / "some-file.txt").write_text("data")
@@ -40,51 +63,60 @@ class TestCleanLifecycle:
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_REF=main\n"
                 "KANON_SOURCE_build_PATH=meta.xml\n"
-                "KANON_MARKETPLACE_INSTALL=true\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
+                "KANON_SOURCE_build_MARKETPLACE=true\n"
                 f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
             ),
         )
 
-        packages_dir = tmp_path / ".packages"
+        packages_dir = store / ".packages"
         packages_dir.mkdir(parents=True)
-        (tmp_path / ".kanon-data" / "sources" / "build").mkdir(parents=True, exist_ok=True)
+        (store / ".kanon-data" / "sources" / "build").mkdir(parents=True, exist_ok=True)
 
-        with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
+        with patch("kanon_cli.core.clean.uninstall_marketplace_plugins") as mock_uninstall:
             clean(kanonenv)
+            mock_uninstall.assert_called_once_with(mp_dir)
 
         assert not mp_dir.exists()
         assert not packages_dir.exists()
 
-    def test_clean_without_marketplace_skips_uninstall(self, tmp_path: Path) -> None:
+    def test_clean_without_marketplace_skips_uninstall(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        store = _isolated_store(monkeypatch, tmp_path / "home")
         kanonenv = _write_kanonenv(
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_REF=main\n"
                 "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
-        (tmp_path / ".packages" / "pkg").mkdir(parents=True)
-        (tmp_path / ".kanon-data" / "sources" / "build").mkdir(parents=True, exist_ok=True)
+        (store / ".packages" / "pkg").mkdir(parents=True)
+        (store / ".kanon-data" / "sources" / "build").mkdir(parents=True, exist_ok=True)
 
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins") as mock_uninstall:
             clean(kanonenv)
             mock_uninstall.assert_not_called()
 
-        assert not (tmp_path / ".packages").exists()
+        assert not (store / ".packages").exists()
 
-    def test_clean_idempotent_on_already_clean(self, tmp_path: Path) -> None:
+    def test_clean_idempotent_on_already_clean(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        store = _isolated_store(monkeypatch, tmp_path / "home")
         kanonenv = _write_kanonenv(
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_REF=main\n"
                 "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
 
         clean(kanonenv)
 
-        assert not (tmp_path / ".packages").exists()
+        assert not (store / ".packages").exists()

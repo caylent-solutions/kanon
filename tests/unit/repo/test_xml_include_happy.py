@@ -26,10 +26,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern used in test_xml_manifest_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -127,18 +123,10 @@ def _setup_include_scenario(
         A loaded XmlManifest instance.
     """
     repodir = _make_repo_dir(tmp_path)
-    # The include_root for XmlManifest is the manifests/ directory.
-    # The primary manifest.xml lives one level up in .repo/.
-    # We write included manifests into manifests/ so they are found by
-    # os.path.join(include_root, name).
+
     _write_included_manifest(repodir, included_filename, included_xml)
     manifest_file = _write_manifest(repodir, primary_xml)
     return _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <include> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -280,11 +268,6 @@ class TestIncludeMinimumAttributes:
             f"Expected 'platform/core' to be visible after <include name='{included_filename}'> "
             f"but got: {project_names!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <include> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -470,11 +453,6 @@ class TestIncludeAllDocumentedAttributes:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <include> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestIncludeDefaultAttributeValues:
     """Verify that default attribute behavior on <include> behaves as documented.
@@ -575,8 +553,7 @@ class TestIncludeDefaultAttributeValues:
 
         projects = {p.name: p for p in manifest.projects}
         tools = projects["platform/tools"]
-        # The project explicitly sets revision="refs/tags/v1.0.0" so the
-        # <include revision="refs/tags/v3.0.0"> must not override it.
+
         assert tools.revisionExpr == "refs/tags/v1.0.0", (
             f"Expected revisionExpr='refs/tags/v1.0.0' (project's own revision) to win "
             f"over <include revision='refs/tags/v3.0.0'> but got: {tools.revisionExpr!r}"
@@ -687,11 +664,6 @@ class TestIncludeDefaultAttributeValues:
         assert "added-group" in core.groups, (
             f"Expected 'added-group' to be appended from <include groups='added-group'> but got: {core.groups!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

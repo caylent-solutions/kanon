@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for event_log.py coverage."""
 
 import json
@@ -147,7 +133,6 @@ def test_add_sync_git_hash_exception():
 
     event = log.AddSync(project, TASK_SYNC_NETWORK, start=100, finish=200, success=True)
 
-    # Should not have git_hash if exception occurred
     assert "git_hash" not in event
 
 
@@ -200,7 +185,7 @@ def test_write():
 
         mock_file.assert_called_once_with("/tmp/event.log", "w+")
         handle = mock_file()
-        # Should write two lines (one per event)
+
         assert handle.write.call_count >= 2
 
 
@@ -214,11 +199,10 @@ def test_write_json_format():
         log.Write("/tmp/event.log")
 
         handle = mock_file()
-        # Get all write calls
+
         writes = [call[0][0] for call in handle.write.call_args_list]
         json_line = "".join(writes).split("\n")[0]
 
-        # Should be valid JSON
         parsed = json.loads(json_line)
         assert "name" in parsed
         assert "task_name" in parsed
@@ -259,5 +243,4 @@ def test_event_id_unique():
     event1 = log.Add("test1", TASK_COMMAND, start=100)
     event2 = log.Add("test2", TASK_COMMAND, start=200)
 
-    # IDs should be different
     assert event1["id"] != event2["id"]

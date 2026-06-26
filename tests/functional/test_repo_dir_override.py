@@ -32,9 +32,6 @@ from tests.functional.conftest import (
     _run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no hard-coded values in test logic
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Dir Override Test User"
 _GIT_USER_EMAIL = "repo-dir-override@example.com"
@@ -45,10 +42,10 @@ _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "override-test-project"
 _GIT_BRANCH = "main"
 
-# Sentinel directory name used inside tmp_path for repo isolation
+
 _REPOS_SUBDIR = "repos"
 
-# kanon CLI tokens
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_INIT = "init"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
@@ -57,16 +54,11 @@ _CLI_FLAG_URL = "-u"
 _CLI_FLAG_BRANCH = "-b"
 _CLI_FLAG_MANIFEST = "-m"
 
-# Name of the .repo directory created by repo init
+
 _REPO_DOT_DIR = ".repo"
 
-# The KANON_REPO_DIR env-var name (must match the constant in the source)
+
 _KANON_REPO_DIR_ENV = "KANON_REPO_DIR"
-
-
-# ---------------------------------------------------------------------------
-# Fixture helper -- shared bare-repo setup
-# ---------------------------------------------------------------------------
 
 
 def _setup_manifest_url(tmp_path: pathlib.Path) -> str:
@@ -176,11 +168,6 @@ def _run_init_no_flag(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: flag-only
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoDirFlagOnly:
     """``kanon repo --repo-dir=<path> init`` with no ``KANON_REPO_DIR`` env var."""
@@ -249,11 +236,6 @@ class TestRepoDirFlagOnly:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: env-only
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoDirEnvOnly:
     """``KANON_REPO_DIR=<path> kanon repo init`` with no ``--repo-dir`` flag."""
@@ -307,11 +289,6 @@ class TestRepoDirEnvOnly:
             f"Expected {env_repo_dir} to exist for env-only custom-path test."
             f" stdout: {result.stdout!r}  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: flag wins over env
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

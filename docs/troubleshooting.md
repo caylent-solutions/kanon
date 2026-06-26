@@ -20,7 +20,7 @@ bash: main: No such file or directory
 Or the argument is received by kanon as an empty string, causing:
 
 ```text
-ERROR: list requires a catalog source.
+ERROR: search requires a catalog source.
 ```
 
 ### Reproducer
@@ -51,7 +51,7 @@ Double-quotes also work, but single-quotes are preferred for clarity.
 
 ### Symptom
 
-Any kanon command that requires a manifest repo (`kanon list`,
+Any kanon command that requires a manifest repo (`kanon search`,
 `kanon add`, `kanon outdated`, `kanon why`, `kanon catalog audit`)
 exits non-zero with:
 
@@ -59,7 +59,7 @@ exits non-zero with:
 ERROR: <command> requires a catalog source.
 Provide one of:
   --catalog-source <git-url>@<ref>      # e.g. --catalog-source https://example.com/org/manifest-repo.git@main
-  KANON_CATALOG_SOURCE=<git-url>@<ref>  # set as env var, then re-run
+  KANON_CATALOG_SOURCES=<git-url>@<ref>  # set as env var, then re-run
 
 The CLI flag takes precedence when both are set.
 A catalog source identifies a manifest repo (a git repository whose
@@ -72,7 +72,7 @@ See docs/configuration.md for the full configuration reference.
 
 ```bash
 # Wrong -- no catalog source provided
-kanon list
+kanon search
 ```
 
 ### Fix
@@ -80,20 +80,20 @@ kanon list
 Pass the catalog source via the CLI flag:
 
 ```bash
-kanon list \
+kanon search \
   --catalog-source https://example.com/org/manifest-repo.git@main
 ```
 
 Or export the environment variable and re-run:
 
 ```bash
-export KANON_CATALOG_SOURCE=https://example.com/org/manifest-repo.git@main
-kanon list
+export KANON_CATALOG_SOURCES=https://example.com/org/manifest-repo.git@main
+kanon search
 ```
 
-For `kanon install` and `kanon doctor`, a lockfile that contains
-a `[catalog].source` field is used as a fallback when neither the
-flag nor the env var is set.
+`kanon install` is hermetic: it never reads a catalog source and rejects
+`--catalog-source`. The catalog source is required only by `kanon search`,
+`kanon add`, `kanon outdated`, `kanon why`, and `kanon catalog audit`.
 
 ### See also
 
@@ -107,36 +107,46 @@ flag nor the env var is set.
 ### Symptom
 
 `kanon install` exits non-zero with an error indicating that the
-lockfile schema version does not match the running CLI:
+lockfile schema version is incompatible with the running CLI. kanon 3.0.0
+writes schema v5; an older v4 (or earlier) lockfile **hard-fails** -- there
+is no automatic upgrade. v4 locks predate the per-source content pins and
+also need regeneration:
 
 ```text
-ERROR: .kanon.lock schema version mismatch.
-  Lockfile schema : 1
-  CLI expects     : 2
-  Remediation: upgrade kanon to the version that wrote this lockfile,
-  or regenerate the lockfile with 'kanon install --refresh-lock'.
+ERROR: lockfile schema v4 is incompatible with this kanon version (schema v5).
+  Path: .kanon.lock
+  Schema v5 adds per-source content-SHA pins ([[sources.content_pins]]) on top
+  of the v4 alias-keyed source entries; older locks carry no content pins and
+  are not silently upgraded.
+  There is no automatic upgrade from schema v4.
+  Remediation: regenerate the lockfile by running 'kanon add' to refresh the
+  alias-keyed declarations, then 'kanon install' to rewrite the lock at schema v5.
 ```
 
 ### Reproducer
 
 ```bash
-# Install with an older kanon that wrote schema version 1,
-# then upgrade kanon and re-run:
+# Install with an older kanon that wrote schema version 4 (or earlier),
+# then upgrade to kanon 3.0.0 and re-run:
 kanon install
 ```
 
 ### Fix
 
-Regenerate the lockfile with the currently installed CLI:
+Regenerate the lockfile at schema v5. There is no in-place upgrade and
+`kanon install` is hermetic (it does not take `--catalog-source`), so refresh
+the alias-keyed declarations with `kanon add`, then rewrite the lock:
 
 ```bash
-kanon install --refresh-lock \
-  --catalog-source https://example.com/org/manifest-repo.git@main
+# Re-add the entries so the .kanon blocks are alias-keyed (supply your catalog source):
+kanon add <entry> --catalog-source https://example.com/org/manifest-repo.git@main
+# Then rewrite the lockfile at schema v5:
+kanon install --refresh-lock
 ```
 
-If you need to stay on an older schema, downgrade kanon to the
-version that wrote the lockfile (check the lockfile's `schema_version`
-field to identify the required release).
+A newer lockfile (schema written by a future kanon) instead fails with
+`lockfile schema vN written by newer kanon; upgrade kanon-cli.` -- upgrade
+kanon-cli to read it.
 
 ### See also
 
@@ -177,11 +187,11 @@ kanon install
 
 ### Fix
 
-Accept the new branch tip by re-resolving the drifted source:
+Accept the new branch tip by re-resolving the drifted source (`kanon install`
+is hermetic and resolves from the committed `.kanon`):
 
 ```bash
-kanon install --refresh-lock-source mysource \
-  --catalog-source https://example.com/org/manifest-repo.git@main
+kanon install --refresh-lock-source mysource
 ```
 
 To turn drift into a hard CI error (recommended for reproducible
@@ -221,7 +231,7 @@ silently return nothing.
 ```bash
 # Interrupt a completion cache refresh mid-write:
 kill -9 $(pgrep -f 'kanon doctor --refresh-completion-cache')
-kanon list <TAB>
+kanon search <TAB>
 ```
 
 ### Fix
@@ -246,7 +256,7 @@ configured catalog source.
 
 ### Symptom
 
-`kanon list`, `kanon add`, or `kanon catalog audit` reports that a
+`kanon search`, `kanon add`, or `kanon catalog audit` reports that a
 `*-marketplace.xml` file is missing its `<catalog-metadata>` block:
 
 ```text
@@ -259,7 +269,7 @@ has integrity issues (1); the catalog author must fix these via
 ### Reproducer
 
 ```bash
-kanon list \
+kanon search \
   --catalog-source https://example.com/org/manifest-repo.git@main
 ```
 
@@ -287,7 +297,7 @@ the consumer side. Ask the catalog author to:
 ### Symptom
 
 Two `*-marketplace.xml` files in the same manifest repo declare the
-same `<catalog-metadata><name>` value. `kanon list`, `kanon add`, or
+same `<catalog-metadata><name>` value. `kanon search`, `kanon add`, or
 `kanon catalog audit` reports:
 
 ```text
@@ -302,7 +312,7 @@ has integrity issues (1); the catalog author must fix these via
 ### Reproducer
 
 ```bash
-kanon list \
+kanon search \
   --catalog-source https://example.com/org/manifest-repo.git@main
 ```
 
@@ -352,7 +362,7 @@ git@example.com: Permission denied (publickey).
 
 ```bash
 # Run against a repo you have no credentials for:
-kanon list \
+kanon search \
   --catalog-source https://private.example.com/org/repo.git@main
 ```
 
@@ -530,7 +540,7 @@ kanon install \
 Or export the env var:
 
 ```bash
-export KANON_CATALOG_SOURCE=https://example.com/org/manifest-repo.git@main
+export KANON_CATALOG_SOURCES=https://example.com/org/manifest-repo.git@main
 kanon install
 ```
 
@@ -693,35 +703,31 @@ kanon install --refresh-lock-source <name> \
 
 ### Symptom
 
-Without `--strict-lock`, `kanon install` silently prunes orphaned lockfile
-entries and emits one info line per orphan to stderr:
-
-```text
-pruned orphaned lock entry: <name>
-```
-
-With `--strict-lock`, the command exits non-zero and enumerates every orphaned
-source by name. For a single orphaned entry (N == 1):
+A plain `kanon install` against a `.kanon` whose alias set has drifted from
+`.kanon.lock` already fails fast (the consistency check runs before
+resolving). `--strict-lock` additionally rejects an orphaned lock entry that
+survives a `kanon_hash` match. The command exits non-zero and enumerates
+every orphaned source by name. For a single orphaned entry (N == 1):
 
 ```text
 ERROR: 1 orphaned lockfile entry: alpha
 These lockfile entries have no matching KANON_SOURCE_*_URL triple in .kanon.
 
 Remediation:
-  Run `kanon install` (without --strict-lock) to auto-prune, or
+  Run `kanon install --reconcile` to prune, or
   restore the missing KANON_SOURCE_<name>_* triples in .kanon, or
   run `kanon remove <name>` for each orphan to clean the lockfile.
 ```
 
 For two or more orphaned entries (N >= 2, names are sorted alphabetically and
-joined by `, `):
+joined by `,`):
 
 ```text
 ERROR: 2 orphaned lockfile entries: alpha, beta
 These lockfile entries have no matching KANON_SOURCE_*_URL triple in .kanon.
 
 Remediation:
-  Run `kanon install` (without --strict-lock) to auto-prune, or
+  Run `kanon install --reconcile` to prune, or
   restore the missing KANON_SOURCE_<name>_* triples in .kanon, or
   run `kanon remove <name>` for each orphan to clean the lockfile.
 ```
@@ -743,17 +749,17 @@ kanon install --strict-lock
 
 Three remediation options are available; pick the one that matches your intent:
 
-- **Option 1: Auto-prune (accept the removal).**
-  Re-run `kanon install` without `--strict-lock`. The orphaned entries are
-  removed from the lockfile automatically. Use this option when the source
+- **Option 1: Reconcile (accept the removal).**
+  Re-run `kanon install --reconcile`. The orphaned entries are pruned from
+  the lockfile and the lock is rewritten. Use this option when the source
   removal was intentional and you want the lockfile to reflect it.
 
   ```bash
-  kanon install
+  kanon install --reconcile
   ```
 
 - **Option 2: Restore the missing triples (undo the removal).**
-  Re-add the `KANON_SOURCE_<name>_URL`, `KANON_SOURCE_<name>_REVISION`, and
+  Re-add the `KANON_SOURCE_<name>_URL`, `KANON_SOURCE_<name>_REF`, and
   `KANON_SOURCE_<name>_PATH` triples to `.kanon` for each listed orphan name.
   Then re-run install. Use this option when the source removal was accidental.
 
@@ -765,7 +771,7 @@ Three remediation options are available; pick the one that matches your intent:
 - **Option 3: Remove each orphan explicitly.**
   Run `kanon remove <name>` for each orphan listed in the error message. This
   cleans both `.kanon` and the lockfile in a single tracked operation. Use this
-  option when you want a clean, auditable removal rather than an auto-prune.
+  option when you want a clean, auditable removal rather than a reconcile.
 
   ```bash
   kanon remove alpha
@@ -875,8 +881,8 @@ the Claude Code CLI.
 
 ### Expected Behaviour After Fix
 
-With the DEFECT-004 fix, every `kanon install` run that has
-`KANON_MARKETPLACE_INSTALL=true` invokes:
+With the DEFECT-004 fix, every `kanon install` run that has at least one
+dependency with `KANON_SOURCE_<alias>_MARKETPLACE=true` invokes:
 
 ```text
 claude plugin marketplace add <absolute-path-to-marketplace-entry>
@@ -889,9 +895,9 @@ registered entry per source that ships a marketplace root
 
 ### Failure Mode: `claude` binary unavailable
 
-When `KANON_MARKETPLACE_INSTALL=true` and the `claude` binary is not on
-`$PATH`, `kanon install` now fails fast with exit code 1. The exact
-text written to stderr is:
+When a `KANON_SOURCE_<alias>_MARKETPLACE=true` dependency is declared and the
+`claude` binary is not on `$PATH`, `kanon install` now fails fast with exit
+code 1. The exact text written to stderr is:
 
 ```text
 Error: claude binary not found on $PATH. Ensure claude is installed and available.
@@ -927,16 +933,18 @@ kanon install
 **Option 2: Skip marketplace registration.**
 
 If Claude Code marketplace integration is not required in this environment,
-set:
+disable the per-dependency marketplace flag on each marketplace source:
 
 ```bash
-export KANON_MARKETPLACE_INSTALL=false
+kanon marketplace disable <alias>
 kanon install
 ```
 
-With `KANON_MARKETPLACE_INSTALL=false`, `kanon install` skips all
-`claude plugin marketplace add` invocations. The source repos are still
-cloned; only the Claude Code plugin registration step is skipped.
+`kanon marketplace disable` removes the `KANON_SOURCE_<alias>_MARKETPLACE` line
+(absence is the canonical false). With no dependency opted in, `kanon install`
+skips all `claude plugin marketplace add` invocations. The source repos are
+still cloned; only the Claude Code plugin registration step is skipped. Use
+`kanon marketplace status` to confirm each dependency's effective setting.
 
 ### See also
 
@@ -983,17 +991,20 @@ including direct-checkout sources.
 
 ### Preconditions
 
-- `KANON_MARKETPLACE_INSTALL=true` (or the `--marketplace-install` flag).
+- The source's dependency block has `KANON_SOURCE_<alias>_MARKETPLACE=true`
+  (set it with `kanon marketplace enable <alias>`, or pass `--marketplace-install`
+  to `kanon add` when adding the entry).
 - The `claude` binary is available on `$PATH`.
 
 ### Remediation (if still missing after upgrade)
 
 If upgrading kanon does not resolve the missing registration, re-run
-install to trigger registration:
+install to trigger registration (`kanon install` is hermetic and resolves
+from the committed `.kanon` / `.kanon.lock`):
 
 ```bash
-KANON_MARKETPLACE_INSTALL=true kanon install \
-  --catalog-source https://example.com/org/manifest-repo.git@main
+kanon marketplace enable <alias>
+kanon install
 ```
 
 This re-runs the full registration loop including the direct-checkout

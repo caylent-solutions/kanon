@@ -19,8 +19,6 @@ import sys
 
 import pytest
 
-from tests.conftest import DEFAULT_CATALOG_SOURCE
-
 
 _TEST_REPO_URL = "https://example.com/repo.git"
 _TEST_KANON_SOURCE_URL = "https://example.com/manifest.git"
@@ -31,8 +29,10 @@ _VALID_KANONENV_CONTENT = (
     f"GITBASE={_TEST_GITBASE_URL}\n"
     "KANON_MARKETPLACE_INSTALL=false\n"
     f"KANON_SOURCE_test_URL={_TEST_KANON_SOURCE_URL}\n"
-    "KANON_SOURCE_test_REVISION=main\n"
+    "KANON_SOURCE_test_REF=main\n"
     "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+    "KANON_SOURCE_test_NAME=test\n"
+    "KANON_SOURCE_test_GITBASE=https://example.com\n"
 )
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -132,15 +132,12 @@ class TestInstallDeprecationWarningSubprocess:
 
     def test_both_set_writes_single_combined_deprecation_to_stderr(self, kanonenv: pathlib.Path) -> None:
         """AC-TEST-003: Both REPO_URL and REPO_REV set => single combined message on stderr."""
-        # KANON_CATALOG_SOURCE is required so that MissingCatalogSourceError (whose
-        # error text contains '--catalog-source') does not add a second line that trips
-        # the single-combined-notice assertion below.
+
         result = _run_install_subprocess(
             kanonenv,
             extra_env={
                 "REPO_URL": _TEST_REPO_URL,
                 "REPO_REV": _TEST_REPO_REV,
-                "KANON_CATALOG_SOURCE": DEFAULT_CATALOG_SOURCE,
             },
         )
 
@@ -151,8 +148,6 @@ class TestInstallDeprecationWarningSubprocess:
             f"Expected 'REPO_REV' in combined stderr message, got stderr={result.stderr!r}"
         )
 
-        # The message must be a single combined notice (not two separate lines each naming only one var).
-        # Count how many lines contain the deprecation keyword to verify a single emission.
         deprecation_lines = [
             line for line in result.stderr.splitlines() if "deprecated" in line.lower() or "catalog-source" in line
         ]
@@ -162,14 +157,11 @@ class TestInstallDeprecationWarningSubprocess:
 
     def test_neither_set_no_deprecation_on_stderr(self, kanonenv: pathlib.Path) -> None:
         """AC-TEST-004: Neither REPO_URL nor REPO_REV set => no deprecation text on stderr."""
-        # Explicitly remove the legacy vars from the environment.  Set
-        # KANON_CATALOG_SOURCE so the subprocess does not fail with
-        # MissingCatalogSourceError (whose message contains '--catalog-source',
-        # which would trip the deprecation-line filter below).
+
         env = _build_env({})
         env.pop("REPO_URL", None)
         env.pop("REPO_REV", None)
-        env["KANON_CATALOG_SOURCE"] = DEFAULT_CATALOG_SOURCE
+        env.pop("KANON_CATALOG_SOURCES", None)
 
         result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install", str(kanonenv)],

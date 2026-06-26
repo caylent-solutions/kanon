@@ -32,10 +32,6 @@ from kanon_cli.repo.error import ManifestInvalidPathError
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- mirrors the pattern used in test_xml_include_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -142,9 +138,7 @@ def _setup_nested_include_scenario(
         NOT been loaded yet -- callers must call m.Load() to trigger validation.
     """
     repodir = _make_repo_dir(tmp_path)
-    # The intermediate manifest contains an <include> with the bad path.
-    # It will be parsed with restrict_includes=True (the default) so
-    # _CheckLocalPath runs and raises ManifestInvalidPathError.
+
     intermediate_xml = (
         f'<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n  <include name="{bad_include_name}" />\n</manifest>\n'
     )
@@ -166,11 +160,6 @@ _MINIMAL_INCLUDED_XML = (
     '  <project name="platform/core" path="core" />\n'
     "</manifest>\n"
 )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests -- one per documented <include> attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -330,11 +319,6 @@ class TestIncludeAttributeValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Invalid-value tests -- one per attribute with invalid inputs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestIncludeAttributeInvalidValues:
     """AC-TEST-002: Every attribute has invalid-value tests.
@@ -470,11 +454,6 @@ class TestIncludeAttributeInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Required attribute omission tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestIncludeRequiredAttributeOmission:
     """AC-TEST-003: Required attribute omission raises with message naming the attribute.
@@ -543,11 +522,6 @@ class TestIncludeRequiredAttributeOmission:
             m.Load()
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Attribute validation happens at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestIncludeAttributeValidatedAtParseTime:
     """AC-FUNC-001: Every documented attribute of <include> is validated at parse time.
@@ -587,7 +561,6 @@ class TestIncludeAttributeValidatedAtParseTime:
         manifest_file.write_text(primary_xml, encoding="utf-8")
         m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
 
-        # Construction must not raise -- error is deferred until Load().
         with pytest.raises(ManifestParseError):
             m.Load()
 
@@ -648,11 +621,6 @@ class TestIncludeAttributeValidatedAtParseTime:
             f"AC-FUNC-001: expected revisionExpr='refs/tags/v3.0.0' after m.Load() for "
             f"<include revision='refs/tags/v3.0.0'> but got: {tools.revisionExpr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

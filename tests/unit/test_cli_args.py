@@ -10,7 +10,7 @@ import pathlib
 
 import pytest
 
-from kanon_cli.constants import CATALOG_ENV_VAR
+from kanon_cli.constants import CATALOG_SOURCES_ENV_VAR
 
 _CLI_ARGS_PY = pathlib.Path(__file__).parent.parent.parent / "src" / "kanon_cli" / "core" / "cli_args.py"
 
@@ -50,17 +50,23 @@ class TestAddCatalogSourceArgMetavar:
 
         parser = _make_parser()
         add_catalog_source_arg(parser)
-        # Retrieve the action registered for --catalog-source.
+
         action = next(a for a in parser._actions if "--catalog-source" in getattr(a, "option_strings", []))
         assert action.metavar == "<git-url>@<ref>"
 
 
 @pytest.mark.unit
 class TestAddCatalogSourceArgDefault:
-    """add_catalog_source_arg reads the default from KANON_CATALOG_SOURCE at parser-build time."""
+    """add_catalog_source_arg carries a LAZY default=None (no env read at build time).
+
+    The env var read at parser-build time was removed (E3-F1-S4-T1): a multi-source
+    KANON_CATALOG_SOURCES would otherwise raise MultipleCatalogSourcesError while
+    *building* the parser, crashing every command. The env is now resolved inside
+    each command handler instead.
+    """
 
     def test_default_none_when_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv(CATALOG_ENV_VAR, raising=False)
+        monkeypatch.delenv(CATALOG_SOURCES_ENV_VAR, raising=False)
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
@@ -68,23 +74,38 @@ class TestAddCatalogSourceArgDefault:
         args = parser.parse_args([])
         assert args.catalog_source is None
 
-    def test_default_from_env_when_env_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(CATALOG_ENV_VAR, "https://h/r.git@v1")
+    def test_default_none_even_when_env_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The parser default is None regardless of the env var (lazy resolution)."""
+        monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/r.git@v1")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
-        # Re-import to pick up env at parser-build time.
         parser = _make_parser()
         add_catalog_source_arg(parser)
         args = parser.parse_args([])
-        assert args.catalog_source == "https://h/r.git@v1"
+        assert args.catalog_source is None
+
+    def test_no_crash_when_env_lists_multiple_sources(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Building the parser with a multi-source env var must NOT raise.
+
+        This is the regression the lazy default fixes: a >1-source
+        KANON_CATALOG_SOURCES previously raised MultipleCatalogSourcesError at
+        parser-build time, making the whole CLI uninvokable.
+        """
+        monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/a.git@main\nhttps://h/b.git@main")
+        from kanon_cli.core.cli_args import add_catalog_source_arg
+
+        parser = _make_parser()
+        add_catalog_source_arg(parser)
+        args = parser.parse_args([])
+        assert args.catalog_source is None
 
 
 @pytest.mark.unit
 class TestAddCatalogSourceArgPrecedence:
-    """CLI flag wins over KANON_CATALOG_SOURCE env var (spec Section 4 header)."""
+    """The flag value parses verbatim; env resolution is deferred to the handler."""
 
-    def test_cli_flag_wins_over_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(CATALOG_ENV_VAR, "https://h/r.git@env-ref")
+    def test_cli_flag_value_parses_verbatim(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/r.git@env-ref")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
@@ -92,23 +113,54 @@ class TestAddCatalogSourceArgPrecedence:
         args = parser.parse_args(["--catalog-source", "https://h/r.git@cli-ref"])
         assert args.catalog_source == "https://h/r.git@cli-ref"
 
-    def test_env_used_when_flag_absent(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(CATALOG_ENV_VAR, "https://h/r.git@env-ref")
-        from kanon_cli.core.cli_args import add_catalog_source_arg
-
-        parser = _make_parser()
-        add_catalog_source_arg(parser)
-        args = parser.parse_args([])
-        assert args.catalog_source == "https://h/r.git@env-ref"
-
-    def test_none_when_neither_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv(CATALOG_ENV_VAR, raising=False)
+    def test_none_when_flag_absent_regardless_of_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/r.git@env-ref")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
         add_catalog_source_arg(parser)
         args = parser.parse_args([])
         assert args.catalog_source is None
+
+    def test_none_when_neither_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv(CATALOG_SOURCES_ENV_VAR, raising=False)
+        from kanon_cli.core.cli_args import add_catalog_source_arg
+
+        parser = _make_parser()
+        add_catalog_source_arg(parser)
+        args = parser.parse_args([])
+        assert args.catalog_source is None
+
+
+@pytest.mark.unit
+class TestAddCatalogSourceArgMultiple:
+    """allow_multiple=True registers a repeatable (append) --catalog-source flag."""
+
+    def test_repeated_flags_append_into_list(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_source_arg
+
+        parser = _make_parser()
+        add_catalog_source_arg(parser, allow_multiple=True)
+        args = parser.parse_args(
+            ["--catalog-source", "https://h/a.git@main", "--catalog-source", "https://h/b.git@main"]
+        )
+        assert args.catalog_source == ["https://h/a.git@main", "https://h/b.git@main"]
+
+    def test_absent_flag_is_none(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_source_arg
+
+        parser = _make_parser()
+        add_catalog_source_arg(parser, allow_multiple=True)
+        args = parser.parse_args([])
+        assert args.catalog_source is None
+
+    def test_single_flag_is_one_element_list(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_source_arg
+
+        parser = _make_parser()
+        add_catalog_source_arg(parser, allow_multiple=True)
+        args = parser.parse_args(["--catalog-source", "https://h/a.git@main"])
+        assert args.catalog_source == ["https://h/a.git@main"]
 
 
 @pytest.mark.unit
@@ -118,16 +170,14 @@ class TestAddCatalogSourceArgHelpText:
     def test_help_text_matches_canonical(self) -> None:
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
-        # The canonical help text lives in cli_args.py and is the single source
-        # of truth for every command that resolves a manifest repo.
         parser = _make_parser()
         add_catalog_source_arg(parser)
         action = next(a for a in parser._actions if "--catalog-source" in getattr(a, "option_strings", []))
-        # The canonical help text defined in cli_args.py (the single source of truth):
+
         expected_help = (
             "Remote catalog source as '<git_url>@<ref>' where ref is a branch, "
-            "tag, or 'latest'. Overrides KANON_CATALOG_SOURCE env var. "
-            "Required when KANON_CATALOG_SOURCE is not set."
+            "tag, or 'latest'. Overrides the KANON_CATALOG_SOURCES env var. "
+            "Required when KANON_CATALOG_SOURCES configures no single source."
         )
         assert action.help == expected_help
 
@@ -145,7 +195,7 @@ class TestAddCatalogSourceArgHelpText:
         parser = _make_parser()
         add_catalog_source_arg(parser)
         action = next(a for a in parser._actions if "--catalog-source" in getattr(a, "option_strings", []))
-        assert "KANON_CATALOG_SOURCE" in action.help
+        assert "KANON_CATALOG_SOURCES" in action.help
 
 
 @pytest.mark.unit
@@ -160,19 +210,65 @@ class TestCycleEndToEnd:
         args = parser.parse_args(["--catalog-source", "https://h/r.git@main"])
         assert args.catalog_source == "https://h/r.git@main"
 
-    def test_cycle_env_var_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv(CATALOG_ENV_VAR, "https://h/r.git@v1")
+    def test_cycle_env_var_not_read_at_build_time(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The env var is NOT read at parser-build time -> default stays None.
+
+        Env resolution is deferred to the command handler (lazy default), so the
+        parsed namespace carries None when the flag is absent even with the env set.
+        """
+        monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://h/r.git@v1")
         from kanon_cli.core.cli_args import add_catalog_source_arg
 
         parser = _make_parser()
         add_catalog_source_arg(parser)
         args = parser.parse_args([])
-        assert args.catalog_source == "https://h/r.git@v1"
+        assert args.catalog_source is None
 
 
-# ---------------------------------------------------------------------------
-# Tests for add_global_flags (AC-FUNC-001 through AC-FUNC-004, AC-TEST-001)
-# ---------------------------------------------------------------------------
+@pytest.mark.unit
+class TestAddCatalogDefaultBranchArg:
+    """add_catalog_default_branch_arg registers a lazy-default --catalog-default-branch flag."""
+
+    def test_dest_is_catalog_default_branch(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_default_branch_arg
+
+        parser = _make_parser()
+        add_catalog_default_branch_arg(parser)
+        args = parser.parse_args([])
+        assert hasattr(args, "catalog_default_branch")
+
+    def test_default_is_none(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_default_branch_arg
+
+        parser = _make_parser()
+        add_catalog_default_branch_arg(parser)
+        args = parser.parse_args([])
+        assert args.catalog_default_branch is None
+
+    def test_flag_value_parses_verbatim(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_default_branch_arg
+
+        parser = _make_parser()
+        add_catalog_default_branch_arg(parser)
+        args = parser.parse_args(["--catalog-default-branch", "trunk"])
+        assert args.catalog_default_branch == "trunk"
+
+    def test_metavar_is_branch(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_default_branch_arg
+
+        parser = _make_parser()
+        add_catalog_default_branch_arg(parser)
+        action = next(a for a in parser._actions if "--catalog-default-branch" in getattr(a, "option_strings", []))
+        assert action.metavar == "<branch>"
+
+    def test_help_text_documents_precedence(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_default_branch_arg
+
+        parser = _make_parser()
+        add_catalog_default_branch_arg(parser)
+        action = next(a for a in parser._actions if "--catalog-default-branch" in getattr(a, "option_strings", []))
+        assert "KANON_CATALOG_DEFAULT_BRANCH" in action.help
+        assert "auto" in action.help
 
 
 @pytest.mark.unit
@@ -286,11 +382,6 @@ class TestAddGlobalFlagsSingleFlags:
         args = parser.parse_args(["--verbose", "--no-color"])
         assert args.verbose is True
         assert args.no_color is True
-
-
-# ---------------------------------------------------------------------------
-# Tests for _apply_global_flags (AC-FUNC-005 through AC-FUNC-008, AC-TEST-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -424,3 +515,50 @@ class TestApplyGlobalFlagsDefenceInDepth:
         msg = str(exc_info.value)
         assert "--quiet" in msg
         assert "--verbose" in msg
+
+
+@pytest.mark.unit
+class TestNoUpdateCheckGlobalFlag:
+    """add_global_flags registers the --no-update-check global flag."""
+
+    def test_no_update_check_dest_registered(self) -> None:
+        from kanon_cli.core.cli_args import add_global_flags
+
+        parser = _make_parser()
+        add_global_flags(parser)
+        args = parser.parse_args([])
+        assert hasattr(args, "no_update_check")
+
+    def test_no_update_check_defaults_false(self) -> None:
+        from kanon_cli.core.cli_args import add_global_flags
+
+        parser = _make_parser()
+        add_global_flags(parser)
+        args = parser.parse_args([])
+        assert args.no_update_check is False
+
+    def test_no_update_check_sets_true(self) -> None:
+        from kanon_cli.core.cli_args import add_global_flags
+
+        parser = _make_parser()
+        add_global_flags(parser)
+        args = parser.parse_args(["--no-update-check"])
+        assert args.no_update_check is True
+
+    def test_no_update_check_independent_of_other_flags(self) -> None:
+        """--no-update-check composes with --quiet and --no-color (not in any mutex group)."""
+        from kanon_cli.core.cli_args import add_global_flags
+
+        parser = _make_parser()
+        add_global_flags(parser)
+        args = parser.parse_args(["--quiet", "--no-color", "--no-update-check"])
+        assert args.quiet is True
+        assert args.no_color is True
+        assert args.no_update_check is True
+
+    def test_apply_global_flags_tolerates_namespace_without_no_update_check(self) -> None:
+        """_apply_global_flags does not read no_update_check (consumed by the cli hook)."""
+        from kanon_cli.core.cli_args import _apply_global_flags
+
+        args = argparse.Namespace(quiet=False, verbose=False, no_color=False)
+        _apply_global_flags(args)

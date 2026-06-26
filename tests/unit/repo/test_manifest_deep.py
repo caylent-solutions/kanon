@@ -1,17 +1,3 @@
-# Copyright (C) 2026 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Deep unit tests for manifest_xml.py to increase coverage."""
 
 import pytest
@@ -186,7 +172,6 @@ class TestXmlManifestParsing:
         manifest_file = repodir / "manifest.xml"
         manifest_file.write_text(xml_content)
 
-        # Create git config for manifests.git
         gitdir = repodir / "manifests.git"
         gitdir.mkdir()
         config_file = gitdir / "config"
@@ -282,7 +267,7 @@ class TestXmlManifestParsing:
         """
 
         repodir, manifest_file = self._make_temp_manifest(tmp_path, xml)
-        # Should not raise
+
         m = manifest_xml.XmlManifest(repodir, manifest_file)
         assert m is not None
 
@@ -309,7 +294,6 @@ class TestXmlManifestParsing:
 
         m = manifest_xml.XmlManifest(repodir, manifest_file)
 
-        # Included project should have groups
         projects = [p for p in m.projects if p.name == "included-project"]
         assert len(projects) > 0
         assert "group1" in projects[0].groups
@@ -561,7 +545,6 @@ class TestXmlManifestSerialization:
         manifest_file = repodir / "manifest.xml"
         manifest_file.write_text(xml_content)
 
-        # Create git config for manifests.git
         gitdir = repodir / "manifests.git"
         gitdir.mkdir()
         config_file = gitdir / "config"
@@ -618,7 +601,6 @@ class TestXmlManifestEdgeCases:
         manifest_file = repodir / "manifest.xml"
         manifest_file.write_text(xml_content)
 
-        # Create git config for manifests.git
         gitdir = repodir / "manifests.git"
         gitdir.mkdir()
         config_file = gitdir / "config"
@@ -712,7 +694,6 @@ class TestXmlManifestRemoteAttributes:
         manifest_file = repodir / "manifest.xml"
         manifest_file.write_text(xml_content)
 
-        # Create git config for manifests.git
         gitdir = repodir / "manifests.git"
         gitdir.mkdir()
         config_file = gitdir / "config"
@@ -905,7 +886,6 @@ class TestManifestToXmlBranches:
         manifest_file = repodir / "manifest.xml"
         manifest_file.write_text(xml_content)
 
-        # Create git config for manifests.git
         gitdir = repodir / "manifests.git"
         gitdir.mkdir()
         config_file = gitdir / "config"
@@ -1014,7 +994,6 @@ class TestManifestProjectParsing:
         manifest_file = repodir / "manifest.xml"
         manifest_file.write_text(xml_content)
 
-        # Create git config for manifests.git
         gitdir = repodir / "manifests.git"
         gitdir.mkdir()
         config_file = gitdir / "config"
@@ -1174,7 +1153,6 @@ class TestManifestDiffMethod:
         manifest_file = repodir / name
         manifest_file.write_text(xml_content)
 
-        # Create git config for manifests.git
         gitdir = repodir / "manifests.git"
         if not gitdir.exists():
             gitdir.mkdir()
@@ -1196,7 +1174,6 @@ class TestManifestMiscMethods:
         manifest_file = repodir / "manifest.xml"
         manifest_file.write_text(xml_content)
 
-        # Create git config for manifests.git
         gitdir = repodir / "manifests.git"
         gitdir.mkdir()
         config_file = gitdir / "config"

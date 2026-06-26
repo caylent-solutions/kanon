@@ -24,10 +24,6 @@ from kanon_cli.repo.error import ManifestParseError
 from kanon_cli.repo.project import Annotation
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern in test_xml_remote_roundtrip.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -155,11 +151,6 @@ def _get_remote(manifest: manifest_xml.XmlManifest, remote_name: str):
     remotes = manifest.remotes
     assert remote_name in remotes, f"Expected remote '{remote_name}' in manifest but found: {list(remotes.keys())!r}"
     return remotes[remote_name]
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 + AC-FINAL-010: Parse + round-trip
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

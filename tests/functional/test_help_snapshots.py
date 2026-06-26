@@ -26,26 +26,14 @@ import subprocess
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
-# Directory that holds all help fixture files.  The path is resolved relative
-# to this source file so the harness works regardless of the working directory
-# from which pytest is invoked.
 _FIXTURES_DIR: pathlib.Path = pathlib.Path(__file__).parent.parent / "fixtures" / "help"
 
-# Each row is a (case_id, argv, fixture_name) triple.
-#
-# case_id      -- unique string used as the pytest parametrize ID
-# argv         -- tuple of CLI tokens inserted *before* "--help"
-#                 (empty tuple -> "kanon --help")
-# fixture_name -- file name inside _FIXTURES_DIR; the expected stdout
-#
-# Tasks T02-T11 each append one (or two, for T09) rows to this list.
+
 _HELP_CASES: list[tuple[str, tuple[str, ...], str]] = [
     ("kanon-toplevel", (), "kanon-toplevel.txt"),
-    ("kanon-list", ("list",), "kanon-list.txt"),
+    ("kanon-search", ("search",), "kanon-search.txt"),
+    ("kanon-marketplace", ("marketplace",), "kanon-marketplace.txt"),
     ("kanon-add", ("add",), "kanon-add.txt"),
     ("kanon-remove", ("remove",), "kanon-remove.txt"),
     ("kanon-clean", ("clean",), "kanon-clean.txt"),
@@ -56,17 +44,7 @@ _HELP_CASES: list[tuple[str, tuple[str, ...], str]] = [
     ("kanon-catalog", ("catalog",), "kanon-catalog.txt"),
     ("kanon-catalog-audit", ("catalog", "audit"), "kanon-catalog-audit.txt"),
     ("kanon-completion", ("completion",), "kanon-completion.txt"),
-    # NOTE: there is no `kanon-bootstrap` snapshot. bootstrap was removed in a
-    # major release; `kanon bootstrap --help` is no longer help output -- it
-    # exits 3 with the deprecation message on stderr (covered by the dedicated
-    # bootstrap deprecation tests). Only the top-level `kanon --help` snapshot
-    # still lists bootstrap (under "Deprecated").
 ]
-
-
-# ---------------------------------------------------------------------------
-# Environment helper
-# ---------------------------------------------------------------------------
 
 
 def _clean_env() -> dict[str, str]:
@@ -76,7 +54,7 @@ def _clean_env() -> dict[str, str]:
 
     - ``NO_COLOR=1`` -- disables ANSI colour codes from the kanon output layer
       and from the terminal library (strips colour regardless of TTY state).
-    - ``KANON_CATALOG_SOURCE`` removed -- prevents any ambient catalog-source
+    - ``KANON_CATALOG_SOURCES`` removed -- prevents any ambient catalog-source
       override from bleeding into the help text.
     - ``COLUMNS=80`` -- pins the terminal width so argparse wraps at a fixed
       column count and output is identical across hosts with different
@@ -87,14 +65,9 @@ def _clean_env() -> dict[str, str]:
     """
     env = dict(os.environ)
     env["NO_COLOR"] = "1"
-    env.pop("KANON_CATALOG_SOURCE", None)
+    env.pop("KANON_CATALOG_SOURCES", None)
     env["COLUMNS"] = "80"
     return env
-
-
-# ---------------------------------------------------------------------------
-# Snapshot test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

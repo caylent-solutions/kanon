@@ -22,18 +22,9 @@ from kanon_cli.repo import RepoCommandError
 from kanon_cli.repo.main import run_from_args
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Pipeline Test User"
 _GIT_USER_EMAIL = "pipeline-test@example.com"
 _MANIFEST_FILENAME = "default.xml"
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -216,11 +207,6 @@ def _repo_init(workspace: pathlib.Path, manifest_url: str) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_full_pipeline_single_project(tmp_path: pathlib.Path) -> None:
     """Full init -> envsubst -> sync pipeline succeeds for a single-project manifest.
@@ -249,15 +235,12 @@ def test_full_pipeline_single_project(tmp_path: pathlib.Path) -> None:
     workspace.mkdir()
     manifest_url = f"file://{manifest_bare}"
 
-    # Stage 1: init
     _repo_init(workspace, manifest_url)
     repo_dot_path = workspace / ".repo"
     assert repo_dot_path.is_dir(), f"Expected .repo/ directory at {repo_dot_path} after init, but it was not created."
 
-    # Stage 2: envsubst (manifest has no placeholders; should be a no-op)
     repo_pkg.repo_envsubst(str(workspace), {})
 
-    # Stage 3: sync
     repo_pkg.repo_sync(str(workspace))
 
     project_dir = workspace / "project-a"
@@ -294,14 +277,11 @@ def test_full_pipeline_multi_project(tmp_path: pathlib.Path) -> None:
     workspace.mkdir()
     manifest_url = f"file://{manifest_bare}"
 
-    # Stage 1: init
     _repo_init(workspace, manifest_url)
     assert (workspace / ".repo").is_dir(), "Expected .repo/ to exist after init for multi-project manifest."
 
-    # Stage 2: envsubst (no-op for static manifest)
     repo_pkg.repo_envsubst(str(workspace), {})
 
-    # Stage 3: sync
     repo_pkg.repo_sync(str(workspace))
 
     for project_path, content_name in [("project-alpha", "alpha"), ("project-beta", "beta")]:
@@ -344,14 +324,11 @@ def test_pipeline_with_variable_substitution(tmp_path: pathlib.Path) -> None:
     workspace.mkdir()
     manifest_url = f"file://{manifest_bare}"
 
-    # Stage 1: init
     _repo_init(workspace, manifest_url)
     assert (workspace / ".repo").is_dir(), "Expected .repo/ to exist after init."
 
-    # Stage 2: envsubst -- inject the actual fetch URL
     repo_pkg.repo_envsubst(str(workspace), {"KANON_PIPELINE_FETCH_URL": fetch_base_url})
 
-    # Verify the manifest was updated by envsubst
     manifests_dir = workspace / ".repo" / "manifests"
     manifest_files = list(manifests_dir.glob("*.xml"))
     assert manifest_files, (
@@ -368,7 +345,6 @@ def test_pipeline_with_variable_substitution(tmp_path: pathlib.Path) -> None:
         f"but it was not found. Manifest content: {processed_xml!r}"
     )
 
-    # Stage 3: sync
     repo_pkg.repo_sync(str(workspace))
 
     project_dir = workspace / "project-envsubst"
@@ -553,7 +529,6 @@ def test_pipeline_variable_substitution_resolves_placeholders(tmp_path: pathlib.
 
     _repo_init(workspace, f"file://{manifest_bare}")
 
-    # Confirm the placeholder is present before envsubst
     manifests_dir = workspace / ".repo" / "manifests"
     xml_files_before = list(manifests_dir.glob("*.xml"))
     placeholder_present = any(f"${{{fetch_var}}}" in p.read_text(encoding="utf-8") for p in xml_files_before)
@@ -562,10 +537,8 @@ def test_pipeline_variable_substitution_resolves_placeholders(tmp_path: pathlib.
         f"manifest XML before envsubst. Files checked: {xml_files_before!r}"
     )
 
-    # Run envsubst
     repo_pkg.repo_envsubst(str(workspace), {fetch_var: fetch_base_url})
 
-    # Confirm the placeholder is resolved after envsubst
     xml_files_after = list(manifests_dir.glob("*.xml"))
     assert xml_files_after, (
         f"Expected at least one XML manifest after envsubst in {manifests_dir}, but none were found."
@@ -614,14 +587,11 @@ def test_pipeline_multi_project_envsubst_sync_all_cloned(tmp_path: pathlib.Path)
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
-    # Stage 1: init
     _repo_init(workspace, f"file://{manifest_bare}")
     assert (workspace / ".repo").is_dir(), "Expected .repo/ directory to exist after init."
 
-    # Stage 2: envsubst -- resolve the fetch URL placeholder
     repo_pkg.repo_envsubst(str(workspace), {fetch_var: fetch_base_url})
 
-    # Stage 3: sync
     repo_pkg.repo_sync(str(workspace))
 
     for project_path, content_name in [("project-gamma", "gamma"), ("project-delta", "delta")]:

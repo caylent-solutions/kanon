@@ -1,0 +1,30 @@
+usage: kanon marketplace [-h] {enable,disable,status} ...
+
+Manage the per-dependency Claude marketplace install flag in .kanon.
+
+This command edits only .kanon: it never touches .kanon.lock, performs
+no version re-resolution, and has no --force flag, so install-time
+determinism is unaffected.
+
+Subcommands:
+  enable <alias>    Write KANON_SOURCE_<alias>_MARKETPLACE=true.
+  disable <alias>   Remove the KANON_SOURCE_<alias>_MARKETPLACE line
+                    (absence is the canonical false; kanon never
+                    writes =false itself).
+  status [--all]    Show each dependency, its catalog <type>, and the
+                    effective marketplace setting. An explicit =false
+                    and an absent line render identically (disabled).
+
+options:
+  -h, --help            show this help message and exit
+
+marketplace subcommands:
+  Available marketplace operations
+
+  {enable,disable,status}
+    enable              Enable marketplace install for a dependency (writes
+                        =true).
+    disable             Disable marketplace install for a dependency (removes
+                        the line).
+    status              Show each dependency's marketplace type and effective
+                        setting.

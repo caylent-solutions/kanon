@@ -34,10 +34,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern used in test_xml_remote_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -149,11 +145,6 @@ def _get_project(manifest: manifest_xml.XmlManifest, project_name: str):
     """
     projects_by_name = {p.name: p for p in manifest.projects}
     return projects_by_name[project_name]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <project> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -386,11 +377,6 @@ class TestProjectMinimumAttributes:
         )
         project = _get_project(manifest, project_name)
         assert project.name == project_name, f"Expected project.name='{project_name}' but got: {project.name!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <project> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -705,11 +691,6 @@ class TestProjectAllDocumentedAttributes:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <project> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestProjectDefaultAttributeValues:
     """Verify that default attribute values on <project> behave as documented.
@@ -915,11 +896,6 @@ class TestProjectDefaultAttributeValues:
         assert project.clone_depth == clone_depth, (
             f"Expected project.clone_depth={clone_depth} but got: {project.clone_depth!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

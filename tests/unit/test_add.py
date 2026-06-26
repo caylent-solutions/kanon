@@ -1,14 +1,15 @@
 """Unit tests for kanon_cli.commands.add.
 
 Covers:
-- Triple constructor (_build_triple_lines)
-- Source-name derivation integration
-- Standard-header creation when destination file is absent
+- Alias-keyed block constructor (_build_source_block_lines)
+- Source-name (alias) derivation integration
+- No standard-header is written (spec Section 5.1): per-dependency blocks only
 - Per-block stdout summary
 - Unknown-entry hard error
 - Soft-spot rule 1 / rule 3 hard error
 - Shell-quoting empty-positional detection
 - Argparse subparser structure and flags
+- utf-8 encoding sweep (AC-12): read_text/write_text callsites specify encoding="utf-8"
 
 AC-TEST-001
 """
@@ -21,11 +22,7 @@ import textwrap
 import pytest
 
 from kanon_cli.core.metadata import CatalogMetadata
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+from tests.conftest import bare_text_io_calls
 
 
 def _make_metadata(
@@ -43,81 +40,197 @@ def _make_metadata(
     )
 
 
-# ---------------------------------------------------------------------------
-# Tests for _build_triple_lines
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
-class TestBuildTripleLines:
-    """Unit tests for the triple-line constructor."""
+class TestBuildSourceBlockLines:
+    """Unit tests for the alias-keyed block-line constructor."""
 
-    def test_returns_three_lines(self) -> None:
-        """_build_triple_lines returns exactly three non-empty strings."""
-        from kanon_cli.commands.add import _build_triple_lines
+    def test_returns_four_structural_lines_when_no_env_no_marketplace(self) -> None:
+        """_build_source_block_lines returns exactly the four structural strings
+        when env_var_lines is empty and marketplace is False (no env-var or
+        _MARKETPLACE line is appended).
+        """
+        from kanon_cli.commands.add import _build_source_block_lines
 
-        lines = _build_triple_lines(
+        lines = _build_source_block_lines(
             source_name="my_entry",
             url="https://example.com/repo.git",
-            revision="refs/tags/1.2.0",
+            ref="refs/tags/1.2.0",
             path="repo-specs/my-entry-marketplace.xml",
+            name="my-entry",
+            env_var_lines=[],
+            marketplace=False,
         )
-        assert len(lines) == 3
+        assert len(lines) == 4
+        joined = "\n".join(lines)
+        assert "_MARKETPLACE" not in joined
+        assert "_GITBASE" not in joined
+
+    def test_env_var_lines_appended_after_structural(self) -> None:
+        """Detected env-var lines are appended after the four structural keys."""
+        from kanon_cli.commands.add import _build_source_block_lines
+
+        lines = _build_source_block_lines(
+            source_name="my_entry",
+            url="https://example.com/repo.git",
+            ref="refs/tags/1.2.0",
+            path="repo-specs/my-entry-marketplace.xml",
+            name="my-entry",
+            env_var_lines=["KANON_SOURCE_my_entry_GITBASE=https://example.com/org"],
+            marketplace=False,
+        )
+        assert len(lines) == 5
+        assert lines[4] == "KANON_SOURCE_my_entry_GITBASE=https://example.com/org"
+
+    def test_marketplace_true_appends_marketplace_line_last(self) -> None:
+        """marketplace=True appends a trailing KANON_SOURCE_<alias>_MARKETPLACE=true.
+
+        With no env-var lines the four structural keys come first, so the
+        _MARKETPLACE line is the fifth (index 4) line.
+        """
+        from kanon_cli.commands.add import _build_source_block_lines
+
+        lines = _build_source_block_lines(
+            source_name="my_entry",
+            url="https://example.com/repo.git",
+            ref="refs/tags/1.2.0",
+            path="repo-specs/my-entry-marketplace.xml",
+            name="my-entry",
+            env_var_lines=[],
+            marketplace=True,
+        )
+        assert len(lines) == 5
+        assert lines[4] == "KANON_SOURCE_my_entry_MARKETPLACE=true"
+
+    def test_marketplace_after_env_var_lines(self) -> None:
+        """The _MARKETPLACE line is always last, after any env-var lines."""
+        from kanon_cli.commands.add import _build_source_block_lines
+
+        lines = _build_source_block_lines(
+            source_name="my_entry",
+            url="https://example.com/repo.git",
+            ref="refs/tags/1.2.0",
+            path="repo-specs/my-entry-marketplace.xml",
+            name="my-entry",
+            env_var_lines=["KANON_SOURCE_my_entry_GITBASE=https://example.com/org"],
+            marketplace=True,
+        )
+        assert len(lines) == 6
+        assert lines[4] == "KANON_SOURCE_my_entry_GITBASE=https://example.com/org"
+        assert lines[5] == "KANON_SOURCE_my_entry_MARKETPLACE=true"
+
+    def test_marketplace_false_omits_marketplace_line(self) -> None:
+        """marketplace=False never emits a _MARKETPLACE line (absence == false)."""
+        from kanon_cli.commands.add import _build_source_block_lines
+
+        lines = _build_source_block_lines(
+            source_name="my_entry",
+            url="https://example.com/repo.git",
+            ref="refs/tags/1.2.0",
+            path="repo-specs/my-entry-marketplace.xml",
+            name="my-entry",
+            env_var_lines=[],
+            marketplace=False,
+        )
+
+        assert not any(line.endswith("_MARKETPLACE=false") for line in lines)
+        assert not any("_MARKETPLACE" in line for line in lines)
 
     def test_url_line_format(self) -> None:
-        """URL line is KANON_SOURCE_<source_name>_URL=<url>."""
-        from kanon_cli.commands.add import _build_triple_lines
+        """URL line is KANON_SOURCE_<alias>_URL=<url>."""
+        from kanon_cli.commands.add import _build_source_block_lines
 
-        lines = _build_triple_lines(
+        lines = _build_source_block_lines(
             source_name="my_entry",
             url="https://example.com/repo.git",
-            revision="refs/tags/1.0.0",
+            ref="refs/tags/1.0.0",
             path="repo-specs/my-entry-marketplace.xml",
+            name="my-entry",
+            env_var_lines=[],
+            marketplace=False,
         )
         assert lines[0] == "KANON_SOURCE_my_entry_URL=https://example.com/repo.git"
 
-    def test_revision_line_format(self) -> None:
-        """REVISION line is KANON_SOURCE_<source_name>_REVISION=<revision>."""
-        from kanon_cli.commands.add import _build_triple_lines
+    def test_ref_line_format(self) -> None:
+        """REF line is KANON_SOURCE_<alias>_REF=<ref> (no _REVISION)."""
+        from kanon_cli.commands.add import _build_source_block_lines
 
-        lines = _build_triple_lines(
+        lines = _build_source_block_lines(
             source_name="foo_bar",
             url="https://example.com/repo.git",
-            revision="refs/tags/2.1.0",
+            ref="refs/tags/2.1.0",
             path="repo-specs/entry-marketplace.xml",
+            name="foo-bar",
+            env_var_lines=[],
+            marketplace=False,
         )
-        assert lines[1] == "KANON_SOURCE_foo_bar_REVISION=refs/tags/2.1.0"
+        assert lines[1] == "KANON_SOURCE_foo_bar_REF=refs/tags/2.1.0"
 
     def test_path_line_format(self) -> None:
-        """PATH line is KANON_SOURCE_<source_name>_PATH=<path>."""
-        from kanon_cli.commands.add import _build_triple_lines
+        """PATH line is KANON_SOURCE_<alias>_PATH=<path>."""
+        from kanon_cli.commands.add import _build_source_block_lines
 
-        lines = _build_triple_lines(
+        lines = _build_source_block_lines(
             source_name="foo_bar",
             url="https://example.com/repo.git",
-            revision="refs/tags/1.0.0",
+            ref="refs/tags/1.0.0",
             path="repo-specs/entry-marketplace.xml",
+            name="foo-bar",
+            env_var_lines=[],
+            marketplace=False,
         )
         assert lines[2] == "KANON_SOURCE_foo_bar_PATH=repo-specs/entry-marketplace.xml"
 
+    def test_name_line_format(self) -> None:
+        """NAME line is KANON_SOURCE_<alias>_NAME=<original manifest name>."""
+        from kanon_cli.commands.add import _build_source_block_lines
+
+        lines = _build_source_block_lines(
+            source_name="foo_bar",
+            url="https://example.com/repo.git",
+            ref="refs/tags/1.0.0",
+            path="repo-specs/entry-marketplace.xml",
+            name="Foo-Bar",
+            env_var_lines=[],
+            marketplace=False,
+        )
+        assert lines[3] == "KANON_SOURCE_foo_bar_NAME=Foo-Bar"
+
+    def test_no_revision_key_emitted(self) -> None:
+        """The block never emits a _REVISION key (renamed to _REF)."""
+        from kanon_cli.commands.add import _build_source_block_lines
+
+        lines = _build_source_block_lines(
+            source_name="my_entry",
+            url="https://example.com/repo.git",
+            ref="refs/tags/1.0.0",
+            path="repo-specs/my-entry-marketplace.xml",
+            name="my-entry",
+            env_var_lines=[],
+            marketplace=False,
+        )
+        joined = "\n".join(lines)
+        assert "_REVISION" not in joined
+
     def test_source_name_hyphen_converted_to_underscore(self) -> None:
-        """Source name uses derive_source_name output -- hyphens are underscores."""
-        from kanon_cli.commands.add import _build_triple_lines
+        """Alias uses derive_source_name output -- hyphens become underscores."""
+        from kanon_cli.commands.add import _build_source_block_lines
         from kanon_cli.core.metadata import derive_source_name
 
         source_name = derive_source_name("Foo-Bar")
-        lines = _build_triple_lines(
+        lines = _build_source_block_lines(
             source_name=source_name,
             url="https://example.com/repo.git",
-            revision="refs/tags/1.0.0",
+            ref="refs/tags/1.0.0",
             path="repo-specs/foo-bar-marketplace.xml",
+            name="Foo-Bar",
+            env_var_lines=[],
+            marketplace=False,
         )
-        assert "foo_bar" in lines[0]
-        assert "foo_bar" in lines[1]
-        assert "foo_bar" in lines[2]
+        for line in lines:
+            assert "foo_bar" in line
 
     @pytest.mark.parametrize(
-        "source_name,url,revision,path",
+        "source_name,url,ref,path",
         [
             (
                 "alpha",
@@ -134,183 +247,137 @@ class TestBuildTripleLines:
         ],
         ids=["simple-name", "underscore-name-ssh-url"],
     )
-    def test_all_three_keys_present(self, source_name: str, url: str, revision: str, path: str) -> None:
-        """All three KANON_SOURCE_* keys appear in the output."""
-        from kanon_cli.commands.add import _build_triple_lines
+    def test_all_four_structural_keys_present(self, source_name: str, url: str, ref: str, path: str) -> None:
+        """All four required structural KANON_SOURCE_* keys appear in the output."""
+        from kanon_cli.commands.add import _build_source_block_lines
 
-        lines = _build_triple_lines(
+        lines = _build_source_block_lines(
             source_name=source_name,
             url=url,
-            revision=revision,
+            ref=ref,
             path=path,
+            name=source_name,
+            env_var_lines=[],
+            marketplace=False,
         )
         joined = "\n".join(lines)
         assert f"KANON_SOURCE_{source_name}_URL" in joined
-        assert f"KANON_SOURCE_{source_name}_REVISION" in joined
+        assert f"KANON_SOURCE_{source_name}_REF" in joined
         assert f"KANON_SOURCE_{source_name}_PATH" in joined
-
-
-# ---------------------------------------------------------------------------
-# Tests for standard-header creation
-# ---------------------------------------------------------------------------
+        assert f"KANON_SOURCE_{source_name}_NAME" in joined
 
 
 @pytest.mark.unit
-class TestStandardHeader:
-    """Standard-header creation when the destination file is absent."""
+class TestNoStandardHeader:
+    """add writes no standard header: the _write_standard_header writer is removed."""
 
-    _SAMPLE_CATALOG_SOURCE = "https://github.com/example/manifest.git@main"
-    # Expected GITBASE derived from _SAMPLE_CATALOG_SOURCE: scheme + netloc + org segment.
-    _EXPECTED_GITBASE = "https://github.com/example"
-    _EXPECTED_MARKETPLACE_INSTALL = "false"
+    def test_write_standard_header_is_removed(self) -> None:
+        """The _write_standard_header writer no longer exists in the add module."""
+        import kanon_cli.commands.add as add_module
 
-    def test_header_written_when_file_absent(self, tmp_path: pathlib.Path) -> None:
-        """_write_standard_header creates the file with the three header lines."""
-        from kanon_cli.commands.add import _write_standard_header
-
-        dest = tmp_path / ".kanon"
-        assert not dest.exists()
-        _write_standard_header(
-            dest,
-            self._SAMPLE_CATALOG_SOURCE,
-            self._EXPECTED_GITBASE,
-            self._EXPECTED_MARKETPLACE_INSTALL,
+        assert not hasattr(add_module, "_write_standard_header"), (
+            "_write_standard_header must be removed (spec Section 5.1 / DoD): "
+            "per-dependency blocks fully replace the global header."
         )
-        assert dest.exists()
 
-    def test_header_contains_gitbase(self, tmp_path: pathlib.Path) -> None:
-        """Created file contains the GITBASE line with a derived (non-placeholder) value."""
-        from kanon_cli.commands.add import _write_standard_header
+    def test_fresh_file_has_no_header_or_catalog_block(self, tmp_path: pathlib.Path) -> None:
+        """A fresh .kanon written by add carries only the per-dep block, no header.
 
-        dest = tmp_path / ".kanon"
-        _write_standard_header(
-            dest,
-            self._SAMPLE_CATALOG_SOURCE,
-            self._EXPECTED_GITBASE,
-            self._EXPECTED_MARKETPLACE_INSTALL,
+        No global [catalog] block, no KANON_MARKETPLACE_INSTALL header line, and
+        no bare GITBASE= header line. This entry's manifest declares no <remote>
+        and no ${VAR} placeholder, so add writes NO per-dependency env-var line
+        either (not even a _GITBASE line) -- only the four structural keys.
+        """
+        import argparse
+        import textwrap
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import run_add
+
+        kanon_file = tmp_path / ".kanon"
+        meta = CatalogMetadata(
+            name="entry-a",
+            display_name="Entry A",
+            description="Test.",
+            version="1.0.0",
         )
-        content = dest.read_text()
-        assert f"GITBASE={self._EXPECTED_GITBASE}" in content
-        assert "<YOUR_GIT_ORG_BASE_URL>" not in content
-
-    def test_header_contains_claude_marketplaces_dir(self, tmp_path: pathlib.Path) -> None:
-        """Created file contains the CLAUDE_MARKETPLACES_DIR line."""
-        from kanon_cli.commands.add import _write_standard_header
-
-        dest = tmp_path / ".kanon"
-        _write_standard_header(
-            dest,
-            self._SAMPLE_CATALOG_SOURCE,
-            self._EXPECTED_GITBASE,
-            self._EXPECTED_MARKETPLACE_INSTALL,
+        xml_path = tmp_path / "repo" / "repo-specs" / "entry-a-marketplace.xml"
+        xml_path.parent.mkdir(parents=True)
+        xml_path.write_text(
+            textwrap.dedent("""\
+                <?xml version="1.0" encoding="UTF-8"?>
+                <manifest>
+                  <catalog-metadata>
+                    <name>entry-a</name>
+                    <display-name>Entry A</display-name>
+                    <description>Test.</description>
+                    <version>1.0.0</version>
+                    <type>plugin</type>
+                    <owner-name>Owner</owner-name>
+                    <owner-email>o@example.com</owner-email>
+                    <keywords>test</keywords>
+                  </catalog-metadata>
+                </manifest>
+            """)
         )
-        content = dest.read_text()
-        assert "CLAUDE_MARKETPLACES_DIR=" in content
-
-    def test_header_contains_kanon_marketplace_install(self, tmp_path: pathlib.Path) -> None:
-        """Created file contains KANON_MARKETPLACE_INSTALL with a concrete boolean value."""
-        from kanon_cli.commands.add import _write_standard_header
-
-        dest = tmp_path / ".kanon"
-        _write_standard_header(
-            dest,
-            self._SAMPLE_CATALOG_SOURCE,
-            self._EXPECTED_GITBASE,
-            self._EXPECTED_MARKETPLACE_INSTALL,
+        manifest_root = tmp_path / "repo"
+        args = argparse.Namespace(
+            catalog_source="https://example.com/org/repo.git@main",
+            kanon_file=str(kanon_file),
+            entries=["entry-a"],
+            force=False,
+            dry_run=False,
         )
-        content = dest.read_text()
-        assert f"KANON_MARKETPLACE_INSTALL={self._EXPECTED_MARKETPLACE_INSTALL}" in content
-        assert "<true|false>" not in content
+        with (
+            patch(
+                "kanon_cli.commands.add._resolve_manifest_repo_for_add",
+                return_value=(manifest_root, "https://example.com/org/repo.git", "main"),
+            ),
+            patch(
+                "kanon_cli.commands.add._build_entry_catalog",
+                return_value=[(meta, xml_path, "https://example.com/org/repo.git")],
+            ),
+            patch(
+                "kanon_cli.commands.add._resolve_spec",
+                return_value="refs/tags/1.0.0",
+            ),
+        ):
+            assert run_add(args) == 0
 
-    def test_header_values_use_derived_gitbase_and_env_marketplace(self, tmp_path: pathlib.Path) -> None:
-        """Header uses derived GITBASE and env-sourced marketplace_install, not placeholder strings."""
-        from kanon_cli.commands.add import _write_standard_header
-        from kanon_cli.constants import KANON_HEADER_CLAUDE_MARKETPLACES_DIR
+        content = kanon_file.read_text()
+        assert "[catalog]" not in content
+        assert "KANON_MARKETPLACE_INSTALL" not in content
 
-        dest = tmp_path / ".kanon"
-        _write_standard_header(
-            dest,
-            self._SAMPLE_CATALOG_SOURCE,
-            self._EXPECTED_GITBASE,
-            self._EXPECTED_MARKETPLACE_INSTALL,
+        for line in content.splitlines():
+            assert not line.startswith("GITBASE="), f"unexpected GITBASE header line: {line!r}"
+        assert "KANON_SOURCE_entry_a_GITBASE" not in content, (
+            "no env-var line is written when the manifest references no ${VAR}"
         )
-        content = dest.read_text()
-        assert f"GITBASE={self._EXPECTED_GITBASE}" in content
-        assert KANON_HEADER_CLAUDE_MARKETPLACES_DIR in content
-        assert f"KANON_MARKETPLACE_INSTALL={self._EXPECTED_MARKETPLACE_INSTALL}" in content
-        # No placeholder strings in the output.
-        assert "<YOUR_GIT_ORG_BASE_URL>" not in content
-        assert "<true|false>" not in content
-
-    def test_header_not_written_when_file_exists(self, tmp_path: pathlib.Path) -> None:
-        """_write_standard_header does not overwrite an existing file."""
-        from kanon_cli.commands.add import _write_standard_header
-
-        dest = tmp_path / ".kanon"
-        dest.write_text("EXISTING=value\n")
-        _write_standard_header(
-            dest,
-            self._SAMPLE_CATALOG_SOURCE,
-            self._EXPECTED_GITBASE,
-            self._EXPECTED_MARKETPLACE_INSTALL,
-        )
-        content = dest.read_text()
-        assert "EXISTING=value" in content
-        # Standard header lines must NOT appear when file already exists
-        assert "GITBASE=" not in content
-
-    def test_catalog_block_written_to_fresh_file(self, tmp_path: pathlib.Path) -> None:
-        """Fresh .kanon file gets a [catalog] block with the catalog source."""
-        from kanon_cli.commands.add import _write_standard_header
-        from kanon_cli.constants import KANON_CATALOG_BLOCK_HEADER, KANON_CATALOG_BLOCK_KEY
-
-        dest = tmp_path / ".kanon"
-        _write_standard_header(
-            dest,
-            self._SAMPLE_CATALOG_SOURCE,
-            self._EXPECTED_GITBASE,
-            self._EXPECTED_MARKETPLACE_INSTALL,
-        )
-        content = dest.read_text()
-        assert KANON_CATALOG_BLOCK_HEADER in content
-        assert f"{KANON_CATALOG_BLOCK_KEY}={self._SAMPLE_CATALOG_SOURCE}" in content
-
-    def test_catalog_block_not_written_when_file_exists(self, tmp_path: pathlib.Path) -> None:
-        """Existing .kanon file is not rewritten -- no [catalog] block added."""
-        from kanon_cli.commands.add import _write_standard_header
-        from kanon_cli.constants import KANON_CATALOG_BLOCK_HEADER
-
-        dest = tmp_path / ".kanon"
-        dest.write_text("EXISTING=value\n")
-        _write_standard_header(
-            dest,
-            self._SAMPLE_CATALOG_SOURCE,
-            self._EXPECTED_GITBASE,
-            self._EXPECTED_MARKETPLACE_INSTALL,
-        )
-        content = dest.read_text()
-        assert KANON_CATALOG_BLOCK_HEADER not in content
-
-
-# ---------------------------------------------------------------------------
-# Tests for stdout summary line
-# ---------------------------------------------------------------------------
+        assert "KANON_SOURCE_entry_a_URL=https://example.com/org/repo.git" in content
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content
+        assert "KANON_SOURCE_entry_a_NAME=entry-a" in content
 
 
 @pytest.mark.unit
 class TestStdoutSummary:
-    """Per-block stdout summary is printed when a triple block is written."""
+    """Per-block stdout summary is printed when a source block is written."""
 
     def test_summary_mentions_source_name(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """Summary line names the source name."""
-        from kanon_cli.commands.add import _append_triple_block
+        """Summary line names the source alias."""
+        from kanon_cli.commands.add import _append_source_block
 
         dest = tmp_path / ".kanon"
         dest.write_text("")
-        _append_triple_block(
+        _append_source_block(
             dest=dest,
             source_name="my_entry",
-            lines=["KANON_SOURCE_my_entry_URL=u", "KANON_SOURCE_my_entry_REVISION=r", "KANON_SOURCE_my_entry_PATH=p"],
+            lines=[
+                "KANON_SOURCE_my_entry_URL=u",
+                "KANON_SOURCE_my_entry_REF=r",
+                "KANON_SOURCE_my_entry_PATH=p",
+                "KANON_SOURCE_my_entry_NAME=my-entry",
+                "KANON_SOURCE_my_entry_GITBASE=https://example.com",
+            ],
         )
         captured = capsys.readouterr()
         assert "my_entry" in captured.out
@@ -319,43 +386,62 @@ class TestStdoutSummary:
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """Summary line names the destination file path."""
-        from kanon_cli.commands.add import _append_triple_block
+        from kanon_cli.commands.add import _append_source_block
 
         dest = tmp_path / ".kanon"
         dest.write_text("")
-        _append_triple_block(
+        _append_source_block(
             dest=dest,
             source_name="entry_a",
-            lines=["KANON_SOURCE_entry_a_URL=u", "KANON_SOURCE_entry_a_REVISION=r", "KANON_SOURCE_entry_a_PATH=p"],
+            lines=[
+                "KANON_SOURCE_entry_a_URL=u",
+                "KANON_SOURCE_entry_a_REF=r",
+                "KANON_SOURCE_entry_a_PATH=p",
+                "KANON_SOURCE_entry_a_NAME=entry-a",
+                "KANON_SOURCE_entry_a_GITBASE=https://example.com",
+            ],
         )
         captured = capsys.readouterr()
         assert str(dest) in captured.out
 
-    def test_triple_appended_to_file(self, tmp_path: pathlib.Path) -> None:
-        """_append_triple_block appends the three lines to the file."""
-        from kanon_cli.commands.add import _append_triple_block
+    def test_block_appended_to_file(self, tmp_path: pathlib.Path) -> None:
+        """_append_source_block appends the block lines to the file."""
+        from kanon_cli.commands.add import _append_source_block
 
         dest = tmp_path / ".kanon"
         dest.write_text("EXISTING=1\n")
-        _append_triple_block(
+        _append_source_block(
             dest=dest,
             source_name="pkg",
             lines=[
                 "KANON_SOURCE_pkg_URL=https://example.com/repo.git",
-                "KANON_SOURCE_pkg_REVISION=refs/tags/1.0.0",
+                "KANON_SOURCE_pkg_REF=refs/tags/1.0.0",
                 "KANON_SOURCE_pkg_PATH=repo-specs/pkg-marketplace.xml",
+                "KANON_SOURCE_pkg_NAME=pkg",
+                "KANON_SOURCE_pkg_GITBASE=https://example.com",
             ],
         )
         content = dest.read_text()
         assert "EXISTING=1" in content
         assert "KANON_SOURCE_pkg_URL=https://example.com/repo.git" in content
-        assert "KANON_SOURCE_pkg_REVISION=refs/tags/1.0.0" in content
+        assert "KANON_SOURCE_pkg_REF=refs/tags/1.0.0" in content
         assert "KANON_SOURCE_pkg_PATH=repo-specs/pkg-marketplace.xml" in content
+        assert "KANON_SOURCE_pkg_NAME=pkg" in content
+        assert "KANON_SOURCE_pkg_GITBASE=https://example.com" in content
 
+    def test_append_to_empty_file_has_no_leading_blank_line(self, tmp_path: pathlib.Path) -> None:
+        """Appending to a fresh/empty .kanon does not start with a blank line."""
+        from kanon_cli.commands.add import _append_source_block
 
-# ---------------------------------------------------------------------------
-# Tests for error paths
-# ---------------------------------------------------------------------------
+        dest = tmp_path / ".kanon"
+        _append_source_block(
+            dest=dest,
+            source_name="pkg",
+            lines=["KANON_SOURCE_pkg_URL=u"],
+        )
+        content = dest.read_text()
+        assert not content.startswith("\n")
+        assert content.splitlines()[0] == "KANON_SOURCE_pkg_URL=u"
 
 
 @pytest.mark.unit
@@ -386,14 +472,14 @@ class TestUnknownEntryError:
     def test_unknown_entry_suggests_kanon_list(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Error message references 'kanon list' for discovery."""
+        """Error message references 'kanon search' for discovery."""
         from kanon_cli.commands.add import _find_entry_by_name
 
         catalog: list[tuple[CatalogMetadata, pathlib.Path, str]] = []
         with pytest.raises(SystemExit):
             _find_entry_by_name("missing-pkg", catalog)
         captured = capsys.readouterr()
-        assert "kanon list" in captured.err
+        assert "kanon search" in captured.err
 
     def test_known_entry_returned(self, tmp_path: pathlib.Path) -> None:
         """_find_entry_by_name returns the matching entry when found."""
@@ -417,7 +503,6 @@ class TestSoftSpotHardError:
         """A CatalogMetadataParseError from the catalog scan exits non-zero."""
         from kanon_cli.commands.add import _build_entry_catalog
 
-        # Create a malformed XML file that _parse_catalog_metadata will reject.
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir()
         bad_xml = repo_specs / "bad-marketplace.xml"
@@ -470,11 +555,6 @@ class TestSoftSpotHardError:
         catalog = _build_entry_catalog(tmp_path, url="https://example.com/repo.git")
         assert len(catalog) == 1
         assert catalog[0][0].name == "entry-a"
-
-
-# ---------------------------------------------------------------------------
-# Tests for argparse subparser structure
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -616,11 +696,6 @@ class TestAddSubparser:
         )
 
 
-# ---------------------------------------------------------------------------
-# Tests for spec-split on last '@'
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSplitNameSpec:
     """_split_name_spec splits on the LAST '@' (spec Section 4.0)."""
@@ -642,11 +717,6 @@ class TestSplitNameSpec:
         name, spec = _split_name_spec(raw)
         assert name == expected_name
         assert spec == expected_spec
-
-
-# ---------------------------------------------------------------------------
-# Tests for _derive_gitbase_from_catalog_source and CatalogSourceURLDerivationError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -758,7 +828,6 @@ class TestDeriveGitbaseFromCatalogSource:
             _derive_gitbase_from_catalog_source,
         )
 
-        # A URL with scheme but no host (not a file:// or git@ URL).
         with pytest.raises(CatalogSourceURLDerivationError) as exc_info:
             _derive_gitbase_from_catalog_source("ftp:")
         err_msg = str(exc_info.value)
@@ -783,11 +852,6 @@ class TestDeriveGitbaseFromCatalogSource:
         assert isinstance(err, ValueError)
         assert err.url == "url"
         assert err.reason == "reason"
-
-
-# ---------------------------------------------------------------------------
-# Tests for _resolve_spec
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -833,11 +897,6 @@ class TestResolveSpec:
         assert result == "refs/tags/1.0.0"
 
 
-# ---------------------------------------------------------------------------
-# Tests for _xml_repo_relative_path
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestXmlRepoRelativePath:
     """_xml_repo_relative_path returns the repo-relative path string."""
@@ -863,21 +922,16 @@ class TestXmlRepoRelativePath:
         assert result == "repo-specs/sub/bar-marketplace.xml"
 
 
-# ---------------------------------------------------------------------------
-# Tests for _resolve_manifest_repo_for_add error paths (unit-level)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestResolveManifestRepoForAdd:
     """_resolve_manifest_repo_for_add error paths."""
 
     def test_invalid_catalog_source_exits_nonzero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """An invalid catalog source string (no '@') exits non-zero."""
+        """An invalid catalog source string (empty ref after '@') exits non-zero."""
         from kanon_cli.commands.add import _resolve_manifest_repo_for_add
 
         with pytest.raises(SystemExit) as exc_info:
-            _resolve_manifest_repo_for_add("not-a-valid-source")
+            _resolve_manifest_repo_for_add("https://example.com/repo.git@", catalog_default_branch=None)
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err
@@ -887,15 +941,10 @@ class TestResolveManifestRepoForAdd:
         from kanon_cli.commands.add import _resolve_manifest_repo_for_add
 
         with pytest.raises(SystemExit) as exc_info:
-            _resolve_manifest_repo_for_add("file:///does/not/exist.git@main")
+            _resolve_manifest_repo_for_add("file:///does/not/exist.git@main", catalog_default_branch=None)
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err
-
-
-# ---------------------------------------------------------------------------
-# Tests for run_add entry point (unit-level, mocked)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -910,7 +959,7 @@ class TestRunAddMissingCatalogSource:
 
         from kanon_cli.commands.add import run_add
 
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         args = argparse.Namespace(
             catalog_source=None,
             kanon_file="./.kanon",
@@ -927,27 +976,82 @@ class TestRunAddMissingCatalogSource:
 
 @pytest.mark.unit
 class TestRunAddGitbaseDerivationError:
-    """run_add exits non-zero when GITBASE cannot be derived from the catalog-source URL."""
+    """run_add exits non-zero when a ${GITBASE} manifest has an unparseable entry URL.
 
-    def test_unparseable_catalog_source_url_exits_nonzero(
-        self, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    GITBASE is derived only when the entry's manifest references ${GITBASE}; a
+    manifest with no ${GITBASE} placeholder never triggers derivation. This
+    exercises the per-entry derivation-error path: a manifest that DOES use
+    ${GITBASE} combined with an entry URL that cannot be parsed.
+    """
+
+    def test_gitbase_manifest_with_unparseable_url_exits_nonzero(
+        self,
+        tmp_path: pathlib.Path,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """run_add exits non-zero and prints ERROR when catalog-source URL has no scheme."""
+        """run_add exits non-zero and prints a GITBASE ERROR when the manifest
+        needs ${GITBASE} but the entry URL has no scheme.
+        """
         import argparse
+        import textwrap
+        from unittest.mock import patch
 
         from kanon_cli.commands.add import run_add
 
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
-        # A schemeless bare URL that cannot be derived -- "@main" suffix is stripped,
-        # leaving "not-valid-url/org/repo" which has no scheme and no SCP pattern match.
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
+
+        meta = CatalogMetadata(
+            name="entry-a",
+            display_name="Entry A",
+            description="Test.",
+            version="1.0.0",
+        )
+        manifest_root = tmp_path / "repo"
+        xml_path = manifest_root / "repo-specs" / "entry-a-marketplace.xml"
+        xml_path.parent.mkdir(parents=True)
+        xml_path.write_text(
+            textwrap.dedent("""\
+                <?xml version="1.0" encoding="UTF-8"?>
+                <manifest>
+                  <catalog-metadata>
+                    <name>entry-a</name>
+                    <display-name>Entry A</display-name>
+                    <description>Test.</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
+                  <remote name="origin" fetch="${GITBASE}/repos" />
+                  <default revision="main" remote="origin" />
+                  <project name="pkg" path="pkg" />
+                </manifest>
+            """),
+            encoding="utf-8",
+        )
+        unparseable_url = "not-valid-url/org/repo"
         args = argparse.Namespace(
-            catalog_source="not-valid-url/org/repo@main",
-            kanon_file="./.kanon",
+            catalog_source=f"{unparseable_url}@main",
+            kanon_file=str(tmp_path / ".kanon"),
             entries=["entry-a"],
             force=False,
             dry_run=False,
+            alias_override=None,
+            marketplace_install=None,
         )
-        with pytest.raises(SystemExit) as exc_info:
+        with (
+            patch(
+                "kanon_cli.commands.add._resolve_manifest_repo_for_add",
+                return_value=(manifest_root, unparseable_url, "main"),
+            ),
+            patch(
+                "kanon_cli.commands.add._build_entry_catalog",
+                return_value=[(meta, xml_path, unparseable_url)],
+            ),
+            patch(
+                "kanon_cli.commands.add._resolve_spec",
+                return_value="refs/tags/1.0.0",
+            ),
+            pytest.raises(SystemExit) as exc_info,
+        ):
             run_add(args)
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
@@ -993,7 +1097,9 @@ class TestResolveManifestRepoForAddVersionConstraint:
             ),
         ):
             (tmp_path / "clone").mkdir(exist_ok=True)
-            repo_dir, url, resolved_ref = _resolve_manifest_repo_for_add("https://example.com/repo.git@latest")
+            repo_dir, url, resolved_ref = _resolve_manifest_repo_for_add(
+                "https://example.com/repo.git@latest", catalog_default_branch=None
+            )
         assert resolved_ref == "2.0.0"
 
     def test_version_constraint_ref_is_resolved(self, tmp_path: pathlib.Path) -> None:
@@ -1015,9 +1121,35 @@ class TestResolveManifestRepoForAddVersionConstraint:
             ),
         ):
             (tmp_path / "clone").mkdir(exist_ok=True)
-            _repo_dir, url, resolved_ref = _resolve_manifest_repo_for_add("https://example.com/repo.git@>=1.0.0")
+            _repo_dir, url, resolved_ref = _resolve_manifest_repo_for_add(
+                "https://example.com/repo.git@>=1.0.0", catalog_default_branch=None
+            )
         assert resolved_ref == "1.5.0"
         assert url == "https://example.com/repo.git"
+
+    def test_omitted_ref_resolves_default_branch_for_manifest_repo(self, tmp_path: pathlib.Path) -> None:
+        """A source with no '@ref' resolves the manifest-repo ref via the default-branch precedence."""
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import _resolve_manifest_repo_for_add
+
+        with (
+            patch("kanon_cli.commands.add.normalize_catalog_source_ref") as mock_normalize,
+            patch(
+                "kanon_cli.commands.add.subprocess.run",
+                return_value=type("R", (), {"returncode": 0, "stderr": ""})(),
+            ),
+            patch("kanon_cli.commands.add.tempfile.mkdtemp", return_value=str(tmp_path / "clone")),
+        ):
+            mock_normalize.return_value = "https://example.com/repo.git@trunk"
+            (tmp_path / "clone").mkdir(exist_ok=True)
+            _repo_dir, url, resolved_ref = _resolve_manifest_repo_for_add(
+                "https://example.com/repo.git", catalog_default_branch="trunk"
+            )
+
+        mock_normalize.assert_called_once_with("https://example.com/repo.git", flag_value="trunk")
+        assert url == "https://example.com/repo.git"
+        assert resolved_ref == "trunk"
 
 
 @pytest.mark.unit
@@ -1035,7 +1167,6 @@ class TestRunAddHappyPath:
 
         kanon_file = tmp_path / ".kanon"
 
-        # Create a minimal metadata for use in catalog
         meta = CatalogMetadata(
             name="entry-a",
             display_name="Entry A",
@@ -1091,34 +1222,39 @@ class TestRunAddHappyPath:
         assert kanon_file.exists()
         content = kanon_file.read_text()
         assert "KANON_SOURCE_entry_a_URL=" in content
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" in content
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content
         assert "KANON_SOURCE_entry_a_PATH=" in content
-
-
-# ---------------------------------------------------------------------------
-# Tests for workspace lock integration in run_add
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestRunAddWorkspaceLock:
     """run_add wraps the .kanon write inside kanon_workspace_lock (AC-FUNC-005)."""
 
-    def test_run_add_creates_kanon_data_dir(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """run_add creates .kanon-data/ as part of workspace lock acquisition.
+    def test_run_add_creates_store_lock_not_cwd_kanon_data(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """run_add creates the edit lock under the KANON_HOME store, not in the CWD.
 
-        The kanon_workspace_lock context manager creates .kanon-data/ eagerly;
-        this test confirms that a normal run_add call in a fresh workspace
-        (with no pre-existing .kanon-data/) creates the directory.
+        The workspace lock now keys on the store-side lock root for the resolved
+        ``.kanon`` path (spec G8: the CWD holds only ``.kanon`` + ``.kanon.lock``).
+        A normal run_add call therefore creates ``.kanon-data/`` under
+        ``<KANON_HOME>/store/.locks/<address>/`` and leaves the project directory
+        free of a ``.kanon-data/`` directory.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
             capsys: Pytest stdout/stderr capture fixture.
+            monkeypatch: Pytest monkeypatch fixture (used to point KANON_HOME).
         """
         import textwrap
         from unittest.mock import patch
 
         from kanon_cli.commands.add import run_add
+        from kanon_cli.constants import KANON_HOME_STORE_LOCKS_SUBDIR, KANON_HOME_STORE_SUBDIR
+
+        kanon_home = tmp_path / "home"
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+        store = kanon_home / KANON_HOME_STORE_SUBDIR
 
         kanon_file = tmp_path / ".kanon"
         meta = CatalogMetadata(
@@ -1156,7 +1292,6 @@ class TestRunAddWorkspaceLock:
             dry_run=False,
         )
 
-        # Pre-condition: .kanon-data/ must not exist.
         assert not (tmp_path / ".kanon-data").exists()
 
         with (
@@ -1175,9 +1310,15 @@ class TestRunAddWorkspaceLock:
         ):
             run_add(args)
 
-        assert (tmp_path / ".kanon-data").is_dir(), (
-            "run_add must create .kanon-data/ via kanon_workspace_lock eager-create "
-            "when the workspace has no prior .kanon-data/ directory"
+        assert not (tmp_path / ".kanon-data").exists(), (
+            "run_add must NOT create .kanon-data/ in the project directory; "
+            "the edit lock now lives under the KANON_HOME store (spec G8)"
+        )
+        store_locks = store / KANON_HOME_STORE_LOCKS_SUBDIR
+        lock_dirs = [path for path in store_locks.rglob(".kanon-data") if path.is_dir()]
+        assert lock_dirs, (
+            "run_add must create the edit lock's .kanon-data/ under "
+            "<KANON_HOME>/store/.locks/<address>/ via kanon_workspace_lock eager-create"
         )
 
     def test_run_add_dry_run_does_not_create_kanon_data_dir(self, tmp_path: pathlib.Path) -> None:
@@ -1248,16 +1389,11 @@ class TestRunAddWorkspaceLock:
             result = run_add(args)
 
         assert result == 0
-        # Dry run must not create .kanon-data/ -- the lock is not acquired.
+
         assert not (tmp_path / ".kanon-data").exists(), (
             "run_add --dry-run must not create .kanon-data/; "
             "the workspace lock is only acquired on the non-dry-run write path"
         )
-
-
-# ---------------------------------------------------------------------------
-# Tests for _resolve_spec with no PEP 440-valid tags (lines 476-477, 482-490)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1340,11 +1476,6 @@ class TestResolveSpecNoPep440Tags:
             assert cap_phrase not in captured.err
 
 
-# ---------------------------------------------------------------------------
-# Tests for _check_within_request_collisions (lines 578-585)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCheckWithinRequestCollisions:
     """_check_within_request_collisions detects duplicate entry names."""
@@ -1384,198 +1515,358 @@ class TestCheckWithinRequestCollisions:
         assert result is None
 
 
-# ---------------------------------------------------------------------------
-# Tests for _read_existing_triple_block (lines 609-623)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestReadExistingTripleBlock:
-    """_read_existing_triple_block reads an existing .kanon block."""
+    """_read_existing_source_block reads an existing .kanon block."""
 
     def test_reads_url_revision_path_from_existing_file(self, tmp_path: pathlib.Path) -> None:
         """Returns the URL, REVISION, PATH values for a known source name."""
-        from kanon_cli.commands.add import _read_existing_triple_block
+        from kanon_cli.commands.add import _read_existing_source_block
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_my_pkg_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_my_pkg_PATH=repo-specs/my-pkg-marketplace.xml\n"
         )
-        url, revision, path = _read_existing_triple_block(kanon_file, "my_pkg")
+        url, revision, path = _read_existing_source_block(kanon_file, "my_pkg")
         assert url == "https://example.com/repo.git"
         assert revision == "refs/tags/1.0.0"
         assert path == "repo-specs/my-pkg-marketplace.xml"
 
     def test_returns_none_triple_for_nonexistent_file(self, tmp_path: pathlib.Path) -> None:
         """Returns (None, None, None) when the .kanon file does not exist."""
-        from kanon_cli.commands.add import _read_existing_triple_block
+        from kanon_cli.commands.add import _read_existing_source_block
 
         kanon_file = tmp_path / ".kanon"
-        url, revision, path = _read_existing_triple_block(kanon_file, "any_name")
+        url, revision, path = _read_existing_source_block(kanon_file, "any_name")
         assert url is None
         assert revision is None
         assert path is None
 
     def test_returns_none_triple_for_unknown_source_name(self, tmp_path: pathlib.Path) -> None:
         """Returns (None, None, None) when the source name is not in the file."""
-        from kanon_cli.commands.add import _read_existing_triple_block
+        from kanon_cli.commands.add import _read_existing_source_block
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_other_pkg_URL=https://example.com/other.git\n"
-            "KANON_SOURCE_other_pkg_REVISION=refs/tags/2.0.0\n"
+            "KANON_SOURCE_other_pkg_REF=refs/tags/2.0.0\n"
             "KANON_SOURCE_other_pkg_PATH=repo-specs/other-marketplace.xml\n"
         )
-        url, revision, path = _read_existing_triple_block(kanon_file, "my_pkg")
+        url, revision, path = _read_existing_source_block(kanon_file, "my_pkg")
         assert url is None
         assert revision is None
         assert path is None
 
 
-# ---------------------------------------------------------------------------
-# Tests for _check_against_existing_blocks (line 652, lines 660-669)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
-class TestCheckAgainstExistingBlocks:
-    """_check_against_existing_blocks detects existing block collisions."""
+class TestSameNameGuard:
+    """_emit_same_name_guard_error fails fast with a diff + the guiding message."""
 
-    def test_force_true_returns_without_error(self, tmp_path: pathlib.Path) -> None:
-        """When force=True, returns immediately without checking the file."""
-        from kanon_cli.commands.add import _check_against_existing_blocks
-
-        kanon_file = tmp_path / ".kanon"
-        kanon_file.write_text("KANON_SOURCE_my_pkg_URL=https://example.com/old.git\n")
-        # Should not raise, even though block exists
-        result = _check_against_existing_blocks(
-            kanon_file=kanon_file,
-            source_name="my_pkg",
-            new_url="https://example.com/new.git",
-            new_revision="refs/tags/2.0.0",
-            new_path="repo-specs/my-pkg-marketplace.xml",
-            force=True,
-        )
-        assert result is None
-
-    def test_existing_block_without_force_exits_nonzero(
-        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-    ) -> None:
-        """When force=False and block exists, exits non-zero."""
-        from kanon_cli.commands.add import _check_against_existing_blocks
+    def test_same_name_guard_exits_nonzero(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """A re-add of an existing alias (same source@ref) without --force exits non-zero."""
+        from kanon_cli.commands.add import _emit_same_name_guard_error
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_my_pkg_URL=https://example.com/old.git\n"
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/1.0.0\n"
-            "KANON_SOURCE_my_pkg_PATH=repo-specs/my-pkg-marketplace.xml\n"
+            "KANON_SOURCE_my_pkg_URL=https://example.com/repo.git\n"
+            "KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0\n"
+            "KANON_SOURCE_my_pkg_PATH=repo-specs/my-pkg-marketplace.xml\n",
+            encoding="utf-8",
         )
         with pytest.raises(SystemExit) as exc_info:
-            _check_against_existing_blocks(
+            _emit_same_name_guard_error(
                 kanon_file=kanon_file,
                 source_name="my_pkg",
-                new_url="https://example.com/new.git",
-                new_revision="refs/tags/2.0.0",
+                new_url="https://example.com/repo.git",
+                new_ref="==1.0.0",
                 new_path="repo-specs/my-pkg-marketplace.xml",
-                force=False,
             )
         assert exc_info.value.code != 0
 
-    def test_existing_block_collision_error_names_source(
+    def test_same_name_guard_names_alias_and_shows_diff_and_guidance(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """Collision error message names the source name."""
-        from kanon_cli.commands.add import _check_against_existing_blocks
+        """The guard error names the alias, renders a +/- diff, and points to --force / remove."""
+        from kanon_cli.commands.add import _emit_same_name_guard_error
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_my_pkg_URL=https://example.com/old.git\n"
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/1.0.0\n"
-            "KANON_SOURCE_my_pkg_PATH=repo-specs/my-pkg-marketplace.xml\n"
+            "KANON_SOURCE_my_pkg_URL=https://example.com/repo.git\n"
+            "KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0\n"
+            "KANON_SOURCE_my_pkg_PATH=repo-specs/my-pkg-marketplace.xml\n",
+            encoding="utf-8",
         )
         with pytest.raises(SystemExit):
-            _check_against_existing_blocks(
+            _emit_same_name_guard_error(
                 kanon_file=kanon_file,
                 source_name="my_pkg",
-                new_url="https://example.com/new.git",
-                new_revision="refs/tags/2.0.0",
+                new_url="https://example.com/repo.git",
+                new_ref="==2.0.0",
                 new_path="repo-specs/my-pkg-marketplace.xml",
-                force=False,
             )
-        captured = capsys.readouterr()
-        assert "my_pkg" in captured.err
-        assert "--force" in captured.err
+        err = capsys.readouterr().err
+        assert "my_pkg" in err
 
-    def test_no_existing_block_returns_none(self, tmp_path: pathlib.Path) -> None:
-        """When source name not in file, returns without error."""
-        from kanon_cli.commands.add import _check_against_existing_blocks
+        assert "-KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0" in err
+        assert "+KANON_SOURCE_my_pkg_REF===2.0.0" in err
+
+        assert "--force" in err
+        assert "kanon remove my_pkg" in err
+
+
+@pytest.mark.unit
+class TestResolveEntryAlias:
+    """_resolve_entry_alias implements the deterministic auto-suffix model."""
+
+    _URL_A = "https://github.com/org-a/pkg.git"
+    _URL_B = "https://github.com/caylent/caylent-private-kanon.git"
+
+    def test_free_base_alias_is_new(self) -> None:
+        """An unused base alias resolves to itself with mode 'new'."""
+        from kanon_cli.commands.add import _resolve_entry_alias
+
+        alias, mode = _resolve_entry_alias({}, "history", self._URL_A, "1.0.0", force=False)
+        assert (alias, mode) == ("history", "new")
+
+    def test_cross_source_collision_appends_repo_suffix(self) -> None:
+        """A taken bare alias from a DIFFERENT source auto-suffixes to base_repo."""
+        from kanon_cli.commands.add import _resolve_entry_alias
+
+        existing = {"history": (self._URL_A, "1.0.0")}
+        alias, mode = _resolve_entry_alias(existing, "history", self._URL_B, ">=2.0.0,<3.0.0", force=False)
+        assert (alias, mode) == ("history_caylent_private_kanon", "new")
+
+    def test_same_repo_different_ref_appends_ref_suffix(self) -> None:
+        """When the repo suffix still collides (same repo, different ref) the ref suffix is added."""
+        from kanon_cli.commands.add import _resolve_entry_alias
+
+        existing = {
+            "history": (self._URL_A, "1.0.0"),
+            "history_caylent_private_kanon": (self._URL_B, ">=9.0.0,<10.0.0"),
+        }
+        alias, mode = _resolve_entry_alias(existing, "history", self._URL_B, ">=0.1.0,<1.0.0", force=False)
+        assert (alias, mode) == ("history_caylent_private_kanon_0_1_0_1_0_0", "new")
+
+    def test_same_source_same_ref_without_force_is_duplicate(self) -> None:
+        """Re-add of the same alias at the same source@ref (no --force) is a duplicate."""
+        from kanon_cli.commands.add import _resolve_entry_alias
+
+        existing = {"history": (self._URL_A, "1.0.0")}
+        alias, mode = _resolve_entry_alias(existing, "history", self._URL_A, "1.0.0", force=False)
+        assert (alias, mode) == ("history", "duplicate")
+
+    def test_same_source_same_ref_with_force_is_overwrite(self) -> None:
+        """Re-add of the same alias at the same source@ref with --force is a force_overwrite."""
+        from kanon_cli.commands.add import _resolve_entry_alias
+
+        existing = {"history": (self._URL_A, "1.0.0")}
+        alias, mode = _resolve_entry_alias(existing, "history", self._URL_A, "1.0.0", force=True)
+        assert (alias, mode) == ("history", "force_overwrite")
+
+    def test_all_candidates_taken_by_distinct_sources_exits(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """When every candidate is taken by a distinct source the add fails fast."""
+        from kanon_cli.commands.add import _resolve_entry_alias
+
+        url_c = "https://github.com/org-c/pkg.git"
+        existing = {
+            "history": (self._URL_A, "1.0.0"),
+            "history_caylent_private_kanon": (self._URL_B, "2.0.0"),
+            "history_caylent_private_kanon_3_0_0": (url_c, "3.0.0"),
+        }
+
+        with pytest.raises(SystemExit) as exc_info:
+            _resolve_entry_alias(existing, "history", self._URL_B, "3.0.0", force=False)
+        assert exc_info.value.code != 0
+        assert "--as" in capsys.readouterr().err
+
+
+@pytest.mark.unit
+class TestResolveOverrideAlias:
+    """_resolve_override_alias never suffixes an explicit --as alias."""
+
+    _URL_A = "https://github.com/org-a/pkg.git"
+    _URL_B = "https://github.com/org-b/pkg.git"
+
+    def test_free_alias_is_new(self) -> None:
+        """A free --as alias resolves to itself with mode 'new'."""
+        from kanon_cli.commands.add import _resolve_override_alias
+
+        alias, mode = _resolve_override_alias({}, "myalias", self._URL_A, "1.0.0", force=False)
+        assert (alias, mode) == ("myalias", "new")
+
+    def test_taken_by_same_source_without_force_is_duplicate(self) -> None:
+        """An --as alias already mapped to the same source@ref is a duplicate (no --force)."""
+        from kanon_cli.commands.add import _resolve_override_alias
+
+        existing = {"myalias": (self._URL_A, "1.0.0")}
+        alias, mode = _resolve_override_alias(existing, "myalias", self._URL_A, "1.0.0", force=False)
+        assert (alias, mode) == ("myalias", "duplicate")
+
+    def test_taken_by_different_source_without_force_exits(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """An --as alias already mapped to a DIFFERENT source (no --force) fails fast."""
+        from kanon_cli.commands.add import _resolve_override_alias
+
+        existing = {"myalias": (self._URL_A, "1.0.0")}
+        with pytest.raises(SystemExit) as exc_info:
+            _resolve_override_alias(existing, "myalias", self._URL_B, "2.0.0", force=False)
+        assert exc_info.value.code != 0
+        err = capsys.readouterr().err
+        assert "myalias" in err
+        assert "--force" in err
+
+    def test_taken_by_different_source_with_force_is_overwrite(self) -> None:
+        """With --force, an --as alias mapped to a different source is an explicit overwrite."""
+        from kanon_cli.commands.add import _resolve_override_alias
+
+        existing = {"myalias": (self._URL_A, "1.0.0")}
+        alias, mode = _resolve_override_alias(existing, "myalias", self._URL_B, "2.0.0", force=True)
+        assert (alias, mode) == ("myalias", "force_overwrite")
+
+
+@pytest.mark.unit
+class TestAliasSanitization:
+    """_sanitize_alias_fragment / _source_repo_fragment / _validate_alias_override."""
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            ("main", "main"),
+            (">=0.1.0,<1.0.0", "0_1_0_1_0_0"),
+            ("caylent-private-kanon", "caylent_private_kanon"),
+            ("__leading_trailing__", "leading_trailing"),
+            ("a---b", "a_b"),
+            ("", ""),
+        ],
+        ids=["branch", "constraint", "repo-name", "trim", "collapse", "empty"],
+    )
+    def test_sanitize_alias_fragment(self, value: str, expected: str) -> None:
+        """Non-charset runs collapse to a single '_'; leading/trailing '_' trimmed; never '__'."""
+        from kanon_cli.commands.add import _sanitize_alias_fragment
+
+        result = _sanitize_alias_fragment(value)
+        assert result == expected
+        assert "__" not in result
+
+    @pytest.mark.parametrize(
+        "url,expected",
+        [
+            ("https://github.com/caylent/caylent-private-kanon.git", "caylent_private_kanon"),
+            ("git@github.com:org/my-repo.git", "my_repo"),
+            ("file:///tmp/bare-repo.git", "bare_repo"),
+            ("https://host/org/repo", "repo"),
+        ],
+        ids=["https-git", "scp", "file", "no-git-suffix"],
+    )
+    def test_source_repo_fragment(self, url: str, expected: str) -> None:
+        """The repo fragment is the sanitized basename of the URL path (sans .git)."""
+        from kanon_cli.commands.add import _source_repo_fragment
+
+        assert _source_repo_fragment(url) == expected
+
+    @pytest.mark.parametrize(
+        "alias",
+        ["good_alias", "Alias123", "a"],
+        ids=["underscore", "mixed-case-digits", "single"],
+    )
+    def test_validate_alias_override_accepts_legal(self, alias: str) -> None:
+        """A legal alias passes validation unchanged."""
+        from kanon_cli.commands.add import _validate_alias_override
+
+        assert _validate_alias_override(alias) == alias
+
+    @pytest.mark.parametrize(
+        "alias",
+        ["", "bad-alias", "has space", "double__under", "dot.alias"],
+        ids=["empty", "hyphen", "space", "double-underscore", "dot"],
+    )
+    def test_validate_alias_override_rejects_illegal(self, alias: str) -> None:
+        """An illegal alias raises AliasOverrideError (fail fast, no silent sanitize)."""
+        from kanon_cli.commands.add import AliasOverrideError, _validate_alias_override
+
+        with pytest.raises(AliasOverrideError):
+            _validate_alias_override(alias)
+
+
+@pytest.mark.unit
+class TestReadAllSourceAliases:
+    """_read_all_source_aliases maps each alias to its (url, ref) coordinates."""
+
+    def test_reads_multiple_aliases_in_order(self, tmp_path: pathlib.Path) -> None:
+        """Every alias block is read with its URL and REF, in first-seen order."""
+        from kanon_cli.commands.add import _read_all_source_aliases
 
         kanon_file = tmp_path / ".kanon"
-        kanon_file.write_text("GITBASE=https://example.com/org\n")
-        result = _check_against_existing_blocks(
-            kanon_file=kanon_file,
-            source_name="new_pkg",
-            new_url="https://example.com/new.git",
-            new_revision="refs/tags/1.0.0",
-            new_path="repo-specs/new-pkg-marketplace.xml",
-            force=False,
+        kanon_file.write_text(
+            "CLAUDE_MARKETPLACES_DIR=/tmp/mk\n"
+            "KANON_SOURCE_alpha_URL=https://example.com/a.git\n"
+            "KANON_SOURCE_alpha_REF=1.0.0\n"
+            "KANON_SOURCE_alpha_PATH=p\n"
+            "KANON_SOURCE_beta_URL=https://example.com/b.git\n"
+            "KANON_SOURCE_beta_REF=2.0.0\n",
+            encoding="utf-8",
         )
-        assert result is None
+        result = _read_all_source_aliases(kanon_file)
+        assert result == {
+            "alpha": ("https://example.com/a.git", "1.0.0"),
+            "beta": ("https://example.com/b.git", "2.0.0"),
+        }
+        assert list(result) == ["alpha", "beta"]
 
+    def test_absent_file_is_empty(self, tmp_path: pathlib.Path) -> None:
+        """A missing .kanon file yields an empty alias map."""
+        from kanon_cli.commands.add import _read_all_source_aliases
 
-# ---------------------------------------------------------------------------
-# Tests for _overwrite_triple_block (lines 693-722)
-# ---------------------------------------------------------------------------
+        assert _read_all_source_aliases(tmp_path / ".kanon") == {}
 
 
 @pytest.mark.unit
 class TestOverwriteTripleBlock:
-    """_overwrite_triple_block replaces an existing triple in the .kanon file."""
+    """_overwrite_source_block replaces an existing triple in the .kanon file."""
 
     def test_overwrites_existing_triple(self, tmp_path: pathlib.Path) -> None:
         """Replaces old URL/REVISION/PATH lines with new ones."""
-        from kanon_cli.commands.add import _overwrite_triple_block
+        from kanon_cli.commands.add import _overwrite_source_block
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "GITBASE=https://example.com/org\n"
             "KANON_SOURCE_my_pkg_URL=https://example.com/old.git\n"
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_my_pkg_PATH=repo-specs/old-marketplace.xml\n"
         )
         new_lines = [
             "KANON_SOURCE_my_pkg_URL=https://example.com/new.git",
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/2.0.0",
+            "KANON_SOURCE_my_pkg_REF=refs/tags/2.0.0",
             "KANON_SOURCE_my_pkg_PATH=repo-specs/new-marketplace.xml",
         ]
-        _overwrite_triple_block(kanon_file, "my_pkg", new_lines)
+        _overwrite_source_block(kanon_file, "my_pkg", new_lines)
         content = kanon_file.read_text()
         assert "KANON_SOURCE_my_pkg_URL=https://example.com/new.git" in content
-        assert "KANON_SOURCE_my_pkg_REVISION=refs/tags/2.0.0" in content
+        assert "KANON_SOURCE_my_pkg_REF=refs/tags/2.0.0" in content
         assert "KANON_SOURCE_my_pkg_PATH=repo-specs/new-marketplace.xml" in content
         assert "https://example.com/old.git" not in content
         assert "refs/tags/1.0.0" not in content
 
     def test_preserves_other_content(self, tmp_path: pathlib.Path) -> None:
         """Lines not belonging to the overwritten triple are preserved."""
-        from kanon_cli.commands.add import _overwrite_triple_block
+        from kanon_cli.commands.add import _overwrite_source_block
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "GITBASE=https://example.com/org\n"
             "KANON_SOURCE_my_pkg_URL=https://example.com/old.git\n"
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_my_pkg_PATH=repo-specs/old-marketplace.xml\n"
             "KANON_SOURCE_other_pkg_URL=https://other.example.com/repo.git\n"
         )
         new_lines = [
             "KANON_SOURCE_my_pkg_URL=https://example.com/new.git",
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/2.0.0",
+            "KANON_SOURCE_my_pkg_REF=refs/tags/2.0.0",
             "KANON_SOURCE_my_pkg_PATH=repo-specs/new-marketplace.xml",
         ]
-        _overwrite_triple_block(kanon_file, "my_pkg", new_lines)
+        _overwrite_source_block(kanon_file, "my_pkg", new_lines)
         content = kanon_file.read_text()
         assert "GITBASE=https://example.com/org" in content
         assert "KANON_SOURCE_other_pkg_URL=https://other.example.com/repo.git" in content
@@ -1583,29 +1874,24 @@ class TestOverwriteTripleBlock:
     def test_overwrite_prints_summary_to_stdout(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """_overwrite_triple_block prints a summary mentioning the source name."""
-        from kanon_cli.commands.add import _overwrite_triple_block
+        """_overwrite_source_block prints a summary mentioning the source name."""
+        from kanon_cli.commands.add import _overwrite_source_block
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_my_pkg_URL=https://example.com/old.git\n"
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_my_pkg_PATH=repo-specs/old-marketplace.xml\n"
         )
         new_lines = [
             "KANON_SOURCE_my_pkg_URL=https://example.com/new.git",
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/2.0.0",
+            "KANON_SOURCE_my_pkg_REF=refs/tags/2.0.0",
             "KANON_SOURCE_my_pkg_PATH=repo-specs/new-marketplace.xml",
         ]
-        _overwrite_triple_block(kanon_file, "my_pkg", new_lines)
+        _overwrite_source_block(kanon_file, "my_pkg", new_lines)
         captured = capsys.readouterr()
         assert "my_pkg" in captured.out
         assert "Overwrote" in captured.out
-
-
-# ---------------------------------------------------------------------------
-# Tests for _render_dry_run_diff with force=True (lines 749-761)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1619,7 +1905,7 @@ class TestRenderDryRunDiff:
         dest = tmp_path / ".kanon"
         new_lines = [
             "KANON_SOURCE_my_pkg_URL=https://example.com/repo.git",
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/1.0.0",
+            "KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0",
             "KANON_SOURCE_my_pkg_PATH=repo-specs/my-pkg-marketplace.xml",
         ]
         _render_dry_run_diff(dest, "my_pkg", new_lines, force=False)
@@ -1636,12 +1922,12 @@ class TestRenderDryRunDiff:
         dest = tmp_path / ".kanon"
         dest.write_text(
             "KANON_SOURCE_my_pkg_URL=https://example.com/old.git\n"
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_my_pkg_PATH=repo-specs/old-marketplace.xml\n"
         )
         new_lines = [
             "KANON_SOURCE_my_pkg_URL=https://example.com/new.git",
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/2.0.0",
+            "KANON_SOURCE_my_pkg_REF=refs/tags/2.0.0",
             "KANON_SOURCE_my_pkg_PATH=repo-specs/new-marketplace.xml",
         ]
         _render_dry_run_diff(dest, "my_pkg", new_lines, force=True)
@@ -1659,18 +1945,13 @@ class TestRenderDryRunDiff:
         dest.write_text("GITBASE=https://example.com/org\n")
         new_lines = [
             "KANON_SOURCE_my_pkg_URL=https://example.com/repo.git",
-            "KANON_SOURCE_my_pkg_REVISION=refs/tags/1.0.0",
+            "KANON_SOURCE_my_pkg_REF=refs/tags/1.0.0",
             "KANON_SOURCE_my_pkg_PATH=repo-specs/my-pkg-marketplace.xml",
         ]
         _render_dry_run_diff(dest, "my_pkg", new_lines, force=True)
         captured = capsys.readouterr()
         for line in new_lines:
             assert f"+{line}" in captured.out
-
-
-# ---------------------------------------------------------------------------
-# Tests for run_add with --force (lines 902-910)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1702,20 +1983,28 @@ class TestRunAddForce:
         )
         return xml_path
 
-    def test_run_add_force_overwrites_existing_block(self, tmp_path: pathlib.Path) -> None:
-        """run_add --force overwrites an existing triple with new values."""
+    def test_run_add_force_overwrites_same_source_block(self, tmp_path: pathlib.Path) -> None:
+        """run_add --force overwrites the alias block when re-adding the same source@ref.
+
+        The existing block is keyed by the same alias and the same source URL +
+        resolved ref the add resolves to, so the alias resolution returns
+        ``force_overwrite`` (a re-add of the existing package, spec Section 4.2)
+        rather than auto-suffixing to a fresh alias. The PATH is refreshed by the
+        overwrite while the URL / REF are re-pinned.
+        """
         import argparse
         from unittest.mock import patch
 
         from kanon_cli.commands.add import run_add
 
         kanon_file = tmp_path / ".kanon"
-        # Pre-populate with an existing block for force-pkg
+
         kanon_file.write_text(
             "GITBASE=https://example.com/org\n"
-            "KANON_SOURCE_force_pkg_URL=https://example.com/old.git\n"
-            "KANON_SOURCE_force_pkg_REVISION=refs/tags/1.0.0\n"
-            "KANON_SOURCE_force_pkg_PATH=repo-specs/force-pkg-marketplace.xml\n"
+            "KANON_SOURCE_force_pkg_URL=https://example.com/repo.git\n"
+            "KANON_SOURCE_force_pkg_REF=refs/tags/2.0.0\n"
+            "KANON_SOURCE_force_pkg_PATH=repo-specs/stale-path.xml\n",
+            encoding="utf-8",
         )
         meta = CatalogMetadata(
             name="force-pkg",
@@ -1732,6 +2021,7 @@ class TestRunAddForce:
             entries=["force-pkg"],
             force=True,
             dry_run=False,
+            alias_override=None,
         )
 
         with (
@@ -1752,8 +2042,68 @@ class TestRunAddForce:
 
         assert result == 0
         content = kanon_file.read_text()
-        assert "KANON_SOURCE_force_pkg_REVISION=refs/tags/2.0.0" in content
-        assert "refs/tags/1.0.0" not in content
+
+        assert "KANON_SOURCE_force_pkg_REF=refs/tags/2.0.0" in content
+        assert "KANON_SOURCE_force_pkg_repo_URL=" not in content
+
+        assert "repo-specs/force-pkg-marketplace.xml" in content
+        assert "repo-specs/stale-path.xml" not in content
+
+    def test_run_add_cross_source_collision_auto_suffixes(self, tmp_path: pathlib.Path) -> None:
+        """A same-NAME add from a DIFFERENT source auto-suffixes; the existing block is untouched."""
+        import argparse
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import run_add
+
+        kanon_file = tmp_path / ".kanon"
+
+        kanon_file.write_text(
+            "GITBASE=https://example.com/org\n"
+            "KANON_SOURCE_force_pkg_URL=https://example.com/other.git\n"
+            "KANON_SOURCE_force_pkg_REF=refs/tags/1.0.0\n"
+            "KANON_SOURCE_force_pkg_PATH=repo-specs/force-pkg-marketplace.xml\n",
+            encoding="utf-8",
+        )
+        meta = CatalogMetadata(
+            name="force-pkg",
+            display_name="Force Pkg",
+            description="Test.",
+            version="2.0.0",
+        )
+        xml_path = self._make_xml_file(tmp_path, "force-pkg")
+        manifest_root = tmp_path / "repo"
+
+        args = argparse.Namespace(
+            catalog_source="https://example.com/repo.git@main",
+            kanon_file=str(kanon_file),
+            entries=["force-pkg"],
+            force=False,
+            dry_run=False,
+            alias_override=None,
+        )
+
+        with (
+            patch(
+                "kanon_cli.commands.add._resolve_manifest_repo_for_add",
+                return_value=(manifest_root, "https://example.com/repo.git", "main"),
+            ),
+            patch(
+                "kanon_cli.commands.add._build_entry_catalog",
+                return_value=[(meta, xml_path, "https://example.com/repo.git")],
+            ),
+            patch(
+                "kanon_cli.commands.add._resolve_spec",
+                return_value="refs/tags/2.0.0",
+            ),
+        ):
+            result = run_add(args)
+
+        assert result == 0
+        content = kanon_file.read_text()
+
+        assert "KANON_SOURCE_force_pkg_repo_URL=https://example.com/repo.git" in content
+        assert "KANON_SOURCE_force_pkg_URL=https://example.com/other.git" in content
 
     def test_run_add_force_new_entry_appends_when_no_existing_block(self, tmp_path: pathlib.Path) -> None:
         """run_add --force appends when the source name is not already present."""
@@ -1800,7 +2150,7 @@ class TestRunAddForce:
         assert result == 0
         content = kanon_file.read_text()
         assert "KANON_SOURCE_new_pkg_URL=" in content
-        assert "KANON_SOURCE_new_pkg_REVISION=refs/tags/1.0.0" in content
+        assert "KANON_SOURCE_new_pkg_REF=refs/tags/1.0.0" in content
 
     def test_run_add_dry_run_force_prints_diff_with_removed_lines(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -1812,11 +2162,13 @@ class TestRunAddForce:
         from kanon_cli.commands.add import run_add
 
         kanon_file = tmp_path / ".kanon"
+
         kanon_file.write_text(
             "GITBASE=https://example.com/org\n"
-            "KANON_SOURCE_dry_pkg_URL=https://example.com/old.git\n"
-            "KANON_SOURCE_dry_pkg_REVISION=refs/tags/1.0.0\n"
-            "KANON_SOURCE_dry_pkg_PATH=repo-specs/dry-pkg-marketplace.xml\n"
+            "KANON_SOURCE_dry_pkg_URL=https://example.com/repo.git\n"
+            "KANON_SOURCE_dry_pkg_REF=refs/tags/2.0.0\n"
+            "KANON_SOURCE_dry_pkg_PATH=repo-specs/stale-path.xml\n",
+            encoding="utf-8",
         )
         meta = CatalogMetadata(
             name="dry-pkg",
@@ -1833,6 +2185,7 @@ class TestRunAddForce:
             entries=["dry-pkg"],
             force=True,
             dry_run=True,
+            alias_override=None,
         )
 
         with (
@@ -1853,9 +2206,289 @@ class TestRunAddForce:
 
         assert result == 0
         captured = capsys.readouterr()
-        # Dry run must show removed lines with '-' and added lines with '+'
-        assert "-KANON_SOURCE_dry_pkg_URL=" in captured.out
-        assert "+KANON_SOURCE_dry_pkg_URL=" in captured.out
-        # File must remain unchanged
+
+        assert "-KANON_SOURCE_dry_pkg_PATH=repo-specs/stale-path.xml" in captured.out
+        assert "+KANON_SOURCE_dry_pkg_PATH=" in captured.out
+
         content = kanon_file.read_text()
-        assert "refs/tags/1.0.0" in content
+        assert "repo-specs/stale-path.xml" in content
+
+
+@pytest.mark.unit
+class TestResolveMarketplaceFlag:
+    """Branch coverage for _resolve_marketplace_flag (item 15, FR-17).
+
+    Precedence: --marketplace-install (flag_override=True) forces on but only on
+    a marketplace-typed entry (else a pretty MarketplaceInstallError);
+    --no-marketplace-install (flag_override=False) forces off;
+    no flag (flag_override=None) auto-detects from the catalog <type>.
+    """
+
+    def test_override_true_on_marketplace_type_returns_true(self) -> None:
+        """flag_override=True on a claude-marketplace entry resolves to True."""
+        from kanon_cli.commands.add import _resolve_marketplace_flag
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        result = _resolve_marketplace_flag(
+            entry_name="mp-entry",
+            entry_type=CATALOG_TYPE_CLAUDE_MARKETPLACE,
+            flag_override=True,
+        )
+        assert result is True
+
+    def test_override_true_on_non_marketplace_type_raises_with_actionable_message(self) -> None:
+        """flag_override=True on a regular type raises MarketplaceInstallError naming the entry."""
+        from kanon_cli.commands.add import MarketplaceInstallError, _resolve_marketplace_flag
+
+        with pytest.raises(MarketplaceInstallError) as exc_info:
+            _resolve_marketplace_flag(
+                entry_name="plain-entry",
+                entry_type="plugin",
+                flag_override=True,
+            )
+        message = str(exc_info.value)
+        assert "requires catalog entry" in message
+        assert "plain-entry" in message
+        assert "'plugin'" in message
+        assert exc_info.value.entry_name == "plain-entry"
+        assert exc_info.value.entry_type == "plugin"
+
+    def test_override_true_on_absent_type_raises_with_absent_in_message(self) -> None:
+        """flag_override=True on an entry with no <type> raises, rendering the type as absent."""
+        from kanon_cli.commands.add import MarketplaceInstallError, _resolve_marketplace_flag
+
+        with pytest.raises(MarketplaceInstallError) as exc_info:
+            _resolve_marketplace_flag(
+                entry_name="typeless-entry",
+                entry_type=None,
+                flag_override=True,
+            )
+        message = str(exc_info.value)
+        assert "requires catalog entry" in message
+        assert "typeless-entry" in message
+        assert "absent" in message
+
+    def test_override_false_returns_false_even_on_marketplace_type(self) -> None:
+        """flag_override=False forces off regardless of the catalog <type>."""
+        from kanon_cli.commands.add import _resolve_marketplace_flag
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        result = _resolve_marketplace_flag(
+            entry_name="mp-entry",
+            entry_type=CATALOG_TYPE_CLAUDE_MARKETPLACE,
+            flag_override=False,
+        )
+        assert result is False
+
+    def test_override_none_auto_detects_marketplace_type_as_true(self) -> None:
+        """flag_override=None defers to _is_marketplace_type, which is True for a marketplace type."""
+        from kanon_cli.commands.add import _resolve_marketplace_flag
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        result = _resolve_marketplace_flag(
+            entry_name="mp-entry",
+            entry_type=CATALOG_TYPE_CLAUDE_MARKETPLACE,
+            flag_override=None,
+        )
+        assert result is True
+
+    def test_override_none_auto_detects_regular_type_as_false(self) -> None:
+        """flag_override=None on a regular type auto-detects to False (no error)."""
+        from kanon_cli.commands.add import _resolve_marketplace_flag
+
+        result = _resolve_marketplace_flag(
+            entry_name="plain-entry",
+            entry_type="plugin",
+            flag_override=None,
+        )
+        assert result is False
+
+    def test_override_none_auto_detects_absent_type_as_false(self) -> None:
+        """flag_override=None on an absent <type> auto-detects to False (None is not marketplace)."""
+        from kanon_cli.commands.add import _resolve_marketplace_flag
+
+        result = _resolve_marketplace_flag(
+            entry_name="typeless-entry",
+            entry_type=None,
+            flag_override=None,
+        )
+        assert result is False
+
+
+@pytest.mark.unit
+class TestRunAddMarketplaceLine:
+    """run_add writes the per-alias _MARKETPLACE line + notice per FR-17 (item 15).
+
+    Exercises the full run_add path with the catalog clone / build mocked so the
+    only variable is the entry's <type> and the --marketplace-install flag.
+    """
+
+    @staticmethod
+    def _make_args(kanon_file: pathlib.Path, marketplace_install: bool | None) -> "argparse.Namespace":
+        """Build a run_add argparse namespace for a single entry."""
+        import argparse
+
+        return argparse.Namespace(
+            catalog_source="https://example.com/org/repo.git@main",
+            kanon_file=str(kanon_file),
+            entries=["entry-a"],
+            force=False,
+            dry_run=False,
+            alias_override=None,
+            marketplace_install=marketplace_install,
+        )
+
+    @staticmethod
+    def _run_with_type(
+        kanon_file: pathlib.Path,
+        entry_type: str | None,
+        marketplace_install: bool | None,
+    ) -> int:
+        """Run run_add with a single mocked catalog entry of the given <type>."""
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import run_add
+
+        import textwrap
+
+        meta = CatalogMetadata(
+            name="entry-a",
+            display_name="Entry A",
+            description="Test.",
+            version="1.0.0",
+            type=entry_type,
+        )
+        manifest_root = kanon_file.parent / "repo"
+        xml_path = manifest_root / "repo-specs" / "entry-a-marketplace.xml"
+        xml_path.parent.mkdir(parents=True, exist_ok=True)
+        xml_path.write_text(
+            textwrap.dedent("""\
+                <?xml version="1.0" encoding="UTF-8"?>
+                <manifest>
+                  <catalog-metadata>
+                    <name>entry-a</name>
+                    <display-name>Entry A</display-name>
+                    <description>Test.</description>
+                    <version>1.0.0</version>
+                  </catalog-metadata>
+                </manifest>
+            """),
+            encoding="utf-8",
+        )
+        url = "https://example.com/org/repo.git"
+        args = TestRunAddMarketplaceLine._make_args(kanon_file, marketplace_install)
+        with (
+            patch(
+                "kanon_cli.commands.add._resolve_manifest_repo_for_add",
+                return_value=(manifest_root, url, "main"),
+            ),
+            patch(
+                "kanon_cli.commands.add._build_entry_catalog",
+                return_value=[(meta, xml_path, url)],
+            ),
+            patch(
+                "kanon_cli.commands.add._resolve_spec",
+                return_value="refs/tags/1.0.0",
+            ),
+        ):
+            return run_add(args)
+
+    def test_marketplace_type_writes_marketplace_true_line(self, tmp_path: pathlib.Path) -> None:
+        """Adding a claude-marketplace entry writes KANON_SOURCE_<alias>_MARKETPLACE=true."""
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        kanon_file = tmp_path / ".kanon"
+        assert self._run_with_type(kanon_file, CATALOG_TYPE_CLAUDE_MARKETPLACE, None) == 0
+        content = kanon_file.read_text(encoding="utf-8")
+        assert "KANON_SOURCE_entry_a_MARKETPLACE=true" in content
+
+    def test_marketplace_type_prints_auto_detect_notice(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Auto-detected marketplace add prints a notice naming the type and the override flag."""
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        kanon_file = tmp_path / ".kanon"
+        assert self._run_with_type(kanon_file, CATALOG_TYPE_CLAUDE_MARKETPLACE, None) == 0
+        out = capsys.readouterr().out
+        assert "Note:" in out
+        assert CATALOG_TYPE_CLAUDE_MARKETPLACE in out
+        assert "KANON_SOURCE_entry_a_MARKETPLACE=true" in out
+        assert "--no-marketplace-install" in out
+
+    def test_regular_type_writes_no_marketplace_line(self, tmp_path: pathlib.Path) -> None:
+        """Adding a regular (plugin) entry writes no _MARKETPLACE line at all."""
+        kanon_file = tmp_path / ".kanon"
+        assert self._run_with_type(kanon_file, "plugin", None) == 0
+        content = kanon_file.read_text(encoding="utf-8")
+        assert "_MARKETPLACE" not in content
+
+    def test_regular_type_prints_no_auto_detect_notice(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A regular add does not print the marketplace auto-detect notice."""
+        kanon_file = tmp_path / ".kanon"
+        assert self._run_with_type(kanon_file, "plugin", None) == 0
+        out = capsys.readouterr().out
+        assert "MARKETPLACE" not in out
+
+    def test_force_flag_on_marketplace_type_writes_true_without_notice(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--marketplace-install on a marketplace type writes =true and suppresses the auto-detect notice."""
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        kanon_file = tmp_path / ".kanon"
+        assert self._run_with_type(kanon_file, CATALOG_TYPE_CLAUDE_MARKETPLACE, True) == 0
+        content = kanon_file.read_text(encoding="utf-8")
+        assert "KANON_SOURCE_entry_a_MARKETPLACE=true" in content
+        out = capsys.readouterr().out
+        assert "Note:" not in out
+
+    def test_no_marketplace_install_on_marketplace_type_omits_line(self, tmp_path: pathlib.Path) -> None:
+        """--no-marketplace-install on a marketplace type omits the _MARKETPLACE line."""
+        from kanon_cli.constants import CATALOG_TYPE_CLAUDE_MARKETPLACE
+
+        kanon_file = tmp_path / ".kanon"
+        assert self._run_with_type(kanon_file, CATALOG_TYPE_CLAUDE_MARKETPLACE, False) == 0
+        content = kanon_file.read_text(encoding="utf-8")
+        assert "_MARKETPLACE" not in content
+
+    def test_marketplace_install_on_non_marketplace_type_exits_nonzero_with_pretty_error(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """--marketplace-install on a regular type exits non-zero with the pretty error, not a traceback."""
+        kanon_file = tmp_path / ".kanon"
+        with pytest.raises(SystemExit) as exc_info:
+            self._run_with_type(kanon_file, "plugin", True)
+        assert exc_info.value.code != 0
+        err = capsys.readouterr().err
+        assert "--marketplace-install requires catalog entry" in err
+        assert "entry-a" in err
+        assert not kanon_file.exists()
+
+
+_ADD_PY = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "commands" / "add.py"
+
+
+@pytest.mark.unit
+class TestAddPyUtf8EncodingSweep:
+    """AC-12: all read_text/write_text calls in commands/add.py specify encoding."""
+
+    def test_no_bare_read_text_calls(self) -> None:
+        """commands/add.py must not contain bare .read_text() calls (no encoding arg)."""
+        bare = bare_text_io_calls(_ADD_PY)
+        read_bare = [b for b in bare if "read_text" in b[1]]
+        assert read_bare == [], (
+            f"commands/add.py has bare read_text() calls without encoding=: {read_bare}. "
+            "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
+        )
+
+    def test_no_bare_write_text_calls(self) -> None:
+        """commands/add.py must not contain bare .write_text() calls (no encoding arg)."""
+        bare = bare_text_io_calls(_ADD_PY)
+        write_bare = [b for b in bare if "write_text" in b[1]]
+        assert write_bare == [], (
+            f"commands/add.py has bare write_text() calls without encoding=: {write_bare}. "
+            "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
+        )

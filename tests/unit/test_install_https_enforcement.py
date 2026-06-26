@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kanon_cli.core.install import InstallError, _run_install
+from kanon_cli.core.install import _run_install
 from kanon_cli.core.remote_url import InsecureRemoteUrlError
 
 
@@ -33,8 +33,10 @@ def _write_kanon(directory: pathlib.Path, url: str, scheme: str = "http") -> pat
     kanonenv.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_mysource_URL={url}\n"
-        f"KANON_SOURCE_mysource_REVISION=main\n"
+        f"KANON_SOURCE_mysource_REF=main\n"
         f"KANON_SOURCE_mysource_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_mysource_NAME=mysource\n"
+        f"KANON_SOURCE_mysource_GITBASE=https://example.com\n"
     )
     return kanonenv.resolve()
 
@@ -73,7 +75,6 @@ class TestInstallEnforcesHttpsPolicy:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source="https://cat.example.com/cat.git@main",
             )
 
         mock_policy.assert_called()
@@ -108,10 +109,8 @@ class TestInstallEnforcesHttpsPolicy:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source="https://cat.example.com/cat.git@main",
             )
 
-        # Verify all calls had allow_insecure=False
         for c in mock_policy.call_args_list:
             assert c.kwargs.get("allow_insecure") is False or (len(c.args) >= 2 and c.args[1] is False)
 
@@ -145,10 +144,8 @@ class TestInstallEnforcesHttpsPolicy:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source="https://cat.example.com/cat.git@main",
             )
 
-        # Verify at least one call had allow_insecure=True
         any_true = any(
             c.kwargs.get("allow_insecure") is True or (len(c.args) >= 2 and c.args[1] is True)
             for c in mock_policy.call_args_list
@@ -181,7 +178,6 @@ class TestInstallEnforcesHttpsPolicy:
                 _run_install(
                     kanonenv_path=kanonenv,
                     lockfile_path=lockfile_path,
-                    catalog_source="https://cat.example.com/cat.git@main",
                 )
 
     def test_http_url_allowed_when_env_var_set_to_one(
@@ -210,66 +206,57 @@ class TestInstallEnforcesHttpsPolicy:
             mock_resolve.return_value = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
             mock_walk.return_value = MagicMock(includes=[])
 
-            # Should not raise -- the override disables the security check
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source="https://cat.example.com/cat.git@main",
             )
 
 
 @pytest.mark.unit
-class TestLockfileConsistentMissingSourceRaisesInstallError:
+class TestLockfileConsistentMissingSourceRaisesConsistencyError:
     """Under LOCKFILE_CONSISTENT state, a source absent from the lockfile is a hard error."""
 
-    def test_source_missing_from_lockfile_raises_install_error(
+    def test_source_missing_from_lockfile_raises_consistency_error(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """If a .kanon source has no lockfile entry under LOCKFILE_CONSISTENT, InstallError is raised.
+        """If a .kanon source has no lockfile entry under LOCKFILE_CONSISTENT, a fail-fast error is raised.
 
         This guards the kanon_hash consistency invariant: if the hash matched but a source
-        is absent from the lockfile, something has corrupted the lockfile. A hard error is
-        preferable to silently falling back to the .kanon URL.
+        is absent from the lockfile, .kanon.lock was edited out of sync with .kanon. A hard
+        ``LockfileConsistencyError`` (no ``BUG:`` string) is raised, preferable to silently
+        falling back to the .kanon URL.
         """
         monkeypatch.delenv("KANON_ALLOW_INSECURE_REMOTES", raising=False)
 
-        # Write a .kanon with one source
         kanonenv = _write_kanon(tmp_path, "https://example.com/repo.git")
         lockfile_path = tmp_path / ".kanon.lock"
 
         from kanon_cli.core.install import _kanon_hash
         from kanon_cli.core.lockfile import (
             CURRENT_SCHEMA_VERSION,
-            CatalogBlock,
             Lockfile,
+            LockfileConsistencyError,
             write_lockfile,
         )
 
-        # Build a lockfile whose kanon_hash matches (so state == LOCKFILE_CONSISTENT)
-        # but whose sources list is EMPTY (no entry for 'mysource').
         kanon_hash_val = _kanon_hash(kanonenv)
-        catalog_source = "https://cat.example.com/cat.git@main"
         lf = Lockfile(
             schema_version=CURRENT_SCHEMA_VERSION,
             generated_at="2026-01-01T00:00:00Z",
             generator="kanon-cli/test",
             kanon_hash=kanon_hash_val,
-            catalog=CatalogBlock(
-                source=catalog_source,
-                url="https://cat.example.com/cat.git",
-                revision_spec="main",
-                resolved_ref="refs/heads/main",
-                resolved_sha="a" * 40,
-            ),
-            sources=[],  # deliberately empty -- 'mysource' is absent
+            sources=[],
         )
         write_lockfile(lf, lockfile_path)
 
-        with pytest.raises(InstallError, match="BUG: source 'mysource' not found in lockfile"):
+        with pytest.raises(LockfileConsistencyError) as excinfo:
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
-                catalog_source=catalog_source,
             )
+        rendered = str(excinfo.value)
+        assert "mysource" in rendered
+        assert "missing from .kanon.lock" in rendered
+        assert "BUG:" not in rendered

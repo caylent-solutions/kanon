@@ -29,11 +29,6 @@ import kanon_cli.repo as repo_pkg
 from kanon_cli.repo import RepoCommandError
 
 
-# ---------------------------------------------------------------------------
-# Shared test helper
-# ---------------------------------------------------------------------------
-
-
 def _git(args: list[str], cwd: pathlib.Path) -> None:
     """Run a git command in cwd, raising RuntimeError on non-zero exit."""
     result = subprocess.run(
@@ -72,8 +67,6 @@ def _make_repo_dir(tmp_path: pathlib.Path) -> str:
     manifest_link = repo_dot_dir / "manifest.xml"
     manifest_link.symlink_to(manifest_path)
 
-    # Some subcommands probe git metadata inside .repo/repo/, so seed the
-    # directory as a git repository with at least one tagged commit.
     repo_tool_dir = repo_dot_dir / "repo"
     repo_tool_dir.mkdir(parents=True, exist_ok=True)
     _git(["init", "-b", "main"], cwd=repo_tool_dir)
@@ -85,11 +78,6 @@ def _make_repo_dir(tmp_path: pathlib.Path) -> str:
     _git(["tag", "-a", "v1.0.0", "-m", "Version 1.0.0"], cwd=repo_tool_dir)
 
     return str(repo_dot_dir)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: repo_run() dispatches a subcommand via the argv list
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -113,14 +101,8 @@ def test_repo_run_dispatches_subcommand_via_argv(tmp_path: pathlib.Path) -> None
 
     repo_dot_dir = _make_repo_dir(tmp_path)
 
-    # "help" subcommand succeeds without network access and exits 0.
     result = repo_pkg.repo_run(["help"], repo_dir=repo_dot_dir)
     assert result == 0, f"repo_run(['help'], repo_dir=...) must return 0 on success, got {result!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: repo_run() returns the exit code from the subcommand
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -154,11 +136,6 @@ def test_repo_run_returns_exit_code_from_subcommand(tmp_path: pathlib.Path) -> N
     assert exit_code == 0, f"repo_run(['help'], ...) must return 0 for a successful invocation. Got {exit_code!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: repo_run() raises on an invalid/unknown subcommand
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_repo_run_raises_on_unknown_subcommand(tmp_path: pathlib.Path) -> None:
     """AC-TEST-003: repo_run() must raise RepoCommandError for an unknown subcommand.
@@ -187,11 +164,6 @@ def test_repo_run_raises_on_unknown_subcommand(tmp_path: pathlib.Path) -> None:
         f"RepoCommandError.exit_code must be non-zero for an unknown subcommand. "
         f"Got exit_code={exc_info.value.exit_code!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: repo_run() does not call os.execv
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -230,11 +202,6 @@ def test_repo_run_does_not_call_os_execv(tmp_path: pathlib.Path, monkeypatch: py
     assert execv_calls == [], f"os.execv was called {len(execv_calls)} time(s) during repo_run(): {execv_calls!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-005: repo_run() catches SystemExit and converts it appropriately
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_repo_run_catches_system_exit_and_converts(tmp_path: pathlib.Path) -> None:
     """AC-TEST-005: repo_run() must catch SystemExit and convert it appropriately.
@@ -257,7 +224,6 @@ def test_repo_run_catches_system_exit_and_converts(tmp_path: pathlib.Path) -> No
 
     repo_dot_dir = _make_repo_dir(tmp_path)
 
-    # Successful subcommand -- SystemExit(0) must become return value 0, not propagate.
     raised_system_exit = False
     try:
         result = repo_pkg.repo_run(["help"], repo_dir=repo_dot_dir)
@@ -273,21 +239,15 @@ def test_repo_run_catches_system_exit_and_converts(tmp_path: pathlib.Path) -> No
 
     assert not raised_system_exit, "repo_run() allowed SystemExit(0) to propagate"
 
-    # Failing subcommand -- SystemExit(non-zero) must become RepoCommandError, not propagate.
     try:
         repo_pkg.repo_run(["no-such-subcommand-xyz"], repo_dir=repo_dot_dir)
     except RepoCommandError:
-        pass  # Expected -- the correct behaviour.
+        pass
     except SystemExit as exc:
         pytest.fail(
             f"repo_run() raised SystemExit({exc.code!r}) on a failing command -- "
             f"library code must raise RepoCommandError instead of propagating SystemExit."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-006: repo_run() does not mutate sys.argv
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -308,7 +268,6 @@ def test_repo_run_does_not_mutate_sys_argv(tmp_path: pathlib.Path) -> None:
     repo_dot_dir = _make_repo_dir(tmp_path)
     argv_before = list(sys.argv)
 
-    # Successful call -- must not mutate sys.argv.
     try:
         repo_pkg.repo_run(["help"], repo_dir=repo_dot_dir)
     except RepoCommandError:
@@ -319,7 +278,6 @@ def test_repo_run_does_not_mutate_sys_argv(tmp_path: pathlib.Path) -> None:
         f"repo_run() mutated sys.argv on a successful call.\n  Before: {argv_before!r}\n  After:  {argv_after!r}"
     )
 
-    # Failing call -- must also not mutate sys.argv.
     argv_before_fail = list(sys.argv)
     try:
         repo_pkg.repo_run(["no-such-subcommand-xyz"], repo_dir=repo_dot_dir)

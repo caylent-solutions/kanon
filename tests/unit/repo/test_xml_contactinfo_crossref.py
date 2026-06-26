@@ -49,10 +49,6 @@ from kanon_cli.repo.error import ManifestParseError
 from kanon_cli.repo.wrapper import Wrapper
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- same pattern as other test_xml_contactinfo_*.py files
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -117,11 +113,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     repodir = _make_repo_dir(tmp_path)
     manifest_file = _write_manifest(repodir, xml_content)
     return _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Cross-element reference validation for <contactinfo>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -321,11 +312,6 @@ class TestContactInfoCrossElementReferences:
             f"AC-TEST-001: expected contactinfo.bugurl='{bugurl}' alongside multiple remotes "
             f"but got: {manifest.contactinfo.bugurl!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Duplicate-element rules for <contactinfo>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -534,11 +520,6 @@ class TestContactInfoDuplicateElementRules:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <contactinfo> in an unexpected parent raises or is ignored
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestContactInfoUnexpectedParent:
     """AC-TEST-003: <contactinfo> in an unexpected parent raises or is ignored per spec.
@@ -728,11 +709,6 @@ class TestContactInfoUnexpectedParent:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Parser enforces cross-element and uniqueness rules at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestContactInfoCrossRefParseTimeEnforcement:
     """AC-FUNC-001: All cross-element and uniqueness rules are enforced at parse time.
@@ -857,11 +833,6 @@ class TestContactInfoCrossRefParseTimeEnforcement:
         assert manifest.contactinfo.bugurl, (
             "AC-FUNC-001: expected manifest.contactinfo.bugurl to be non-empty after Load()"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

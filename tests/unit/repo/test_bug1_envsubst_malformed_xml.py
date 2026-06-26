@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 1: envsubst crashes with ExpatError on malformed XML.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 1 -- Malformed XML in envsubst
@@ -33,9 +19,6 @@ import pytest
 
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 _VALID_XML = """\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -55,21 +38,11 @@ _MALFORMED_XML = """\
 """
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_cmd():
     """Return an Envsubst instance without invoking __init__ parent chain."""
     cmd = Envsubst.__new__(Envsubst)
     cmd.manifest = mock.MagicMock()
     return cmd
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Malformed XML file is skipped; processing continues
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -93,7 +66,6 @@ def test_malformed_xml_is_skipped_and_processing_continues(tmp_path):
     processed_files = []
 
     def _fake_envsubst(infile):
-        # The real EnvSubst raises for malformed XML; we track what is reached.
         processed_files.append(infile)
 
     with mock.patch("glob.glob", return_value=[malformed_str, valid_str]):
@@ -108,11 +80,6 @@ def test_malformed_xml_is_skipped_and_processing_continues(tmp_path):
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- No crash (ExpatError is caught) when XML is malformed
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_no_crash_on_malformed_xml(tmp_path):
     """AC-TEST-002: EnvSubst() must not raise ExpatError for malformed XML.
@@ -125,13 +92,7 @@ def test_no_crash_on_malformed_xml(tmp_path):
 
     cmd = _make_cmd()
 
-    # Must not raise -- ExpatError must be caught internally.
     cmd.EnvSubst(str(malformed_path))
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- No orphan .bak file left for files that fail to parse
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -148,18 +109,12 @@ def test_no_bak_file_created_for_malformed_xml(tmp_path):
 
     cmd = _make_cmd()
 
-    # Must not raise and must not create the .bak file.
     cmd.EnvSubst(str(malformed_path))
 
     assert not bak_path.exists(), (
         f"No .bak backup file must be created for a malformed XML file, "
         f"but {bak_path} exists after EnvSubst() returned."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002 -- Error is logged with the filename of the malformed XML file
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -186,11 +141,6 @@ def test_error_logged_with_filename_on_malformed_xml(tmp_path, caplog):
     )
 
 
-# ---------------------------------------------------------------------------
-# Parametrized -- multiple malformed inputs all survive without crash
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "bad_xml",
@@ -209,10 +159,8 @@ def test_various_malformed_inputs_do_not_crash(tmp_path, bad_xml):
 
     cmd = _make_cmd()
 
-    # Must not raise for any of the malformed inputs.
     cmd.EnvSubst(str(bad_path))
 
-    # No .bak must be created.
     bak_path = tmp_path / "bad.xml.bak"
     assert not bak_path.exists(), (
         f"No .bak file must exist for malformed XML input {bad_xml!r}, but {bak_path} was created."

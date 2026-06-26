@@ -18,11 +18,7 @@ import pytest
 from kanon_cli.repo.subcmds import all_commands
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
-# ---------------------------------------------------------------------------
-# Parametrize data -- derived at module import time from the live registry.
-# Each parameter is a (command_name, command_class) pair so that pytest
-# displays a descriptive test ID for every case.
-# ---------------------------------------------------------------------------
+
 _SUBCOMMAND_PARAMS = sorted(all_commands.items(), key=lambda pair: pair[0])
 
 

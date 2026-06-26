@@ -23,19 +23,18 @@ import pytest
 
 INTEGRATION_TESTING_DOC = pathlib.Path(__file__).parent.parent.parent / "docs" / "integration-testing.md"
 
-# Category 15 section and fixture headings.
+
 RX_CATEGORY_HEADING = "## 16. Category 15:"
 FIXTURE_HEADING = "### Fixture setup"
 
-# Required semver tags that the cs-catalog source must carry so that all
-# RX-01..RX-26 PEP 440 constraint scenarios resolve to the expected version.
+
 REQUIRED_TAGS = ("1.0.0", "1.0.1", "1.1.0", "1.2.0", "2.0.0", "2.1.0", "3.0.0")
 
-# Key strings expected in the fixture setup block after T4's fix.
+
 _BARE_CLONE_CMD = "git clone --bare"
 _CATALOG_SUB_PATH = "fixtures/cs-catalog/catalog"
 _TAG_VERIFY_CMD = "git -C"
-# Post-T4 explanation strings: present only after the bare sub-repo fix is applied.
+
 _FETCH_PLUS_NAME_RESOLUTION = 'fetch + "/" + name'
 _SEPARATE_BARE_REPO_PHRASE = "separate bare git repo"
 _PARENT_DIR_PHRASE = "_parent_ directory, not the project repo"
@@ -64,14 +63,14 @@ def _extract_fixture_block(content: str) -> str:
     Raises AssertionError with a descriptive message if either heading is absent.
     """
     category_text = _extract_category_block(content)
-    # Find the fixture setup block within the category section.
+
     fix_idx = category_text.find(FIXTURE_HEADING)
     assert fix_idx != -1, (
         f"Fixture heading '{FIXTURE_HEADING}' not found inside '{RX_CATEGORY_HEADING}' "
         f"in {INTEGRATION_TESTING_DOC}. The fixture setup subsection is missing."
     )
     section = category_text[fix_idx:]
-    # Delimit to the next ### heading so we stay within the fixture block.
+
     next_section_idx = section.find("\n### ", 1)
     if next_section_idx != -1:
         section = section[:next_section_idx]
@@ -235,8 +234,7 @@ class TestRxCatalogSubRepoTags:
         """
         content = INTEGRATION_TESTING_DOC.read_text(encoding="utf-8")
         block = _extract_fixture_block(content)
-        # Each required tag must appear on a line beginning with '# Expected:'
-        # so it is part of the documented verification output, not buried in prose.
+
         expected_comment_fragment = f"# Expected: {tag}"
         tag_on_expected_line = any(tag in line for line in block.splitlines() if line.strip().startswith("# Expected:"))
         assert tag_on_expected_line, (

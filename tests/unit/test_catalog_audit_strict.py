@@ -73,23 +73,16 @@ class TestStrictFlagExitCodes:
     @pytest.mark.parametrize(
         "error_count, warn_count, strict, expected_exit",
         [
-            # AC-FUNC-001: no strict, no findings => 0
             (0, 0, False, 0),
-            # AC-FUNC-002: no strict, errors => 1
             (1, 0, False, 1),
             (2, 0, False, 1),
-            # AC-FUNC-003: no strict, warnings only => 0
             (0, 1, False, 0),
             (0, 3, False, 0),
-            # AC-FUNC-004: strict, no findings => 0
             (0, 0, True, 0),
-            # AC-FUNC-005: strict, warnings only => 1
             (0, 1, True, 1),
             (0, 3, True, 1),
-            # AC-FUNC-006: strict, both errors and warnings => 1
             (1, 1, True, 1),
             (2, 3, True, 1),
-            # strict + errors only (same as without strict) => 1
             (1, 0, True, 1),
         ],
     )
@@ -299,6 +292,5 @@ class TestStrictFindingsMutationGuard:
         with patch.dict(AUDIT_CHECK_REGISTRY, {"metadata": findings_check}, clear=True):
             audit_command(args)
 
-        # The original finding objects are unmodified
         assert original_findings[0].kind == "warn", "First finding (warn) should not be mutated by --strict."
         assert original_findings[1].kind == "error", "Second finding (error) should not be mutated by --strict."

@@ -24,10 +24,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -101,11 +97,6 @@ def _load_manifest(repodir: pathlib.Path, manifest_file: pathlib.Path) -> manife
     m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
     m.Load()
     return m
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Self-reference (A includes A) raises cycle error
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -256,11 +247,6 @@ class TestIncludeSelfReference:
             _load_manifest(repodir, manifest_file)
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Two-node cycle (A->B->A) raises cycle error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestIncludeTwoNodeCycle:
     """AC-TEST-002: A->B->A two-node include cycle raises ManifestParseError.
@@ -283,7 +269,7 @@ class TestIncludeTwoNodeCycle:
 
         AC-TEST-002, AC-FUNC-001
         """
-        # a.xml includes b.xml
+
         a_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
@@ -292,7 +278,7 @@ class TestIncludeTwoNodeCycle:
             '  <include name="b.xml" />\n'
             "</manifest>\n"
         )
-        # b.xml includes a.xml -- completing the cycle
+
         b_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
@@ -301,7 +287,7 @@ class TestIncludeTwoNodeCycle:
             '  <include name="a.xml" />\n'
             "</manifest>\n"
         )
-        # primary manifest includes a.xml to start the chain
+
         primary_xml = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n  <include name="a.xml" />\n</manifest>\n'
         repodir = _make_repo_dir(tmp_path)
         _write_included_manifest(repodir, "a.xml", a_xml)
@@ -397,11 +383,6 @@ class TestIncludeTwoNodeCycle:
         assert "start_a.xml" in error_message or "back_to_a.xml" in error_message or "cycle" in error_message.lower(), (
             f"AC-TEST-002: expected cycle error to mention a filename involved in the cycle but got: {error_message!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Three-node cycle (A->B->C->A) raises cycle error
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -559,11 +540,6 @@ class TestIncludeThreeNodeCycle:
             _load_manifest(repodir, manifest_file)
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Include depth limit (MAX_SUBMANIFEST_DEPTH) enforced
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestIncludeDepthLimit:
     """AC-TEST-004: The include depth limit (MAX_SUBMANIFEST_DEPTH) is enforced.
@@ -592,9 +568,6 @@ class TestIncludeDepthLimit:
         limit = manifest_xml.MAX_SUBMANIFEST_DEPTH
         repodir = _make_repo_dir(tmp_path)
 
-        # Build a linear chain: node_1 -> node_2 -> ... -> node_limit -> node_{limit+1}(leaf)
-        # When node_limit (at include depth=limit) tries to include node_{limit+1},
-        # next_depth = limit+1 > limit, which triggers the depth error.
         total_nodes = limit + 1
         leaf_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -618,7 +591,6 @@ class TestIncludeDepthLimit:
             )
             _write_included_manifest(repodir, f"depth_node_{level}.xml", node_xml)
 
-        # Primary manifest includes the first level (depth=1)
         primary_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n  <include name="depth_node_1.xml" />\n</manifest>\n'
         )
@@ -647,8 +619,6 @@ class TestIncludeDepthLimit:
         limit = manifest_xml.MAX_SUBMANIFEST_DEPTH
         repodir = _make_repo_dir(tmp_path)
 
-        # Build a linear chain of exactly limit levels
-        # node_1 -> node_2 -> ... -> node_(limit-1) -> leaf
         leaf_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
@@ -659,7 +629,6 @@ class TestIncludeDepthLimit:
         )
         _write_included_manifest(repodir, "deep_leaf.xml", leaf_xml)
 
-        # Build chain from level (limit-1) down to 1
         for level in range(limit - 1, 0, -1):
             if level == limit - 1:
                 next_file = "deep_leaf.xml"
@@ -675,14 +644,11 @@ class TestIncludeDepthLimit:
             )
             _write_included_manifest(repodir, f"deep_node_{level}.xml", node_xml)
 
-        # Primary manifest includes node_1 (total depth = limit - 1 levels of includes)
-        # plus the primary manifest itself = limit levels, which is exactly the limit
         primary_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n  <include name="deep_node_1.xml" />\n</manifest>\n'
         )
         manifest_file = _write_manifest(repodir, primary_xml)
 
-        # Should not raise -- chain is at (not above) the depth limit
         result = _load_manifest(repodir, manifest_file)
         assert result is not None, (
             "AC-TEST-004: expected XmlManifest instance for include chain at depth limit but got None"
@@ -706,11 +672,6 @@ class TestIncludeDepthLimit:
             f"AC-TEST-004: expected MAX_SUBMANIFEST_DEPTH to be an int but got {type(limit).__name__!r}"
         )
         assert limit > 0, f"AC-TEST-004: expected MAX_SUBMANIFEST_DEPTH to be positive but got {limit!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005: Relative path resolution is correct for nested includes
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -844,7 +805,7 @@ class TestIncludeRelativePathResolution:
             '  <project name="shared/lib" path="sharedlib" />\n'
             "</manifest>\n"
         )
-        # Primary includes shared.xml twice -- this is not a cycle
+
         primary_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
@@ -855,14 +816,9 @@ class TestIncludeRelativePathResolution:
         _write_included_manifest(repodir, "shared_once.xml", shared_xml)
         manifest_file = _write_manifest(repodir, primary_xml)
 
-        # Including the same file twice at the same level is allowed
-        # (the parser may complain about duplicate projects but not cycles)
-        # We only assert no RecursionError or cycle-specific error is raised.
         try:
             _load_manifest(repodir, manifest_file)
         except ManifestParseError:
-            # Duplicate project names may cause ManifestParseError -- that is
-            # acceptable. The important thing is no RecursionError.
             pass
         except RecursionError as exc:
             pytest.fail(
@@ -885,7 +841,6 @@ class TestIncludeRelativePathResolution:
         """
         repodir = _make_repo_dir(tmp_path)
 
-        # Build a linear acyclic chain of the given depth
         leaf_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
@@ -922,11 +877,6 @@ class TestIncludeRelativePathResolution:
             f"AC-TEST-005: expected 'acyclic/proj' to be visible after {depth}-deep "
             f"acyclic include chain but got: {project_names!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline for cycle errors
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

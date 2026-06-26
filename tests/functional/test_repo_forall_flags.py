@@ -59,10 +59,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Forall Flags Test User"
 _GIT_USER_EMAIL = "repo-forall-flags@example.com"
@@ -70,54 +66,45 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "forall-flags-test-project"
 
-# Error exit code for argument-parsing errors (optparse uses 2).
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Expected exit code for successful forall invocations on a real synced repo.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests.
-# The command exits 1 (manifest not found) rather than 2 (argument parsing
-# error), confirming the flag was accepted by optparse.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-forall-flags-repo-dir"
 
-# Inline-value suffix for negative tests on boolean (store_true) flags.
-# optparse exits 2 with '--<flag> option does not take a value' when a
-# store_true flag is supplied with an inline ``=value`` suffix.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Phrase emitted on stderr when a store_true flag receives an inline value.
+
 _DOES_NOT_TAKE_VALUE_PHRASE = "does not take a value"
 
-# Phrase emitted on stderr when a value-required flag has no argument.
+
 _REQUIRES_ARGUMENT_PHRASE = "requires 1 argument"
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# A groups value used in valid-value tests for -g / --groups.
+
 _GROUPS_VALUE = "default"
 
-# Pattern guaranteed not to match any project name; used with -i/--inverse-regex
-# to confirm all projects are selected when the pattern matches nothing.
+
 _NON_MATCHING_REGEX_PATTERN = "zzz-does-not-match-anything"
 
-# Phrase expected in stdout when the -p flag prepends the project name to each
-# output line.
+
 _PROJECT_HEADER_PHRASE = "project"
 
-# ---------------------------------------------------------------------------
-# CLI token constants -- every flag token referenced in test logic.
-# ---------------------------------------------------------------------------
 
 _CMD_REPO = "repo"
 _FLAG_REPO_DIR = "--repo-dir"
 _SUBCMD_FORALL = "forall"
 
-# Boolean (store_true) flags:
+
 _CLI_FLAG_REGEX_SHORT = "-r"
 _CLI_FLAG_REGEX_LONG = "--regex"
 _CLI_FLAG_INVERSE_REGEX_SHORT = "-i"
@@ -128,26 +115,19 @@ _CLI_FLAG_IGNORE_MISSING = "--ignore-missing"
 _CLI_FLAG_PROJECT_HEADER_SHORT = "-p"
 _CLI_FLAG_INTERACTIVE = "--interactive"
 
-# Value-required flag:
+
 _CLI_FLAG_GROUPS_SHORT = "-g"
 _CLI_FLAG_GROUPS_LONG = "--groups"
 
-# Command callback flag:
+
 _CLI_FLAG_COMMAND_SHORT = "-c"
 _CLI_FLAG_COMMAND_LONG = "--command"
 
-# The shell command used in functional tests; produces output on stdout.
+
 _FORALL_SHELL_COMMAND = "echo"
 _FORALL_SHELL_ARG = "FORALL_FLAG_TEST"
 _FORALL_COMMAND_WITH_JOBS = "--jobs=1"
 
-# ---------------------------------------------------------------------------
-# Parametrize data tables -- all tuples use flag constants, not raw strings.
-#
-# AC-TEST-001 valid-value tests: boolean (store_true) flags.
-# All are accepted against a nonexistent repo (exit 1 = parsed OK, not 2).
-# Each entry: (flag_token, test_id).
-# ---------------------------------------------------------------------------
 
 _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     (_CLI_FLAG_REGEX_SHORT, "short-regex"),
@@ -161,8 +141,7 @@ _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     (_CLI_FLAG_INTERACTIVE, "long-interactive"),
 ]
 
-# Long-form boolean flags used in AC-TEST-002 negative tests.
-# Only long-form flags support '--flag=value' inline syntax in optparse.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_REGEX_LONG, "regex"),
     (_CLI_FLAG_INVERSE_REGEX_LONG, "inverse-regex"),
@@ -170,10 +149,6 @@ _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_IGNORE_MISSING, "ignore-missing"),
     (_CLI_FLAG_INTERACTIVE, "interactive"),
 ]
-
-# ---------------------------------------------------------------------------
-# Helper: build the canonical forall argv prefix.
-# ---------------------------------------------------------------------------
 
 
 def _build_forall_argv(repo_dir: pathlib.Path, *extra: str) -> tuple[str, ...]:
@@ -190,11 +165,6 @@ def _build_forall_argv(repo_dir: pathlib.Path, *extra: str) -> tuple[str, ...]:
         A tuple of string arguments suitable for passing to ``_run_kanon``.
     """
     return (_CMD_REPO, _FLAG_REPO_DIR, str(repo_dir), _SUBCMD_FORALL) + extra
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/forall.py
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -355,11 +325,6 @@ class TestRepoForallFlagsValidValues:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with invalid or missing values
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -523,11 +488,6 @@ class TestRepoForallFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoForallFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -677,11 +637,6 @@ class TestRepoForallFlagsAbsenceDefaults:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -915,11 +870,6 @@ class TestRepoForallFlagsDocumentedBehavior:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

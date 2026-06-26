@@ -22,11 +22,6 @@ import pytest
 from tests.integration.test_why_live_resolve import _create_catalog_with_project_and_include
 
 
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon_scenario(
     args: list[str],
     cwd: pathlib.Path | None = None,
@@ -56,11 +51,6 @@ def _run_kanon_scenario(
         env=env,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Shared fixture builder
-# ---------------------------------------------------------------------------
 
 
 def _build_catalog_and_workspace(
@@ -127,11 +117,6 @@ def _build_catalog_and_workspace(
     )
 
     return catalog_source_url, workspace, kanon_file
-
-
-# ---------------------------------------------------------------------------
-# Subprocess operator-path tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario

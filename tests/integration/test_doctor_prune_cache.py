@@ -1,7 +1,8 @@
 """Integration tests for 'kanon doctor --prune-cache'.
 
 Drives the full CLI via subprocess under a controlled tmp_path workspace
-with KANON_CACHE_DIR set. Creates mixed-age cache files (old atime set via
+with KANON_HOME set (the cache resolves under <KANON_HOME>/cache). Creates
+mixed-age cache files (old atime set via
 os.utime), runs 'kanon doctor --prune-cache', and asserts:
 - Exit code 0.
 - stdout or stderr names the pruned count.
@@ -21,12 +22,7 @@ import sys
 
 import pytest
 
-from kanon_cli.constants import KANON_CACHE_DIR_MODE
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+from kanon_cli.constants import KANON_HOME_CACHE_DIR_MODE
 
 
 def _set_atime(path: pathlib.Path, dt: datetime.datetime) -> None:
@@ -64,26 +60,27 @@ def _run_kanon(args: list[str], env: dict[str, str], cwd: pathlib.Path) -> subpr
 def _base_env(cache_dir: pathlib.Path, kanon_file: pathlib.Path) -> dict[str, str]:
     """Build the environment dict for a CLI subprocess.
 
+    The cache resolves under <KANON_HOME>/cache, so KANON_HOME is set to the
+    parent of *cache_dir* (which is ``tmp_path / "cache"``) so that the
+    subprocess-resolved cache equals *cache_dir*.
+
     Args:
-        cache_dir: Path to set as KANON_CACHE_DIR.
+        cache_dir: The cache directory the subprocess must resolve to; its
+            parent is set as KANON_HOME.
         kanon_file: Path to set as KANON_KANON_FILE.
 
     Returns:
-        Environment dict with PATH, KANON_CACHE_DIR, KANON_KANON_FILE set.
+        Environment dict with PATH, KANON_HOME, KANON_KANON_FILE set.
     """
     env = {k: v for k, v in os.environ.items()}
-    env["KANON_CACHE_DIR"] = str(cache_dir)
+    env["KANON_HOME"] = str(cache_dir.parent)
     env["KANON_KANON_FILE"] = str(kanon_file)
     return env
 
 
-# ---------------------------------------------------------------------------
-# Test fixtures
-# ---------------------------------------------------------------------------
-
 _NOW = datetime.datetime.now(tz=datetime.timezone.utc)
-_OLD_DAYS = 31  # older than the default 30-day threshold
-_NEW_DAYS = 10  # newer than the threshold
+_OLD_DAYS = 31
+_NEW_DAYS = 10
 
 
 @pytest.mark.integration
@@ -241,22 +238,19 @@ class TestDoctorPruneCacheIntegration:
         cache_dir.mkdir()
 
         completion_cache = cache_dir / "completion-cache"
-        completion_cache.mkdir(mode=KANON_CACHE_DIR_MODE)
+        completion_cache.mkdir(mode=KANON_HOME_CACHE_DIR_MODE)
 
         old_dt = _NOW - datetime.timedelta(days=_OLD_DAYS)
         new_dt = _NOW - datetime.timedelta(days=_NEW_DAYS)
 
-        # File in completion-cache (refresh should clear it).
         comp_file = completion_cache / "comp.json"
         comp_file.write_bytes(b"c" * 50)
         _set_atime(comp_file, old_dt)
 
-        # Old file at top level (prune should remove it).
         old_top = cache_dir / "old.json"
         old_top.write_bytes(b"o" * 100)
         _set_atime(old_top, old_dt)
 
-        # New file at top level (must survive).
         new_top = cache_dir / "new.json"
         new_top.write_bytes(b"n" * 100)
         _set_atime(new_top, new_dt)

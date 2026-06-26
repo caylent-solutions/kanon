@@ -39,14 +39,13 @@ def _scenario_block(doc: str, heading: str) -> str:
 class TestT7MK17:
     def test_uses_linkfile_assertion_not_plugin_list_grep(self) -> None:
         block = _scenario_block(_load_doc(), "MK-17")
-        # The corrected scenario asserts BOTH linkfiles are present.
+
         assert 'test -L "${KANON_TEST_ROOT}/mk17-mpl/mk17-a"' in block, "MK-17 must assert mk17-a linkfile is present"
         assert 'test -L "${KANON_TEST_ROOT}/mk17-mpl/mk17-b"' in block, "MK-17 must assert mk17-b linkfile is present"
 
     def test_no_plugin_list_grep_for_path_suffixes(self) -> None:
         block = _scenario_block(_load_doc(), "MK-17")
-        # The old, broken assertion used `claude plugin list ... | grep -E "mk17-(a|b)"`.
-        # That expression should not appear in the corrected block.
+
         assert "mk17-(a|b)" not in block, (
             "MK-17 must not grep `claude plugin list` for path-suffix names like mk17-(a|b); "
             "those don't appear in plugin list (plugin name comes from marketplace.json)"

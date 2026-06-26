@@ -5,6 +5,7 @@ that the full install -> clean roundtrip works correctly. Also covers error
 paths: invalid manifest, corrupt state, and marketplace-enabled vs disabled.
 """
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,7 +13,17 @@ import pytest
 
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
+
+
+def _store_base() -> Path:
+    """Return the shared artifact store base (``<KANON_HOME>/store``).
+
+    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
+    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
+    The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
+    per-test temporary directory.
+    """
+    return Path(os.environ["KANON_HOME"]) / "store"
 
 
 def _write_kanonenv(directory: Path, content: str) -> Path:
@@ -26,8 +37,10 @@ def _minimal_kanonenv_content(name: str = "primary") -> str:
     """Return minimal .kanon content for a single source."""
     return (
         f"KANON_SOURCE_{name}_URL=https://example.com/repo.git\n"
-        f"KANON_SOURCE_{name}_REVISION=main\n"
+        f"KANON_SOURCE_{name}_REF=main\n"
         f"KANON_SOURCE_{name}_PATH=meta.xml\n"
+        f"KANON_SOURCE_{name}_NAME={name}\n"
+        f"KANON_SOURCE_{name}_GITBASE=https://example.com\n"
     )
 
 
@@ -40,14 +53,15 @@ class TestCleanRemovesRepoManagedFiles:
         created by install.
         """
         kanonenv = _write_kanonenv(tmp_path, _minimal_kanonenv_content())
-        (tmp_path / ".packages" / "some-pkg").mkdir(parents=True)
-        (tmp_path / ".kanon-data" / "sources" / "primary").mkdir(parents=True)
-        (tmp_path / ".kanon-data" / "sources" / "primary" / "metadata.txt").write_text("data")
+        store_base = _store_base()
+        (store_base / ".packages" / "some-pkg").mkdir(parents=True)
+        (store_base / ".kanon-data" / "sources" / "primary").mkdir(parents=True)
+        (store_base / ".kanon-data" / "sources" / "primary" / "metadata.txt").write_text("data")
 
         clean(kanonenv)
 
-        assert not (tmp_path / ".packages").exists(), ".packages/ should be removed by clean()"
-        assert not (tmp_path / ".kanon-data").exists(), ".kanon-data/ should be removed by clean()"
+        assert not (store_base / ".packages").exists(), ".packages/ should be removed by clean()"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ should be removed by clean()"
 
 
 @pytest.mark.integration
@@ -61,13 +75,14 @@ class TestCleanPreservesNonRepoFiles:
         - User source files
         """
         kanonenv = _write_kanonenv(tmp_path, _minimal_kanonenv_content())
+        store_base = _store_base()
         (tmp_path / ".gitignore").write_text(".packages/\n.kanon-data/\n")
         user_file = tmp_path / "src" / "main.py"
         user_file.parent.mkdir(parents=True)
         user_file.write_text("# user code\n")
 
-        (tmp_path / ".packages").mkdir()
-        (tmp_path / ".kanon-data").mkdir()
+        (store_base / ".packages").mkdir(parents=True)
+        (store_base / ".kanon-data").mkdir(parents=True)
 
         clean(kanonenv)
 
@@ -97,17 +112,18 @@ class TestInstallCleanRoundtrip:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (tmp_path / ".packages" / "tool-a").is_symlink(), "install() should create a symlink in .packages/"
-        assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir(), (
+        store_base = _store_base()
+        assert (store_base / ".packages" / "tool-a").is_symlink(), "install() should create a symlink in .packages/"
+        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
             "install() should create .kanon-data/sources/primary/"
         )
 
         clean(kanonenv)
 
-        assert not (tmp_path / ".packages").exists(), "clean() should remove .packages/ after install"
-        assert not (tmp_path / ".kanon-data").exists(), "clean() should remove .kanon-data/ after install"
+        assert not (store_base / ".packages").exists(), "clean() should remove .packages/ after install"
+        assert not (store_base / ".kanon-data").exists(), "clean() should remove .kanon-data/ after install"
         assert kanonenv.is_file(), "clean() must not remove the .kanon configuration file"
 
 
@@ -137,13 +153,14 @@ class TestCleanErrorPaths:
         in a corrupt/unexpected state (e.g. unexpected nested files).
         """
         kanonenv = _write_kanonenv(tmp_path, _minimal_kanonenv_content())
-        corrupt_dir = tmp_path / ".kanon-data" / "sources" / "primary" / "unexpected-subdir"
+        store_base = _store_base()
+        corrupt_dir = store_base / ".kanon-data" / "sources" / "primary" / "unexpected-subdir"
         corrupt_dir.mkdir(parents=True)
         (corrupt_dir / "corrupt.bin").write_bytes(b"\x00\xff\xfe")
 
         clean(kanonenv)
 
-        assert not (tmp_path / ".kanon-data").exists(), (
+        assert not (store_base / ".kanon-data").exists(), (
             "clean() must remove .kanon-data/ even when contents are in unexpected state"
         )
 
@@ -152,14 +169,15 @@ class TestCleanErrorPaths:
         .kanon-data/ do not exist.
         """
         kanonenv = _write_kanonenv(tmp_path, _minimal_kanonenv_content())
+        store_base = _store_base()
 
-        assert not (tmp_path / ".packages").exists()
-        assert not (tmp_path / ".kanon-data").exists()
+        assert not (store_base / ".packages").exists()
+        assert not (store_base / ".kanon-data").exists()
 
         clean(kanonenv)
 
-        assert not (tmp_path / ".packages").exists()
-        assert not (tmp_path / ".kanon-data").exists()
+        assert not (store_base / ".packages").exists()
+        assert not (store_base / ".kanon-data").exists()
 
 
 @pytest.mark.integration
@@ -171,14 +189,15 @@ class TestCleanMarketplaceBehavior:
         the marketplace uninstall function is never invoked.
         """
         kanonenv = _write_kanonenv(tmp_path, _minimal_kanonenv_content())
-        (tmp_path / ".packages").mkdir()
-        (tmp_path / ".kanon-data").mkdir()
+        store_base = _store_base()
+        (store_base / ".packages").mkdir(parents=True)
+        (store_base / ".kanon-data").mkdir(parents=True)
 
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins") as mock_uninstall:
             clean(kanonenv)
             mock_uninstall.assert_not_called()
 
-        assert not (tmp_path / ".packages").exists(), (
+        assert not (store_base / ".packages").exists(), (
             ".packages/ should still be removed even when marketplace uninstall is skipped"
         )
 
@@ -193,15 +212,18 @@ class TestCleanMarketplaceBehavior:
         kanonenv = _write_kanonenv(
             tmp_path,
             (
-                "KANON_MARKETPLACE_INSTALL=true\n"
                 f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
                 "KANON_SOURCE_primary_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_primary_REVISION=main\n"
+                "KANON_SOURCE_primary_REF=main\n"
                 "KANON_SOURCE_primary_PATH=meta.xml\n"
+                "KANON_SOURCE_primary_NAME=primary\n"
+                "KANON_SOURCE_primary_GITBASE=https://example.com\n"
+                "KANON_SOURCE_primary_MARKETPLACE=true\n"
             ),
         )
-        (tmp_path / ".packages").mkdir()
-        (tmp_path / ".kanon-data").mkdir()
+        store_base = _store_base()
+        (store_base / ".packages").mkdir(parents=True)
+        (store_base / ".kanon-data").mkdir(parents=True)
 
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
             clean(kanonenv)
@@ -209,4 +231,6 @@ class TestCleanMarketplaceBehavior:
         assert not marketplace_dir.exists(), (
             "clean() should remove CLAUDE_MARKETPLACES_DIR when KANON_MARKETPLACE_INSTALL=true"
         )
-        assert not (tmp_path / ".packages").exists(), ".packages/ should be removed during clean with marketplace=true"
+        assert not (store_base / ".packages").exists(), (
+            ".packages/ should be removed during clean with marketplace=true"
+        )

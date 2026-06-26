@@ -13,7 +13,7 @@ import unittest.mock
 import pytest
 
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     IncludeEntry,
     Lockfile,
     ProjectEntry,
@@ -25,7 +25,7 @@ from kanon_cli.core.lockfile import (
 _SHA40 = "a" * 40
 _SHA40_B = "b" * 40
 _SHA64 = "c" * 64
-# kanon_hash uses the sha256:-prefixed form (spec Rule 1a, 71 chars total).
+
 _KANON_HASH = "sha256:" + "a" * 64
 
 
@@ -51,14 +51,6 @@ def _make_include_chain(depth: int, prefix: str) -> list[IncludeEntry]:
 
 def _build_deep_lockfile() -> Lockfile:
     """Build a Lockfile with two sources, 3-level nested includes, 2 projects each."""
-    catalog = CatalogBlock(
-        source="https://example.com/catalog.git@main",
-        url="https://example.com/catalog.git",
-        revision_spec="main",
-        resolved_ref="refs/heads/main",
-        resolved_sha=_SHA40,
-    )
-
     sources = []
     for src_idx in range(2):
         src_name = f"source{src_idx}"
@@ -68,7 +60,7 @@ def _build_deep_lockfile() -> Lockfile:
                 name=f"{src_name}-proj{proj_idx}",
                 url=f"https://example.com/{src_name}/proj{proj_idx}.git",
                 canonical_url=f"https://example.com/{src_name}/proj{proj_idx}",
-                revision_spec="==1.2.3",
+                ref_spec="==1.2.3",
                 resolved_ref="refs/tags/1.2.3",
                 resolved_sha=_SHA40_B,
             )
@@ -76,9 +68,10 @@ def _build_deep_lockfile() -> Lockfile:
         ]
         sources.append(
             SourceEntry(
+                alias=src_name,
                 name=src_name,
                 url=f"https://example.com/{src_name}.git",
-                revision_spec="main",
+                ref_spec="main",
                 resolved_ref="refs/heads/main",
                 resolved_sha=_SHA64,
                 path=f"repo-specs/{src_name}/meta.xml",
@@ -88,11 +81,10 @@ def _build_deep_lockfile() -> Lockfile:
         )
 
     return Lockfile(
-        schema_version=3,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2026-01-01T00:00:00Z",
-        generator="kanon-cli/1.4.0",
+        generator="kanon-cli/2.0.0",
         kanon_hash=_KANON_HASH,
-        catalog=catalog,
         sources=sources,
         marketplace_registered=False,
         marketplace_dir="",
@@ -122,7 +114,7 @@ class TestLockfileRoundtrip:
         write_lockfile(lf, lock_path)
         with open(lock_path, "rb") as f:
             data = tomllib.load(f)
-        assert data["schema_version"] == 3
+        assert data["schema_version"] == CURRENT_SCHEMA_VERSION
         assert len(data["sources"]) == 2
 
     def test_roundtrip_preserves_nested_includes(self, tmp_path):
@@ -131,7 +123,7 @@ class TestLockfileRoundtrip:
         lock_path = tmp_path / "kanon.lock"
         write_lockfile(lf, lock_path)
         lf2 = read_lockfile(lock_path)
-        # Verify nesting depth: source0 -> includes[0] -> includes[0] -> includes[0]
+
         src0 = lf2.sources[0]
         assert len(src0.includes) == 1
         level1 = src0.includes[0]
@@ -162,15 +154,12 @@ class TestLockfileRoundtrip:
         lf = _build_deep_lockfile()
         lock_path = tmp_path / "kanon.lock"
 
-        # Write once, verify destination exists
         write_lockfile(lf, lock_path)
         assert lock_path.exists()
 
-        # Write again to the same destination (overwrite via rename)
         write_lockfile(lf, lock_path)
         assert lock_path.exists()
 
-        # Re-read must still produce the same object
         lf2 = read_lockfile(lock_path)
         assert lf2 == lf
 
@@ -186,22 +175,22 @@ class TestLockfileRoundtrip:
 
         raw_toml = lock_path.read_text()
 
-        # Strip the generated_at line (volatile timestamp) for stable comparison
         stripped_lines = [line for line in raw_toml.splitlines() if not line.startswith("generated_at")]
         stripped_content = "\n".join(stripped_lines)
 
-        # The stripped content must contain the key structural markers
-        assert "schema_version = 3" in stripped_content
-        assert 'generator = "kanon-cli/1.4.0"' in stripped_content
-        assert "[catalog]" in stripped_content
+        assert f"schema_version = {CURRENT_SCHEMA_VERSION}" in stripped_content
+        assert 'generator = "kanon-cli/2.0.0"' in stripped_content
+
+        assert "[catalog]" not in stripped_content
         assert "[[sources]]" in stripped_content
+        assert 'alias = "source0"' in stripped_content
         assert "[[sources.includes]]" in stripped_content
         assert "[[sources.projects]]" in stripped_content
 
     def test_sha64_roundtrip(self, tmp_path):
         """64-char SHA-256 values survive the write-then-read roundtrip unchanged."""
         lf = _build_deep_lockfile()
-        # source0 uses _SHA64 as resolved_sha
+
         assert lf.sources[0].resolved_sha == _SHA64
         lock_path = tmp_path / "kanon.lock"
         write_lockfile(lf, lock_path)
@@ -214,7 +203,7 @@ class TestLockfileRoundtrip:
         lock_path = tmp_path / "kanon.lock"
         write_lockfile(lf, lock_path)
         write_lockfile(lf, lock_path)
-        # Only the destination file should exist; temp files cleaned up via rename
+
         remaining = list(tmp_path.iterdir())
         assert len(remaining) == 1
         assert remaining[0] == lock_path
@@ -224,14 +213,12 @@ class TestLockfileRoundtrip:
         lf = _build_deep_lockfile()
         lock_path = tmp_path / "kanon.lock"
 
-        # Patch os.fsync to raise after the write -- simulates a disk error
         with unittest.mock.patch("os.fsync", side_effect=OSError("simulated disk error")):
             with pytest.raises(OSError, match="simulated disk error"):
                 write_lockfile(lf, lock_path)
 
-        # Destination should not exist (the write failed)
         assert not lock_path.exists()
-        # No orphaned temp files should remain in the directory
+
         remaining = list(tmp_path.iterdir())
         assert remaining == []
 
@@ -240,13 +227,11 @@ class TestLockfileRoundtrip:
         lf = _build_deep_lockfile()
         lock_path = tmp_path / "kanon.lock"
 
-        # Patch os.replace to raise -- simulates a rename failure
         with unittest.mock.patch("os.replace", side_effect=OSError("simulated replace error")):
             with pytest.raises(OSError, match="simulated replace error"):
                 write_lockfile(lf, lock_path)
 
-        # Destination should not exist
         assert not lock_path.exists()
-        # No orphaned temp files should remain
+
         remaining = list(tmp_path.iterdir())
         assert remaining == []

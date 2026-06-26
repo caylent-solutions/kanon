@@ -1,15 +1,20 @@
-"""Unit tests for lockfile schema migration policy -- T2 (updated for schema v2).
+"""Unit tests for lockfile schema migration policy -- updated for schema v5 (FLAG-C).
+
+Schema v5 (spec Section 5.2, Section 13 FLAG-C) is the latest breaking major:
+``read_lockfile`` fails fast on any older schema (v1, v2, v3, v4) with an actionable
+regenerate error, and no silent upgrader to v5 is registered.  The migration registry
+(``_register_upgrader`` / ``_unregister_upgrader`` / ``_dispatch_migration``) remains the
+documented extension point for any future NON-breaking bump and is exercised here directly.
 
 Covers:
-  - AC-FUNC-001: forward-incompatible read raises LockfileSchemaError with exact message.
-  - AC-FUNC-002: missing-upgrader backward-incompatible read raises LockfileSchemaError.
-  - AC-FUNC-003: successful backward-compatible read via registered upgrader chain.
-  - AC-FUNC-004: current-schema read is unchanged; no upgrader invoked.
-  - AC-FUNC-005: CURRENT_SCHEMA_VERSION exported and equals 3.
-  - AC-FUNC-006: _register_upgrader rejects duplicate registrations.
-  - AC-TEST-002: fake upgrader registered at setup and unregistered at teardown.
-  - AC-CYCLE-001: end-to-end cycle with v0 fixture (v0 -> v1 -> v2 -> v3 chain).
-  - FAIL-FAST: _unregister_upgrader raises KeyError for unregistered (from, to) pairs.
+  - CURRENT_SCHEMA_VERSION exported and equals 5.
+  - Forward-incompatible read (schema_version > current) raises LockfileSchemaError.
+  - Older-schema read (schema_version < current) is a hard fail-fast regenerate.
+  - _dispatch_migration walks a registered upgrader chain to the current version.
+  - _dispatch_migration raises when no upgrader exists for a required step.
+  - _register_upgrader rejects duplicate registrations.
+  - _dispatch_migration detects a non-advancing upgrader.
+  - _unregister_upgrader raises KeyError for unregistered (from, to) pairs.
 """
 
 import pytest
@@ -24,33 +29,20 @@ from kanon_cli.core.lockfile import (
 )
 from tests.unit.test_lockfile import _minimal_toml
 
-# ---------------------------------------------------------------------------
-# Module-level constant re-exported for test readability
-# ---------------------------------------------------------------------------
 
 _VALID_SHA40 = "a" * 40
-# kanon_hash uses the sha256:-prefixed form (spec Rule 1a, 71 chars total).
+
 _VALID_KANON_HASH = "sha256:" + "a" * 64
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: CURRENT_SCHEMA_VERSION exported and equals 3
-# ---------------------------------------------------------------------------
+@pytest.mark.unit
+def test_current_schema_version_exported_and_equals_5():
+    """CURRENT_SCHEMA_VERSION is exported from lockfile module and equals 5."""
+    assert CURRENT_SCHEMA_VERSION == 5
 
 
 @pytest.mark.unit
-def test_current_schema_version_exported_and_equals_3():
-    """CURRENT_SCHEMA_VERSION is exported from lockfile module and equals 3."""
-    assert CURRENT_SCHEMA_VERSION == 3
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Forward-incompatible read (schema_version > current)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("future_version", [4, 99])
+@pytest.mark.parametrize("future_version", [6, 99])
 def test_forward_incompatible_raises_schema_error_exact_message(future_version, tmp_path):
     """schema_version > CURRENT_SCHEMA_VERSION raises LockfileSchemaError with exact message.
 
@@ -63,142 +55,89 @@ def test_forward_incompatible_raises_schema_error_exact_message(future_version, 
     assert str(exc_info.value) == (f"lockfile schema v{future_version} written by newer kanon; upgrade kanon-cli.")
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: Missing-upgrader backward-incompatible read
-# ---------------------------------------------------------------------------
+@pytest.mark.unit
+@pytest.mark.parametrize("old_version", [1, 2, 3, 4])
+def test_older_schema_hard_fails_regenerate(old_version, tmp_path):
+    """schema_version < CURRENT_SCHEMA_VERSION fails fast with the actionable regenerate error.
+
+    Schema v5 is the latest breaking major: there is no silent upgrader, so an older lock
+    (v4 included) must raise LockfileSchemaError naming the offending version and
+    instructing the operator to regenerate via 'kanon add' / 'kanon install'.
+    """
+    p = tmp_path / "kanon.lock"
+    p.write_text(_minimal_toml(old_version))
+    with pytest.raises(LockfileSchemaError) as exc_info:
+        read_lockfile(p)
+    err = str(exc_info.value)
+    assert f"v{old_version}" in err
+    assert "kanon add" in err
+    assert "kanon install" in err
+
+    assert "kanon bug" not in err
 
 
 @pytest.mark.unit
-def test_backward_incompatible_no_upgrader_raises_schema_error(tmp_path):
-    """schema_version < CURRENT_SCHEMA_VERSION with no registered upgrader raises LockfileSchemaError.
+def test_v3_read_does_not_dispatch_migration(tmp_path, monkeypatch):
+    """read_lockfile does not invoke _dispatch_migration for an older schema (no silent upgrade)."""
+    import kanon_cli.core.lockfile as lockfile_module
 
-    Message: "no upgrade path from lockfile schema v<N> to v<current>; this is a kanon bug; please report."
-    """
-    # Version 0 has no registered upgrader -- verifying missing-upgrader path.
+    called: list[int] = []
+
+    def _spy_dispatch(data):
+        called.append(1)
+        return data
+
+    monkeypatch.setattr(lockfile_module, "_dispatch_migration", _spy_dispatch)
     p = tmp_path / "kanon.lock"
-    p.write_text(_minimal_toml(0))
-    with pytest.raises(LockfileSchemaError) as exc_info:
+    p.write_text(_minimal_toml(3))
+    with pytest.raises(LockfileSchemaError):
         read_lockfile(p)
+    assert called == [], "an older schema must fail fast before the migration walker is reached"
+
+
+@pytest.mark.unit
+class TestDispatchMigrationChain:
+    """_dispatch_migration advances a raw dict through registered (N, N+1) upgraders."""
+
+    def setup_method(self):
+        """Register a fake chain that advances a v0 dict up to the current schema."""
+
+        def _make_step(target: int):
+            def _step(data: dict) -> dict:
+                upgraded = dict(data)
+                upgraded["schema_version"] = target
+                return upgraded
+
+            return _step
+
+        for from_ver in range(0, CURRENT_SCHEMA_VERSION):
+            _register_upgrader(from_ver, from_ver + 1, _make_step(from_ver + 1))
+
+    def teardown_method(self):
+        """Unregister the fake chain so registry state does not leak."""
+        for from_ver in range(0, CURRENT_SCHEMA_VERSION):
+            _unregister_upgrader(from_ver, from_ver + 1)
+
+    def test_dispatch_advances_to_current_schema(self):
+        """_dispatch_migration returns a dict whose schema_version equals CURRENT_SCHEMA_VERSION."""
+        data = {"schema_version": 0}
+        result = _dispatch_migration(data)
+        assert result["schema_version"] == CURRENT_SCHEMA_VERSION
+
+
+@pytest.mark.unit
+def test_dispatch_missing_upgrader_raises_schema_error():
+    """_dispatch_migration raises LockfileSchemaError when a required (N, N+1) step is unregistered.
+
+    No upgrader is registered for (0, 1), so the walker cannot advance and must
+    raise the missing-upgrade-path error.
+    """
+    data = {"schema_version": 0}
+    with pytest.raises(LockfileSchemaError) as exc_info:
+        _dispatch_migration(data)
     assert str(exc_info.value) == (
         f"no upgrade path from lockfile schema v0 to v{CURRENT_SCHEMA_VERSION}; this is a kanon bug; please report."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-003 / AC-TEST-002: Successful backward-compatible read with fake upgrader
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestSuccessfulUpgradeViaFakeUpgrader:
-    """Tests for backward-compatible read via a registered v0-to-v1 upgrader.
-
-    The v1->v2 and v2->v3 upgraders are already registered in production (for the
-    real migration). The fake v0->v1 upgrader is registered at setup and unregistered
-    at teardown so registry state does not leak across tests (AC-TEST-002).
-
-    Since CURRENT_SCHEMA_VERSION is now 3, a v0 lockfile goes through the chain:
-    v0 -> v1 (fake upgrader) -> v2 (real upgrader) -> v3 (real upgrader). The final
-    schema_version is 3.
-    """
-
-    def setup_method(self):
-        """Register a fake v0-to-v1 upgrader that promotes schema_version and adds required fields."""
-
-        def _fake_v0_to_v1(data: dict) -> dict:
-            """Upgrade a v0 dict to schema v1 by adding/updating required fields."""
-            upgraded = dict(data)
-            upgraded["schema_version"] = 1
-            # v0 fixture omits generated_at; the upgrader fills it in.
-            upgraded.setdefault("generated_at", "2026-01-01T00:00:00Z")
-            upgraded.setdefault("generator", "kanon-cli/1.4.0")
-            upgraded.setdefault("kanon_hash", _VALID_KANON_HASH)
-            if "catalog" not in upgraded:
-                upgraded["catalog"] = {
-                    "source": "https://example.com/catalog.git@main",
-                    "url": "https://example.com/catalog.git",
-                    "revision_spec": "main",
-                    "resolved_ref": "refs/heads/main",
-                    "resolved_sha": _VALID_SHA40,
-                }
-            return upgraded
-
-        _register_upgrader(0, 1, _fake_v0_to_v1)
-
-    def teardown_method(self):
-        """Unregister the fake upgrader so registry state does not leak."""
-        _unregister_upgrader(0, 1)
-
-    def test_successful_upgrade_returns_current_schema_lockfile(self, tmp_path):
-        """read_lockfile upgrades a v0 fixture through v1 to CURRENT_SCHEMA_VERSION via upgrader chain."""
-        p = tmp_path / "kanon.lock"
-        p.write_text(_minimal_toml(0))
-        lf = read_lockfile(p)
-        assert lf.schema_version == CURRENT_SCHEMA_VERSION
-        assert lf.schema_version == 3
-
-    def test_upgrader_register_and_unregister_work_as_pair(self, tmp_path):
-        """Registering and unregistering the upgrader leaves registry clean."""
-        p = tmp_path / "kanon.lock"
-        p.write_text(_minimal_toml(0))
-        # Should succeed (upgrader registered in setup_method; v1->v2 is real upgrader)
-        lf = read_lockfile(p)
-        assert lf.schema_version == CURRENT_SCHEMA_VERSION
-        # After teardown_method unregisters (0,1), a subsequent call should raise (no v0->v1 path).
-        # We verify via a direct unregister + re-read to simulate teardown.
-        _unregister_upgrader(0, 1)
-        with pytest.raises(LockfileSchemaError):
-            read_lockfile(p)
-        # Re-register so teardown_method's _unregister_upgrader call does not raise.
-        _register_upgrader(0, 1, lambda d: {**d, "schema_version": 1})
-
-    def test_no_upgrader_invoked_for_current_schema(self, tmp_path):
-        """No upgrader function is called when schema_version == CURRENT_SCHEMA_VERSION (AC-FUNC-004).
-
-        Registers a spy upgrader for a hypothetical v3->v4 step (not used here),
-        then reads a v3 lockfile and asserts the spy was never called. The spy is
-        placed at (3, 4) -- one step above the current schema -- because (2, 3) is
-        now a real, registered upgrader and a duplicate registration would collide.
-        """
-        invocations: list[int] = []
-
-        def _spy_upgrader(data: dict) -> dict:
-            invocations.append(1)
-            return data
-
-        # Register a spy at v3->v4 to detect any accidental upgrader dispatch.
-        _register_upgrader(3, 4, _spy_upgrader)
-        try:
-            p = tmp_path / "kanon.lock"
-            p.write_text(_minimal_toml(3))
-            lf = read_lockfile(p)
-            assert lf.schema_version == 3
-            # Spy must not have been called -- current-schema read skips migration.
-            assert invocations == []
-        finally:
-            _unregister_upgrader(3, 4)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: Current-schema read is unchanged
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_current_schema_read_unchanged(tmp_path):
-    """read_lockfile with schema_version == CURRENT_SCHEMA_VERSION works as expected."""
-    p = tmp_path / "kanon.lock"
-    p.write_text(_minimal_toml(CURRENT_SCHEMA_VERSION))
-    lf = read_lockfile(p)
-    assert lf.schema_version == CURRENT_SCHEMA_VERSION
-    assert lf.generated_at == "2026-01-01T00:00:00Z"
-    assert lf.generator == "kanon-cli/1.4.0"
-    assert lf.kanon_hash == _VALID_KANON_HASH
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: _register_upgrader rejects duplicate registrations
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -222,11 +161,6 @@ class TestRegisterUpgraderDuplicateRejection:
         assert "1" in err
 
 
-# ---------------------------------------------------------------------------
-# FAIL-FAST: non-advancing upgrader detection
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestNonAdvancingUpgraderDetected:
     """_dispatch_migration raises LockfileSchemaError when an upgrader does not advance schema_version."""
@@ -235,7 +169,6 @@ class TestNonAdvancingUpgraderDetected:
         """Register a broken upgrader for (0, 1) that does not change schema_version."""
 
         def _non_advancing(data: dict) -> dict:
-            # Intentionally returns the data unmodified -- schema_version stays at 0.
             return dict(data)
 
         _register_upgrader(0, 1, _non_advancing)
@@ -245,7 +178,7 @@ class TestNonAdvancingUpgraderDetected:
         _unregister_upgrader(0, 1)
 
     def test_non_advancing_upgrader_raises_schema_error(self):
-        """_dispatch_migration raises LockfileSchemaError with exact message when upgrader does not advance schema_version."""
+        """_dispatch_migration raises LockfileSchemaError with exact message when upgrader does not advance."""
         data = {"schema_version": 0}
         with pytest.raises(LockfileSchemaError) as exc_info:
             _dispatch_migration(data)
@@ -256,73 +189,16 @@ class TestNonAdvancingUpgraderDetected:
         assert "please report" in err
 
 
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: End-to-end cycle
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
-class TestEndToEndMigrationCycle:
-    """AC-CYCLE-001: Full read-upgrade-assert-teardown cycle with a v0 fixture.
-
-    The v0->v1 upgrader is registered by the test; the v1->v2 and v2->v3 upgraders
-    are the real ones already in the registry.  The chain v0->v1->v2->v3 produces a
-    v3 Lockfile.
-    """
-
-    def test_full_cycle(self, tmp_path):
-        """Write v0 fixture; register v0->v1 upgrader; read and assert v3; remove; assert raises."""
-        # Step 1: Write a v0 TOML fixture to tmp_path.
-        v0_fixture = tmp_path / "kanon.lock"
-        v0_fixture.write_text(_minimal_toml(0))
-
-        # Step 2: Register a fake v0-to-v1 upgrader.
-        def _v0_to_v1(data: dict) -> dict:
-            upgraded = dict(data)
-            upgraded["schema_version"] = 1
-            upgraded.setdefault("generated_at", "2026-01-01T00:00:00Z")
-            upgraded.setdefault("generator", "kanon-cli/1.4.0")
-            upgraded.setdefault("kanon_hash", _VALID_KANON_HASH)
-            if "catalog" not in upgraded:
-                upgraded["catalog"] = {
-                    "source": "https://example.com/catalog.git@main",
-                    "url": "https://example.com/catalog.git",
-                    "revision_spec": "main",
-                    "resolved_ref": "refs/heads/main",
-                    "resolved_sha": _VALID_SHA40,
-                }
-            return upgraded
-
-        _register_upgrader(0, 1, _v0_to_v1)
-
-        try:
-            # Step 3: Call read_lockfile; assert the returned object is a v3 Lockfile
-            # (v0->v1 via fake upgrader, v1->v2->v3 via the real upgraders).
-            lf = read_lockfile(v0_fixture)
-            assert lf.schema_version == CURRENT_SCHEMA_VERSION
-            assert lf.schema_version == 3
-            assert lf.kanon_hash == _VALID_KANON_HASH
-            assert lf.catalog.revision_spec == "main"
-            # v2 marketplace fields are defaulted by the real v1->v2 upgrader.
-            assert lf.marketplace_registered is False
-            assert lf.marketplace_dir == ""
-            # v3 moved the ownership ledger per-source; this fixture declares no
-            # sources, so there is nothing to default at the top level.
-            assert lf.sources == []
-        finally:
-            # Step 4: Remove the upgrader.
-            _unregister_upgrader(0, 1)
-
-        # Step 5: A second read_lockfile on the same file raises LockfileSchemaError
-        # (no v0->v1 path anymore).
-        with pytest.raises(LockfileSchemaError) as exc_info:
-            read_lockfile(v0_fixture)
-        assert "no upgrade path from lockfile schema v0" in str(exc_info.value)
-
-
-# ---------------------------------------------------------------------------
-# FAIL-FAST: _unregister_upgrader raises KeyError for missing registrations
-# ---------------------------------------------------------------------------
+def test_current_schema_read_unchanged(tmp_path):
+    """read_lockfile with schema_version == CURRENT_SCHEMA_VERSION works as expected."""
+    p = tmp_path / "kanon.lock"
+    p.write_text(_minimal_toml(CURRENT_SCHEMA_VERSION))
+    lf = read_lockfile(p)
+    assert lf.schema_version == CURRENT_SCHEMA_VERSION
+    assert lf.generated_at == "2026-01-01T00:00:00Z"
+    assert lf.generator == "kanon-cli/2.0.0"
+    assert lf.kanon_hash == _VALID_KANON_HASH
 
 
 @pytest.mark.unit
@@ -349,5 +225,5 @@ class TestUnregisterUpgraderFailFast:
     def test_unregister_registered_pair_does_not_raise(self):
         """_unregister_upgrader succeeds for a previously registered (from, to) pair."""
         _register_upgrader(88, 89, lambda d: d)
-        # Must not raise
+
         _unregister_upgrader(88, 89)

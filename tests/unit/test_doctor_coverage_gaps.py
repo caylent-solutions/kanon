@@ -2,7 +2,7 @@
 
 Gaps targeted (from the E15-F4-S1-T1 coverage-gap analysis):
 - Line 114: _is_branch_revision returns False when revision_spec starts with "refs/"
-- Line 184: _run_ls_remote_impl sleep path on TimeoutExpired when attempt < retry_count - 1
+- git_runner: run_git_ls_remote does NOT call time.sleep (issue #64 / spec Section 3.5)
 - Lines 219-223: _run_ls_remote function body (always mocked elsewhere, now tested directly)
 - Line 454: _check_branch_drift continue on returncode != 0
 - Lines 1114-1116: run_doctor / doctor_command orphan-lock findings loop
@@ -26,30 +26,33 @@ from kanon_cli.commands.doctor import (
     _check_branch_drift,
     _is_branch_revision,
     _run_ls_remote,
-    _run_ls_remote_impl,
     doctor_command,
 )
+from kanon_cli.core.git_runner import run_git_ls_remote
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     Lockfile,
     SourceEntry,
     write_lockfile,
 )
 
 
-# ---------------------------------------------------------------------------
-# Module-level helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_minimal_kanon(kanon_file: pathlib.Path) -> None:
-    """Write a minimal .kanon file with only a catalog source declaration.
+    """Write a minimal .kanon file with a single per-dependency source block.
+
+    Schema 3.0.0 .kanon carries no global catalog-source line (the [catalog]
+    block was removed); a dependency is declared via its KANON_SOURCE_<alias>_*
+    keys.
 
     Args:
         kanon_file: Path to write the .kanon file.
     """
     kanon_file.write_text(
-        "KANON_CATALOG_SOURCE=https://example.com/catalog.git@main\n",
+        "KANON_SOURCE_meta_URL=https://example.com/catalog.git\n"
+        "KANON_SOURCE_meta_REF=main\n"
+        "KANON_SOURCE_meta_PATH=repo-specs/meta.xml\n"
+        "KANON_SOURCE_meta_NAME=meta\n"
+        "KANON_SOURCE_meta_GITBASE=https://example.com\n",
         encoding="utf-8",
     )
 
@@ -102,9 +105,10 @@ def _make_lockfile_with_sources(
 
     entries = [
         SourceEntry(
+            alias=s["name"],
             name=s["name"],
             url=s["url"],
-            revision_spec=s["revision_spec"],
+            ref_spec=s["revision_spec"],
             resolved_ref=s["revision_spec"],
             resolved_sha=s["resolved_sha"],
             path="repo-specs/meta.xml",
@@ -112,17 +116,10 @@ def _make_lockfile_with_sources(
         for s in sources
     ]
     lockfile = Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash="sha256:" + "a" * 64,
-        catalog=CatalogBlock(
-            source="",
-            url="",
-            revision_spec="",
-            resolved_ref="",
-            resolved_sha="",
-        ),
         sources=entries,
     )
     lock_path = tmp_path / ".kanon.lock"
@@ -155,11 +152,6 @@ def _make_doctor_args(
     )
 
 
-# ---------------------------------------------------------------------------
-# Line 114: _is_branch_revision returns False for refs/-prefixed strings
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "revision_spec,expected",
@@ -185,113 +177,106 @@ def test_is_branch_revision(revision_spec: str, expected: bool) -> None:
     assert _is_branch_revision(revision_spec) is expected
 
 
-# ---------------------------------------------------------------------------
-# Line 184: _run_ls_remote_impl sleep path on TimeoutExpired retries
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
-class TestRunLsRemoteImplTimeoutSleepPath:
-    """_run_ls_remote_impl calls time.sleep between TimeoutExpired retries."""
+class TestRunGitLsRemoteNoSleep:
+    """run_git_ls_remote (in git_runner) never calls time.sleep between retries."""
 
-    def test_sleep_called_between_timeout_retries(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """time.sleep is called when TimeoutExpired occurs and attempt < retry_count - 1."""
+    def test_no_sleep_on_timeout_retries(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """time.sleep is NOT called when TimeoutExpired occurs between attempts."""
+        import time
+
         sleep_calls: list[float] = []
+        original_sleep = time.sleep
 
-        def _fake_sleep(delay: float) -> None:
+        def _tracking_sleep(delay: float) -> None:
             sleep_calls.append(delay)
+            original_sleep(0)
+
+        monkeypatch.setattr(time, "sleep", _tracking_sleep)
 
         def _fake_run(*args, **kwargs):
             raise subprocess.TimeoutExpired(cmd=args[0], timeout=1)
 
-        import kanon_cli.commands.doctor as doctor_mod
-
         monkeypatch.setattr(subprocess, "run", _fake_run)
-        monkeypatch.setattr(doctor_mod.time, "sleep", _fake_sleep)
 
-        # retry_count=2 means two attempts; between them one sleep should occur
-        retry_delay = 0.5
-        _run_ls_remote_impl(
+        run_git_ls_remote(
             ["git", "ls-remote", "https://example.com/repo.git", "HEAD"],
             timeout=1,
             retry_count=2,
-            retry_delay=retry_delay,
         )
 
-        assert len(sleep_calls) == 1
-        assert sleep_calls[0] == retry_delay
+        assert sleep_calls == [], f"time.sleep was called {len(sleep_calls)} time(s); expected 0"
 
-    def test_sleep_not_called_on_last_timeout_attempt(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """time.sleep is NOT called after the final TimeoutExpired attempt."""
+    def test_no_sleep_on_transient_failure_retries(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """time.sleep is NOT called between transient non-zero-exit retries."""
+        import time
+
         sleep_calls: list[float] = []
+        original_sleep = time.sleep
 
-        def _fake_sleep(delay: float) -> None:
+        def _tracking_sleep(delay: float) -> None:
             sleep_calls.append(delay)
+            original_sleep(0)
+
+        monkeypatch.setattr(time, "sleep", _tracking_sleep)
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda *a, **kw: subprocess.CompletedProcess(args=a[0], returncode=1, stdout="", stderr="transient"),
+        )
+
+        run_git_ls_remote(
+            ["git", "ls-remote", "https://example.com/repo.git"],
+            timeout=30,
+            retry_count=3,
+        )
+
+        assert sleep_calls == [], f"time.sleep was called {len(sleep_calls)} time(s); expected 0"
+
+    def test_no_sleep_on_single_attempt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """time.sleep is NOT called for retry_count=1 (single attempt, no retries)."""
+        import time
+
+        sleep_calls: list[float] = []
+        original_sleep = time.sleep
+
+        def _tracking_sleep(delay: float) -> None:
+            sleep_calls.append(delay)
+            original_sleep(0)
+
+        monkeypatch.setattr(time, "sleep", _tracking_sleep)
 
         def _fake_run(*args, **kwargs):
             raise subprocess.TimeoutExpired(cmd=args[0], timeout=1)
 
-        import kanon_cli.commands.doctor as doctor_mod
-
         monkeypatch.setattr(subprocess, "run", _fake_run)
-        monkeypatch.setattr(doctor_mod.time, "sleep", _fake_sleep)
 
-        # retry_count=1 means only one attempt; no sleep should occur
-        _run_ls_remote_impl(
+        run_git_ls_remote(
             ["git", "ls-remote", "https://example.com/repo.git", "HEAD"],
             timeout=1,
             retry_count=1,
-            retry_delay=1.0,
         )
 
-        assert len(sleep_calls) == 0
-
-    def test_multiple_timeouts_sleep_between_each(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """With retry_count=3 and 3 timeouts, sleep is called exactly twice."""
-        sleep_calls: list[float] = []
-
-        def _fake_sleep(delay: float) -> None:
-            sleep_calls.append(delay)
-
-        def _fake_run(*args, **kwargs):
-            raise subprocess.TimeoutExpired(cmd=args[0], timeout=1)
-
-        import kanon_cli.commands.doctor as doctor_mod
-
-        monkeypatch.setattr(subprocess, "run", _fake_run)
-        monkeypatch.setattr(doctor_mod.time, "sleep", _fake_sleep)
-
-        _run_ls_remote_impl(
-            ["git", "ls-remote", "https://example.com/repo.git"],
-            timeout=1,
-            retry_count=3,
-            retry_delay=0.1,
-        )
-
-        # Between 3 attempts there should be 2 sleeps
-        assert len(sleep_calls) == 2
-
-
-# ---------------------------------------------------------------------------
-# Lines 219-223: _run_ls_remote function body (direct unit tests)
-# ---------------------------------------------------------------------------
+        assert sleep_calls == []
 
 
 @pytest.mark.unit
 class TestRunLsRemoteDirectly:
-    """Direct unit tests for _run_ls_remote covering both ref-truthy and ref-falsy paths."""
+    """Direct unit tests for _run_ls_remote covering both ref-truthy and ref-falsy paths.
+
+    _run_ls_remote now delegates to run_git_ls_remote in kanon_cli.core.git_runner.
+    Tests patch subprocess.run to capture the cmd list passed by _run_ls_remote.
+    """
 
     def test_with_ref_builds_cmd_with_ref(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When ref is non-empty, _run_ls_remote passes url and ref to _run_ls_remote_impl."""
+        """When ref is non-empty, _run_ls_remote includes url and ref in the git command."""
         captured_cmds: list[list[str]] = []
 
-        def _fake_impl(cmd, timeout, retry_count, retry_delay):
+        def _fake_run(cmd, *args, **kwargs):
             captured_cmds.append(list(cmd))
-            return (0, "sha\trefs/heads/main\n", "")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="sha\trefs/heads/main\n", stderr="")
 
-        import kanon_cli.commands.doctor as doctor_mod
-
-        monkeypatch.setattr(doctor_mod, "_run_ls_remote_impl", _fake_impl)
+        monkeypatch.setattr(subprocess, "run", _fake_run)
 
         url = "https://example.com/repo.git"
         ref = "refs/heads/main"
@@ -304,13 +289,11 @@ class TestRunLsRemoteDirectly:
         """When ref is empty string, _run_ls_remote omits the ref arg from cmd."""
         captured_cmds: list[list[str]] = []
 
-        def _fake_impl(cmd, timeout, retry_count, retry_delay):
+        def _fake_run(cmd, *args, **kwargs):
             captured_cmds.append(list(cmd))
-            return (0, "", "")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-        import kanon_cli.commands.doctor as doctor_mod
-
-        monkeypatch.setattr(doctor_mod, "_run_ls_remote_impl", _fake_impl)
+        monkeypatch.setattr(subprocess, "run", _fake_run)
 
         url = "https://example.com/repo.git"
         _run_ls_remote(url, "", timeout=30, retry_count=1, retry_delay=0.0)
@@ -319,38 +302,31 @@ class TestRunLsRemoteDirectly:
         assert captured_cmds[0] == ["git", "ls-remote", url]
 
     def test_returns_impl_result(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """_run_ls_remote returns the result tuple from _run_ls_remote_impl."""
-
-        def _fake_impl(cmd, timeout, retry_count, retry_delay):
-            return (0, "stdout-content", "stderr-content")
-
-        import kanon_cli.commands.doctor as doctor_mod
-
-        monkeypatch.setattr(doctor_mod, "_run_ls_remote_impl", _fake_impl)
+        """_run_ls_remote returns the result tuple from the underlying runner."""
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda cmd, *a, **kw: subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="stdout-content", stderr="stderr-content"
+            ),
+        )
 
         result = _run_ls_remote("https://x.com/r.git", "HEAD", 30, 1, 0.0)
 
         assert result == (0, "stdout-content", "stderr-content")
 
     def test_with_nonzero_return_propagated(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Non-zero exit code from _run_ls_remote_impl is returned unchanged."""
-
-        def _fake_impl(cmd, timeout, retry_count, retry_delay):
-            return (128, "", "not found")
-
-        import kanon_cli.commands.doctor as doctor_mod
-
-        monkeypatch.setattr(doctor_mod, "_run_ls_remote_impl", _fake_impl)
+        """Non-zero exit code from the runner is returned unchanged."""
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda cmd, *a, **kw: subprocess.CompletedProcess(args=cmd, returncode=128, stdout="", stderr="not found"),
+        )
 
         code, out, err = _run_ls_remote("https://x.com/r.git", "HEAD", 30, 1, 0.0)
 
         assert code == 128
         assert err == "not found"
-
-
-# ---------------------------------------------------------------------------
-# Line 454: _check_branch_drift continues on returncode != 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -413,17 +389,16 @@ class TestCheckBranchDriftNonZeroReturncode:
 
         def _recording_stub(url, ref, timeout, retry_count, retry_delay):
             checked_urls.append(url)
-            # First call fails; second returns a "no drift" result
+
             if url == "https://example.com/first.git":
                 return (128, "", "error")
-            # Return same SHA as locked to avoid a drift finding
+
             return (0, f"{'b' * 40}\trefs/heads/develop\n", "")
 
         monkeypatch.setattr(doctor_mod, "_run_ls_remote", _recording_stub)
 
         _check_branch_drift(lockfile, strict_drift=False)
 
-        # Both URLs must have been queried
         assert "https://example.com/first.git" in checked_urls
         assert "https://example.com/second.git" in checked_urls
 
@@ -463,11 +438,6 @@ class TestCheckBranchDriftNonZeroReturncode:
         assert findings[0].code == "BRANCH_DRIFT"
 
 
-# ---------------------------------------------------------------------------
-# Lines 1114-1116: doctor_command orphan-lock findings loop
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDoctorCommandOrphanLockFindings:
     """doctor_command prints orphan-lock findings and sets has_errors on error-level findings."""
@@ -481,9 +451,10 @@ class TestDoctorCommandOrphanLockFindings:
         """
         kanon_file.write_text(
             f"KANON_SOURCE_{source_name}_URL=https://example.com/repo.git\n"
-            f"KANON_SOURCE_{source_name}_REVISION=main\n"
+            f"KANON_SOURCE_{source_name}_REF=main\n"
             f"KANON_SOURCE_{source_name}_PATH=repo-specs/meta.xml\n"
-            "KANON_CATALOG_SOURCE=https://example.com/catalog.git@main\n",
+            f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+            f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -499,9 +470,10 @@ class TestDoctorCommandOrphanLockFindings:
         """
         kanon_file.write_text(
             "KANON_SOURCE_REALSRC_URL=https://example.com/real.git\n"
-            "KANON_SOURCE_REALSRC_REVISION=main\n"
+            "KANON_SOURCE_REALSRC_REF=main\n"
             "KANON_SOURCE_REALSRC_PATH=repo-specs/real.xml\n"
-            "KANON_CATALOG_SOURCE=https://example.com/catalog.git@main\n",
+            "KANON_SOURCE_REALSRC_NAME=REALSRC\n"
+            "KANON_SOURCE_REALSRC_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -515,7 +487,6 @@ class TestDoctorCommandOrphanLockFindings:
         kanon_file = tmp_path / ".kanon"
         self._write_kanon_without_source(kanon_file)
 
-        # Build a lockfile with a source that is NOT in .kanon
         lock_path = tmp_path / ".kanon.lock"
         lockfile = _make_lockfile_with_sources(
             tmp_path,
@@ -598,11 +569,6 @@ class TestDoctorCommandOrphanLockFindings:
         result = doctor_command(args)
 
         assert result == 0
-
-
-# ---------------------------------------------------------------------------
-# Lines 1121-1123: doctor_command branch-drift findings loop
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -694,11 +660,6 @@ class TestDoctorCommandBranchDriftFindings:
         assert "BRANCH_DRIFT" in captured.err or "branch" in captured.err.lower()
 
 
-# ---------------------------------------------------------------------------
-# Lines 1128-1130: doctor_command dangling-SHA findings loop
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDoctorCommandDanglingShaFindings:
     """doctor_command prints dangling-SHA findings and sets has_errors for error findings."""
@@ -766,11 +727,6 @@ class TestDoctorCommandDanglingShaFindings:
         assert "DANGLING_SHA" in captured.err or "dangling" in captured.err.lower()
 
 
-# ---------------------------------------------------------------------------
-# Line 1139: doctor_command remote-reachability findings loop
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDoctorCommandRemoteReachabilityFindings:
     """doctor_command prints remote-reachability findings (always warnings, never errors)."""
@@ -803,7 +759,6 @@ class TestDoctorCommandRemoteReachabilityFindings:
         args = _make_doctor_args(kanon_file=str(kanon_file))
         result = doctor_command(args)
 
-        # Remote findings are always warnings -- they must not cause a non-zero exit
         assert result == 0
 
     def test_remote_finding_printed_to_stderr(

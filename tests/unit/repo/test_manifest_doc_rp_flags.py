@@ -1,17 +1,3 @@
-# Copyright (C) 2026 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests verifying RP-manifest-04..08 scenario blocks in
 docs/integration-testing.md reference only flags present in
 subcmds/manifest.py::Manifest._Options().
@@ -25,18 +11,11 @@ import re
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Path constants
-# ---------------------------------------------------------------------------
 
 _REPO_ROOT = pathlib.Path(__file__).parent.parent.parent.parent
 _INTEGRATION_TESTING_DOC = _REPO_ROOT / "docs" / "integration-testing.md"
 
-# ---------------------------------------------------------------------------
-# Stale (wrong) flag names that must NOT appear in the five rewritten blocks.
-# These were the pre-fix incorrect flags documented against manifest subcommand.
-# Source: manifest.py::_Options() does not define any of these strings.
-# ---------------------------------------------------------------------------
+
 _STALE_FLAGS = [
     "--revision-as-tag",
     "--suppress-upstream",
@@ -44,26 +23,12 @@ _STALE_FLAGS = [
     "--ignore-local-manifests",
 ]
 
-# ---------------------------------------------------------------------------
-# Real flags that must appear in the corrected scenario blocks.
-# Each tuple is (scenario_id, expected_flag_fragment).
-# Source: manifest.py::_Options() line numbers (see AC-DOC-001 inline comments).
-# ---------------------------------------------------------------------------
+
 _SCENARIO_CORRECT_FLAGS = [
-    # RP-manifest-04: -r / --revision-as-HEAD
-    # manifest.py _Options() line 70-76: p.add_option("-r", "--revision-as-HEAD", ...)
     ("RP-manifest-04", "--revision-as-HEAD"),
-    # RP-manifest-05: --suppress-upstream-revision
-    # manifest.py _Options() line 84-91: p.add_option("--suppress-upstream-revision", ...)
     ("RP-manifest-05", "--suppress-upstream-revision"),
-    # RP-manifest-06: --suppress-dest-branch
-    # manifest.py _Options() line 92-99: p.add_option("--suppress-dest-branch", ...)
     ("RP-manifest-06", "--suppress-dest-branch"),
-    # RP-manifest-07: --pretty
-    # manifest.py _Options() line 117-122: p.add_option("--pretty", ...)
     ("RP-manifest-07", "--pretty"),
-    # RP-manifest-08: --no-local-manifests
-    # manifest.py _Options() line 123-129: p.add_option("--no-local-manifests", ...)
     ("RP-manifest-08", "--no-local-manifests"),
 ]
 
@@ -109,11 +74,6 @@ def _extract_scenario_block(content: str, scenario_id: str) -> str:
     return match.group(0)
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Correct real flags present in each scenario block
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "scenario_id,expected_flag",
@@ -149,11 +109,6 @@ class TestRpManifestCorrectFlagsPresent:
             f"in the scenario block, but it was not found.\n"
             f"Block content:\n{block}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Stale flag names absent from the five scenario blocks
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

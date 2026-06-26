@@ -27,67 +27,41 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# NOTE: _run_kanon is imported from tests.functional.conftest (canonical
-# definition). No _git helper or repo-init setup is needed because all tests
-# here exercise argument-parsing and subcommand precondition failures that do
-# not require a fully initialized .repo directory.
-# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
-
-# Nonexistent repo-dir path used in argument-parser tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-prune-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-prune-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-prune-option-99"
 
-# Flag with unexpected inline value exercised in AC-TEST-003.
-# 'repo prune' defines --verbose as a boolean store_true flag via
-# _CommonOptions(); the optparse parser rejects '--verbose=unexpected'
-# because boolean flags cannot accept an inline value, producing
-# exit 2 with '--verbose option does not take a value'.
+
 _BOOL_FLAG_WITH_VALUE = "--verbose=unexpected"
 _BOOL_FLAG_WITH_VALUE_ALT_A = "--quiet=badvalue"
 _BOOL_FLAG_WITH_VALUE_ALT_B = "--outer-manifest=nope"
 
-# Option name extracted from the bool-flag-with-value token, used in
-# the assertion that the error message names the offending flag.
+
 _BOOL_FLAG_BASE_NAME = "--verbose"
 
-# Phrase produced by optparse when a boolean flag is supplied with an
-# inline value (AC-TEST-003).
+
 _BOOL_FLAG_VALUE_PHRASE = "does not take a value"
 
-# Phrase expected in stderr when an unknown option is supplied (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
+
 _HELP_USAGE_PHRASE = "repo prune"
 
-# Phrase expected in stderr when the .repo directory is absent (AC-TEST-004).
-# The embedded repo tool prints "error parsing manifest" to stderr when the
-# .repo/manifest.xml file cannot be found.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest filename the embedded repo tool names in stderr for precondition
-# failures (AC-TEST-004).
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
-
-
-# ---------------------------------------------------------------------------
-# Shared determinism helper -- DRY extraction for _is_deterministic tests.
-# ---------------------------------------------------------------------------
 
 
 def _assert_deterministic(
@@ -128,11 +102,6 @@ def _assert_deterministic(
         f"  first:  {output_a!r}\n"
         f"  second: {output_b!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo prune --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -186,11 +155,6 @@ class TestRepoPruneHelp:
         state, confirming the determinism requirement of AC-FUNC-001.
         """
         _assert_deterministic(tmp_path, ["--help"], _EXIT_SUCCESS, compare_stdout=True)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -271,11 +235,6 @@ class TestRepoPruneUnknownFlag:
         confirming the determinism requirement of AC-FUNC-001.
         """
         _assert_deterministic(tmp_path, [_UNKNOWN_FLAG_PRIMARY], _EXIT_ARGPARSE_ERROR, compare_stdout=False)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Boolean flag with inline value produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -364,11 +323,6 @@ class TestRepoPruneBoolFlagWithValue:
         _assert_deterministic(tmp_path, [_BOOL_FLAG_WITH_VALUE], _EXIT_ARGPARSE_ERROR, compare_stdout=False)
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoPrunePreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failures exit 1 with clear message.
@@ -424,11 +378,6 @@ class TestRepoPrunePreconditionFailure:
         invocations, confirming the determinism requirement of AC-FUNC-001.
         """
         _assert_deterministic(tmp_path, [], _EXIT_PRECONDITION_ERROR, compare_stdout=False)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

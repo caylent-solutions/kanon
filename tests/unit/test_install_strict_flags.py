@@ -29,22 +29,12 @@ from kanon_cli.core.install import (
     install,
 )
 from kanon_cli.core.kanon_hash import kanon_hash as compute_kanon_hash
-from kanon_cli.core.lockfile import Lockfile, SourceEntry, CatalogBlock
+from kanon_cli.core.lockfile import CURRENT_SCHEMA_VERSION, Lockfile, SourceEntry
 
 
-# ---------------------------------------------------------------------------
-# Shared constants
-# ---------------------------------------------------------------------------
-
-_CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
 _FAKE_SHA_ALPHA = "a" * 40
 _FAKE_SHA_BETA = "b" * 40
-_FAKE_SHA_REMOTE = "c" * 40  # simulates the remote's current branch tip
-
-
-# ---------------------------------------------------------------------------
-# Helpers to build test fixtures
-# ---------------------------------------------------------------------------
+_FAKE_SHA_REMOTE = "c" * 40
 
 
 def _write_kanon_single(
@@ -58,8 +48,10 @@ def _write_kanon_single(
     kanon_path.write_text(
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL={url}\n"
-        f"KANON_SOURCE_{source_name}_REVISION={revision}\n"
+        f"KANON_SOURCE_{source_name}_REF={revision}\n"
         f"KANON_SOURCE_{source_name}_PATH=manifest.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com\n"
     )
     kanon_path.chmod(0o600)
     return kanon_path
@@ -76,30 +68,25 @@ def _write_lockfile_with_orphan(
     """Write a lockfile containing one active source + one orphaned source."""
     lock_path = directory / ".kanon.lock"
     lock_path.write_text(
-        f"schema_version = 1\n"
+        f"schema_version = {CURRENT_SCHEMA_VERSION}\n"
         f'generated_at = "2026-01-15T00:00:00Z"\n'
         f'generator = "kanon-cli/test"\n'
         f'kanon_hash = "{kanon_hash}"\n'
         f"\n"
-        f"[catalog]\n"
-        f'source = "{_CATALOG_SOURCE}"\n'
-        f'url = "https://catalog.example.com/repo.git"\n'
-        f'revision_spec = "main"\n'
-        f'resolved_ref = "refs/heads/main"\n'
-        f'resolved_sha = "{sha_active}"\n'
-        f"\n"
         f"[[sources]]\n"
+        f'alias = "{active_source}"\n'
         f'name = "{active_source}"\n'
         f'url = "https://git.example.com/{active_source}.git"\n'
-        f'revision_spec = "main"\n'
+        f'ref_spec = "main"\n'
         f'resolved_ref = "refs/heads/main"\n'
         f'resolved_sha = "{sha_active}"\n'
         f'path = "manifest.xml"\n'
         f"\n"
         f"[[sources]]\n"
+        f'alias = "{orphan_source}"\n'
         f'name = "{orphan_source}"\n'
         f'url = "https://git.example.com/{orphan_source}.git"\n'
-        f'revision_spec = "main"\n'
+        f'ref_spec = "main"\n'
         f'resolved_ref = "refs/heads/main"\n'
         f'resolved_sha = "{sha_orphan}"\n'
         f'path = "manifest.xml"\n'
@@ -118,22 +105,16 @@ def _write_lockfile_branch(
     """Write a minimal lockfile for a branch-shaped source."""
     lock_path = directory / ".kanon.lock"
     lock_path.write_text(
-        f"schema_version = 1\n"
+        f"schema_version = {CURRENT_SCHEMA_VERSION}\n"
         f'generated_at = "2026-01-15T00:00:00Z"\n'
         f'generator = "kanon-cli/test"\n'
         f'kanon_hash = "{kanon_hash}"\n'
         f"\n"
-        f"[catalog]\n"
-        f'source = "{_CATALOG_SOURCE}"\n'
-        f'url = "https://catalog.example.com/repo.git"\n'
-        f'revision_spec = "main"\n'
-        f'resolved_ref = "refs/heads/main"\n'
-        f'resolved_sha = "{sha}"\n'
-        f"\n"
         f"[[sources]]\n"
+        f'alias = "{source_name}"\n'
         f'name = "{source_name}"\n'
         f'url = "https://git.example.com/{source_name}.git"\n'
-        f'revision_spec = "{revision_spec}"\n'
+        f'ref_spec = "{revision_spec}"\n'
         f'resolved_ref = "{resolved_ref}"\n'
         f'resolved_sha = "{sha}"\n'
         f'path = "manifest.xml"\n'
@@ -144,15 +125,16 @@ def _write_lockfile_branch(
 def _build_source_entry(
     name: str,
     url: str = "https://git.example.com/alpha.git",
-    revision_spec: str = "main",
+    ref_spec: str = "main",
     resolved_ref: str = "refs/heads/main",
     resolved_sha: str = _FAKE_SHA_ALPHA,
     path: str = "manifest.xml",
 ) -> SourceEntry:
     return SourceEntry(
+        alias=name,
         name=name,
         url=url,
-        revision_spec=revision_spec,
+        ref_spec=ref_spec,
         resolved_ref=resolved_ref,
         resolved_sha=resolved_sha,
         path=path,
@@ -162,28 +144,14 @@ def _build_source_entry(
 def _build_lockfile(
     kanon_hash: str,
     sources: list[SourceEntry],
-    catalog_sha: str = _FAKE_SHA_ALPHA,
 ) -> Lockfile:
-    catalog = CatalogBlock(
-        source=_CATALOG_SOURCE,
-        url="https://catalog.example.com/repo.git",
-        revision_spec="main",
-        resolved_ref="refs/heads/main",
-        resolved_sha=catalog_sha,
-    )
     return Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2026-01-15T00:00:00Z",
         generator="kanon-cli/test",
         kanon_hash=kanon_hash,
-        catalog=catalog,
         sources=sources,
     )
-
-
-# ===========================================================================
-# Tests for _detect_orphaned_lock_entries (AC-FUNC-007)
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -238,11 +206,6 @@ class TestDetectOrphanedLockEntries:
         assert sorted(result) == ["alpha", "beta"]
 
 
-# ===========================================================================
-# Tests for _detect_branch_drift (AC-FUNC-008)
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestDetectBranchDrift:
     """Unit tests for _detect_branch_drift helper."""
@@ -283,8 +246,8 @@ class TestDetectBranchDrift:
         assert report.current_sha == _FAKE_SHA_REMOTE
 
     def test_skips_pep440_tag_shaped_spec(self) -> None:
-        """Sources with PEP 440 revision_spec (tags) are skipped."""
-        sources = [_build_source_entry("alpha", revision_spec="==1.0.0", resolved_sha=_FAKE_SHA_ALPHA)]
+        """Sources with PEP 440 ref_spec (tags) are skipped."""
+        sources = [_build_source_entry("alpha", ref_spec="==1.0.0", resolved_sha=_FAKE_SHA_ALPHA)]
         lockfile = _build_lockfile("sha256:" + "a" * 64, sources)
         with patch("kanon_cli.core.install.subprocess.run") as mock_run:
             reports = _detect_branch_drift(lockfile)
@@ -292,11 +255,11 @@ class TestDetectBranchDrift:
         assert reports == []
 
     def test_skips_refs_tags_spec(self) -> None:
-        """Sources with refs/tags/ revision_spec are skipped."""
+        """Sources with refs/tags/ ref_spec are skipped."""
         sources = [
             _build_source_entry(
                 "alpha",
-                revision_spec="refs/tags/1.0.0",
+                ref_spec="refs/tags/1.0.0",
                 resolved_ref="refs/tags/1.0.0",
                 resolved_sha=_FAKE_SHA_ALPHA,
             )
@@ -312,7 +275,7 @@ class TestDetectBranchDrift:
         sources = [
             _build_source_entry(
                 "alpha",
-                revision_spec="refs/heads/main",
+                ref_spec="refs/heads/main",
                 resolved_ref="refs/heads/main",
                 resolved_sha=_FAKE_SHA_ALPHA,
             )
@@ -335,15 +298,12 @@ class TestDetectBranchDrift:
         lockfile = _build_lockfile("sha256:" + "a" * 64, sources)
 
         def _ls_remote_side_effect(*args, **kwargs):
-            # args[0] is the command list: ["git", "ls-remote", url, ref]
             url = args[0][2]
             mock = MagicMock()
             mock.returncode = 0
             if "alpha" in url:
-                # alpha has drifted
                 mock.stdout = f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n"
             else:
-                # beta is stable
                 mock.stdout = f"{_FAKE_SHA_BETA}\trefs/heads/main\n"
             return mock
 
@@ -352,11 +312,6 @@ class TestDetectBranchDrift:
 
         assert len(reports) == 1
         assert reports[0].source_name == "alpha"
-
-
-# ===========================================================================
-# Tests for OrphanedLockEntryError (AC-FUNC-002)
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -372,18 +327,13 @@ class TestOrphanedLockEntryError:
     def test_str_contains_remediation(self) -> None:
         err = OrphanedLockEntryError(orphaned_names=["ghost"])
         s = str(err)
-        assert "--strict-lock" in s
+        assert "kanon install --reconcile" in s
 
     def test_is_install_error_subclass(self) -> None:
         from kanon_cli.core.install import InstallError
 
         err = OrphanedLockEntryError(orphaned_names=["ghost"])
         assert isinstance(err, InstallError)
-
-
-# ===========================================================================
-# Tests for BranchDriftError (AC-FUNC-004)
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -417,11 +367,6 @@ class TestBranchDriftError:
         assert isinstance(err, InstallError)
 
 
-# ===========================================================================
-# Tests for AC-FUNC-001: orphan + no flag -> prune + info-line
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestOrphanPruneNoFlag:
     """AC-FUNC-001: Orphaned entries are pruned and info-line is emitted (default mode)."""
@@ -450,12 +395,10 @@ class TestOrphanPruneNoFlag:
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            # ls-remote call from _detect_branch_drift: alpha's tip equals locked SHA
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_ALPHA}\trefs/heads/main\n")
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=_CATALOG_SOURCE,
                 strict_lock=False,
                 strict_drift=False,
             )
@@ -492,7 +435,6 @@ class TestOrphanPruneNoFlag:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=_CATALOG_SOURCE,
                 strict_lock=False,
                 strict_drift=False,
             )
@@ -502,11 +444,6 @@ class TestOrphanPruneNoFlag:
         source_names = [s.name for s in updated_lockfile.sources]
         assert "ghost" not in source_names
         assert "alpha" in source_names
-
-
-# ===========================================================================
-# Tests for AC-FUNC-002: orphan + --strict-lock -> OrphanedLockEntryError
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -539,7 +476,6 @@ class TestOrphanStrictLock:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=_CATALOG_SOURCE,
                 strict_lock=True,
                 strict_drift=False,
             )
@@ -548,44 +484,40 @@ class TestOrphanStrictLock:
 
     def test_strict_lock_error_lists_all_orphans(self, tmp_path: pathlib.Path) -> None:
         """OrphanedLockEntryError names every orphaned source in the message."""
-        # Write a .kanon with only "alpha"
+
         kanon_path = _write_kanon_single(tmp_path, source_name="alpha")
         real_hash = compute_kanon_hash(kanon_path)
-        # Lockfile has alpha (active) + ghost1, ghost2 (orphans)
+
         lock_path = tmp_path / ".kanon.lock"
         lock_path.write_text(
-            f"schema_version = 1\n"
+            f"schema_version = {CURRENT_SCHEMA_VERSION}\n"
             f'generated_at = "2026-01-15T00:00:00Z"\n'
             f'generator = "kanon-cli/test"\n'
             f'kanon_hash = "{real_hash}"\n'
             f"\n"
-            f"[catalog]\n"
-            f'source = "{_CATALOG_SOURCE}"\n'
-            f'url = "https://catalog.example.com/repo.git"\n'
-            f'revision_spec = "main"\n'
-            f'resolved_ref = "refs/heads/main"\n'
-            f'resolved_sha = "{_FAKE_SHA_ALPHA}"\n'
-            f"\n"
             f"[[sources]]\n"
+            f'alias = "alpha"\n'
             f'name = "alpha"\n'
             f'url = "https://git.example.com/alpha.git"\n'
-            f'revision_spec = "main"\n'
+            f'ref_spec = "main"\n'
             f'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{_FAKE_SHA_ALPHA}"\n'
             f'path = "manifest.xml"\n'
             f"\n"
             f"[[sources]]\n"
+            f'alias = "ghost1"\n'
             f'name = "ghost1"\n'
             f'url = "https://git.example.com/ghost1.git"\n'
-            f'revision_spec = "main"\n'
+            f'ref_spec = "main"\n'
             f'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{_FAKE_SHA_BETA}"\n'
             f'path = "manifest.xml"\n'
             f"\n"
             f"[[sources]]\n"
+            f'alias = "ghost2"\n'
             f'name = "ghost2"\n'
             f'url = "https://git.example.com/ghost2.git"\n'
-            f'revision_spec = "main"\n'
+            f'ref_spec = "main"\n'
             f'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{_FAKE_SHA_BETA}"\n'
             f'path = "manifest.xml"\n'
@@ -606,7 +538,6 @@ class TestOrphanStrictLock:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=_CATALOG_SOURCE,
                 strict_lock=True,
                 strict_drift=False,
             )
@@ -636,18 +567,12 @@ class TestOrphanStrictLock:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=_CATALOG_SOURCE,
                 strict_lock=True,
             )
 
         error_msg = str(exc_info.value)
-        # Remediation must mention running without --strict-lock OR restoring source triples
+
         assert "KANON_SOURCE_" in error_msg or "--strict-lock" in error_msg
-
-
-# ===========================================================================
-# Tests for AC-FUNC-003: drift + no flag -> reuse + info-line
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -673,12 +598,10 @@ class TestDriftReuseNoFlag:
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            # Remote tip differs from locked SHA -- simulates drift
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=_CATALOG_SOURCE,
                 strict_lock=False,
                 strict_drift=False,
             )
@@ -710,22 +633,15 @@ class TestDriftReuseNoFlag:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=_CATALOG_SOURCE,
                 strict_lock=False,
                 strict_drift=False,
             )
 
-        # repo init should use the locked SHA, NOT the remote tip
         assert mock_init.called
         init_call_args = mock_init.call_args
-        # Third positional arg to run_repo_init is the revision passed to repo init
+
         called_revision = init_call_args.args[2]
         assert called_revision == _FAKE_SHA_ALPHA
-
-
-# ===========================================================================
-# Tests for AC-FUNC-004: drift + --strict-drift -> BranchDriftError
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -755,7 +671,6 @@ class TestDriftStrictFlag:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=_CATALOG_SOURCE,
                 strict_lock=False,
                 strict_drift=True,
             )
@@ -788,17 +703,11 @@ class TestDriftStrictFlag:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=_CATALOG_SOURCE,
                 strict_drift=True,
             )
 
         error_msg = str(exc_info.value)
         assert "--refresh-lock-source" in error_msg
-
-
-# ===========================================================================
-# Tests for AC-FUNC-005: both flags, both events present
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -812,33 +721,28 @@ class TestBothFlagsBothEvents:
         """When orphan AND drift both exist with both strict flags, OrphanedLockEntryError fires first."""
         kanon_path = _write_kanon_single(tmp_path, source_name="alpha", revision="main")
         real_hash = compute_kanon_hash(kanon_path)
-        # Lockfile has alpha (active, drifted) AND ghost (orphan)
+
         lock_path = tmp_path / ".kanon.lock"
         lock_path.write_text(
-            f"schema_version = 1\n"
+            f"schema_version = {CURRENT_SCHEMA_VERSION}\n"
             f'generated_at = "2026-01-15T00:00:00Z"\n'
             f'generator = "kanon-cli/test"\n'
             f'kanon_hash = "{real_hash}"\n'
             f"\n"
-            f"[catalog]\n"
-            f'source = "{_CATALOG_SOURCE}"\n'
-            f'url = "https://catalog.example.com/repo.git"\n'
-            f'revision_spec = "main"\n'
-            f'resolved_ref = "refs/heads/main"\n'
-            f'resolved_sha = "{_FAKE_SHA_ALPHA}"\n'
-            f"\n"
             f"[[sources]]\n"
+            f'alias = "alpha"\n'
             f'name = "alpha"\n'
             f'url = "https://git.example.com/alpha.git"\n'
-            f'revision_spec = "main"\n'
+            f'ref_spec = "main"\n'
             f'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{_FAKE_SHA_ALPHA}"\n'
             f'path = "manifest.xml"\n'
             f"\n"
             f"[[sources]]\n"
+            f'alias = "ghost"\n'
             f'name = "ghost"\n'
             f'url = "https://git.example.com/ghost.git"\n'
-            f'revision_spec = "main"\n'
+            f'ref_spec = "main"\n'
             f'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{_FAKE_SHA_BETA}"\n'
             f'path = "manifest.xml"\n'
@@ -855,23 +759,15 @@ class TestBothFlagsBothEvents:
             patch("kanon_cli.core.install.run_repo_init"),
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
-            # The orphan error must be raised, not the drift error
             pytest.raises(OrphanedLockEntryError),
         ):
-            # Both alpha's tip differs from locked SHA (drift) AND ghost is orphaned
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=_CATALOG_SOURCE,
                 strict_lock=True,
                 strict_drift=True,
             )
-
-
-# ===========================================================================
-# Tests for AC-FUNC-006: drift detector only runs in consistent state
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -883,7 +779,6 @@ class TestDriftDetectorScope:
     ) -> None:
         """When lockfile is absent, no branch drift info-line is emitted."""
         kanon_path = _write_kanon_single(tmp_path, source_name="alpha", revision="main")
-        # No lockfile -- LOCKFILE_ABSENT state
 
         from kanon_cli.core.install import _RefResolution
 
@@ -902,7 +797,6 @@ class TestDriftDetectorScope:
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=_CATALOG_SOURCE,
                 strict_drift=True,
             )
 
@@ -912,7 +806,6 @@ class TestDriftDetectorScope:
     def test_drift_not_raised_in_lockfile_absent_state(self, tmp_path: pathlib.Path) -> None:
         """strict-drift does NOT raise when lockfile is absent (no lockfile to compare)."""
         kanon_path = _write_kanon_single(tmp_path, source_name="alpha", revision="main")
-        # No lockfile
 
         from kanon_cli.core.install import _RefResolution
 
@@ -928,10 +821,9 @@ class TestDriftDetectorScope:
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
-            # Must NOT raise BranchDriftError -- lockfile is absent, nothing to compare
+
             install(
                 kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=_CATALOG_SOURCE,
                 strict_drift=True,
             )

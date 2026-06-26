@@ -31,11 +31,6 @@ def _compute_hash(kanon_file: pathlib.Path) -> str:
     return kanon_hash(kanon_file)
 
 
-# ---------------------------------------------------------------------------
-# Test: DoctorFinding dataclass
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDoctorFinding:
     """DoctorFinding dataclass has kind, code, message, remediation."""
@@ -70,11 +65,6 @@ class TestDoctorFinding:
 
         f = DoctorFinding(kind=kind, code="X", message="m", remediation="r")
         assert f.kind == kind
-
-
-# ---------------------------------------------------------------------------
-# Test: check 1 -- .kanon / .kanon.lock consistency
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -123,7 +113,7 @@ class TestCheckKanonHashConsistency:
         from kanon_cli.commands.doctor import _check_kanon_hash
 
         kanon_file = _write_kanon(tmp_path)
-        # Write lockfile with a wrong hash
+
         _write_lockfile(tmp_path, kanon_hash_val="sha256:" + "b" * 64)
         lock_file = tmp_path / ".kanon.lock"
 
@@ -145,10 +135,8 @@ class TestCheckKanonHashConsistency:
         """
         from kanon_cli.commands.doctor import _check_kanon_hash
 
-        # Zero-source .kanon: no KANON_SOURCE_<name>_* triples.
         kanon_file = _write_kanon(tmp_path, content="KANON_MARKETPLACE_INSTALL=false\n")
-        # A lockfile must be present so _check_kanon_hash reaches the kanon_hash
-        # recompute (it short-circuits to NO_LOCKFILE when the lockfile is absent).
+
         _write_lockfile(tmp_path, kanon_hash_val="sha256:" + "a" * 64)
         lock_file = tmp_path / ".kanon.lock"
 
@@ -159,11 +147,6 @@ class TestCheckKanonHashConsistency:
         assert finding.code == "NO_SOURCES"
         assert "no sources" in finding.message.lower()
         assert "kanon add" in finding.remediation
-
-
-# ---------------------------------------------------------------------------
-# Test: check 3 -- orphan lock entries
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -192,7 +175,7 @@ class TestCheckOrphanLocks:
 
         kanon_file = _write_kanon(tmp_path)
         real_hash = _compute_hash(kanon_file)
-        # Put "ghost" in the lockfile but not in .kanon
+
         _write_lockfile(tmp_path, kanon_hash_val=real_hash, source_names=["src", "ghost"])
         lock_file = tmp_path / ".kanon.lock"
         lockfile = read_lockfile(lock_file)
@@ -227,14 +210,9 @@ class TestCheckOrphanLocks:
         assert len(findings) == 2
         assert codes == {"ORPHAN_LOCK"}
         assert kinds == {"error"}
-        # Both ghost names appear in the messages
+
         assert any("ghost1" in m for m in orphan_names)
         assert any("ghost2" in m for m in orphan_names)
-
-
-# ---------------------------------------------------------------------------
-# Test: check 4 -- branch drift
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -259,7 +237,6 @@ class TestCheckBranchDrift:
         lock_file = tmp_path / ".kanon.lock"
         lockfile = read_lockfile(lock_file)
 
-        # Patch git ls-remote to return the same SHA as locked
         ls_remote_output = f"{sha}\trefs/heads/main\n"
         with patch("kanon_cli.commands.doctor._run_ls_remote", return_value=(0, ls_remote_output, "")):
             findings = _check_branch_drift(lockfile, strict_drift=False)
@@ -301,7 +278,7 @@ class TestCheckBranchDrift:
 
         kanon_file = _write_kanon(tmp_path)
         real_hash = _compute_hash(kanon_file)
-        sha_revision = "c" * 40  # this is a SHA-pinned source
+        sha_revision = "c" * 40
         _write_lockfile(
             tmp_path,
             kanon_hash_val=real_hash,
@@ -312,17 +289,11 @@ class TestCheckBranchDrift:
         lock_file = tmp_path / ".kanon.lock"
         lockfile = read_lockfile(lock_file)
 
-        # _run_ls_remote should NOT be called for SHA-pinned sources
         with patch("kanon_cli.commands.doctor._run_ls_remote") as mock_ls:
             findings = _check_branch_drift(lockfile, strict_drift=False)
             mock_ls.assert_not_called()
 
         assert findings == []
-
-
-# ---------------------------------------------------------------------------
-# Test: check 5 -- dangling SHA
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -341,8 +312,10 @@ class TestCheckDanglingShas:
         sha = "a" * 40
         kanon_content = (
             f"KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
-            f"KANON_SOURCE_src_REVISION={sha}\n"
+            f"KANON_SOURCE_src_REF={sha}\n"
             f"KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+            f"KANON_SOURCE_src_NAME=src\n"
+            f"KANON_SOURCE_src_GITBASE=https://example.com\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
         )
         kanon_file = _write_kanon(tmp_path, content=kanon_content)
@@ -356,7 +329,6 @@ class TestCheckDanglingShas:
         lock_file = tmp_path / ".kanon.lock"
         lockfile = read_lockfile(lock_file)
 
-        # ls-remote returns the SHA in the first column (ref listing)
         with patch("kanon_cli.commands.doctor._run_ls_remote", return_value=(0, f"{sha}\trefs/heads/main\n", "")):
             findings = _check_dangling_shas(lockfile)
 
@@ -371,12 +343,13 @@ class TestCheckDanglingShas:
         from kanon_cli.commands.doctor import _check_dangling_shas
         from kanon_cli.core.lockfile import read_lockfile
 
-        # Use a SHA as the revision spec (SHA-pinned) so dangling check runs.
         sha = "a" * 40
         kanon_content = (
             f"KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
-            f"KANON_SOURCE_src_REVISION={sha}\n"
+            f"KANON_SOURCE_src_REF={sha}\n"
             f"KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+            f"KANON_SOURCE_src_NAME=src\n"
+            f"KANON_SOURCE_src_GITBASE=https://example.com\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
         )
         kanon_file = _write_kanon(tmp_path, content=kanon_content)
@@ -390,7 +363,6 @@ class TestCheckDanglingShas:
         lock_file = tmp_path / ".kanon.lock"
         lockfile = read_lockfile(lock_file)
 
-        # ls-remote returns exit 0 but the SHA is not in the output
         other_sha = "b" * 40
         with patch("kanon_cli.commands.doctor._run_ls_remote", return_value=(0, f"{other_sha}\trefs/heads/main\n", "")):
             findings = _check_dangling_shas(lockfile)
@@ -412,8 +384,10 @@ class TestCheckDanglingShas:
         sha = "a" * 40
         kanon_content = (
             f"KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
-            f"KANON_SOURCE_src_REVISION={sha}\n"
+            f"KANON_SOURCE_src_REF={sha}\n"
             f"KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+            f"KANON_SOURCE_src_NAME=src\n"
+            f"KANON_SOURCE_src_GITBASE=https://example.com\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
         )
         kanon_file = _write_kanon(tmp_path, content=kanon_content)
@@ -448,11 +422,15 @@ class TestCheckDanglingShas:
         sha2 = "b" * 40
         kanon_content = (
             f"KANON_SOURCE_src1_URL=https://example.com/org/repo1.git\n"
-            f"KANON_SOURCE_src1_REVISION={sha1}\n"
+            f"KANON_SOURCE_src1_REF={sha1}\n"
             f"KANON_SOURCE_src1_PATH=repo-specs/meta.xml\n"
+            f"KANON_SOURCE_src1_NAME=src1\n"
+            f"KANON_SOURCE_src1_GITBASE=https://example.com\n"
             f"KANON_SOURCE_src2_URL=https://example.com/org/repo2.git\n"
-            f"KANON_SOURCE_src2_REVISION={sha2}\n"
+            f"KANON_SOURCE_src2_REF={sha2}\n"
             f"KANON_SOURCE_src2_PATH=repo-specs/meta2.xml\n"
+            f"KANON_SOURCE_src2_NAME=src2\n"
+            f"KANON_SOURCE_src2_GITBASE=https://example.com\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
         )
         kanon_file = _write_kanon(tmp_path, content=kanon_content)
@@ -472,9 +450,8 @@ class TestCheckDanglingShas:
             url: str, ref: str, timeout: int, retry_count: int, retry_delay: float
         ) -> tuple[int, str, str]:
             if url == "https://example.com/org/repo1.git":
-                # sha1 is in the first column (reachable)
                 return (0, f"{sha1}\trefs/heads/main\n", "")
-            # sha2 is NOT in the output (dangling)
+
             return (0, f"{'c' * 40}\trefs/heads/main\n", "")
 
         with patch("kanon_cli.commands.doctor._run_ls_remote", side_effect=_fake_ls_remote):
@@ -483,11 +460,6 @@ class TestCheckDanglingShas:
         assert len(findings) == 1
         assert findings[0].code == "DANGLING_SHA"
         assert sha2 in findings[0].message
-
-
-# ---------------------------------------------------------------------------
-# Test: doctor_command entrypoint
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

@@ -235,7 +235,7 @@ class TestFormatFindingsJson:
     def test_json_output_is_parseable_by_json_loads(self) -> None:
         findings = [AuditFinding(kind="warn", code="W001", message="something", remediation="do X")]
         result = _format_findings(findings, "json")
-        # Must not raise
+
         parsed = json.loads(result)
         assert isinstance(parsed, dict)
 
@@ -401,7 +401,6 @@ class TestFormatEnvVarValidation:
 
         from kanon_cli.commands.catalog import _register_audit
 
-        # Must not raise
         _register_audit(catalog_subparsers)
 
     def test_valid_format_env_var_json_does_not_exit(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -417,7 +416,6 @@ class TestFormatEnvVarValidation:
 
         from kanon_cli.commands.catalog import _register_audit
 
-        # Must not raise
         _register_audit(catalog_subparsers)
 
     def test_invalid_format_env_var_prints_error_message(
@@ -445,22 +443,32 @@ class TestFormatEnvVarValidation:
 
 @pytest.mark.unit
 class TestCloneAuditTargetErrors:
-    """_clone_audit_target error paths (cache dir not set, clone fails)."""
+    """_clone_audit_target error paths (empty ref, clone fails)."""
 
-    def test_clone_without_cache_dir_exits_1(self) -> None:
-        """Calling _clone_audit_target without KANON_CACHE_DIR exits 1."""
-        import os
+    def test_clone_resolves_cache_under_kanon_home(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_clone_audit_target no longer requires a cache env var: the clone cache
+        resolves under <KANON_HOME>/cache/catalog-audit (the env-var-unset failure
+        path is removed because KANON_HOME always resolves)."""
+        import subprocess
 
         from kanon_cli.commands.catalog import _clone_audit_target
+        from kanon_cli.constants import KANON_CATALOG_AUDIT_CACHE_SUBDIR
 
-        env_backup = os.environ.pop("KANON_CACHE_DIR", None)
-        try:
-            with pytest.raises(SystemExit) as exc_info:
-                _clone_audit_target("https://example.com/repo.git@main")
-            assert exc_info.value.code == 1
-        finally:
-            if env_backup is not None:
-                os.environ["KANON_CACHE_DIR"] = env_backup
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
+
+        def mock_clone(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+            dest = pathlib.Path(cmd[-1])
+            dest.mkdir(parents=True, exist_ok=True)
+            (dest / "repo-specs").mkdir()
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+        with patch("subprocess.run", side_effect=mock_clone):
+            result_path = _clone_audit_target("https://example.com/repo.git@main")
+
+        expected_root = tmp_path / "cache" / KANON_CATALOG_AUDIT_CACHE_SUBDIR
+        assert expected_root in result_path.parents, f"clone path {result_path} must live under {expected_root}"
 
     def test_clone_failure_exits_1(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """A failed git clone exits with code 1 and prints an ERROR message."""
@@ -468,7 +476,7 @@ class TestCloneAuditTargetErrors:
 
         from kanon_cli.commands.catalog import _clone_audit_target
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         failed_result = subprocess.CompletedProcess(
             args=["git", "clone"],
@@ -490,10 +498,9 @@ class TestCloneAuditTargetErrors:
 
         from kanon_cli.commands.catalog import _clone_audit_target
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         def mock_clone_empty(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess:
-            # Find the last argument (clone destination)
             dest = cmd[-1]
             pathlib.Path(dest).mkdir(parents=True, exist_ok=True)
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
@@ -507,7 +514,7 @@ class TestCloneAuditTargetErrors:
         """A source with an empty ref (ending in '@') exits with code 1."""
         from kanon_cli.commands.catalog import _clone_audit_target
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with pytest.raises(SystemExit) as exc_info:
             _clone_audit_target("https://example.com/repo.git@")
@@ -521,7 +528,7 @@ class TestCloneAuditTargetErrors:
         from kanon_cli.constants import KANON_CATALOG_AUDIT_CACHE_SUBDIR
         from kanon_cli.core.url import canonicalize_repo_url
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         source = "https://example.com/repo.git@main"
         idx = source.rfind("@")
@@ -530,12 +537,10 @@ class TestCloneAuditTargetErrors:
         canonical_url = canonicalize_repo_url(url)
         cache_key = hashlib.sha256(f"{canonical_url}@{ref}".encode()).hexdigest()
 
-        # Pre-create the cache entry with repo-specs/ to simulate a cached clone
-        clone_path = tmp_path / KANON_CATALOG_AUDIT_CACHE_SUBDIR / cache_key
+        clone_path = tmp_path / "cache" / KANON_CATALOG_AUDIT_CACHE_SUBDIR / cache_key
         clone_path.mkdir(parents=True)
         (clone_path / "repo-specs").mkdir()
 
-        # The clone should be reused without calling git
         with patch("subprocess.run") as mock_run:
             result_path = _clone_audit_target(source)
             mock_run.assert_not_called()
@@ -548,7 +553,7 @@ class TestCloneAuditTargetErrors:
 
         from kanon_cli.commands.catalog import _clone_audit_target
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         def mock_clone(cmd: list[str], **kwargs: object) -> subprocess_module.CompletedProcess:
             dest = pathlib.Path(cmd[-1])
@@ -568,7 +573,7 @@ class TestCloneAuditTargetErrors:
         """audit_command clones a remote target and invokes checks."""
         import subprocess as subprocess_module
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         def mock_clone(cmd: list[str], **kwargs: object) -> subprocess_module.CompletedProcess:
             dest = pathlib.Path(cmd[-1])
@@ -609,7 +614,7 @@ class TestRunAuditCLIDispatch:
 
         parser = build_parser()
         args = parser.parse_args(["catalog"])
-        # The help func returns 2 after printing help
+
         result = args.func(args)
         assert result == 2
 
@@ -636,7 +641,6 @@ class TestLooksLikeRemoteSource:
     def test_local_path_with_single_at_is_not_remote(self) -> None:
         from kanon_cli.commands.catalog import _looks_like_remote_source
 
-        # A Windows UNC or unusual path with @: single '@' with no URL prefix
         assert _looks_like_remote_source("path@version") is False
 
     def test_no_at_sign_is_not_remote(self) -> None:

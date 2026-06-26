@@ -13,8 +13,7 @@ import pytest
 
 _THIS_DIR = pathlib.Path(__file__).parent
 
-# All modules that live in kanon_cli.repo and must NOT be imported with
-# bare (flat-namespace) import statements in the test suite.
+
 _REPO_INTERNAL_MODULES = frozenset(
     {
         "color",
@@ -76,13 +75,12 @@ def _collect_flat_namespace_imports(filepath: pathlib.Path) -> list[str]:
                 if top in _REPO_INTERNAL_MODULES:
                     violations.append(f"line {node.lineno}: import {alias.name}")
         elif isinstance(node, ast.ImportFrom):
-            # level > 0 means relative import -- always OK
             if node.level == 0 and node.module:
                 top = node.module.split(".")[0]
-                # Skip cross-test imports (test_* modules are test helpers)
+
                 if top.startswith("test_"):
                     continue
-                # Skip kanon_cli.* imports (already correct)
+
                 if top == "kanon_cli":
                     continue
                 if top in _REPO_INTERNAL_MODULES:

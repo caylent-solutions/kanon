@@ -13,11 +13,6 @@ import pytest
 from kanon_cli.completions.sanitize import SanitizationError, SanitizationResult, sanitize_entries
 
 
-# ---------------------------------------------------------------------------
-# SanitizationResult structural contract
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_sanitization_result_is_named_tuple() -> None:
     """SanitizationResult must be a NamedTuple with .kept and .dropped fields."""
@@ -47,15 +42,10 @@ def test_sanitization_result_dropped_type() -> None:
         assert isinstance(item[1], str)
 
 
-# ---------------------------------------------------------------------------
-# Single-pass correctness: first forbidden char wins
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_first_forbidden_char_determines_reason() -> None:
     """When entry has multiple forbidden chars, the first one determines the reason."""
-    # NUL comes before newline -- reason should mention NUL.
+
     entry = "\x00bad\nentry"
     result = sanitize_entries([entry], completer_name="test")
     assert len(result.dropped) == 1
@@ -74,11 +64,6 @@ def test_newline_before_metachar_wins() -> None:
     assert "|" not in reason
 
 
-# ---------------------------------------------------------------------------
-# Generator input support (Iterable, not just list)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_iterable_input_accepted() -> None:
     """sanitize_entries accepts any Iterable, not just lists."""
@@ -93,11 +78,6 @@ def test_iterable_input_accepted() -> None:
     assert len(result.dropped) == 1
 
 
-# ---------------------------------------------------------------------------
-# completer_name parameter is accepted (not used in filtering logic)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize("name", ["__complete_catalog_entries", "", "arbitrary-name"])
 def test_completer_name_parameter_accepted(name: str) -> None:
@@ -105,11 +85,6 @@ def test_completer_name_parameter_accepted(name: str) -> None:
     result = sanitize_entries(["clean"], completer_name=name)
     assert result.kept == ["clean"]
     assert result.dropped == []
-
-
-# ---------------------------------------------------------------------------
-# SanitizationError message roundtrip
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

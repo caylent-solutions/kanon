@@ -24,51 +24,36 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
-# Nonexistent repo-dir path component used in argument-parser tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-manifest-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-manifest-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-manifest-option-99"
 
-# Named option exercised in AC-TEST-003: requires exactly one argument value.
-# Supplying '--manifest-name' without a value triggers exit 2 with
-# "--manifest-name option requires 1 argument" in stderr.
+
 _OPTION_REQUIRING_VALUE = "--manifest-name"
 
-# Short form of the option requiring a value.
+
 _OPTION_REQUIRING_VALUE_SHORT = "-m"
 
-# Error message substring expected in stderr when a named option is supplied
-# without its required value (optparse-level missing-argument error).
+
 _MISSING_ARG_PHRASE = "requires"
 
-# Phrase expected in stderr for unknown flag errors (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
+
 _HELP_USAGE_PHRASE = "repo manifest"
 
-# Phrase expected in stderr when the .repo dir or manifest file is absent
-# (AC-TEST-004). The embedded repo tool emits 'error parsing manifest' when
-# the manifest XML cannot be found.
+
 _MISSING_REPO_PHRASE = "error"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo manifest --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -218,11 +203,6 @@ class TestRepoManifestHelp:
             f"  first:  {result_a.stdout!r}\n"
             f"  second: {result_b.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -400,11 +380,6 @@ class TestRepoManifestUnknownFlag:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Named option without its required value produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -606,11 +581,6 @@ class TestRepoManifestMissingRequiredArg:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoManifestPreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failures exit 1 with clear message.
@@ -729,11 +699,6 @@ class TestRepoManifestPreconditionFailure:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

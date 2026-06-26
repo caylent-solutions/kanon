@@ -47,11 +47,6 @@ def _run_check(
     return _check_tag_format(tmp_path, stub)
 
 
-# ---------------------------------------------------------------------------
-# Registry registration (AC-FUNC-007)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestTagFormatCheckRegistered:
     """'tag-format' is registered in AUDIT_CHECK_REGISTRY (AC-FUNC-007)."""
@@ -84,11 +79,6 @@ class TestTagFormatCheckRegistered:
         assert isinstance(findings[0], AuditFinding), f"Expected AuditFinding, got {type(findings[0])}"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-008: ls_remote_callable injection
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestLsRemoteCallableInjection:
     """_check_tag_format accepts ls_remote_callable so tests avoid network (AC-FUNC-008)."""
@@ -116,11 +106,6 @@ class TestLsRemoteCallableInjection:
         assert len(findings_non_pep440) == 1
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Only PEP 440 tags => zero findings
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestOnlyPep440TagsZeroFindings:
     """A repo with only PEP 440 tags produces zero tag-format findings (AC-FUNC-001)."""
@@ -141,11 +126,6 @@ class TestOnlyPep440TagsZeroFindings:
         """PEP 440 version strings in tags produce zero findings."""
         findings = _run_check(tmp_path, tags)
         assert findings == [], f"Expected zero findings for PEP 440 tags {tags!r}, got: {findings}"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: v1.0.0 tag => one WARN finding
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -195,11 +175,6 @@ class TestV1Dot0Dot0TagOneWarn:
         assert tag in findings[0].message
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: release-2024 tag => one WARN finding
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRelease2024TagOneWarn:
     """A release-2024 tag produces exactly one WARN finding (AC-FUNC-003)."""
@@ -227,11 +202,6 @@ class TestRelease2024TagOneWarn:
         assert findings[0].kind == "warn"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: subpackage/1.0.0 (monorepo PEP 440) => zero findings
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMonorepoPep440TagZeroFindings:
     """A monorepo-prefixed PEP 440 tag produces zero findings (AC-FUNC-004)."""
@@ -249,11 +219,6 @@ class TestMonorepoPep440TagZeroFindings:
         """Monorepo-prefixed tags whose last component is PEP 440 produce zero findings."""
         findings = _run_check(tmp_path, [tag])
         assert findings == [], f"Expected zero findings for monorepo PEP 440 tag {tag!r}, got: {findings}"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: subpackage/v1.0.0 (monorepo non-PEP-440) => one WARN finding
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -282,11 +247,6 @@ class TestMonorepoNonPep440TagOneWarn:
         assert "subpackage/v1.0.0" in msg, f"Expected full tag name in message, got: {msg}"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-006 (empty tag list => zero findings)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestEmptyTagListZeroFindings:
     """An empty tag list produces zero findings."""
@@ -311,7 +271,6 @@ class TestEmptyTagListZeroFindings:
         from kanon_cli.commands.catalog import _check_tag_format
 
         def _notab_stub(target_path: pathlib.Path) -> str:
-            # No tab -- malformed line
             return "aaaa refs/tags/bad-format\n"
 
         findings = _check_tag_format(tmp_path, _notab_stub)
@@ -338,11 +297,6 @@ class TestEmptyTagListZeroFindings:
         assert findings == [], f"Expected zero findings for empty tag name, got: {findings}"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: cap behaviour -- 60 non-PEP-440 tags => 50 WARN + 1 summary
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCapBehaviour:
     """More than KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT non-PEP-440 tags triggers cap (AC-FUNC-006)."""
@@ -356,7 +310,7 @@ class TestCapBehaviour:
         tags = [f"v1.{i}.0" for i in range(60)]
         findings = _run_check(tmp_path, tags)
         warn_findings = [f for f in findings if f.kind == "warn"]
-        # Expect exactly LIMIT per-tag + 1 summary
+
         expected_count = KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT + 1
         assert len(warn_findings) == expected_count, (
             f"Expected {expected_count} WARN findings (cap={KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT} + summary), "
@@ -368,7 +322,7 @@ class TestCapBehaviour:
         tags = [f"v1.{i}.0" for i in range(60)]
         findings = _run_check(tmp_path, tags)
         warn_findings = [f for f in findings if f.kind == "warn"]
-        # The last finding is the summary
+
         summary = warn_findings[-1]
         remaining = 60 - KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT
         assert str(remaining) in summary.message, (
@@ -401,11 +355,6 @@ class TestCapBehaviour:
         assert len(warn_findings) == n, f"Expected {n} WARNs for {n} non-PEP-440 tags, got {len(warn_findings)}"
 
 
-# ---------------------------------------------------------------------------
-# Mixed tag lists (PEP 440 + non-PEP-440 together)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMixedTagLists:
     """Mixed PEP 440 and non-PEP-440 tags produce findings only for non-PEP-440 ones."""
@@ -415,7 +364,7 @@ class TestMixedTagLists:
         tags = ["1.0.0", "v1.0.0", "2.10.1", "release-2024", "subpackage/3.0.0"]
         findings = _run_check(tmp_path, tags)
         warn_findings = [f for f in findings if f.kind == "warn"]
-        # v1.0.0 and release-2024 => 2 WARNs; 1.0.0, 2.10.1, subpackage/3.0.0 => 0
+
         assert len(warn_findings) == 2, f"Expected 2 WARNs for non-PEP-440 tags, got: {warn_findings}"
         warned_tags = [f.message for f in warn_findings]
         assert any("v1.0.0" in m for m in warned_tags), "Expected v1.0.0 in WARN message"
@@ -432,11 +381,6 @@ class TestMixedTagLists:
         messages = [f.message for f in warn_findings]
         assert any("v1.0.0" in m for m in messages), "Expected v1.0.0 WARN"
         assert any("release-2024" in m for m in messages), "Expected release-2024 WARN"
-
-
-# ---------------------------------------------------------------------------
-# Finding attributes
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -463,11 +407,6 @@ class TestFindingAttributes:
         findings = _run_check(tmp_path, tags)
         error_findings = [f for f in findings if f.kind == "error"]
         assert error_findings == [], f"tag-format check must never produce ERROR findings, got: {error_findings}"
-
-
-# ---------------------------------------------------------------------------
-# _check_tag_format_with_subprocess error path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -514,15 +453,9 @@ class TestCheckTagFormatWithSubprocessErrorPath:
         with patch("subprocess.run", return_value=success_result):
             findings = _check_tag_format_with_subprocess(tmp_path)
 
-        # v1.0.0 is non-canonical => one WARN; 1.0.0 is canonical => zero findings
         assert len(findings) == 1, f"Expected one WARN for v1.0.0, got: {findings}"
         assert findings[0].kind == "warn"
         assert "v1.0.0" in findings[0].message
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-009: constant lives in constants.py
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -541,11 +474,6 @@ class TestConstantLocation:
         from kanon_cli.constants import KANON_CATALOG_AUDIT_TAG_REPORT_LIMIT as limit
 
         assert limit == 50, f"Expected default 50, got {limit}"
-
-
-# ---------------------------------------------------------------------------
-# Peeled-ref filtering helpers (gap 4b, AC-TEST-002)
-# ---------------------------------------------------------------------------
 
 
 def _make_ls_remote_stub_with_peeled(
@@ -578,11 +506,6 @@ def _make_ls_remote_stub_with_peeled(
         return "\n".join(lines) + ("\n" if lines else "")
 
     return _stub
-
-
-# ---------------------------------------------------------------------------
-# TestPeeledRefFiltering (gap 4b, AC-TEST-002)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -685,7 +608,6 @@ class TestPeeledRefFiltering:
         """
         from kanon_cli.commands.catalog import _check_tag_format
 
-        # badtag is lightweight: no entry in peeled_tags
         stub = _make_ls_remote_stub_with_peeled(tags=["badtag"], peeled_tags=[])
         findings = _check_tag_format(tmp_path, stub)
         assert len(findings) == 1, f"Lightweight malformed tag must still produce one T001 finding. Got: {findings}"

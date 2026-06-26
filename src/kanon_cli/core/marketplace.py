@@ -14,6 +14,27 @@ import sys
 import xml.etree.ElementTree as ET
 
 
+def create_dirsymlink(link_path: pathlib.Path, target: pathlib.Path) -> None:
+    """Create a directory symlink at *link_path* pointing at *target* (POSIX).
+
+    This creates a standard directory symlink via ``os.symlink``.  Kanon is
+    POSIX-only; on Windows the recommended path is WSL/WSL2.
+
+    The function fails fast with an actionable ``OSError`` if the link cannot be
+    created.  It never silently skips the link.
+
+    Args:
+        link_path: Path at which the symlink should be created.
+        target: Path to the directory the link should resolve to.
+
+    Raises:
+        OSError: If link creation fails for any reason (e.g. *link_path* already
+            exists as a non-symlink entry, or the filesystem does not support
+            symbolic links).
+    """
+    os.symlink(target, link_path)
+
+
 def locate_claude_binary() -> str:
     """Locate the claude CLI binary on $PATH.
 
@@ -371,7 +392,6 @@ def register_direct_checkout_marketplaces(
         if not project_path:
             continue
 
-        # Skip projects that already have <linkfile> children -- handled elsewhere.
         if project_el.findall("linkfile"):
             continue
 
@@ -394,11 +414,10 @@ def register_direct_checkout_marketplaces(
         link_target = marketplace_dir / marketplace_name
 
         if link_target.exists() or link_target.is_symlink():
-            # Entry already present (idempotent re-install).
             continue
 
         marketplace_dir.mkdir(parents=True, exist_ok=True)
-        link_target.symlink_to(project_dir.resolve())
+        create_dirsymlink(link_target, project_dir.resolve())
 
 
 def discover_registered_marketplace_names(marketplace_dir: pathlib.Path) -> list[str]:
@@ -432,8 +451,6 @@ def discover_registered_marketplace_names(marketplace_dir: pathlib.Path) -> list
         try:
             names.add(read_marketplace_name(entry))
         except FileNotFoundError:
-            # Not a real marketplace (no .claude-plugin/marketplace.json); skip
-            # it exactly as install_marketplace_plugins does.
             continue
     return sorted(names)
 
@@ -471,10 +488,7 @@ def install_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
 
     for entry in entries:
         marketplaces_processed += 1
-        # An entry whose .claude-plugin/marketplace.json is absent (e.g. a
-        # linkfile target pointing into a subdirectory of a plugin repo
-        # rather than at the marketplace root) is not a real marketplace.
-        # Skip it with a warning rather than crashing on FileNotFoundError.
+
         try:
             marketplace_name = read_marketplace_name(entry)
         except FileNotFoundError:
@@ -545,8 +559,7 @@ def uninstall_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
 
     for entry in entries:
         marketplaces_processed += 1
-        # Same skip-and-warn behaviour as install: a linkfile target without
-        # a marketplace.json is not a real marketplace and can be skipped.
+
         try:
             marketplace_name = read_marketplace_name(entry)
         except FileNotFoundError:

@@ -10,7 +10,10 @@ Builds real file:// fixture repos with two sources:
               latest-available=<B-12>, upgrade-type=drift.
 
 Invokes 'kanon outdated --format json' via subprocess, parses stdout with
-json.loads, and asserts both shape and per-source field values.
+json.loads, and asserts both shape and per-source field values. The JSON
+payload is an object ``{"aliases": [...], "sources": [...]}`` where the row
+dicts live under ``"sources"`` and the per-source render strings under
+``"aliases"``.
 
 AC-TEST-002, AC-CYCLE-001
 """
@@ -24,10 +27,6 @@ import textwrap
 
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
@@ -47,11 +46,6 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
       </catalog-metadata>
     </manifest>
 """)
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -90,11 +84,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     """Clone work_dir into a bare repository and return the bare path."""
     _git(["clone", "--bare", str(work_dir), str(bare_dir)], cwd=work_dir.parent)
     return bare_dir.resolve()
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _create_project_repo_with_tags(
@@ -198,11 +187,6 @@ def _create_manifest_repo(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -219,7 +203,7 @@ def _run_kanon(
         The completed subprocess result.
     """
     env = dict(os.environ)
-    env.pop("KANON_CATALOG_SOURCE", None)
+    env.pop("KANON_CATALOG_SOURCES", None)
     env.pop("KANON_OUTDATED_FORMAT", None)
     if extra_env:
         env.update(extra_env)
@@ -232,11 +216,6 @@ def _run_kanon(
     )
 
 
-# ---------------------------------------------------------------------------
-# Integration tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestOutdatedFormatJson:
     """End-to-end tests for 'kanon outdated --format json'.
@@ -245,7 +224,7 @@ class TestOutdatedFormatJson:
     """
 
     def test_single_tag_pinned_source_json_shape(self, tmp_path: pathlib.Path) -> None:
-        """Single tag-pinned source: JSON array has one element with correct fields.
+        """Single tag-pinned source: JSON 'sources' list has one element with correct fields.
 
         AC-TEST-002: subprocess invocation with --format json; json.loads; shape and values.
         """
@@ -263,12 +242,11 @@ class TestOutdatedFormatJson:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
         kanon_file.write_text(
-            "GITBASE=file:///unused\n"
-            "CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces\n"
-            "KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_FOO_URL={project_url}\n"
-            "KANON_SOURCE_FOO_REVISION=>=1.0.0\n"
+            "KANON_SOURCE_FOO_REF=>=1.0.0\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -279,22 +257,16 @@ class TestOutdatedFormatJson:
 
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 5\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            f"source = {catalog_source!r}\n"
-            f'url = "file://{manifest_bare}"\n'
-            'revision_spec = "main"\n'
-            'resolved_ref = "main"\n'
-            f'resolved_sha = "{"b" * 40}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "FOO"\n'
             'name = "FOO"\n'
             f"url = {project_url!r}\n"
-            'revision_spec = ">=1.0.0"\n'
+            'ref_spec = ">=1.0.0"\n'
             'resolved_ref = "refs/tags/1.0.0"\n'
             f'resolved_sha = "{sha_100}"\n'
             'path = "./foo"\n'
@@ -320,10 +292,17 @@ class TestOutdatedFormatJson:
         )
 
         parsed = json.loads(result.stdout)
-        assert isinstance(parsed, list)
-        assert len(parsed) == 1
 
-        obj = parsed[0]
+        assert isinstance(parsed, dict)
+        assert set(parsed.keys()) == {"aliases", "sources"}
+        assert isinstance(parsed["sources"], list)
+        assert len(parsed["sources"]) == 1
+        assert isinstance(parsed["aliases"], list)
+        assert len(parsed["aliases"]) == 1
+        assert all(isinstance(render, str) and render for render in parsed["aliases"])
+        assert "FOO" in parsed["aliases"][0]
+
+        obj = parsed["sources"][0]
         assert set(obj.keys()) == {
             "name",
             "current",
@@ -347,19 +326,17 @@ class TestOutdatedFormatJson:
         Assert array has exactly 2 elements with matching upgrade-type values
         and correct SHA truncations for the branch-pinned source.
         """
-        # --- Tag-pinned source (FOO) ---
+
         project_base = tmp_path / "project-repos"
         project_base.mkdir()
         foo_bare = _create_project_repo_with_tags(project_base, "foo", ["1.0.0", "1.0.1"])
         foo_url = f"file://{foo_bare}"
 
-        # --- Branch-pinned source (MYLIB) ---
         mylib_bare, sha_a, sha_b = _create_project_repo_with_two_commits(project_base, "mylib")
         mylib_url = f"file://{mylib_bare}"
         sha_a_12 = sha_a[:12]
         sha_b_12 = sha_b[:12]
 
-        # --- Manifest / catalog repo with both entries ---
         manifest_base = tmp_path / "manifest-repos"
         manifest_base.mkdir()
         manifest_bare = _create_manifest_repo(manifest_base, ["foo", "mylib"])
@@ -370,15 +347,16 @@ class TestOutdatedFormatJson:
 
         kanon_file = workspace / ".kanon"
         kanon_file.write_text(
-            "GITBASE=file:///unused\n"
-            "CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces\n"
-            "KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_FOO_URL={foo_url}\n"
-            "KANON_SOURCE_FOO_REVISION=>=1.0.0\n"
+            "KANON_SOURCE_FOO_REF=>=1.0.0\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
             f"KANON_SOURCE_MYLIB_URL={mylib_url}\n"
-            "KANON_SOURCE_MYLIB_REVISION=main\n"
+            "KANON_SOURCE_MYLIB_REF=main\n"
             "KANON_SOURCE_MYLIB_PATH=./mylib\n"
+            "KANON_SOURCE_MYLIB_NAME=MYLIB\n"
+            "KANON_SOURCE_MYLIB_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -389,30 +367,25 @@ class TestOutdatedFormatJson:
 
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 5\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            f"source = {catalog_source!r}\n"
-            f'url = "file://{manifest_bare}"\n'
-            'revision_spec = "main"\n'
-            'resolved_ref = "main"\n'
-            f'resolved_sha = "{"b" * 40}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "FOO"\n'
             'name = "FOO"\n'
             f"url = {foo_url!r}\n"
-            'revision_spec = ">=1.0.0"\n'
+            'ref_spec = ">=1.0.0"\n'
             'resolved_ref = "refs/tags/1.0.0"\n'
             f'resolved_sha = "{sha_100}"\n'
             'path = "./foo"\n'
             "\n"
             "[[sources]]\n"
+            'alias = "MYLIB"\n'
             'name = "MYLIB"\n'
             f"url = {mylib_url!r}\n"
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "main"\n'
             f'resolved_sha = "{sha_a}"\n'
             'path = "./mylib"\n'
@@ -438,13 +411,22 @@ class TestOutdatedFormatJson:
         )
 
         parsed = json.loads(result.stdout)
-        assert isinstance(parsed, list)
-        assert len(parsed) == 2, f"Expected 2 sources, got {len(parsed)}: {parsed}"
 
-        # Build lookup by name for stable assertions regardless of order
-        by_name = {obj["name"]: obj for obj in parsed}
+        assert isinstance(parsed, dict)
+        assert set(parsed.keys()) == {"aliases", "sources"}
+        sources = parsed["sources"]
+        assert isinstance(sources, list)
+        assert len(sources) == 2, f"Expected 2 sources, got {len(sources)}: {sources}"
 
-        # --- Assert FOO (tag-pinned, patch upgrade) ---
+        assert isinstance(parsed["aliases"], list)
+        assert len(parsed["aliases"]) == 2
+        assert all(isinstance(render, str) and render for render in parsed["aliases"])
+        alias_text = "\n".join(parsed["aliases"])
+        assert "FOO" in alias_text
+        assert "MYLIB" in alias_text
+
+        by_name = {obj["name"]: obj for obj in sources}
+
         assert "FOO" in by_name, f"Expected 'FOO' in JSON output, got names: {list(by_name.keys())}"
         foo_obj = by_name["FOO"]
         assert set(foo_obj.keys()) == {
@@ -458,7 +440,6 @@ class TestOutdatedFormatJson:
         assert foo_obj["latest-matching-spec"] == "1.0.1"
         assert foo_obj["upgrade-type"] == "patch"
 
-        # --- Assert MYLIB (branch-pinned, drift) ---
         assert "MYLIB" in by_name, f"Expected 'MYLIB' in JSON output, got names: {list(by_name.keys())}"
         mylib_obj = by_name["MYLIB"]
         assert set(mylib_obj.keys()) == {
@@ -493,12 +474,11 @@ class TestOutdatedFormatJson:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
         kanon_file.write_text(
-            "GITBASE=file:///unused\n"
-            "CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces\n"
-            "KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_BAZ_URL={project_url}\n"
-            "KANON_SOURCE_BAZ_REVISION=>=1.0.0\n"
+            "KANON_SOURCE_BAZ_REF=>=1.0.0\n"
             "KANON_SOURCE_BAZ_PATH=./baz\n"
+            "KANON_SOURCE_BAZ_NAME=BAZ\n"
+            "KANON_SOURCE_BAZ_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -518,9 +498,15 @@ class TestOutdatedFormatJson:
             f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         parsed = json.loads(result.stdout)
-        assert isinstance(parsed, list)
-        assert len(parsed) == 1
-        obj = parsed[0]
+
+        assert isinstance(parsed, dict)
+        assert set(parsed.keys()) == {"aliases", "sources"}
+        assert isinstance(parsed["sources"], list)
+        assert len(parsed["sources"]) == 1
+        assert isinstance(parsed["aliases"], list)
+        assert len(parsed["aliases"]) == 1
+        assert "BAZ" in parsed["aliases"][0]
+        obj = parsed["sources"][0]
         assert obj["name"] == "BAZ"
         assert set(obj.keys()) == {
             "name",
@@ -550,12 +536,11 @@ class TestOutdatedFormatJson:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
         kanon_file.write_text(
-            "GITBASE=file:///unused\n"
-            "CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces\n"
-            "KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_QUX_URL={project_url}\n"
-            "KANON_SOURCE_QUX_REVISION=>=1.0.0,<1.1\n"
+            "KANON_SOURCE_QUX_REF=>=1.0.0,<1.1\n"
             "KANON_SOURCE_QUX_PATH=./qux\n"
+            "KANON_SOURCE_QUX_NAME=QUX\n"
+            "KANON_SOURCE_QUX_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -566,22 +551,16 @@ class TestOutdatedFormatJson:
 
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 5\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            f"source = {catalog_source!r}\n"
-            f'url = "file://{manifest_bare}"\n'
-            'revision_spec = "main"\n'
-            'resolved_ref = "main"\n'
-            f'resolved_sha = "{"b" * 40}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "QUX"\n'
             'name = "QUX"\n'
             f"url = {project_url!r}\n"
-            'revision_spec = ">=1.0.0,<1.1"\n'
+            'ref_spec = ">=1.0.0,<1.1"\n'
             'resolved_ref = "refs/tags/1.0.0"\n'
             f'resolved_sha = "{sha_100}"\n'
             'path = "./qux"\n'
@@ -608,8 +587,13 @@ class TestOutdatedFormatJson:
             f"got {result.returncode}.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # Output is still valid JSON
+
         parsed = json.loads(result.stdout)
-        assert isinstance(parsed, list)
-        assert len(parsed) == 1
-        assert parsed[0]["upgrade-type"] == "patch"
+        assert isinstance(parsed, dict)
+        assert set(parsed.keys()) == {"aliases", "sources"}
+        assert isinstance(parsed["sources"], list)
+        assert len(parsed["sources"]) == 1
+        assert isinstance(parsed["aliases"], list)
+        assert len(parsed["aliases"]) == 1
+        assert "QUX" in parsed["aliases"][0]
+        assert parsed["sources"][0]["upgrade-type"] == "patch"

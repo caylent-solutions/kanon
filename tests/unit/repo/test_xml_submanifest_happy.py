@@ -30,10 +30,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern used in test_xml_superproject_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -120,11 +116,6 @@ def _build_submanifest_manifest(
         f"  <submanifest {sm_attrs} />\n"
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <submanifest> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -249,11 +240,6 @@ class TestSubmanifestMinimumAttributes:
         )
         sm = manifest.submanifests[submanifest_name]
         assert sm.name == submanifest_name, f"Expected submanifest.name='{submanifest_name}' but got: {sm.name!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <submanifest> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -452,11 +438,6 @@ class TestSubmanifestAllDocumentedAttributes:
         assert sm.revision == revision, f"Expected submanifest.revision='{revision}' but got: {sm.revision!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <submanifest> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSubmanifestDefaultAttributeValues:
     """Verify that default attribute values on <submanifest> behave as documented.
@@ -635,11 +616,6 @@ class TestSubmanifestDefaultAttributeValues:
         assert sm.relpath == expected_relpath, (
             f"Expected submanifest.relpath='{expected_relpath}' for name='{name}' but got: {sm.relpath!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

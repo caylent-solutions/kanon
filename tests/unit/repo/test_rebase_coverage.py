@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for subcmds/rebase.py coverage."""
 
 from unittest import mock
@@ -372,10 +358,7 @@ class TestRebaseCommand:
         mock_get_projects.return_value = [mock_project]
 
         mock_git_cmd = mock.MagicMock()
-        # First call (update-index) returns 1 (dirty)
-        # Second call (stash) returns 0
-        # Third call (rebase) returns 0
-        # Fourth call (stash pop) returns 0
+
         mock_git_cmd.Wait.side_effect = [1, 0, 0, 0]
         mock_git_command.return_value = mock_git_cmd
 
@@ -456,4 +439,3 @@ class TestRebaseCommand:
 
         result = cmd.Execute(opt, [])
         assert result == 1
-        # Should stop after first failure with fail_fast

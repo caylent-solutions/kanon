@@ -111,49 +111,39 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all domain literals must appear here only.
-# No inline literals in test bodies or f-string diagnostics.
-# ---------------------------------------------------------------------------
 
-# Exit code constants
 _EXPECTED_EXIT_SUCCESS = 0
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Nonexistent repo-dir used for argument-parser acceptance tests that do not
-# require a fully initialized .repo directory.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-smartsync-flags-repo-dir"
 
-# Inline-value suffix for negative tests against boolean flags.
-# optparse exits 2 with '--<flag> option does not take a value'.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Phrase expected in stderr when optparse rejects an inline value on a boolean flag.
+
 _DOES_NOT_TAKE_VALUE_PHRASE = "does not take a value"
 
-# Phrase expected in stderr when optparse rejects a non-integer value for an int flag.
+
 _INVALID_INT_PHRASE = "invalid integer value"
 
-# Non-integer value used in negative tests for typed int flags.
+
 _INVALID_INT_VALUE = "abc"
 
-# Valid integer value used in valid-value tests for typed int flags.
+
 _VALID_INT_VALUE = "2"
 
-# Valid string value for --manifest-name (must be an XML filename).
+
 _MANIFEST_NAME_VALUE = "default.xml"
 
-# Valid string values for string-store flags.
+
 _MANIFEST_SERVER_USERNAME_VALUE = "testuser"
 _MANIFEST_SERVER_PASSWORD_VALUE = "testpassword"
 
-# Explicit default value for --retry-fetches (documented as 0 in _Options()).
+
 _RETRY_FETCHES_DEFAULT_VALUE = "0"
 
-# ---------------------------------------------------------------------------
-# CLI flag constants for flags used in non-parametrize test bodies
-# and referenced in parametrize tuples.
-# ---------------------------------------------------------------------------
+
 _CLI_FLAG_FAIL_FAST = "--fail-fast"
 _CLI_FLAG_FORCE_BROKEN = "--force-broken"
 _CLI_FLAG_FORCE_SYNC = "--force-sync"
@@ -192,8 +182,7 @@ _CLI_FLAG_MANIFEST_NAME = "--manifest-name"
 _CLI_FLAG_MANIFEST_SERVER_USERNAME = "--manifest-server-username"
 _CLI_FLAG_MANIFEST_SERVER_PASSWORD = "--manifest-server-password"
 
-# Short-form flag constants -- used in parametrize tuples that exercise short
-# aliases.  Defined as named constants per the no-inline-literals rule.
+
 _CLI_FLAG_SHORT_FORCE_BROKEN = "-f"
 _CLI_FLAG_SHORT_LOCAL_ONLY = "-l"
 _CLI_FLAG_SHORT_NETWORK_ONLY = "-n"
@@ -202,18 +191,7 @@ _CLI_FLAG_SHORT_CURRENT_BRANCH = "-c"
 _CLI_FLAG_SHORT_JOBS = "-j"
 _CLI_FLAG_LONG_JOBS = "--jobs"
 
-# ---------------------------------------------------------------------------
-# Parametrize lists for boolean flags -- tuples of (flag_token, test_id).
-# All boolean flags (both store_true and store_false) are accepted without an
-# argument value, and rejected with an inline value via optparse's exit-2 path.
-# Short-form flags must NOT be tested with inline '=value' syntax (only long-
-# form flags support '--flag=value' in optparse).
-# ---------------------------------------------------------------------------
 
-# All boolean flags in Smartsync._Options() (which delegates to Sync._Options
-# with show_smart=False) and _CommonOptions(). Both short and long forms are
-# included for valid-value tests.
-# NOTE: -s/--smart-sync and -t/--smart-tag are intentionally absent (show_smart=False).
 _BOOL_FLAGS_ALL: list[tuple[str, str]] = [
     (_CLI_FLAG_SHORT_FORCE_BROKEN, "short-force-broken"),
     (_CLI_FLAG_FORCE_BROKEN, "long-force-broken"),
@@ -253,9 +231,7 @@ _BOOL_FLAGS_ALL: list[tuple[str, str]] = [
     (_CLI_FLAG_IGNORE_HOOKS, "long-ignore-hooks"),
 ]
 
-# Long-form boolean flags eligible for the inline-value negative test.
-# Short-form flags are excluded because '--flag=value' syntax is only valid
-# for long-form flags in optparse.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_FORCE_BROKEN, "force-broken"),
     (_CLI_FLAG_FAIL_FAST, "fail-fast"),
@@ -289,9 +265,7 @@ _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_IGNORE_HOOKS, "ignore-hooks"),
 ]
 
-# Typed int flags: (flag_token, valid_value, test_id).
-# Valid-value test passes the flag with _VALID_INT_VALUE.
-# Negative test passes the flag with _INVALID_INT_VALUE.
+
 _INT_FLAGS: list[tuple[str, str, str]] = [
     (_CLI_FLAG_JOBS_NETWORK, _VALID_INT_VALUE, "jobs-network"),
     (_CLI_FLAG_JOBS_CHECKOUT, _VALID_INT_VALUE, "jobs-checkout"),
@@ -299,11 +273,6 @@ _INT_FLAGS: list[tuple[str, str, str]] = [
     (_CLI_FLAG_SHORT_JOBS, _VALID_INT_VALUE, "short-jobs"),
     (_CLI_FLAG_LONG_JOBS, _VALID_INT_VALUE, "long-jobs"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/smartsync.py
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -459,11 +428,6 @@ class TestRepoSmartSyncFlagsValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags that accept typed or enumerated values
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoSmartSyncFlagsInvalidValues:
     """AC-TEST-002: Every flag that accepts enumerated values has a negative test.
@@ -574,11 +538,6 @@ class TestRepoSmartSyncFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoSmartSyncFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -675,11 +634,6 @@ class TestRepoSmartSyncFlagsAbsenceDefaults:
             f"  stdout: {smartsync_defaults_result.stdout!r}\n"
             f"  stderr: {smartsync_defaults_result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -894,11 +848,6 @@ class TestRepoSmartSyncFlagsDocumentedBehavior:
         assert result.returncode != _ARGPARSE_ERROR_EXIT_CODE, (
             f"'{flag}' triggered an argument-parsing error (exit {result.returncode}).\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

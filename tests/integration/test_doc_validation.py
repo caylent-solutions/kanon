@@ -13,6 +13,12 @@ Covered acceptance criteria:
     ".kanon" as a positional argument in those invocations
   - AC-TEST-005: test_catalog_no_repo_url -- catalog/.kanon does not contain
     any uncommented REPO_URL or REPO_REV lines
+  - item 33 (E15-F1-S1): TestInitDefaultBranchPrerequisiteEnforced --
+    docs/integration-testing.md documents the init.defaultBranch=main test
+    prerequisite, AND both CI (.github/actions/setup-kanon/action.yml) and the
+    devcontainer (.devcontainer/.devcontainer.postcreate.sh) run
+    'git config --global init.defaultBranch main', so drift in any of the three
+    enforcement points fails CI.
 """
 
 import re
@@ -20,22 +26,22 @@ from pathlib import Path
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Path constants
-# ---------------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).parent.parent.parent
 _DOCS_DIR = _REPO_ROOT / "docs"
 _README = _REPO_ROOT / "README.md"
 _CHANGELOG = _REPO_ROOT / "CHANGELOG.md"
 
-# All markdown documentation files (docs/ tree plus top-level README and CHANGELOG).
+_INTEGRATION_TESTING_DOC = _DOCS_DIR / "integration-testing.md"
+_SETUP_KANON_ACTION = _REPO_ROOT / ".github" / "actions" / "setup-kanon" / "action.yml"
+_DEVCONTAINER_POSTCREATE = _REPO_ROOT / ".devcontainer" / ".devcontainer.postcreate.sh"
+
+_INIT_DEFAULT_BRANCH_CONFIG_RE = re.compile(r"git\s+config\s+--global\s+init\.defaultBranch\s+main")
+
+
 _ALL_DOC_FILES: list[Path] = sorted(list(_DOCS_DIR.glob("**/*.md")) + [_README, _CHANGELOG])
 
-# Onboarding doc files: these are the user-facing guides that should only
-# show the auto-discovery form of kanon install/clean (no ".kanon" positional
-# argument). Integration testing docs and pipeline docs are excluded because
-# they intentionally show all invocation forms including explicit paths.
+
 _ONBOARDING_DOC_FILES: list[Path] = [
     _DOCS_DIR / "setup-guide.md",
     _DOCS_DIR / "lifecycle.md",
@@ -44,7 +50,7 @@ _ONBOARDING_DOC_FILES: list[Path] = [
     _DOCS_DIR / "multi-source-guide.md",
 ]
 
-# Regex to extract the body of any fenced code block (any language label).
+
 _CODE_BLOCK_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
 
 
@@ -87,11 +93,6 @@ def _extract_code_block_lines(file_path: Path) -> list[str]:
     return lines
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: No stale "pipx install rpm-git-repo" references
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestNoStalePipxReferences:
     """AC-TEST-001: All doc files must have zero occurrences of
@@ -132,11 +133,6 @@ class TestNoStalePipxReferences:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: No standalone "repo" commands in code blocks
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestNoStandaloneRepoReferences:
     """AC-TEST-002: No doc file code blocks reference "repo" as a standalone
@@ -147,8 +143,7 @@ class TestNoStandaloneRepoReferences:
 
     def test_no_standalone_repo_references(self) -> None:
         """Code blocks across all doc files must not contain bare 'repo <cmd>' invocations."""
-        # Pattern: a line in a code block that begins with 'repo' followed by a space
-        # or a repo subcommand.  Lines starting with 'kanon repo' are fine.
+
         standalone_repo_re = re.compile(r"^repo\s")
         violations: list[str] = []
         for doc_path in _ALL_DOC_FILES:
@@ -180,11 +175,6 @@ class TestNoStandaloneRepoReferences:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Onboarding docs use auto-discovery form for kanon install/clean
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestDocsUseAutoDiscover:
     """AC-TEST-004: Primary onboarding doc files that contain 'kanon install'
@@ -204,8 +194,6 @@ class TestDocsUseAutoDiscover:
         assert doc_path.is_file(), f"Expected onboarding doc to exist: {doc_path}"
         violations: list[str] = []
         for line in _extract_code_block_lines(doc_path):
-            # A line with 'kanon install' or 'kanon clean' that also ends with (or contains)
-            # '.kanon' as a positional argument -- not as an env var value or comment.
             if ("kanon install" in line or "kanon clean" in line) and re.search(
                 r"\bkanon\s+(?:install|clean)\b.*\B\.kanon\b", line
             ):
@@ -217,9 +205,55 @@ class TestDocsUseAutoDiscover:
         )
 
 
-# AC-TEST-005 (bundled-catalog REPO_URL/REPO_REV guard) was retired by
-# E6-F2-S1-T1, which deleted src/kanon_cli/catalog/ from the wheel and added
-# the .gitignore + CI guards enforcing its absence. The previous
-# TestCatalogNoRepoUrl class asserted on a path that no longer exists in the
-# repo; the CI check "Verify bundled catalog removed (E6-F2-S1-T1)" plus the
-# unit assertions in tests/test_wheel_layout.py now cover the invariant.
+@pytest.mark.integration
+class TestInitDefaultBranchPrerequisiteEnforced:
+    """item 33 (E15-F1-S1): the init.defaultBranch=main test prerequisite is
+    documented and enforced in all three places.
+
+    Local/file:// default-branch resolution (item 3) and the integration suite
+    rely on freshly ``git init``-ed repos defaulting to ``main``. That only holds
+    when ``init.defaultBranch`` is configured to ``main``. This prerequisite is
+    documented in ``docs/integration-testing.md`` and applied automatically by
+    CI (``.github/actions/setup-kanon/action.yml``) and the devcontainer
+    (``.devcontainer/.devcontainer.postcreate.sh``). If any of the three drifts,
+    the suite would silently regress to ``master`` defaults, so these assertions
+    fail CI on drift.
+    """
+
+    def test_doc_documents_the_prerequisite_section(self) -> None:
+        """integration-testing.md has the init.defaultBranch=main prerequisite section."""
+        assert _INTEGRATION_TESTING_DOC.is_file(), f"Expected doc to exist: {_INTEGRATION_TESTING_DOC}"
+        text = _INTEGRATION_TESTING_DOC.read_text(encoding="utf-8")
+        assert "## Test prerequisites" in text, (
+            f"{_INTEGRATION_TESTING_DOC.name} is missing the 'Test prerequisites' section heading."
+        )
+        assert "### `init.defaultBranch=main`" in text, (
+            f"{_INTEGRATION_TESTING_DOC.name} is missing the '### `init.defaultBranch=main`' "
+            "prerequisite subsection heading."
+        )
+        assert _INIT_DEFAULT_BRANCH_CONFIG_RE.search(text), (
+            f"{_INTEGRATION_TESTING_DOC.name} no longer shows the "
+            "'git config --global init.defaultBranch main' prerequisite command."
+        )
+
+    def test_ci_setup_action_sets_init_default_branch(self) -> None:
+        """The setup-kanon composite action runs 'git config --global init.defaultBranch main'."""
+        assert _SETUP_KANON_ACTION.is_file(), f"Expected CI action to exist: {_SETUP_KANON_ACTION}"
+        text = _SETUP_KANON_ACTION.read_text(encoding="utf-8")
+        assert _INIT_DEFAULT_BRANCH_CONFIG_RE.search(text), (
+            f"{_SETUP_KANON_ACTION} no longer runs "
+            "'git config --global init.defaultBranch main'. CI runners default new "
+            "repos to 'master', so dropping this would break the @main integration fixtures."
+        )
+
+    def test_devcontainer_postcreate_sets_init_default_branch(self) -> None:
+        """The devcontainer postcreate script runs 'git config --global init.defaultBranch main'."""
+        assert _DEVCONTAINER_POSTCREATE.is_file(), (
+            f"Expected devcontainer postcreate script to exist: {_DEVCONTAINER_POSTCREATE}"
+        )
+        text = _DEVCONTAINER_POSTCREATE.read_text(encoding="utf-8")
+        assert _INIT_DEFAULT_BRANCH_CONFIG_RE.search(text), (
+            f"{_DEVCONTAINER_POSTCREATE} no longer runs "
+            "'git config --global init.defaultBranch main'. The dev environment must "
+            "satisfy the prerequisite automatically; dropping this would regress local runs."
+        )

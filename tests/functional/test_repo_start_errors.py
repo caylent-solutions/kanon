@@ -28,56 +28,41 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
-# Nonexistent repo-dir path used in argument-parser tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-start-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-start-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-start-option-99"
 
-# Value-requiring option used in AC-TEST-003: requires exactly one argument
-# value. Supplying it without a value triggers exit 2 with
-# "--rev option requires 1 argument" on stderr.
+
 _OPTION_REQUIRING_VALUE = "--rev"
 _OPTION_REQUIRING_VALUE_ALT = "--jobs"
 _OPTION_REQUIRING_VALUE_LONG = "--revision"
 
-# Error message substring expected in stderr when the option is supplied
-# without a value (argparse-level missing-argument error).
+
 _MISSING_ARG_PHRASE = "requires"
 
-# Phrase expected in stderr for unknown flag errors (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
+
 _HELP_USAGE_PHRASE = "repo start"
 
-# Phrase expected in stderr when the .repo/manifest.xml is absent (AC-TEST-004).
-# The embedded repo tool prints "error parsing manifest" when .repo is absent.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest file named in stderr for precondition failures (AC-TEST-004).
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
 
-# A valid branch name used in precondition-failure tests (tests that reach
-# the repo tool layer rather than the argument parser).
+
 _VALID_BRANCH_NAME = "feature/test-precondition"
-
-
-# ---------------------------------------------------------------------------
-# Shared determinism helper -- DRY extraction for _is_deterministic tests.
-# ---------------------------------------------------------------------------
 
 
 def _assert_deterministic(
@@ -124,11 +109,6 @@ def _assert_deterministic(
         f"  first:  {output_a!r}\n"
         f"  second: {output_b!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo start --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -204,11 +184,6 @@ class TestRepoStartHelp:
         state, confirming the determinism requirement of AC-FUNC-001.
         """
         _assert_deterministic(tmp_path, ["--help"], _EXIT_SUCCESS, compare_stdout=True)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -296,11 +271,6 @@ class TestRepoStartUnknownFlag:
             _EXIT_ARGPARSE_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Value-requiring option without its argument produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -393,11 +363,6 @@ class TestRepoStartMissingOptionValue:
             _EXIT_ARGPARSE_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -531,11 +496,6 @@ class TestRepoStartPreconditionFailure:
             _EXIT_PRECONDITION_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Combined channel and determinism validation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

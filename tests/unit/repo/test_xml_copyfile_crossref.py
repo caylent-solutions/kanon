@@ -56,10 +56,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- same pattern as other test_xml_*_crossref.py files
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -140,11 +136,6 @@ def _get_project(manifest: manifest_xml.XmlManifest, project_name: str):
         The Project object with the given name.
     """
     return {p.name: p for p in manifest.projects}[project_name]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Cross-element reference validation for <copyfile>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -376,11 +367,6 @@ class TestCopyfileCrossElementReferences:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Duplicate-element rules for <copyfile>
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCopyfileDuplicateElementRules:
     """AC-TEST-002: Duplicate-element rules for <copyfile> surface clear behavior.
@@ -567,11 +553,6 @@ class TestCopyfileDuplicateElementRules:
         assert len(projects["platform/lib"].copyfiles) == 1, (
             f"AC-TEST-002: expected 1 copyfile on platform/lib but got: {len(projects['platform/lib'].copyfiles)}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <copyfile> in an unexpected parent raises or is ignored
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -775,11 +756,6 @@ class TestCopyfileUnexpectedParent:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Parser enforces cross-element and uniqueness rules at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCopyfileCrossRefParseTimeEnforcement:
     """AC-FUNC-001: All cross-element and uniqueness rules are enforced at parse time.
@@ -876,11 +852,6 @@ class TestCopyfileCrossRefParseTimeEnforcement:
         assert project.remote.fetchUrl == fetch_url, (
             f"AC-FUNC-001: expected remote.fetchUrl='{fetch_url}' but got: {project.remote.fetchUrl!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

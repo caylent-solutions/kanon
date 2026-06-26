@@ -5,7 +5,11 @@ AC-TEST-001: Parametrises the five paths:
   (b) refresh by catalog entry name (via derive_source_name).
   (c) unknown name raises UnknownSourceError.
   (d) mutual exclusion with --refresh-lock raises SystemExit(2).
-  (e) missing catalog source on refresh path raises MissingCatalogSourceError.
+  (e) --refresh-lock-source is hermetic: it re-resolves from the committed .kanon
+      and ignores a populated KANON_CATALOG_SOURCES env var (spec Section 4.3 /
+      FR-14, so install -- including the refresh-lock-source path -- never resolves
+      or requires a catalog source).  The install subparser does not register
+      --catalog-source.
 
 AC-FUNC-001 through AC-FUNC-007 verified by these unit tests.
 """
@@ -22,7 +26,6 @@ import pytest
 from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
     InstallState,
-    MissingCatalogSourceError,
     UnknownSourceError,
     _RefResolution,
     _emit_install_state,
@@ -32,31 +35,30 @@ from kanon_cli.core.install import (
 )
 from kanon_cli.core.kanon_hash import kanon_hash as compute_kanon_hash
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     Lockfile,
     ProjectEntry,
     SourceEntry,
 )
 
 
-# ---------------------------------------------------------------------------
-# Shared fixture content
-# ---------------------------------------------------------------------------
-
 _VALID_SHA_A = "a" * 40
 _VALID_SHA_B = "b" * 40
-_VALID_SHA_C = "c" * 40
 
 _KANON_TWO_SOURCE = """\
 GITBASE=https://git.example.com
 CLAUDE_MARKETPLACES_DIR=/tmp/mktplc
 KANON_MARKETPLACE_INSTALL=false
 KANON_SOURCE_alpha_URL=https://git.example.com/alpha.git
-KANON_SOURCE_alpha_REVISION=main
+KANON_SOURCE_alpha_REF=main
 KANON_SOURCE_alpha_PATH=manifest.xml
+KANON_SOURCE_alpha_NAME=alpha
+KANON_SOURCE_alpha_GITBASE=https://example.com
 KANON_SOURCE_beta_URL=https://git.example.com/beta.git
-KANON_SOURCE_beta_REVISION=main
+KANON_SOURCE_beta_REF=main
 KANON_SOURCE_beta_PATH=manifest.xml
+KANON_SOURCE_beta_NAME=beta
+KANON_SOURCE_beta_GITBASE=https://example.com
 """
 
 
@@ -74,7 +76,7 @@ def _make_project_entry(name: str, url: str = "https://git.example.com/proj.git"
         name=name,
         url=url,
         canonical_url=canonicalize_repo_url(url),
-        revision_spec="main",
+        ref_spec="main",
         resolved_ref="refs/heads/main",
         resolved_sha=_VALID_SHA_A,
     )
@@ -84,15 +86,16 @@ def _make_source_entry(
     name: str,
     url: str = "https://git.example.com/repo.git",
     sha: str = _VALID_SHA_A,
-    revision_spec: str = "main",
+    ref_spec: str = "main",
     resolved_ref: str = "refs/heads/main",
     path: str = "manifest.xml",
     projects: list[ProjectEntry] | None = None,
 ) -> SourceEntry:
     return SourceEntry(
+        alias=name,
         name=name,
         url=url,
-        revision_spec=revision_spec,
+        ref_spec=ref_spec,
         resolved_ref=resolved_ref,
         resolved_sha=sha,
         path=path,
@@ -103,22 +106,13 @@ def _make_source_entry(
 def _make_lockfile(
     kanon_path: pathlib.Path,
     source_entries: list[SourceEntry],
-    catalog_source: str = "https://git.example.com/catalog.git@main",
 ) -> Lockfile:
     kanon_hash = compute_kanon_hash(kanon_path)
-    catalog_url, catalog_ref = catalog_source.rsplit("@", 1)
     return Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2026-01-15T00:00:00Z",
         generator="kanon-cli/test",
         kanon_hash=kanon_hash,
-        catalog=CatalogBlock(
-            source=catalog_source,
-            url=catalog_url,
-            revision_spec=catalog_ref,
-            resolved_ref=f"refs/heads/{catalog_ref}",
-            resolved_sha=_VALID_SHA_C,
-        ),
         sources=source_entries,
     )
 
@@ -132,11 +126,6 @@ def _write_lockfile_file(
     lock_path = directory / ".kanon.lock"
     write_lockfile(lockfile, lock_path)
     return lock_path
-
-
-# ---------------------------------------------------------------------------
-# Shared fixture for .kanon file and lockfile with two sources
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
@@ -164,11 +153,6 @@ def two_source_setup(tmp_path: pathlib.Path):
     }
 
 
-# ===========================================================================
-# AC-FUNC-001: InstallState.REFRESH_LOCK_SOURCE enum value exists
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestRefreshLockSourceInstallState:
     """AC-FUNC-001: REFRESH_LOCK_SOURCE enum value is present on InstallState."""
@@ -184,17 +168,12 @@ class TestRefreshLockSourceInstallState:
             InstallState.LOCKFILE_ABSENT,
             InstallState.LOCKFILE_CONSISTENT,
             InstallState.LOCKFILE_HASH_MISMATCH,
+            InstallState.RECONCILE,
             InstallState.LOCKFILE_UNREACHABLE,
-            InstallState.LOCKFILE_SOURCE_MISMATCH,
             InstallState.REFRESH_LOCK,
         ]
         for other in other_states:
             assert InstallState.REFRESH_LOCK_SOURCE is not other
-
-
-# ===========================================================================
-# AC-FUNC-001 / AC-FUNC-002: _resolve_source_name resolution
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -215,26 +194,27 @@ class TestResolveSourceName:
     def test_resolve_by_catalog_entry_name_via_derive(self, tmp_path: pathlib.Path) -> None:
         """AC-FUNC-002: name matching via derive_source_name resolves to correct entry."""
         kanon_path = _write_kanon(tmp_path)
-        # 'Alpha-Tool' normalises via derive_source_name to 'alpha_tool'
-        # but our source name is 'alpha', so we need a source named 'alpha_tool'
-        # to demonstrate the derive path.
+
         kanon_content = """\
 GITBASE=https://git.example.com
 CLAUDE_MARKETPLACES_DIR=/tmp/mktplc
 KANON_MARKETPLACE_INSTALL=false
 KANON_SOURCE_alpha_tool_URL=https://git.example.com/alpha.git
-KANON_SOURCE_alpha_tool_REVISION=main
+KANON_SOURCE_alpha_tool_REF=main
 KANON_SOURCE_alpha_tool_PATH=manifest.xml
+KANON_SOURCE_alpha_tool_NAME=alpha_tool
+KANON_SOURCE_alpha_tool_GITBASE=https://example.com
 KANON_SOURCE_beta_URL=https://git.example.com/beta.git
-KANON_SOURCE_beta_REVISION=main
+KANON_SOURCE_beta_REF=main
 KANON_SOURCE_beta_PATH=manifest.xml
+KANON_SOURCE_beta_NAME=beta
+KANON_SOURCE_beta_GITBASE=https://example.com
 """
         kanon_path = _write_kanon(tmp_path, kanon_content)
         alpha_entry = _make_source_entry(name="alpha_tool", url="https://git.example.com/alpha.git")
         beta_entry = _make_source_entry(name="beta", url="https://git.example.com/beta.git")
         lockfile = _make_lockfile(kanon_path, [alpha_entry, beta_entry])
 
-        # 'Alpha-Tool' normalises to 'alpha_tool' via derive_source_name
         result = _resolve_source_name("Alpha-Tool", lockfile)
         assert result.name == "alpha_tool"
 
@@ -251,7 +231,7 @@ KANON_SOURCE_beta_PATH=manifest.xml
         err = exc_info.value
         err_str = str(err)
         assert "nonexistent" in err_str
-        # Error must list known source names
+
         assert "alpha" in err_str
         assert "beta" in err_str
 
@@ -260,7 +240,7 @@ KANON_SOURCE_beta_PATH=manifest.xml
         [
             ("alpha", "alpha"),
             ("beta", "beta"),
-            ("ALPHA", "alpha"),  # derive_source_name lowercases
+            ("ALPHA", "alpha"),
         ],
     )
     def test_resolve_parametrised_by_name_and_derive(
@@ -277,11 +257,6 @@ KANON_SOURCE_beta_PATH=manifest.xml
 
         result = _resolve_source_name(name, lockfile)
         assert result.name == expected_source_name
-
-
-# ===========================================================================
-# AC-FUNC-003: UnknownSourceError diagnostic payload
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -318,11 +293,6 @@ class TestUnknownSourceError:
         assert "foo" in err_str
         assert "alpha" in err_str
         assert "beta" in err_str
-
-
-# ===========================================================================
-# AC-FUNC-004: --refresh-lock and --refresh-lock-source are mutually exclusive
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -372,52 +342,75 @@ class TestRefreshLockMutualExclusion:
         subparsers = parser.add_subparsers()
         install_cmd.register(subparsers)
 
-        # --refresh-lock alone should still work
         args = parser.parse_args(["install", "--refresh-lock"])
         assert args.refresh_lock is True
         assert args.refresh_lock_source is None
 
 
-# ===========================================================================
-# AC-FUNC-005: missing catalog source on --refresh-lock-source path
-# ===========================================================================
-
-
 @pytest.mark.unit
-class TestRefreshLockSourceMissingCatalog:
-    """AC-FUNC-005: missing catalog source raises MissingCatalogSourceError on refresh path."""
+class TestRefreshLockSourceHermeticCatalogIgnored:
+    """AC-FUNC-005: the refresh-lock-source path ignores a populated catalog env
+    var and the install subparser does not register --catalog-source."""
 
-    def test_install_refresh_lock_source_missing_catalog_raises(
+    def test_refresh_lock_source_ignores_env_catalog_source(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """install(refresh_lock_source='alpha') with no catalog source raises MissingCatalogSourceError."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        """install(refresh_lock_source='alpha') ignores a populated KANON_CATALOG_SOURCES env var."""
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://env.example.com/catalog.git@main")
         kanon_path = _write_kanon(tmp_path)
 
-        # Write a consistent lockfile -- the lockfile fallback is disabled on this path
-        alpha_entry = _make_source_entry(name="alpha", url="https://git.example.com/alpha.git")
-        beta_entry = _make_source_entry(name="beta", url="https://git.example.com/beta.git")
+        alpha_entry = _make_source_entry(name="alpha", url="https://git.example.com/alpha.git", sha=_VALID_SHA_A)
+        beta_entry = _make_source_entry(name="beta", url="https://git.example.com/beta.git", sha=_VALID_SHA_B)
         lockfile = _make_lockfile(kanon_path, [alpha_entry, beta_entry])
-        _write_lockfile_file(tmp_path, lockfile)
+        lock_path = _write_lockfile_file(tmp_path, lockfile)
 
-        with pytest.raises(MissingCatalogSourceError) as exc_info:
+        new_alpha_sha = "e" * 40
+        mock_ref = _RefResolution(sha=new_alpha_sha, resolved_ref="refs/heads/main")
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+        ):
             install(
                 kanonenv_path=kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source=None,
                 refresh_lock_source="alpha",
             )
 
-        msg = str(exc_info.value)
-        # Must include refresh-specific remediation
-        assert "catalog source" in msg.lower() or "KANON_CATALOG_SOURCE" in msg
+        from kanon_cli.core.lockfile import read_lockfile
 
+        new_lf = read_lockfile(lock_path)
+        alpha_new = next(e for e in new_lf.sources if e.name == "alpha")
 
-# ===========================================================================
-# AC-FUNC-006: info-line for REFRESH_LOCK_SOURCE
-# ===========================================================================
+        assert alpha_new.resolved_sha == new_alpha_sha
+        assert alpha_new.url == "https://git.example.com/alpha.git"
+        lock_text = lock_path.read_text(encoding="utf-8")
+        assert "https://env.example.com/catalog.git" not in lock_text
+
+    def test_install_subparser_rejects_catalog_source_flag(self) -> None:
+        """The install subparser does not register --catalog-source (FR-14): passing it exits non-zero."""
+        from kanon_cli.commands import install as install_cmd
+
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers()
+        install_cmd.register(subparsers)
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(
+                [
+                    "install",
+                    "--refresh-lock-source",
+                    "alpha",
+                    "--catalog-source",
+                    "https://git.example.com/catalog.git@main",
+                ]
+            )
+        assert exc_info.value.code != 0
 
 
 @pytest.mark.unit
@@ -476,11 +469,6 @@ class TestEmitInstallStateRefreshLockSource:
         assert "lockfile rebuilt from .kanon (1 sources, 2 projects)" in captured.out
 
 
-# ===========================================================================
-# AC-FUNC-007: _merge_partial_lockfile preserves non-refreshed sources byte-for-byte
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestMergePartialLockfile:
     """AC-FUNC-007: _merge_partial_lockfile replaces exactly one source entry."""
@@ -503,11 +491,9 @@ class TestMergePartialLockfile:
             attributed_marketplaces={},
         )
 
-        # The refreshed source has the new SHA
         refreshed = next(e for e in merged.sources if e.name == "alpha")
         assert refreshed.resolved_sha == new_alpha_sha
 
-        # The preserved source keeps its SHA/url (ledger reset is asserted separately)
         preserved = next(e for e in merged.sources if e.name == "beta")
         assert preserved.resolved_sha == beta_old.resolved_sha
         assert preserved.url == beta_old.url
@@ -522,7 +508,7 @@ class TestMergePartialLockfile:
         forward a stale per-source ledger.
         """
         kanon_path = _write_kanon(tmp_path)
-        # Seed stale per-source ledgers so we can prove they are replaced.
+
         alpha_old = _make_source_entry(name="alpha", sha=_VALID_SHA_A)
         alpha_old.registered_marketplaces = ["stale-alpha-mp"]
         beta_old = _make_source_entry(name="beta", sha=_VALID_SHA_B)
@@ -576,8 +562,6 @@ class TestMergePartialLockfile:
         old_lockfile = _make_lockfile(kanon_path, [alpha_old, beta_old])
         old_hash = old_lockfile.kanon_hash
 
-        # Compute a fresh hash (same .kanon content -- hashes equal in this case,
-        # but the point is we pass a fresh hash and it is recorded)
         new_kanon_hash = compute_kanon_hash(kanon_path)
         alpha_new = _make_source_entry(name="alpha", sha="f" * 40)
 
@@ -589,20 +573,24 @@ class TestMergePartialLockfile:
         )
 
         assert merged.kanon_hash == new_kanon_hash
-        # Verify the hash is actually a valid sha256: prefixed value
+
         assert merged.kanon_hash.startswith("sha256:")
         assert len(merged.kanon_hash) == 71
-        # In this test old_hash == new_kanon_hash (same .kanon content), which is fine
-        _ = old_hash  # used to suppress lint warning
 
-    def test_merge_preserves_catalog_block(self, tmp_path: pathlib.Path) -> None:
-        """_merge_partial_lockfile preserves the [catalog] block unchanged."""
+        _ = old_hash
+
+    def test_merge_preserves_top_level_metadata_and_has_no_catalog(self, tmp_path: pathlib.Path) -> None:
+        """_merge_partial_lockfile preserves the v4 top-level metadata and emits no [catalog] block.
+
+        Schema v4 removed the lockfile ``[catalog]`` block, so the merged Lockfile
+        must carry no ``catalog`` attribute.  The merge still preserves the
+        schema version, generator, and marketplace fields verbatim from the
+        source lockfile (only ``kanon_hash`` and ``generated_at`` are refreshed).
+        """
         kanon_path = _write_kanon(tmp_path)
         alpha_old = _make_source_entry(name="alpha", sha=_VALID_SHA_A)
         beta_old = _make_source_entry(name="beta", sha=_VALID_SHA_B)
-        old_lockfile = _make_lockfile(
-            kanon_path, [alpha_old, beta_old], catalog_source="https://catalog.example.com/repo.git@v1"
-        )
+        old_lockfile = _make_lockfile(kanon_path, [alpha_old, beta_old])
 
         alpha_new = _make_source_entry(name="alpha", sha="f" * 40)
         new_hash = compute_kanon_hash(kanon_path)
@@ -613,7 +601,11 @@ class TestMergePartialLockfile:
             attributed_marketplaces={},
         )
 
-        assert merged.catalog == old_lockfile.catalog
+        assert not hasattr(merged, "catalog"), "schema v4 removed the lockfile [catalog] block"
+        assert merged.schema_version == old_lockfile.schema_version
+        assert merged.generator == old_lockfile.generator
+        assert merged.marketplace_registered == old_lockfile.marketplace_registered
+        assert merged.marketplace_dir == old_lockfile.marketplace_dir
 
     def test_merge_raises_on_unknown_source_name(self, tmp_path: pathlib.Path) -> None:
         """_merge_partial_lockfile raises when refreshed_source.name is not in old_lockfile."""
@@ -631,11 +623,6 @@ class TestMergePartialLockfile:
                 new_kanon_hash=new_hash,
                 attributed_marketplaces={},
             )
-
-
-# ===========================================================================
-# AC-FUNC-001/AC-FUNC-007: install() accepts refresh_lock_source kwarg
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -656,7 +643,7 @@ class TestInstallRefreshLockSourceKwarg:
     ) -> None:
         """AC-FUNC-001: install(refresh_lock_source='alpha') re-resolves only alpha;
         beta entry is preserved verbatim (excluding kanon_hash and generated_at)."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         kanon_path = _write_kanon(tmp_path)
 
         alpha_entry = _make_source_entry(
@@ -672,7 +659,6 @@ class TestInstallRefreshLockSourceKwarg:
         lockfile = _make_lockfile(kanon_path, [alpha_entry, beta_entry])
         lock_path = _write_lockfile_file(tmp_path, lockfile)
 
-        # The new SHA that the refresh will resolve to
         new_alpha_sha = "e" * 40
         mock_ref = _RefResolution(sha=new_alpha_sha, resolved_ref="refs/heads/main")
 
@@ -686,7 +672,6 @@ class TestInstallRefreshLockSourceKwarg:
             install(
                 kanonenv_path=kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source="https://catalog.example.com/repo.git@main",
                 refresh_lock_source="alpha",
             )
 
@@ -696,13 +681,11 @@ class TestInstallRefreshLockSourceKwarg:
         alpha_new = next(e for e in new_lf.sources if e.name == "alpha")
         beta_new = next(e for e in new_lf.sources if e.name == "beta")
 
-        # alpha is refreshed with the new SHA
         assert alpha_new.resolved_sha == new_alpha_sha
 
-        # beta is preserved byte-for-byte (excluding kanon_hash / generated_at at the top level)
         assert beta_new.resolved_sha == _VALID_SHA_B
         assert beta_new.url == beta_entry.url
-        assert beta_new.revision_spec == beta_entry.revision_spec
+        assert beta_new.ref_spec == beta_entry.ref_spec
         assert beta_new.resolved_ref == beta_entry.resolved_ref
         assert beta_new.path == beta_entry.path
 
@@ -722,7 +705,7 @@ class TestInstallRefreshLockSourceKwarg:
         XML include entries. The singular form "project" is used because both
         counts equal 1.
         """
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         kanon_path = _write_kanon(tmp_path)
 
         alpha_entry = _make_source_entry(name="alpha", url="https://git.example.com/alpha.git")
@@ -750,15 +733,12 @@ class TestInstallRefreshLockSourceKwarg:
             install(
                 kanonenv_path=kanon_path,
                 lock_file_path=kanon_path.parent / ".kanon.lock",
-                catalog_source="https://catalog.example.com/repo.git@main",
                 refresh_lock_source="alpha",
             )
 
         captured = capsys.readouterr()
         assert "lockfile partially rebuilt" in captured.out
         assert "alpha" in captured.out
-        # refreshed_count == 1: the alpha top-level source entry was re-resolved.
-        # preserved_count == 1: the beta top-level source entry was kept as-is.
-        # Singular form "project" is used for count == 1.
+
         assert "1 project refreshed" in captured.out
         assert "1 project preserved" in captured.out

@@ -33,40 +33,33 @@ from tests.functional.conftest import (
     _run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no domain literals embedded in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Groups Filter Test User"
 _GIT_USER_EMAIL = "groups-filter@example.com"
 _GIT_BRANCH = "main"
 _MANIFEST_FILENAME = "default.xml"
 
-# Project names and paths used in multi-project manifests.
+
 _PROJECT_ALPHA_NAME = "content-alpha"
 _PROJECT_ALPHA_PATH = "alpha"
 
 _PROJECT_BETA_NAME = "content-beta"
 _PROJECT_BETA_PATH = "beta"
 
-# Group name used in negation tests.
+
 _GROUP_FILTER_NAME = "group1"
 
-# The ``notdefault`` sentinel group (excluded from ``default`` matching).
+
 _NOTDEFAULT_GROUP = "notdefault"
 
-# Expected error message fragment when a project does not match the group filter.
+
 _GROUP_ERROR_FRAGMENT = "project group must be enabled"
 
-# Traceback marker -- must not appear in stdout on successful runs.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
-_ERROR_PREFIX = "Error:"
 
-# ---------------------------------------------------------------------------
-# Shared helpers for multi-project manifest setup.
-# ---------------------------------------------------------------------------
+_ERROR_PREFIX = "Error:"
 
 
 def _create_two_project_manifest(
@@ -168,8 +161,7 @@ def _create_two_bare_content_repos(base: pathlib.Path) -> str:
         content_file_name="README.md",
         content_file_text="beta content",
     )
-    # Move the bare repos up to ``base`` so the manifest remote fetch URL
-    # (file://<base>) resolves both <project>.git directories correctly.
+
     alpha_bare.rename(base / alpha_bare.name)
     beta_bare.rename(base / beta_bare.name)
     return f"file://{base}"
@@ -257,11 +249,6 @@ def _setup_two_project_synced_repo(
     )
 
     return checkout_dir, repo_dir
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: --groups all matches all projects
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -369,11 +356,6 @@ class TestGroupsFilterAll:
         assert _PROJECT_BETA_PATH in result.stdout, (
             f"Expected beta project in '--groups=all' stdout.\n  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: --groups default matches projects without notdefault
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -487,11 +469,6 @@ class TestGroupsFilterDefault:
         assert beta_present, (
             f"Beta project (no {_NOTDEFAULT_GROUP!r}) must appear with '--groups=default'.\n  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: --groups -group1 excludes group1 projects
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -615,11 +592,6 @@ class TestGroupsFilterNegation:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: --groups unknown with a named project raises a clear error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestGroupsFilterUnknown:
     """AC-TEST-004: Requesting a named project under an unmatched group filter raises a clear error.
@@ -728,11 +700,6 @@ class TestGroupsFilterUnknown:
         assert result.stdout.strip() == "", f"Expected empty stdout with unmatched group filter, got: {result.stdout!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: --groups grammar matches documented behavior
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestGroupsFilterDocumentedBehavior:
     """AC-FUNC-001: ``--groups`` grammar matches the documented filter behavior.
@@ -821,8 +788,7 @@ class TestGroupsFilterDocumentedBehavior:
             project_beta_groups="",
             init_groups="all",
         )
-        # Re-initialise without --groups to reset the manifest-stored groups
-        # to "default".  Both worktrees are already on disk from the first sync.
+
         repos_dir = tmp_path / "repos"
         manifest_bare = repos_dir / "manifest-bare.git"
         manifest_url = f"file://{manifest_bare}"
@@ -864,11 +830,6 @@ class TestGroupsFilterDocumentedBehavior:
         assert _PROJECT_BETA_PATH in result.stdout, (
             f"Beta (no {_NOTDEFAULT_GROUP!r}) must appear after re-init to default groups.\n  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

@@ -19,8 +19,10 @@ class TestRunNoPipx:
             "GITBASE=https://example.com/\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-            "KANON_SOURCE_test_REVISION=main\n"
+            "KANON_SOURCE_test_REF=main\n"
             "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+            "KANON_SOURCE_test_NAME=test\n"
+            "KANON_SOURCE_test_GITBASE=https://example.com\n"
         )
         args = MagicMock()
         args.kanonenv_path = kanonenv
@@ -62,8 +64,10 @@ _VALID_KANONENV = (
     "GITBASE=https://example.com/\n"
     "KANON_MARKETPLACE_INSTALL=false\n"
     "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-    "KANON_SOURCE_test_REVISION=main\n"
+    "KANON_SOURCE_test_REF=main\n"
     "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+    "KANON_SOURCE_test_NAME=test\n"
+    "KANON_SOURCE_test_GITBASE=https://example.com\n"
 )
 
 
@@ -92,7 +96,6 @@ class TestRunResolvesExplicitPath:
 
         args = MagicMock()
         args.kanonenv_path = pathlib.Path(".kanon")
-        args.catalog_source = None
 
         received: list[pathlib.Path] = []
 
@@ -117,7 +120,6 @@ class TestRunResolvesExplicitPath:
         kanonenv.write_text(_VALID_KANONENV)
         args = MagicMock()
         args.kanonenv_path = kanonenv
-        args.catalog_source = None
 
         received: list[pathlib.Path] = []
 
@@ -172,6 +174,34 @@ class TestRegister:
         parsed = parser.parse_args(["install"])
         assert parsed.kanonenv_path is None
 
+    def test_install_does_not_register_catalog_source_flag(self) -> None:
+        """AC-21 / FR-14: install is hermetic, so --catalog-source is not registered."""
+        from kanon_cli.commands.install import register
+
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        install_parser = subparsers.choices["install"]
+        option_strings = {opt for action in install_parser._actions for opt in action.option_strings}
+        assert "--catalog-source" not in option_strings
+
+    @pytest.mark.parametrize(
+        "catalog_value",
+        ["https://git.example.com/catalog.git@main", "https://example.com/catalog.git", "latest"],
+    )
+    def test_install_rejects_catalog_source_flag_nonzero(self, catalog_value: str) -> None:
+        """AC-21 / FR-14: passing --catalog-source to install exits non-zero (unrecognized argument)."""
+        from kanon_cli.commands.install import register
+
+        parser = argparse.ArgumentParser(prog="kanon")
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["install", "--catalog-source", catalog_value])
+        assert exc_info.value.code != 0
+
 
 @pytest.mark.unit
 class TestAutoDiscovery:
@@ -183,8 +213,10 @@ class TestAutoDiscovery:
             "GITBASE=https://example.com/\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-            "KANON_SOURCE_test_REVISION=main\n"
+            "KANON_SOURCE_test_REF=main\n"
             "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+            "KANON_SOURCE_test_NAME=test\n"
+            "KANON_SOURCE_test_GITBASE=https://example.com\n"
         )
         args = MagicMock()
         args.kanonenv_path = None
@@ -204,8 +236,10 @@ class TestAutoDiscovery:
             "GITBASE=https://example.com/\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_test_URL=https://example.com/manifest.git\n"
-            "KANON_SOURCE_test_REVISION=main\n"
+            "KANON_SOURCE_test_REF=main\n"
             "KANON_SOURCE_test_PATH=repo-specs/test.xml\n"
+            "KANON_SOURCE_test_NAME=test\n"
+            "KANON_SOURCE_test_GITBASE=https://example.com\n"
         )
         args = MagicMock()
         args.kanonenv_path = kanonenv
@@ -356,7 +390,7 @@ class TestDeprecationWarnings:
         assert mock_warnings.warn.called, "warnings.warn must be called when REPO_URL is set"
         call_kwargs = mock_warnings.warn.call_args
         assert call_kwargs is not None, "warnings.warn was not called"
-        # Check category argument (second positional or keyword)
+
         positional = call_kwargs[0]
         keyword = call_kwargs[1]
         category = positional[1] if len(positional) > 1 else keyword.get("category")

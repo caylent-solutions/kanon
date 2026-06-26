@@ -24,34 +24,23 @@ from kanon_cli.commands.outdated import _build_row
 from kanon_cli.version import _classify_revision_shape, RevisionShape, _list_branch_head
 
 
-# ---------------------------------------------------------------------------
-# Shape classification tests (AC-FUNC-001, AC-FUNC-004)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "revision, expected_shape",
     [
-        # Branch-pinned: plain branch names without PEP 440 operators
         ("main", RevisionShape.BRANCH),
         ("develop", RevisionShape.BRANCH),
         ("feature/foo", RevisionShape.BRANCH),
         ("release/v1", RevisionShape.BRANCH),
-        # SHA-pinned: 40-char hex
         ("a" * 40, RevisionShape.SHA),
-        # SHA-pinned: 64-char hex
         ("b" * 64, RevisionShape.SHA),
-        # Tag-pinned: PEP 440 constraint
         (">=1.0.0", RevisionShape.TAG),
         ("~=1.0.0", RevisionShape.TAG),
         (">=1.0.0,<2.0.0", RevisionShape.TAG),
         ("*", RevisionShape.TAG),
         ("latest", RevisionShape.TAG),
-        # Tag-pinned: refs/tags prefix
         ("refs/tags/>=1.0.0", RevisionShape.TAG),
         ("refs/tags/1.0.0", RevisionShape.TAG),
-        # Tag-pinned: refs/tags prefix but with non-SHA revision
         ("refs/tags/~=1.0.0", RevisionShape.TAG),
     ],
 )
@@ -62,10 +51,6 @@ class TestClassifyRevisionShape:
             f"_classify_revision_shape({revision!r}) returned {result!r}, expected {expected_shape!r}"
         )
 
-
-# ---------------------------------------------------------------------------
-# Branch-pinned: no drift (locked SHA == HEAD)  (AC-FUNC-001, AC-FUNC-003)
-# ---------------------------------------------------------------------------
 
 _FAKE_HEAD_SHA_FULL = "abcdef1234567890abcdef1234567890abcdef12"
 _FAKE_HEAD_SHA_12 = "abcdef123456"
@@ -80,7 +65,7 @@ class TestBranchPinnedNoDrift:
     def test_no_drift_upgrade_type(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -101,7 +86,7 @@ class TestBranchPinnedNoDrift:
     def test_no_drift_latest_columns_show_truncated_head(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -125,7 +110,7 @@ class TestBranchPinnedNoDrift:
     def test_no_drift_current_column(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -139,13 +124,7 @@ class TestBranchPinnedNoDrift:
                 lock_ref=_FAKE_HEAD_SHA_FULL,
             )
 
-        # current column uses the first 12 chars of the locked SHA
         assert row.current == _FAKE_HEAD_SHA_12
-
-
-# ---------------------------------------------------------------------------
-# Branch-pinned: drift (locked SHA != HEAD)  (AC-FUNC-002)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -155,7 +134,7 @@ class TestBranchPinnedDrift:
     def test_drift_upgrade_type(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -176,7 +155,7 @@ class TestBranchPinnedDrift:
     def test_drift_current_shows_locked_truncated_sha(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -195,7 +174,7 @@ class TestBranchPinnedDrift:
     def test_drift_latest_columns_show_head_truncated(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -224,7 +203,7 @@ class TestBranchPinnedDriftBranchNames:
     def test_branch_drift_parametrized(self, branch_name: str) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": branch_name,
+            "ref": branch_name,
             "path": "./src",
         }
         with patch(
@@ -243,11 +222,6 @@ class TestBranchPinnedDriftBranchNames:
         assert row.latest_available == _FAKE_HEAD_SHA_12
 
 
-# ---------------------------------------------------------------------------
-# Branch-pinned: no lockfile (live-resolve HEAD)  (AC-FUNC-003)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBranchPinnedNoLockfile:
     """Branch-pinned source with no lockfile: current is live-resolved HEAD."""
@@ -255,7 +229,7 @@ class TestBranchPinnedNoLockfile:
     def test_no_lockfile_current_equals_head_truncated(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -277,7 +251,7 @@ class TestBranchPinnedNoLockfile:
         """Without lockfile, current == head, so upgrade-type=none."""
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -296,7 +270,7 @@ class TestBranchPinnedNoLockfile:
     def test_no_lockfile_latest_columns_show_head(self) -> None:
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -314,11 +288,6 @@ class TestBranchPinnedNoLockfile:
         assert row.latest_available == _FAKE_HEAD_SHA_12
 
 
-# ---------------------------------------------------------------------------
-# SHA-pinned source  (AC-FUNC-004)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestShaPinned:
     """SHA-pinned source: all three columns show same truncated SHA, upgrade-type=none."""
@@ -328,7 +297,7 @@ class TestShaPinned:
         sha_12 = "a" * 12
         source = {
             "url": "file:///some/repo",
-            "revision": sha_40,
+            "ref": sha_40,
             "path": "./src",
         }
         row = _build_row(
@@ -348,7 +317,7 @@ class TestShaPinned:
         sha_12 = "b" * 12
         source = {
             "url": "file:///some/repo",
-            "revision": sha_64,
+            "ref": sha_64,
             "path": "./src",
         }
         row = _build_row(
@@ -369,7 +338,7 @@ class TestShaPinned:
         sha_12 = "c" * 12
         source = {
             "url": "file:///some/repo",
-            "revision": sha_40,
+            "ref": sha_40,
             "path": "./src",
         }
         row = _build_row(
@@ -390,10 +359,10 @@ class TestShaPinned:
         sha_12 = "d" * 12
         source = {
             "url": "file:///some/repo",
-            "revision": sha_40,
+            "ref": sha_40,
             "path": "./src",
         }
-        # Even with a different lock_ref, upgrade-type should be none for SHA-pinned
+
         row = _build_row(
             name="FOO",
             source=source,
@@ -404,11 +373,6 @@ class TestShaPinned:
         assert row.upgrade_type == "none"
         assert row.latest_matching_spec == sha_12
         assert row.latest_available == sha_12
-
-
-# ---------------------------------------------------------------------------
-# SHA truncation must be exactly 12 leading hex chars
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -426,7 +390,7 @@ class TestShaTruncation:
         """Branch HEAD SHA is truncated to exactly 12 leading hex chars."""
         source = {
             "url": "file:///some/repo",
-            "revision": "main",
+            "ref": "main",
             "path": "./src",
         }
         with patch(
@@ -442,11 +406,6 @@ class TestShaTruncation:
 
         assert row.latest_matching_spec == expected_12
         assert len(row.latest_matching_spec) == 12
-
-
-# ---------------------------------------------------------------------------
-# _resolve_lock_sha unit tests (AC-FINAL-014 coverage)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -475,22 +434,16 @@ class TestResolveLockSha:
         sha = "a" * 40
         lock_file = tmp_path / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 5\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "file:///fake@HEAD"\n'
-            'url = "file:///fake"\n'
-            'revision_spec = "HEAD"\n'
-            'resolved_ref = "HEAD"\n'
-            f'resolved_sha = "{sha}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "FOO"\n'
             'name = "FOO"\n'
             'url = "file:///some/repo"\n'
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{sha}"\n'
             'path = "./foo"\n'
@@ -505,33 +458,22 @@ class TestResolveLockSha:
         sha = "b" * 40
         lock_file = tmp_path / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 5\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "file:///fake@HEAD"\n'
-            'url = "file:///fake"\n'
-            'revision_spec = "HEAD"\n'
-            'resolved_ref = "HEAD"\n'
-            f'resolved_sha = "{sha}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "BAR"\n'
             'name = "BAR"\n'
             'url = "file:///some/repo"\n'
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{sha}"\n'
             'path = "./bar"\n'
         )
         result = _resolve_lock_sha("FOO", lock_file)
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# run() dispatch: branch-pinned and SHA-pinned sources
-# ---------------------------------------------------------------------------
 
 
 def _make_args(
@@ -565,8 +507,10 @@ class TestRunDispatchBranchPinned:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=main\n"
+            "KANON_SOURCE_FOO_REF=main\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -612,8 +556,10 @@ class TestRunDispatchShaPinned:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            f"KANON_SOURCE_FOO_REVISION={sha_40}\n"
+            f"KANON_SOURCE_FOO_REF={sha_40}\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -634,11 +580,6 @@ class TestRunDispatchShaPinned:
         captured = capsys.readouterr()
         assert sha_12 in captured.out
         assert "none" in captured.out
-
-
-# ---------------------------------------------------------------------------
-# _list_branch_head error paths (AC-FINAL-014 coverage for version.py helpers)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -676,7 +617,7 @@ class TestListBranchHeadErrors:
         """Empty git ls-remote output (branch not found) raises ValueError."""
         mock_result = MagicMock()
         mock_result.returncode = 0
-        mock_result.stdout = ""  # No matching refs
+        mock_result.stdout = ""
 
         with patch("subprocess.run", return_value=mock_result):
             with pytest.raises(ValueError, match="not found on remote"):
@@ -712,7 +653,7 @@ class TestListBranchHeadErrors:
         """Empty lines in git ls-remote output are skipped; ValueError raised if no match."""
         mock_result = MagicMock()
         mock_result.returncode = 0
-        # Output with an empty line in the middle (between two non-empty lines)
+
         mock_result.stdout = "abc123\trefs/heads/other\n\ndef456\trefs/heads/another\n"
 
         with patch("subprocess.run", return_value=mock_result):
@@ -732,12 +673,6 @@ class TestListBranchHeadErrors:
         assert sha == expected_sha
 
 
-# ---------------------------------------------------------------------------
-# run() error paths: RuntimeError and ValueError from _list_branch_head
-# cause sys.exit(1)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunBranchPinnedErrorPaths:
     """run() converts _list_branch_head RuntimeError/ValueError to sys.exit(1)."""
@@ -752,8 +687,10 @@ class TestRunBranchPinnedErrorPaths:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=main\n"
+            "KANON_SOURCE_FOO_REF=main\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
 
         args = _make_args(
@@ -782,8 +719,10 @@ class TestRunBranchPinnedErrorPaths:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=main\n"
+            "KANON_SOURCE_FOO_REF=main\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
 
         args = _make_args(

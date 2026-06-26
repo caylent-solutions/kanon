@@ -35,10 +35,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -79,11 +75,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
     m.Load()
     return m
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests -- one per documented attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -345,11 +336,6 @@ class TestExtendProjectValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Invalid-value tests -- one or more per attribute that can fail
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestExtendProjectInvalidValues:
     """AC-TEST-002: Every attribute with a constrained value has negative tests.
@@ -502,11 +488,6 @@ class TestExtendProjectInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Required attribute omission raises naming the attribute
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestExtendProjectRequiredAttributeOmission:
     """AC-TEST-003: Omitting a required attribute raises ManifestParseError naming it.
@@ -568,11 +549,6 @@ class TestExtendProjectRequiredAttributeOmission:
         assert "name" in error_text, (
             f"AC-TEST-003: expected error message to name the empty 'name' attribute but got: {error_text!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Attribute validation at parse time
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -669,11 +645,6 @@ class TestExtendProjectParseTimeValidation:
             f"AC-FUNC-001: expected upstream='refs/heads/upstream' after all-attributes "
             f"extend-project but got: {core.upstream!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

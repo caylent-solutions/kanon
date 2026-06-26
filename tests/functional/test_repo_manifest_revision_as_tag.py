@@ -24,9 +24,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no literals in assertions.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Manifest Revision-As-Tag Test User"
 _GIT_USER_EMAIL = "repo-manifest-rat@example.com"
@@ -46,11 +43,6 @@ _TEST_TAG_REFS = f"{_REFS_TAGS_PREFIX}{_TEST_TAG_NAME}"
 
 _XML_DECLARATION_FRAGMENT = "<?xml"
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
-
-
-# ---------------------------------------------------------------------------
-# Setup helper
-# ---------------------------------------------------------------------------
 
 
 def _setup_tagged_synced_repo(
@@ -78,26 +70,17 @@ def _setup_tagged_synced_repo(
         manifest_filename=_MANIFEST_FILENAME,
     )
 
-    # Locate the bare content repo created by _create_bare_content_repo.
     bare_content_dir = tmp_path / "repos" / f"{_PROJECT_NAME}.git"
 
-    # Create a tag in the bare content repo pointing at its HEAD commit.
     _git(
         ["tag", "-a", _TEST_TAG_NAME, "-m", f"Tag {_TEST_TAG_NAME}", "HEAD"],
         cwd=bare_content_dir,
     )
 
-    # Fetch the tag into the project's working tree checkout so
-    # 'git describe --exact-match HEAD' resolves the tag locally.
     project_worktree = checkout_dir / _PROJECT_PATH
     _git(["fetch", "--tags"], cwd=project_worktree)
 
     return checkout_dir, repo_dir
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-TEST-002: Real synced workspace tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

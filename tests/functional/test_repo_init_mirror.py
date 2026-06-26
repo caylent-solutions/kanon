@@ -20,9 +20,6 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no hardcoded literals inside test bodies.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Init Mirror Test User"
 _GIT_USER_EMAIL = "repo-init-mirror@example.com"
@@ -33,14 +30,9 @@ _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "mirror-test-project"
 _GIT_BRANCH = "main"
 
-# Traceback marker for asserting no crash in stderr.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 _ATTRIBUTE_ERROR_MARKER = "AttributeError"
-
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -104,16 +96,11 @@ def _setup_mirror_repos(
     bare_content = _create_bare_content_repo(repos_dir)
     fetch_base = f"file://{bare_content.parent}"
     manifest_bare = _create_manifest_repo(repos_dir, fetch_base)
-    # Deliberately use the bare directory path (no /.git suffix).
+
     manifest_url = f"file://{manifest_bare}"
 
     repo_dir = mirror_dir / ".repo"
     return mirror_dir, repo_dir, manifest_url
-
-
-# ---------------------------------------------------------------------------
-# Functional tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

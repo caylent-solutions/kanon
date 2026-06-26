@@ -11,7 +11,7 @@ Valid --check values: all, entry-name-uniqueness, metadata, remote-url, source-n
 Output format 'text' (default): one finding per line with ERROR:, WARN:, or INFO: prefix.
 Output format 'json': a single JSON object {"findings": [...]} written to stdout.
 
-Cache layout: ${KANON_CACHE_DIR}/catalog-audit/<sha256>/ -- remote sources are cloned once and reused within KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS.
+Cache layout: <KANON_HOME>/cache/catalog-audit/<sha256>/ -- remote sources are cloned once and reused within KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS.
 
 positional arguments:
   <dir-or-source>       Path to a local manifest repo directory (must contain

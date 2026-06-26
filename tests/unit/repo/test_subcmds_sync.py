@@ -1,23 +1,13 @@
-# Copyright (C) 2022 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """Unittests for the subcmds/sync.py module."""
 
 import os
+import pathlib
 import shutil
+import subprocess
 import tempfile
 import time
 import unittest
+import uuid
 from unittest import mock
 
 import pytest
@@ -27,6 +17,10 @@ from kanon_cli.repo.error import GitError
 from kanon_cli.repo.error import RepoExitError
 from kanon_cli.repo.project import SyncNetworkHalfResult
 from kanon_cli.repo.subcmds import sync
+from kanon_cli.repo.wrapper import Wrapper
+
+_GNUPG_TMP_ROOT_ENV = "KANON_TEST_TMP_ROOT"
+_GNUPG_TMP_ROOT_DEFAULT = "/var/tmp/kanon-test-runs"
 
 
 @pytest.mark.parametrize(
@@ -53,18 +47,14 @@ def test_get_current_branch_only(use_superproject, cli_args, result):
         assert cmd._GetCurrentBranchOnly(opts, cmd.manifest) == result
 
 
-# Used to patch os.cpu_count() for reliable results.
 OS_CPU_COUNT = 24
 
 
 @pytest.mark.parametrize(
     "argv, jobs_manifest, jobs, jobs_net, jobs_check",
     [
-        # No user or manifest settings.
         ([], None, OS_CPU_COUNT, 1, command.DEFAULT_LOCAL_JOBS),
-        # No user settings, so manifest settings control.
         ([], 3, 3, 3, 3),
-        # User settings, but no manifest.
         (["--jobs=4"], None, 4, 4, 4),
         (["--jobs=4", "--jobs-network=5"], None, 4, 5, 4),
         (["--jobs=4", "--jobs-checkout=6"], None, 4, 4, 6),
@@ -78,7 +68,6 @@ OS_CPU_COUNT = 24
         ),
         (["--jobs-checkout=6"], None, OS_CPU_COUNT, 1, 6),
         (["--jobs-network=5", "--jobs-checkout=6"], None, OS_CPU_COUNT, 5, 6),
-        # User settings with manifest settings.
         (["--jobs=4"], 3, 4, 4, 4),
         (["--jobs=4", "--jobs-network=5"], 3, 4, 5, 4),
         (["--jobs=4", "--jobs-checkout=6"], 3, 4, 4, 6),
@@ -86,7 +75,6 @@ OS_CPU_COUNT = 24
         (["--jobs-network=5"], 3, 3, 5, 3),
         (["--jobs-checkout=6"], 3, 3, 3, 6),
         (["--jobs-network=5", "--jobs-checkout=6"], 3, 3, 5, 6),
-        # Settings that exceed rlimits get capped.
         (["--jobs=1000000"], None, 83, 83, 83),
         ([], 1000000, 83, 83, 83),
     ],
@@ -156,7 +144,6 @@ class LocalSyncState(unittest.TestCase):
             """
             )
 
-        # Initialize state to read from the new file.
         self.state = self._new_state()
         projA = mock.MagicMock(relpath="projA")
         projB = mock.MagicMock(relpath="projB")
@@ -195,7 +182,6 @@ class LocalSyncState(unittest.TestCase):
             """
             )
 
-        # Initialize state to read from the new file.
         self.state = self._new_state()
         projB = mock.MagicMock(relpath="projB")
         self.assertEqual(self.state.IsPartiallySynced(), False)
@@ -510,11 +496,10 @@ class SyncUpdateRepoProject(unittest.TestCase):
         """Common setup."""
         self.repodir = tempfile.mkdtemp(".repo")
         self.manifest = manifest = mock.MagicMock(repodir=self.repodir)
-        # Create a repoProject with a mock Sync_NetworkHalf.
+
         repoProject = mock.MagicMock(name="repo")
         repoProject.Sync_NetworkHalf = mock.Mock(return_value=SyncNetworkHalfResult(True, None))
-        # Set worktree to the real temp dir so the pipx-install guard
-        # (os.path.isdir check) does not short-circuit these tests.
+
         repoProject.worktree = self.repodir
         manifest.repoProject = repoProject
         manifest.IsArchive = False
@@ -626,20 +611,17 @@ class InterleavedSyncTest(unittest.TestCase):
         self.cmd = sync.Sync(manifest=self.manifest, outer_client=self.outer_client)
         self.cmd.outer_manifest = self.manifest
 
-        # Mock projects.
         self.projA = FakeProject("projA", objdir="objA")
         self.projB = FakeProject("projB", objdir="objB")
         self.projA_sub = FakeProject("projA/sub", name="projA_sub", objdir="objA_sub")
         self.projC = FakeProject("projC", objdir="objC")
 
-        # Mock methods that are not part of the core interleaved sync logic.
         mock.patch.object(self.cmd, "_UpdateAllManifestProjects").start()
         mock.patch.object(self.cmd, "_UpdateProjectsRevisionId").start()
         mock.patch.object(self.cmd, "_ValidateOptionsWithManifest").start()
         mock.patch.object(sync, "_PostRepoUpgrade").start()
         mock.patch.object(sync, "_PostRepoFetch").start()
 
-        # Mock parallel context for worker tests.
         self.parallel_context_patcher = mock.patch("kanon_cli.repo.subcmds.sync.Sync.get_parallel_context")
         self.mock_get_parallel_context = self.parallel_context_patcher.start()
         self.sync_dict = {}
@@ -649,7 +631,6 @@ class InterleavedSyncTest(unittest.TestCase):
         }
         self.mock_get_parallel_context.return_value = self.mock_context
 
-        # Mock _GetCurrentBranchOnly for worker tests.
         mock.patch.object(sync.Sync, "_GetCurrentBranchOnly").start()
 
     def tearDown(self):
@@ -662,15 +643,9 @@ class InterleavedSyncTest(unittest.TestCase):
         opt, args = self.cmd.OptionParser.parse_args(["--interleaved", "--fail-fast", "-j2"])
         opt.quiet = True
 
-        # With projA/sub, _SafeCheckoutOrder creates two batches:
-        # 1. [projA, projB]
-        # 2. [projA/sub]
-        # We want to fail on the first batch and ensure the second isn't run.
         all_projects = [self.projA, self.projB, self.projA_sub]
         mock.patch.object(self.cmd, "GetProjects", return_value=all_projects).start()
 
-        # Mock ExecuteInParallel to simulate a failed run on the first batch of
-        # projects.
         execute_mock = mock.patch.object(self.cmd, "ExecuteInParallel", return_value=False).start()
 
         with self.assertRaises(sync.SyncFailFastError):
@@ -691,7 +666,6 @@ class InterleavedSyncTest(unittest.TestCase):
         opt, args = self.cmd.OptionParser.parse_args(["--interleaved", "-j4"])
         opt.quiet = True
 
-        # Setup projects with a shared objdir.
         self.projA.objdir = "common_objdir"
         self.projC.objdir = "common_objdir"
 
@@ -699,8 +673,6 @@ class InterleavedSyncTest(unittest.TestCase):
         mock.patch.object(self.cmd, "GetProjects", return_value=all_projects).start()
 
         def execute_side_effect(jobs, target, work_items, **kwargs):
-            # The callback is a partial object. The first arg is the set we
-            # need to update to avoid the stall detection.
             synced_relpaths_set = kwargs["callback"].args[0]
             projects_in_pass = self.cmd.get_parallel_context()["projects"]
             for item in work_items:
@@ -732,7 +704,7 @@ class InterleavedSyncTest(unittest.TestCase):
         if args is None:
             args = ["--interleaved"]
         opt, _ = self.cmd.OptionParser.parse_args(args)
-        # Set defaults for options used by the worker.
+
         opt.quiet = True
         opt.verbose = False
         opt.force_sync = False
@@ -906,12 +878,51 @@ class PreciousObjectsSharedStoreVerification(unittest.TestCase):
         )
 
 
-# NEW COMPREHENSIVE TESTS BELOW
-
-
 @pytest.mark.unit
 class TestPostRepoUpgrade:
     """Tests for _PostRepoUpgrade function."""
+
+    @pytest.fixture(autouse=True)
+    def short_gnupg_homedir(self):
+        """Redirect the vendored repo tool's gnupg homedir to a short per-test path.
+
+        _PostRepoUpgrade calls the real SetupGnuPG (the dynamically loaded repo
+        wrapper module), which runs gpg with the homedir built from HOME. Under
+        pytest-xdist HOME is a deeply nested per-worker temp dir, so the
+        gpg-agent AF_UNIX socket path exceeds the kernel's sun_path limit and
+        gpg-agent fails to start, making gpg exit non-zero even though the key
+        import itself succeeds. Point the wrapper module's homedir globals at a
+        short path under KANON_TEST_TMP_ROOT so the agent socket stays well
+        within the limit and the agent starts reliably under contention.
+        """
+        wrapper = Wrapper()
+        tmp_root = pathlib.Path(os.environ.get(_GNUPG_TMP_ROOT_ENV, _GNUPG_TMP_ROOT_DEFAULT))
+        worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+        base = tmp_root / f"g-{worker}-{uuid.uuid4().hex[:8]}"
+        base.mkdir(parents=True, exist_ok=True)
+        home_dot_repo = base / ".repoconfig"
+        gpg_dir = home_dot_repo / "gnupg"
+
+        saved = {
+            "repo_config_dir": wrapper.repo_config_dir,
+            "home_dot_repo": wrapper.home_dot_repo,
+            "gpg_dir": wrapper.gpg_dir,
+        }
+        wrapper.repo_config_dir = str(base)
+        wrapper.home_dot_repo = str(home_dot_repo)
+        wrapper.gpg_dir = str(gpg_dir)
+        try:
+            yield
+        finally:
+            wrapper.repo_config_dir = saved["repo_config_dir"]
+            wrapper.home_dot_repo = saved["home_dot_repo"]
+            wrapper.gpg_dir = saved["gpg_dir"]
+            subprocess.run(
+                ["gpgconf", "--homedir", str(gpg_dir), "--kill", "all"],
+                capture_output=True,
+                check=False,
+            )
+            shutil.rmtree(base, ignore_errors=True)
 
     def test_creates_symlink_if_not_exists(self, tmp_path):
         """Test that internal-fs-layout.md symlink is created."""
@@ -929,7 +940,7 @@ class TestPostRepoUpgrade:
             sync._PostRepoUpgrade(manifest, quiet=True)
 
         link_path = repodir / "internal-fs-layout.md"
-        assert link_path.exists() or True  # May fail depending on platform
+        assert link_path.exists() or True
 
     def test_calls_setup_gnupg_when_needed(self, tmp_path):
         """Test that SetupGnuPG is called when needed."""
@@ -1053,7 +1064,6 @@ class TestFetchTimes:
         manifest = mock.MagicMock()
         manifest.repodir = str(tmp_path)
 
-        # Create a fetch times file
         import json
 
         fetch_times_path = tmp_path / ".repo_fetchtimes.json"
@@ -1106,7 +1116,6 @@ class TestFetchTimes:
         project = mock.MagicMock()
         project.name = "test"
 
-        # Need to call Get first to initialize _saved
         ft.Get(project)
         ft.Set(project, 100)
         ft.Save()
@@ -1125,8 +1134,7 @@ class TestFetchTimes:
         ft = sync._FetchTimes(manifest)
         project = mock.MagicMock(name="test")
 
-        # Should handle corrupted file gracefully
-        ft.Get(project)  # This will load and reset
+        ft.Get(project)
         assert ft._saved == {}
 
     def test_save_without_load(self, tmp_path):
@@ -1137,7 +1145,6 @@ class TestFetchTimes:
         ft = sync._FetchTimes(manifest)
         ft.Save()
 
-        # Should not create file if nothing was loaded
         fetch_times_path = tmp_path / ".repo_fetchtimes.json"
         assert not fetch_times_path.exists()
 
@@ -1226,7 +1233,6 @@ class TestValidateOptionsWithManifest:
             with mock.patch("os.cpu_count", return_value=8):
                 cmd._ValidateOptionsWithManifest(opt, mp)
 
-                # Should be capped
                 assert opt.jobs < 1000
 
 
@@ -1264,11 +1270,9 @@ class TestUpdateProjectList:
         manifest.subdir = str(tmp_path / ".repo")
         (tmp_path / ".repo").mkdir()
 
-        # Create old project list with a project that will be removed
         project_list = tmp_path / ".repo" / "project.list"
         project_list.write_text("old_project\nkept_project\n")
 
-        # Create the git directory for old_project
         old_project_dir = tmp_path / "old_project"
         old_project_dir.mkdir()
         (old_project_dir / ".git").mkdir()
@@ -1320,11 +1324,9 @@ class TestUpdateCopyLinkfileList:
         manifest = mock.MagicMock()
         manifest.subdir = str(tmp_path)
 
-        # Create old copy-link-files.json
         copylinkfile_path = tmp_path / "copy-link-files.json"
         copylinkfile_path.write_text('{"linkfile": ["old_link"], "copyfile": ["old_copy"]}')
 
-        # Create old files to be removed
         (tmp_path / "old_link").write_text("old")
         (tmp_path / "old_copy").write_text("old")
 
@@ -1604,11 +1606,10 @@ class TestPersistentTransport:
                 mock_response.read.return_value = b"<response/>"
                 mock_opener.return_value.open.return_value = mock_response
 
-                # This will test basic flow without full execution
                 try:
                     transport.request("example.com", "/handler", b"<request/>", verbose=False)
                 except Exception:
-                    pass  # Expected to fail in test environment
+                    pass
 
 
 @pytest.mark.unit
@@ -1694,7 +1695,6 @@ class TestGetPreciousObjectsStateAdditional:
         opt = mock.Mock(spec_set=["this_manifest_only"])
         opt.this_manifest_only = True
 
-        # Should still return True for shared projects
         result = cmd._GetPreciousObjectsState(project, opt)
         assert result is True
 
@@ -1708,7 +1708,6 @@ class TestOptions:
         cmd = sync.Sync()
         parser = cmd.OptionParser
 
-        # Test that various options are available
         opts, _ = parser.parse_args(["--jobs=4"])
         assert opts.jobs == 4
 
@@ -1794,6 +1793,5 @@ class TestLocalSyncStateEdgeCases:
         state._state = {}
         state.Save()
 
-        # Should not create file for empty state
         state_file = repodir / ".repo_localsyncstate.json"
         assert not state_file.exists()

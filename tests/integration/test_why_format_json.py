@@ -20,7 +20,7 @@ import textwrap
 import pytest
 
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     IncludeEntry,
     Lockfile,
     ProjectEntry,
@@ -30,27 +30,17 @@ from kanon_cli.core.lockfile import (
 from kanon_cli.core.url import canonicalize_repo_url
 
 
-# ---------------------------------------------------------------------------
-# Fixture constants
-# ---------------------------------------------------------------------------
-
 _SOURCE_NAME = "FOO"
 _PROJECT_NAME = "baz"
 _PROJECT_URL = "https://github.com/org/baz"
 _INCLUDE_NAME = "bar"
 _INCLUDE_PATH = "repo-specs/bar.xml"
 
-# Fixed SHAs used throughout the fixture -- 40 hex chars each
+
 _SOURCE_SHA = "a" * 40
 _INCLUDE_SHA = "c" * 40
 _PROJECT_SHA = "b" * 40
-_CATALOG_SHA = "f" * 40
 _KANON_HASH = "sha256:" + "a" * 64
-
-
-# ---------------------------------------------------------------------------
-# Override conftest autouse fixtures (not needed for this test)
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)
@@ -63,11 +53,6 @@ def _mock_resolve_ref_to_sha():
 def _mock_check_sha_reachable():
     """Override: this test does not install anything -- no git calls needed."""
     yield
-
-
-# ---------------------------------------------------------------------------
-# Fixture: .kanon and .kanon.lock in a tmp directory
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture()
@@ -86,33 +71,26 @@ def why_json_fixture(tmp_path: pathlib.Path):
     """
     kanon_file = tmp_path / ".kanon"
     kanon_content = textwrap.dedent(f"""\
-        GITBASE=https://github.com
-        CLAUDE_MARKETPLACES_DIR=/tmp/mkts
-        KANON_MARKETPLACE_INSTALL=false
         KANON_SOURCE_{_SOURCE_NAME}_URL=https://github.com/org/catalog
-        KANON_SOURCE_{_SOURCE_NAME}_REVISION=main
+        KANON_SOURCE_{_SOURCE_NAME}_REF=main
         KANON_SOURCE_{_SOURCE_NAME}_PATH=./foo
+        KANON_SOURCE_{_SOURCE_NAME}_NAME={_SOURCE_NAME}
+        KANON_SOURCE_{_SOURCE_NAME}_GITBASE=https://example.com
     """)
     kanon_file.write_text(kanon_content)
     kanon_file.chmod(0o644)
 
     lockfile = Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash=_KANON_HASH,
-        catalog=CatalogBlock(
-            source="https://github.com/org/catalog@main",
-            url="https://github.com/org/catalog",
-            revision_spec="main",
-            resolved_ref="refs/heads/main",
-            resolved_sha=_CATALOG_SHA,
-        ),
         sources=[
             SourceEntry(
+                alias=_SOURCE_NAME,
                 name=_SOURCE_NAME,
                 url="https://github.com/org/catalog",
-                revision_spec="main",
+                ref_spec="main",
                 resolved_ref="refs/heads/main",
                 resolved_sha=_SOURCE_SHA,
                 path="./foo",
@@ -130,7 +108,7 @@ def why_json_fixture(tmp_path: pathlib.Path):
                         name=_PROJECT_NAME,
                         url=_PROJECT_URL,
                         canonical_url=canonicalize_repo_url(_PROJECT_URL),
-                        revision_spec="main",
+                        ref_spec="main",
                         resolved_ref="refs/heads/main",
                         resolved_sha=_PROJECT_SHA,
                     )
@@ -151,11 +129,6 @@ def why_json_fixture(tmp_path: pathlib.Path):
         "include_path": _INCLUDE_PATH,
         "source_name": _SOURCE_NAME,
     }
-
-
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
 
 
 def _run_why_json(
@@ -182,11 +155,6 @@ def _run_why_json(
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
-# ---------------------------------------------------------------------------
-# End-to-end integration tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestWhyFormatJsonIntegration:
     """End-to-end integration tests for 'kanon why --format json' via subprocess."""
@@ -194,14 +162,19 @@ class TestWhyFormatJsonIntegration:
     def test_json_output_is_well_formed(self, why_json_fixture: dict) -> None:
         """Output from --format json is parseable by json.loads and is a dict (AC-FUNC-001).
 
-        The new JSON shape is {"matched": {"category": ..., "token": ...}, "chains": [...]}.
+        The JSON shape is
+        {"matched": {"category": ..., "token": ...}, "aliases": [...], "chains": [...]}.
         """
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0, f"Expected exit 0, got {result.returncode}. stderr: {result.stderr}"
         parsed = json.loads(result.stdout)
         assert isinstance(parsed, dict), f"Expected dict from json.loads, got {type(parsed).__name__}: {parsed!r}"
         assert "matched" in parsed, f"Expected 'matched' key in output, got: {list(parsed.keys())}"
+        assert "aliases" in parsed, f"Expected 'aliases' key in output, got: {list(parsed.keys())}"
         assert "chains" in parsed, f"Expected 'chains' key in output, got: {list(parsed.keys())}"
+        assert isinstance(parsed["aliases"], list), (
+            f"Expected 'aliases' to be a list, got {type(parsed['aliases']).__name__}: {parsed['aliases']!r}"
+        )
 
     def test_json_array_length_one(self, why_json_fixture: dict) -> None:
         """JSON output chains array has one chain for a single-chain tree (AC-FUNC-001)."""
@@ -342,7 +315,7 @@ class TestWhyFormatJsonIntegration:
         """No ERROR message emitted to stderr on a successful --format json invocation."""
         result = _run_why_json(why_json_fixture, why_json_fixture["project_url"])
         assert result.returncode == 0
-        # Warnings (e.g., about recommended character set) are acceptable; hard errors are not
+
         assert "ERROR:" not in result.stderr
 
     def test_not_found_error_exits_nonzero_with_json_format(self, why_json_fixture: dict) -> None:
@@ -370,32 +343,25 @@ class TestWhyFormatJsonIntegration:
 
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "GITBASE=https://github.com\n"
-            "CLAUDE_MARKETPLACES_DIR=/tmp/mkts\n"
-            "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=https://github.com/org/catalog\n"
-            "KANON_SOURCE_FOO_REVISION=main\n"
+            "KANON_SOURCE_FOO_REF=main\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
         lockfile = Lockfile(
-            schema_version=1,
+            schema_version=CURRENT_SCHEMA_VERSION,
             generated_at="2024-01-01T00:00:00Z",
             generator="kanon-test",
             kanon_hash=_KANON_HASH,
-            catalog=CatalogBlock(
-                source="https://github.com/org/catalog@main",
-                url="https://github.com/org/catalog",
-                revision_spec="main",
-                resolved_ref="refs/heads/main",
-                resolved_sha=_CATALOG_SHA,
-            ),
             sources=[
                 SourceEntry(
+                    alias="FOO",
                     name="FOO",
                     url="https://github.com/org/catalog",
-                    revision_spec="main",
+                    ref_spec="main",
                     resolved_ref="refs/heads/main",
                     resolved_sha=_SOURCE_SHA,
                     path="./foo",
@@ -405,7 +371,7 @@ class TestWhyFormatJsonIntegration:
                             name="baz",
                             url=raw_url,
                             canonical_url=expected_canonical,
-                            revision_spec="main",
+                            ref_spec="main",
                             resolved_ref="refs/heads/main",
                             resolved_sha=_PROJECT_SHA,
                         )
@@ -431,11 +397,6 @@ class TestWhyFormatJsonIntegration:
             "This is a regression: _chain_to_node_dicts must use node.canonical_url for project nodes."
         )
         assert project_node["url"] != raw_url, f"url field must not be the raw SCP form {raw_url!r}"
-
-
-# ---------------------------------------------------------------------------
-# JSON parity test for url match on live-resolve path (no lockfile)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

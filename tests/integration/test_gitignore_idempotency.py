@@ -81,13 +81,10 @@ class TestGitignoreIdempotency:
     def test_malformed_gitignore_is_handled_gracefully(self, tmp_path: pathlib.Path) -> None:
         """AC-TEST-003: a .gitignore with no trailing newline and binary-like content is handled."""
         gitignore = tmp_path / ".gitignore"
-        # Malformed content: non-UTF-8 bytes are not expected by update_gitignore,
-        # but a file with unusual whitespace, blank lines, and mixed line endings
-        # is a realistic malformed case that should be handled without error.
+
         malformed_content = "# Project ignores\r\n\r\nbuild/\r\ndist/\n\t\nnode_modules/"
         gitignore.write_text(malformed_content, encoding="utf-8")
 
-        # Must not raise any exception
         update_gitignore(tmp_path)
 
         content = gitignore.read_text(encoding="utf-8")
@@ -109,7 +106,7 @@ class TestGitignoreIdempotency:
     def test_gitignore_without_trailing_newline_appended_cleanly(self, tmp_path: pathlib.Path) -> None:
         """AC-TEST-004: entries are appended on their own line when .gitignore has no trailing newline."""
         gitignore = tmp_path / ".gitignore"
-        # No trailing newline
+
         gitignore.write_text("build/")
 
         update_gitignore(tmp_path)
@@ -130,7 +127,7 @@ class TestGitignoreIdempotency:
         update_gitignore(tmp_path)
 
         content = gitignore.read_text()
-        # "build/.packages/" would indicate concatenation -- it must not occur
+
         assert "build/.packages/" not in content, (
             "Kanon entries must not be concatenated with the last line of a file missing trailing newline"
         )

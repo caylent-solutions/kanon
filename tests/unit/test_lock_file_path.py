@@ -20,42 +20,36 @@ from kanon_cli.utils.lock_file_path import derive_lock_file_path
 @pytest.mark.parametrize(
     "kanon_file, cli_lock_file, env_lock_file, expected",
     [
-        # AC-FUNC-001: default .kanon, no CLI, no env -- derivation produces .kanon.lock
         (
             Path("./.kanon"),
             None,
             None,
             Path("./.kanon.lock"),
         ),
-        # AC-FUNC-002: non-default alt.kanon, no CLI, no env -- derivation produces alt.kanon.lock
         (
             Path("./alt.kanon"),
             None,
             None,
             Path("./alt.kanon.lock"),
         ),
-        # AC-FUNC-003: CLI wins -- returns the explicit CLI path
         (
             Path("./.kanon"),
             Path("./explicit.lock"),
             None,
             Path("./explicit.lock"),
         ),
-        # AC-FUNC-004: env wins over derivation when CLI absent
         (
             Path("./.kanon"),
             None,
             "./env.lock",
             Path("./env.lock"),
         ),
-        # AC-FUNC-005: CLI wins over both env and derivation
         (
             Path("./.kanon"),
             Path("./explicit.lock"),
             "./env.lock",
             Path("./explicit.lock"),
         ),
-        # AC-FUNC-006: empty-string env-var is treated as unset -- falls through to derivation
         (
             Path("./.kanon"),
             None,

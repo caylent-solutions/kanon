@@ -1,17 +1,3 @@
-# Copyright (C) 2026 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Coverage-boost unit tests for manifest_xml.py targeting uncovered lines."""
 
 import io
@@ -36,11 +22,6 @@ from kanon_cli.repo.manifest_xml import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_manifest(tmp_path, xml_content):
     """Create a temporary manifest directory + XmlManifest instance."""
     repodir = tmp_path / ".repo"
@@ -59,14 +40,9 @@ def _make_manifest(tmp_path, xml_content):
 def _make_and_load(tmp_path, xml_content):
     """Create manifest and trigger loading (which parses the XML)."""
     m = _make_manifest(tmp_path, xml_content)
-    # Accessing .projects triggers _Load()
+
     _ = m.projects
     return m
-
-
-# ===========================================================================
-# Lines 222-225  _XmlRemote._resolveFetchUrl gopher:// branch
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -78,11 +54,11 @@ class TestXmlRemoteResolveFetchUrlGopher:
         remote = _XmlRemote(
             name="origin",
             fetch="../relative",
-            manifestUrl="/some/local/path",  # no colon-slash scheme
+            manifestUrl="/some/local/path",
         )
-        # The resolved URL should not start with gopher://
+
         assert not remote.resolvedFetchUrl.startswith("gopher://")
-        # It should have resolved the relative path
+
         assert "relative" in remote.resolvedFetchUrl
 
     def test_resolve_fetch_url_with_scheme(self):
@@ -94,11 +70,6 @@ class TestXmlRemoteResolveFetchUrlGopher:
         )
         assert "other" in remote.resolvedFetchUrl
         assert "gopher" not in remote.resolvedFetchUrl
-
-
-# ===========================================================================
-# Lines 279-313  _XmlSubmanifest.__init__
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -162,11 +133,6 @@ class TestXmlSubmanifestInit:
         assert sub.project == "some/project"
 
 
-# ===========================================================================
-# Lines 315-331  _XmlSubmanifest.__eq__, __ne__
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestXmlSubmanifestEquality:
     """Cover __eq__ and __ne__ on _XmlSubmanifest."""
@@ -197,11 +163,6 @@ class TestXmlSubmanifestEquality:
         parent = self._make_parent(tmp_path)
         a = _XmlSubmanifest("x", groups=[], parent=parent)
         assert a != "not a submanifest"
-
-
-# ===========================================================================
-# Lines 335-368  ToSubmanifestSpec, relpath, GetGroupsStr, GetDefaultGroupsStr
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -255,7 +216,7 @@ class TestXmlSubmanifestMethods:
 
     def test_to_submanifest_spec(self, tmp_path):
         parent = self._make_parent(tmp_path)
-        # Need to load parent so remotes are populated
+
         _ = parent.projects
         sub = _XmlSubmanifest(
             "mysub",
@@ -275,11 +236,6 @@ class TestXmlSubmanifestMethods:
         sub.AddAnnotation("k", "v", "true")
         assert len(sub.annotations) == 1
         assert sub.annotations[0].name == "k"
-
-
-# ===========================================================================
-# Lines 424-440  XmlManifest.__init__ edge cases
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -324,13 +280,8 @@ class TestXmlManifestInitEdgeCases:
 </manifest>
 """
         parent = _make_manifest(tmp_path, xml_content)
-        # Topdir should be the directory containing .repo
+
         assert parent.topdir == str(tmp_path)
-
-
-# ===========================================================================
-# Lines 461-479  Override method
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -358,7 +309,7 @@ class TestXmlManifestOverride:
 </manifest>
 """
         m = _make_manifest(tmp_path, xml_content)
-        # Create an alternate manifest in the manifests worktree
+
         alt = Path(m.manifestProject.worktree) / "alternate.xml"
         alt.parent.mkdir(parents=True, exist_ok=True)
         alt.write_text(xml_content)
@@ -375,16 +326,11 @@ class TestXmlManifestOverride:
 </manifest>
 """
         m = _make_manifest(tmp_path, xml_content)
-        # Write a file on disk and reference it by absolute path
+
         local_file = tmp_path / "local_override.xml"
         local_file.write_text(xml_content)
         m.Override(str(local_file), load_local_manifests=False)
         assert not m._load_local_manifests
-
-
-# ===========================================================================
-# Lines 529-560  _RemoteToXml annotation, _SubmanifestToXml
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -465,14 +411,9 @@ class TestRemoteAndSubmanifestToXml:
         m._SubmanifestToXml(sub, doc, root)
         xml_str = doc.toxml()
         assert 'name="sub_minimal"' in xml_str
-        # None attrs should be omitted
+
         assert "remote=" not in xml_str
         assert "project=" not in xml_str
-
-
-# ===========================================================================
-# Lines 589, 641-649, 658-698  ToXml coverage
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -506,13 +447,13 @@ class TestToXmlDetailedCoverage:
 </manifest>
 """
         m = _make_manifest(tmp_path, xml_content)
-        # Mark p1 as local
+
         p = m.projects[0]
         p.groups.append(LOCAL_MANIFEST_GROUP_PREFIX + ":local_file")
 
         doc = m.ToXml(omit_local=True)
         xml_str = doc.toxml()
-        # The local project should be omitted
+
         assert "p1" not in xml_str
 
     def test_toxml_project_with_different_remote(self, tmp_path):
@@ -562,11 +503,6 @@ class TestToXmlDetailedCoverage:
         assert 'clone-depth="3"' in xml_str
 
 
-# ===========================================================================
-# Lines 762-769  ToXml repo-hooks output
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestToXmlRepoHooks:
     """Cover ToXml repo-hooks output."""
@@ -587,11 +523,6 @@ class TestToXmlRepoHooks:
         assert "repo-hooks" in xml_str
         assert 'in-project="hooks"' in xml_str
         assert 'enabled-list="pre-upload"' in xml_str
-
-
-# ===========================================================================
-# Lines 780-784  ToXml superproject output
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -615,11 +546,6 @@ class TestToXmlSuperproject:
         assert 'remote="super-remote"' in xml_str
 
 
-# ===========================================================================
-# Lines 837, 849-850  ToDict unhandled element, Save
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestToDictAndSave:
     """Cover ToDict and Save."""
@@ -639,11 +565,6 @@ class TestToDictAndSave:
         output = buf.getvalue()
         assert "<manifest>" in output
         assert "origin" in output
-
-
-# ===========================================================================
-# Lines 876-894  is_multimanifest, is_submanifest, all_manifests, all_children
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -671,11 +592,6 @@ class TestManifestTreeProperties:
 """
         m = _make_manifest(tmp_path, xml_content)
         assert not m.is_submanifest
-
-
-# ===========================================================================
-# Lines 913-924  all_paths, all_projects
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -711,11 +627,6 @@ class TestAllPathsAllProjects:
         assert len(m.all_projects) == 2
 
 
-# ===========================================================================
-# Lines 992-1034  CloneBundle, CloneFilter, etc. property coverage
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestManifestProjectProperties:
     """Cover CloneBundle, CloneFilter, CloneFilterForDepth, etc."""
@@ -729,7 +640,7 @@ class TestManifestProjectProperties:
 </manifest>
 """
         m = _make_manifest(tmp_path, xml_content)
-        # Default: clone_bundle is None and no partial_clone => True
+
         result = m.CloneBundle
         assert result is True
 
@@ -777,9 +688,9 @@ class TestManifestProjectProperties:
 </manifest>
 """
         m = _make_manifest(tmp_path, xml_content)
-        # When local manifests path is set and loading is enabled
+
         result = m.HasLocalManifests
-        # local_manifests is None for XmlManifest so it should be falsy
+
         assert not result
 
     def test_is_from_local_manifest(self, tmp_path):
@@ -842,11 +753,6 @@ class TestManifestProjectProperties:
         assert not m.EnableGitLfs
 
 
-# ===========================================================================
-# Lines 1060-1070  FindManifestByPath
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestFindManifestByPath:
     """Cover FindManifestByPath."""
@@ -862,11 +768,6 @@ class TestFindManifestByPath:
         m = _make_manifest(tmp_path, xml_content)
         result = m.FindManifestByPath(str(tmp_path))
         assert result is m
-
-
-# ===========================================================================
-# Lines 1148-1176  _Load inner paths
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -899,11 +800,6 @@ class TestLoadPaths:
             m._Load(submanifest_depth=MAX_SUBMANIFEST_DEPTH + 1)
 
 
-# ===========================================================================
-# Lines 1194-1220  Local manifests loading
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestLocalManifestsLoading:
     """Cover local manifests loading code path."""
@@ -919,7 +815,6 @@ class TestLocalManifestsLoading:
 """
         m = _make_manifest(tmp_path, xml_content)
 
-        # Create local_manifests directory with a local manifest file
         local_dir = Path(str(m.local_manifests)) if m.local_manifests else None
         if local_dir:
             local_dir.mkdir(parents=True, exist_ok=True)
@@ -944,18 +839,13 @@ class TestLocalManifestsLoading:
 </manifest>
 """
         m = _make_manifest(tmp_path, xml_content)
-        # Force local_manifests to a path that will cause OSError
+
         m.local_manifests = "/nonexistent/path/that/does/not/exist"
         m._load_local_manifests = True
         m.Unload()
-        # Should not raise
+
         m._Load()
         assert m._loaded
-
-
-# ===========================================================================
-# Lines 1389-1399  _ParseManifest submanifest handling
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -974,7 +864,7 @@ class TestParseManifestSubmanifest:
 </manifest>
 """
         m = _make_and_load(tmp_path, xml_content)
-        # Should not raise, both have same attrs
+
         assert "sub1" in m.submanifests
 
     def test_duplicate_submanifest_different_attrs_raises(self, tmp_path):
@@ -991,11 +881,6 @@ class TestParseManifestSubmanifest:
         m = _make_manifest(tmp_path, xml_content)
         with pytest.raises(error.ManifestParseError, match="already exists"):
             _ = m.projects
-
-
-# ===========================================================================
-# Lines 1484-1510  extend-project with base_revision, dest_path
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -1107,11 +992,6 @@ class TestExtendProjectAdvanced:
         assert p.revisionExpr == "develop"
 
 
-# ===========================================================================
-# Lines 1515, 1529-1546  repo-hooks and superproject parsing
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestRepoHooksDuplicate:
     """Cover duplicate repo-hooks error."""
@@ -1145,11 +1025,6 @@ class TestRepoHooksDuplicate:
         m = _make_manifest(tmp_path, xml_content)
         with pytest.raises(error.ManifestParseError, match="duplicate superproject"):
             _ = m.projects
-
-
-# ===========================================================================
-# Lines 1569-1615  remove-project by path, hooks cleanup
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -1210,11 +1085,6 @@ class TestRemoveProject:
         m = _make_manifest(tmp_path, xml_content)
         with pytest.raises(error.ManifestParseError, match="must have name and/or path"):
             _ = m.projects
-
-
-# ===========================================================================
-# Lines 1650-1691  _AddMetaProjectMirror
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -1305,11 +1175,6 @@ class TestAddMetaProjectMirror:
         assert "repo" in m._projects
 
 
-# ===========================================================================
-# Lines 1769-1785  _ParseNotice
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestParseNotice:
     """Cover _ParseNotice with multi-line, indented notice text."""
@@ -1331,11 +1196,6 @@ class TestParseNotice:
         assert "Line 1" in m.notice
         assert "Line 2" in m.notice
         assert "Line 3" in m.notice
-
-
-# ===========================================================================
-# Lines 1789-1846  _ParseSubmanifest
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -1459,11 +1319,6 @@ class TestParseSubmanifest:
         assert sub.annotations[0].name == "ann_key"
 
 
-# ===========================================================================
-# Lines 1928-1929, 1937-1938  _ParseProject with parent (subproject)
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestParseProjectSubproject:
     """Cover _ParseProject with parent for subproject code paths."""
@@ -1485,11 +1340,6 @@ class TestParseProjectSubproject:
         assert len(parent_projects[0].subprojects) == 1
         sub = parent_projects[0].subprojects[0]
         assert sub.name == "parent-proj/child-proj"
-
-
-# ===========================================================================
-# Lines 1999-2016  GetProjectPaths mirror/worktree branches
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -1522,11 +1372,6 @@ class TestGetProjectPaths:
         m = _make_manifest(tmp_path, xml_content)
         relpath, worktree, gitdir, objdir, use_wt = m.GetProjectPaths("p1/", "p1/", "origin/")
         assert relpath == "p1"
-
-
-# ===========================================================================
-# Lines 2030-2036  GetProjectsWithName all_manifests
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -1570,11 +1415,6 @@ class TestGetProjectsWithName:
         m = _make_and_load(tmp_path, xml_content)
         result = m.GetProjectsWithName("p1", all_manifests=True)
         assert len(result) == 1
-
-
-# ===========================================================================
-# Lines 2039-2067  GetSubprojectName, _JoinRelpath, GetSubprojectPaths
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -1636,11 +1476,6 @@ class TestGetSubprojectPaths:
         assert worktree is not None
 
 
-# ===========================================================================
-# Lines 2051-2067  GetSubprojectPaths detailed
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestGetSubprojectPathsDetailed:
     """Cover GetSubprojectPaths with trailing slash and mirror mode."""
@@ -1659,11 +1494,6 @@ class TestGetSubprojectPathsDetailed:
 
         relpath, worktree, gitdir, objdir = m.GetSubprojectPaths(parent_proj, "child/", "child/")
         assert not relpath.endswith("/")
-
-
-# ===========================================================================
-# Lines 2102, 2132, 2139, 2158, 2161, 2169, 2172  _CheckLocalPath
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -1718,7 +1548,6 @@ class TestCheckLocalPath:
         assert "path cannot be outside" in result
 
     def test_absolute_path_abs_ok(self):
-        # abs_ok=True should allow absolute paths
         result = XmlManifest._CheckLocalPath("/foo/bar", abs_ok=True)
         assert result is None
 
@@ -1732,11 +1561,6 @@ class TestCheckLocalPath:
     def test_cwd_dot_not_ok(self):
         result = XmlManifest._CheckLocalPath(".", cwd_dot_ok=False)
         assert "bad component" in result
-
-
-# ===========================================================================
-# Lines 2245  _get_remote not found
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -1755,11 +1579,6 @@ class TestGetRemote:
         m = _make_manifest(tmp_path, xml_content)
         with pytest.raises(error.ManifestParseError, match="remote unknown not defined"):
             _ = m.projects
-
-
-# ===========================================================================
-# Lines 2268-2303  projectsDiff
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -1826,15 +1645,9 @@ class TestProjectsDiff:
         m_from = _make_manifest(tmp_path / "from", xml_content)
         m_to = _make_manifest(tmp_path / "to", xml_content)
         diff = m_from.projectsDiff(m_to)
-        # Both manifests have p1 but p1.Exists will be False (no git repo)
-        # so p1 goes to "missing"
+
         assert len(diff["added"]) == 0
         assert len(diff["removed"]) == 0
-
-
-# ===========================================================================
-# Lines 2323-2356  RepoClient.__init__
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -1871,7 +1684,7 @@ class TestRepoClientInit:
         manifest_git = sub_prefix / "manifests.git"
         manifest_git.mkdir()
         (manifest_git / "config").write_text('[remote "origin"]\n    url = https://localhost:0/manifest\n')
-        # Also need root-level manifests for the outer_client
+
         root_manifests = repodir / "manifests"
         root_manifests.mkdir(exist_ok=True)
         root_git = repodir / "manifests.git"
@@ -1885,7 +1698,7 @@ class TestRepoClientInit:
   <default remote="origin" revision="main"/>
 </manifest>
 """)
-        # Create an outer_client
+
         outer_mf = repodir / "manifest.xml"
         outer_mf.write_text("""\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1913,15 +1726,10 @@ class TestRepoClientInit:
         manifest_git = repodir / "manifests.git"
         manifest_git.mkdir()
         (manifest_git / "config").write_text('[remote "origin"]\n    url = https://localhost:0/manifest\n')
-        # Create the forbidden file
+
         (repodir / "local_manifest.xml").write_text("<manifest/>")
         with pytest.raises(SystemExit):
             manifest_xml.RepoClient(str(repodir))
-
-
-# ===========================================================================
-# Lines 1017, 1023, 1026, 1030  SetManifestOverride, UseLocalManifests, etc.
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -1950,11 +1758,6 @@ class TestSetManifestOverride:
         assert rc._outer_client.manifest.manifestFileOverrides[rc.path_prefix] == "/some/path.xml"
 
 
-# ===========================================================================
-# Lines 1421-1439  recursively_add_projects (duplicate path)
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestRecursivelyAddProjects:
     """Cover recursively_add_projects error paths."""
@@ -1972,11 +1775,6 @@ class TestRecursivelyAddProjects:
         m = _make_manifest(tmp_path, xml_content)
         with pytest.raises(error.ManifestParseError, match="duplicate path"):
             _ = m.projects
-
-
-# ===========================================================================
-# Lines 1731  _ParseDefault sync-j validation
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -2006,11 +1804,6 @@ class TestParseDefault:
         m = _make_manifest(tmp_path, xml_content)
         with pytest.raises(error.ManifestParseError, match="sync-j must be greater than 0"):
             _ = m.projects
-
-
-# ===========================================================================
-# Lines 1861-1879  _ParseProject error paths (no remote, no revision)
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -2081,11 +1874,6 @@ class TestParseProjectErrors:
             _ = m.projects
 
 
-# ===========================================================================
-# Lines 1580-1595  remove-project base-rev mismatch by path
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestRemoveProjectBaseRev:
     """Cover remove-project with base-rev mismatch."""
@@ -2119,11 +1907,6 @@ class TestRemoveProjectBaseRev:
             _ = m.projects
 
 
-# ===========================================================================
-# Lines 1635-1641  repo-hooks project not found, multiple projects
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestRepoHooksProjectErrors:
     """Cover repo-hooks project not found."""
@@ -2140,11 +1923,6 @@ class TestRepoHooksProjectErrors:
         m = _make_manifest(tmp_path, xml_content)
         with pytest.raises(error.ManifestParseError, match="not found for repo-hooks"):
             _ = m.projects
-
-
-# ===========================================================================
-# Lines 1413-1416  duplicate manifest-server
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -2166,11 +1944,6 @@ class TestDuplicateManifestServer:
             _ = m.projects
 
 
-# ===========================================================================
-# Lines 1305-1307  _ParseManifestXml restrict_includes invalid path
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestParseManifestXmlIncludes:
     """Cover _ParseManifestXml include path validation."""
@@ -2186,8 +1959,7 @@ class TestParseManifestXmlIncludes:
 </manifest>
 """
         m = _make_manifest(tmp_path, xml_content)
-        # The include is parsed non-restrictively in the main manifest.
-        # Let's directly test with restrict_includes=True
+
         mf_path = os.path.join(str(tmp_path), ".repo", "manifest.xml")
         with pytest.raises(error.ManifestInvalidPathError, match='invalid "name"'):
             m._ParseManifestXml(
@@ -2220,11 +1992,6 @@ class TestParseManifestXmlIncludes:
             _ = m.projects
 
 
-# ===========================================================================
-# Lines 1404  duplicate notice
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestDuplicateNotice:
     """Cover duplicate notice error."""
@@ -2242,11 +2009,6 @@ class TestDuplicateNotice:
         m = _make_manifest(tmp_path, xml_content)
         with pytest.raises(error.ManifestParseError, match="duplicate notice"):
             _ = m.projects
-
-
-# ===========================================================================
-# Lines 1378-1379  duplicate default raises
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -2280,11 +2042,6 @@ class TestDuplicateDefault:
         assert m.default.revisionExpr == "main"
 
 
-# ===========================================================================
-# Lines 1362-1363  duplicate remote raises
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestDuplicateRemote:
     """Cover duplicate remote error."""
@@ -2316,11 +2073,6 @@ class TestDuplicateRemote:
         assert "origin" in m.remotes
 
 
-# ===========================================================================
-# Lines 1538-1546  superproject no remote / no revision
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestSuperprojectErrors:
     """Cover superproject error paths."""
@@ -2337,11 +2089,6 @@ class TestSuperprojectErrors:
         m = _make_manifest(tmp_path, xml_content)
         with pytest.raises(error.ManifestParseError, match="no revision for superproject"):
             _ = m.projects
-
-
-# ===========================================================================
-# Lines 1431-1432  project conflicts with submanifest path
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -2361,11 +2108,6 @@ class TestProjectConflictsSubmanifest:
         m = _make_manifest(tmp_path, xml_content)
         with pytest.raises(error.ManifestParseError, match="conflicts with submanifest path"):
             _ = m.projects
-
-
-# ===========================================================================
-# Lines 2232-2236  _ParseAnnotation keep validation
-# ===========================================================================
 
 
 @pytest.mark.unit

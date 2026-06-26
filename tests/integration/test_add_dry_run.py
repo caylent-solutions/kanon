@@ -23,14 +23,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Git helper constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Minimal marketplace XML for a named entry.
+
 _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -46,11 +42,6 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
       </catalog-metadata>
     </manifest>
 """)
-
-
-# ---------------------------------------------------------------------------
-# Git helpers (shared with test_add_core.py pattern)
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -106,11 +97,6 @@ def _create_manifest_repo_with_tags(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -132,11 +118,6 @@ def _run_kanon(
 def _sha256(path: pathlib.Path) -> str:
     """Return the SHA-256 hex digest of a file's content."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-# ---------------------------------------------------------------------------
-# Integration tests: --dry-run
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -204,7 +185,7 @@ class TestAddDryRun:
             cwd=workspace,
         )
         assert "+KANON_SOURCE_entry_a_URL=" in result.stdout
-        assert "+KANON_SOURCE_entry_a_REVISION=" in result.stdout
+        assert "+KANON_SOURCE_entry_a_REF=" in result.stdout
         assert "+KANON_SOURCE_entry_a_PATH=" in result.stdout
 
     def test_dry_run_does_not_modify_file_content(self, tmp_path: pathlib.Path) -> None:
@@ -254,14 +235,14 @@ class TestAddDryRun:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
-        # Pre-populate with an existing entry-a block at 1.0.0
+
         kanon_file.write_text(
             "GITBASE=<YOUR_GIT_ORG_BASE_URL>\n"
             "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces\n"
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
         sha_before = _sha256(kanon_file)
@@ -269,7 +250,7 @@ class TestAddDryRun:
         result = _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -281,16 +262,119 @@ class TestAddDryRun:
         )
 
         assert result.returncode == 0, f"Expected exit 0.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
-        # Must show minus lines for removed and plus lines for added
-        assert "-KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" in result.stdout
-        assert "+KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0" in result.stdout
-        # File must not be modified
+
+        assert "-KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in result.stdout
+        assert "+KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in result.stdout
+        assert "+KANON_SOURCE_entry_a_NAME=entry-a" in result.stdout
+
         assert _sha256(kanon_file) == sha_before, "File content changed during --dry-run --force"
 
 
-# ---------------------------------------------------------------------------
-# Integration tests: --force overwrite
-# ---------------------------------------------------------------------------
+_CLAUDE_MARKETPLACES_DIR_HEADER = "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces"
+
+
+@pytest.mark.integration
+class TestAddMarketplaceDryRun:
+    """kanon add <claude-marketplace> --dry-run previews the header but writes nothing (Feature A)."""
+
+    def test_dry_run_previews_marketplaces_dir_header_line(self, tmp_path: pathlib.Path) -> None:
+        """The dry-run diff includes a +CLAUDE_MARKETPLACES_DIR=... preview line for a marketplace entry."""
+        from tests.integration.test_add_core import _create_marketplace_manifest_repo
+
+        bare = _create_marketplace_manifest_repo(
+            tmp_path / "repo",
+            entry_name="mp-entry",
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "mp-entry",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+                "--dry-run",
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert f"+{_CLAUDE_MARKETPLACES_DIR_HEADER}" in result.stdout, (
+            f"Expected the marketplace header preview line in the dry-run diff; got:\n{result.stdout!r}"
+        )
+
+    def test_dry_run_does_not_create_or_modify_file(self, tmp_path: pathlib.Path) -> None:
+        """A marketplace --dry-run leaves an absent .kanon absent (no header write)."""
+        from tests.integration.test_add_core import _create_marketplace_manifest_repo
+
+        bare = _create_marketplace_manifest_repo(
+            tmp_path / "repo",
+            entry_name="mp-entry",
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+
+        result = _run_kanon(
+            [
+                "add",
+                "mp-entry",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+                "--dry-run",
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert not kanon_file.exists(), "kanon add --dry-run must not create the .kanon file"
+
+    def test_dry_run_leaves_existing_file_byte_unchanged(self, tmp_path: pathlib.Path) -> None:
+        """A marketplace --dry-run against an existing headerless .kanon leaves it byte-for-byte unchanged."""
+        from tests.integration.test_add_core import _create_marketplace_manifest_repo
+
+        bare = _create_marketplace_manifest_repo(
+            tmp_path / "repo",
+            entry_name="mp-entry",
+            tags=["1.0.0"],
+        )
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanon_file = workspace / ".kanon"
+        kanon_file.write_text("GITBASE=<YOUR_GIT_ORG_BASE_URL>\n")
+        sha_before = _sha256(kanon_file)
+        mtime_before = kanon_file.stat().st_mtime
+
+        result = _run_kanon(
+            [
+                "add",
+                "mp-entry",
+                "--catalog-source",
+                f"file://{bare}@main",
+                "--kanon-file",
+                str(kanon_file),
+                "--dry-run",
+            ],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, (
+            f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert _sha256(kanon_file) == sha_before, "File content changed during marketplace --dry-run"
+        assert kanon_file.stat().st_mtime == mtime_before, "File mtime changed during marketplace --dry-run"
+        assert "CLAUDE_MARKETPLACES_DIR" not in kanon_file.read_text(), (
+            "the dry-run must not write the header into the file"
+        )
 
 
 @pytest.mark.integration
@@ -313,7 +397,7 @@ class TestAddForce:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
@@ -331,8 +415,14 @@ class TestAddForce:
         )
         assert result.returncode == 0, f"Expected exit 0.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
 
-    def test_force_overwrites_existing_revision(self, tmp_path: pathlib.Path) -> None:
-        """--force replaces existing REVISION line with the new one."""
+    def test_force_overwrites_existing_block(self, tmp_path: pathlib.Path) -> None:
+        """--force re-add of the same source@ref overwrites and normalises the block.
+
+        3.0.0: --force overwrites a re-add of the SAME package (same source@ref),
+        keeping the alias keyed by the bare alias and re-pinning the block with
+        the full normalised keys (_NAME/_GITBASE added). A different-ref re-add
+        would auto-suffix instead, so the re-add uses the existing ref (==1.0.0).
+        """
         bare = _create_manifest_repo_with_tags(
             tmp_path / "repo",
             entry_names=["entry-a"],
@@ -347,14 +437,14 @@ class TestAddForce:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
-        _run_kanon(
+        result = _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -363,10 +453,14 @@ class TestAddForce:
             ],
             cwd=workspace,
         )
+        assert result.returncode == 0, f"--force re-add must exit 0.\nstderr: {result.stderr!r}"
 
         content = kanon_file.read_text()
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0" in content
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" not in content
+
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content
+        assert "KANON_SOURCE_entry_a_NAME=entry-a" in content
+
+        assert "KANON_SOURCE_entry_a_manifest_bare_URL" not in content
 
     def test_force_preserves_surrounding_content(self, tmp_path: pathlib.Path) -> None:
         """--force preserves header and other blocks byte-for-byte."""
@@ -384,18 +478,18 @@ class TestAddForce:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_b_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_b_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_b_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_b_PATH=repo-specs/entry-b-marketplace.xml\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
         _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -406,18 +500,13 @@ class TestAddForce:
         )
 
         content = kanon_file.read_text()
-        # Header preserved
+
         assert "GITBASE=" in content
-        # entry-b block preserved
-        assert "KANON_SOURCE_entry_b_REVISION=refs/tags/1.0.0" in content
-        # entry-a updated
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/2.0.0" in content
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" not in content
 
+        assert "KANON_SOURCE_entry_b_REF=refs/tags/1.0.0" in content
 
-# ---------------------------------------------------------------------------
-# Integration tests: collision-error path
-# ---------------------------------------------------------------------------
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content
+        assert "KANON_SOURCE_entry_a_NAME=entry-a" in content
 
 
 @pytest.mark.integration
@@ -440,14 +529,14 @@ class TestAddCollisionError:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
         result = _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -473,14 +562,14 @@ class TestAddCollisionError:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
         result = _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -488,14 +577,10 @@ class TestAddCollisionError:
             ],
             cwd=workspace,
         )
-        # Must name the source name and relevant details.
-        # The existing mapping was stored with the canonical git ref form
-        # ("refs/tags/1.0.0"); the requested mapping is reported with the raw
-        # PEP 440 specifier the user supplied on the command line ("==2.0.0")
-        # because that is what surfaces the collision before any ref resolution.
+
         assert "entry_a" in result.stderr
         assert "refs/tags/1.0.0" in result.stderr
-        assert "==2.0.0" in result.stderr
+        assert "==1.0.0" in result.stderr
 
     def test_collision_error_references_force_or_remove(self, tmp_path: pathlib.Path) -> None:
         """Error message references --force or 'kanon remove'."""
@@ -513,14 +598,14 @@ class TestAddCollisionError:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
 
         result = _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -546,7 +631,7 @@ class TestAddCollisionError:
             "KANON_MARKETPLACE_INSTALL=<true|false>\n"
             "\n"
             f"KANON_SOURCE_entry_a_URL=file://{bare}\n"
-            "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_entry_a_PATH=repo-specs/entry-a-marketplace.xml\n"
         )
         kanon_file.write_text(original_content)
@@ -555,7 +640,7 @@ class TestAddCollisionError:
         _run_kanon(
             [
                 "add",
-                "entry-a@==2.0.0",
+                "entry-a@==1.0.0",
                 "--catalog-source",
                 f"file://{bare}@main",
                 "--kanon-file",
@@ -565,11 +650,6 @@ class TestAddCollisionError:
         )
 
         assert _sha256(kanon_file) == sha_before, "File was modified on collision error"
-
-
-# ---------------------------------------------------------------------------
-# Integration tests: within-request collision
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -643,11 +723,6 @@ class TestAddWithinRequestCollision:
         assert result.returncode != 0
 
 
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: End-to-end cycle evidence
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestAddCycleEvidence:
     """AC-CYCLE-001: Full end-to-end cycle with entry-a and entry-b.
@@ -672,7 +747,6 @@ class TestAddCycleEvidence:
         workspace.mkdir()
         kanon_file = workspace / ".kanon"
 
-        # Step 2: kanon add entry-a => triple written
         result = _run_kanon(
             [
                 "add",
@@ -687,10 +761,13 @@ class TestAddCycleEvidence:
         assert result.returncode == 0, f"Step 2 failed.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         content_after_add = kanon_file.read_text()
         assert "KANON_SOURCE_entry_a_URL=" in content_after_add
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" in content_after_add
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content_after_add
         assert "KANON_SOURCE_entry_a_PATH=" in content_after_add
+        assert "KANON_SOURCE_entry_a_NAME=" in content_after_add
+        assert "KANON_SOURCE_entry_a_GITBASE=" not in content_after_add, (
+            "this entry's manifest references no ${GITBASE}, so add writes no env-var line"
+        )
 
-        # Step 3: kanon add entry-a (collision) => hard error
         result2 = _run_kanon(
             [
                 "add",
@@ -705,10 +782,9 @@ class TestAddCycleEvidence:
         assert result2.returncode != 0, "Expected non-zero exit on collision"
         assert "entry_a" in result2.stderr
         assert "refs/tags/1.0.0" in result2.stderr
-        # Spec-canonical: --force or kanon remove referenced
+
         assert "--force" in result2.stderr or "kanon remove" in result2.stderr
 
-        # Step 4: kanon add entry-a --force => block overwritten
         result3 = _run_kanon(
             [
                 "add",
@@ -723,10 +799,9 @@ class TestAddCycleEvidence:
         )
         assert result3.returncode == 0, f"Step 4 failed.\nstdout: {result3.stdout!r}\nstderr: {result3.stderr!r}"
         content_after_force = kanon_file.read_text()
-        # Block still present (same tags, same content)
-        assert "KANON_SOURCE_entry_a_REVISION=refs/tags/1.0.0" in content_after_force
 
-        # Step 5: kanon add entry-a --dry-run => diff, no file change
+        assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content_after_force
+
         sha_before_dry = _sha256(kanon_file)
         result4 = _run_kanon(
             [
@@ -746,7 +821,6 @@ class TestAddCycleEvidence:
         sha_after_dry = _sha256(kanon_file)
         assert sha_before_dry == sha_after_dry, "File changed during dry-run"
 
-        # Step 6: kanon add entry-a entry-a => within-request hard error
         result5 = _run_kanon(
             [
                 "add",

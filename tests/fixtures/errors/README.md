@@ -19,7 +19,7 @@ All files in this directory conform to the following invariants:
 
 | File | Spec section | Requirement |
 |------|-------------|-------------|
-| `missing-catalog-source.txt` | spec Section 4 header (R124) | Canonical error when `--catalog-source` and `KANON_CATALOG_SOURCE` are both absent for a command that requires a catalog source. The `<command>` placeholder is instantiated as `list`. |
+| `missing-catalog-source.txt` | spec Section 4 header (R124) | Canonical error when `--catalog-source` and `KANON_CATALOG_SOURCES` are both absent for a command that requires a catalog source. The `<command>` placeholder is instantiated as `list`. |
 | `lockfile-hash-mismatch.txt` | lockfile state table (R128) | Error when `.kanon` has been modified since the lockfile was written (SHA-256 of the canonical key set has changed). Emitted by `kanon install --strict-lock` (the npm-ci path); plain `kanon install` reconciles the change instead of erroring. |
 | `lockfile-sha-unreachable.txt` | spec Section 4.7 state table (R128) | Error when `.kanon.lock` records a resolved SHA that the remote no longer exposes. |
 | `entry-not-found.txt` | spec Section 4.2 step 3 / Section 4.3 (R128) | Error when the requested catalog entry name is not found in the manifest repo. |

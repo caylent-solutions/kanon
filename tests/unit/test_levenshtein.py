@@ -23,39 +23,28 @@ import pytest
 @pytest.mark.parametrize(
     "a, b, expected",
     [
-        # Identical strings -> 0
         ("", "", 0),
         ("foo", "foo", 0),
         ("hello world", "hello world", 0),
-        # Single insertion (add one character) -> 1
         ("cat", "cats", 1),
         ("bat", "abat", 1),
-        # Single deletion (remove one character) -> 1
         ("cats", "cat", 1),
         ("abat", "bat", 1),
-        # Single substitution (change one character) -> 1
         ("cat", "bat", 1),
         ("foo", "boo", 1),
-        # Empty vs non-empty -> len(other)
         ("", "abc", 3),
         ("", "hello", 5),
         ("", "x", 1),
-        # Non-empty vs empty -> len(self)
         ("abc", "", 3),
         ("hello", "", 5),
         ("x", "", 1),
-        # Mixed-case preserved: no normalization; uppercase differs from lowercase
         ("Foo", "foo", 1),
         ("FOO", "foo", 3),
-        # Classic example: "kitten" vs "sitting" -> 3
-        # k->s, e->i, insert g (kitten -> sitten -> sittin -> sitting = 3 edits)
         ("kitten", "sitting", 3),
-        # Additional multi-edit examples
         ("saturday", "sunday", 3),
         ("abc", "xyz", 3),
-        # Unicode: characters counted as single units
-        ("\u03b1\u03b2\u03b3", "\u03b1\u03b2\u03b4", 1),  # alpha beta gamma -> alpha beta delta
-        ("\u00e9", "\u00e8", 1),  # e-acute vs e-grave
+        ("\u03b1\u03b2\u03b3", "\u03b1\u03b2\u03b4", 1),
+        ("\u00e9", "\u00e8", 1),
     ],
 )
 class TestLevenshteinDistance:

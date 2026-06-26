@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-dev lint lint-check format format-check check test test-unit test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
+.PHONY: help install install-dev lint lint-check lint-no-comments lint-markdown format format-check check test test-unit test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -15,8 +15,14 @@ install-dev: ## Install development dependencies (editable + ruff + pytest)
 
 lint: lint-check format-check ## Run all lint checks (ruff check + ruff format --check)
 
-lint-check: ## Lint Python files (ruff check)
+lint-check: lint-no-comments ## Lint Python files (ruff check + no-comments gate)
 	ruff check .
+
+lint-no-comments: ## Forbid '#' comments in all first-party kanon Python (allows line-1 shebang + PEP 263 encoding cookie)
+	python tools/lint/check_no_comments.py
+
+lint-markdown: ## Lint kanon's own Markdown under docs/ and README.md (pymarkdownlnt, config in [tool.pymarkdown]: MD013 off, MD024 siblings_only; vendored docs/repo/ excluded)
+	uv run pymarkdownlnt scan -r -e 'docs/repo/*' docs/ README.md
 
 format: ## Auto-format Python files (ruff format)
 	ruff format .
@@ -26,32 +32,32 @@ format-check: ## Verify formatting without modifying files (ruff format --check)
 
 check: lint ## Run all static analysis checks
 
-validate: check test ## Run full validation pipeline (lint + tests)
+validate: check test-unit ## Run per-unit validation (lint + unit tests). Full suite + coverage are enforced in CI (test / test-integration / test-functional / test-scenarios).
 
 test: ## Run full test suite with coverage
-	uv run pytest --cov=kanon_cli --cov-report=term-missing
+	uv run pytest -n auto --dist loadscope --cov=kanon_cli --cov-report=term-missing
 
 test-unit: ## Run unit tests only
-	uv run pytest -m unit
+	uv run pytest -n auto --dist loadscope -m "unit"
 
 test-integration: ## Run integration tests only
-	uv run pytest -m integration
+	uv run pytest -n auto --dist loadscope -m "integration"
 
 security-scan: ## Run security scan with bandit (high severity, high confidence, excludes vendored repo submodule)
 	uv run bandit -r src/kanon_cli/ -x src/kanon_cli/repo -lll -iii
 
 test-functional: SMOKE_TEST_TIMEOUT ?= 300
 test-functional: ## Run functional tests only
-	SMOKE_TEST_TIMEOUT=$(SMOKE_TEST_TIMEOUT) uv run pytest -m functional
+	SMOKE_TEST_TIMEOUT=$(SMOKE_TEST_TIMEOUT) uv run pytest -n auto --dist loadscope -m "functional"
 
 test-scenarios: ## Run end-to-end scenario tests (mirrors docs/integration-testing.md)
-	uv run pytest -m scenario
+	uv run pytest -n auto --dist loadscope -m "scenario"
 
 test-operator-path: ## Run operator-path scenario tests (E49 subprocess path tests -- fast lane for tests/scenarios/test_why_url_path.py etc.)
 	uv run pytest -m scenario tests/scenarios/test_why_url_path.py tests/scenarios/test_doctor_cache.py tests/scenarios/test_rls_exact_vs_range.py
 
 test-cov: ## Run tests with coverage report
-	uv run pytest --cov=kanon_cli --cov-report=term-missing
+	uv run pytest -n auto --dist loadscope --cov=kanon_cli --cov-report=term-missing
 
 clean: ## Remove build artifacts and caches
 	find . -depth -type d -name __pycache__ -exec rm -rf {} +
@@ -70,7 +76,7 @@ distcheck: ## Check the built distribution
 publish: clean build distcheck ## Build package (publishing is automated via CI pipeline)
 
 coverage-json: ## Generate JSON coverage report
-	uv run pytest -m unit --cov=kanon_cli --cov-report=json
+	uv run pytest -n auto --dist loadscope -m unit --cov=kanon_cli --cov-report=json
 	@echo "Coverage report generated in coverage.json"
 
 pre-commit-check: ## Run all pre-commit hooks

@@ -29,10 +29,6 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo GC Flags Test User"
 _GIT_USER_EMAIL = "repo-gc-flags@example.com"
@@ -44,23 +40,16 @@ _PROJECT_PATH = "gc-flags-test-project"
 _MANIFEST_BARE_DIR_NAME = "manifest-bare.git"
 _GIT_BRANCH_MAIN = "main"
 
-# Error exit code for invalid argument values or constraint violations.
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-gc-flags-repo-dir"
 
-# Inline-value token for negative tests (boolean store_true flags reject inline values).
-# The optparse parser exits 2 with '--<flag> option does not take a value' when
-# a store_true flag is supplied with an inline value.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Known flags from Gc._Options() -- used to build parametrize lists.
-# All are boolean store_true flags; none accept a typed value.
-# Flags and their short-form aliases registered in Gc._Options():
-#   -n / --dry-run  (dest='dryrun', default=False): do everything except actually delete
-#   -y / --yes      (default=False):                answer yes to all safe prompts
-#   --repack        (default=False):                repack partial-clone projects
+
 _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("-n", "short-dry-run"),
     ("--dry-run", "long-dry-run"),
@@ -69,26 +58,12 @@ _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("--repack", "long-repack"),
 ]
 
-# Long-form flags that accept inline values in optparse (tested in AC-TEST-002).
-# Only long-form flags can be supplied with '--flag=value' syntax in optparse.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--dry-run", "dry-run"),
     ("--yes", "yes"),
     ("--repack", "repack"),
 ]
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
-# NOTE: _git is imported from tests.functional.conftest (canonical definition).
-#
-# The helpers below (_init_git_work_dir, _clone_as_bare,
-# _create_bare_content_repo, _create_manifest_repo, _setup_initialized_repo)
-# are near-duplicates of same-named functions in test_repo_overview_flags.py,
-# test_repo_info_flags.py, and others. Consolidating them into a shared module
-# requires touching files outside this task's Changes Manifest. This
-# duplication is tracked as a follow-up DRY cleanup in proposal E1-F2-S12-T4.
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -216,11 +191,6 @@ def _setup_initialized_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathl
     return checkout_dir, repo_dir
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/gc.py
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoGcFlagsValidValues:
     """AC-TEST-001: Every ``_Options()`` flag in subcmds/gc.py has a valid-value test.
@@ -289,11 +259,6 @@ class TestRepoGcFlagsValidValues:
             f"'--dry-run --yes' triggered an argument-parsing error "
             f"(exit {result.returncode}).\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with inline values (boolean flags)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -460,11 +425,6 @@ class TestRepoGcFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoGcFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -535,11 +495,6 @@ class TestRepoGcFlagsAbsenceDefaults:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoGcFlagsDocumentedBehavior:
     """AC-FUNC-001: Every documented flag behaves per its help text.
@@ -574,11 +529,6 @@ class TestRepoGcFlagsDocumentedBehavior:
             f"'--dry-run --repack' triggered an argument-parsing error "
             f"(exit {result.returncode}).\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

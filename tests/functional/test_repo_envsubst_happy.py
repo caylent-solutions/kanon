@@ -42,64 +42,51 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no hard-coded domain literals in test logic
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Envsubst Happy Test User"
 _GIT_USER_EMAIL = "repo-envsubst-happy@example.com"
 _PROJECT_PATH = "envsubst-test-project"
 
-# CLI token for the envsubst subcommand
+
 _CLI_TOKEN_ENVSUBST = "envsubst"
 
-# Optional flag that produces verbose output from the embedded tool
+
 _CLI_FLAG_VERBOSE = "--verbose"
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT = 0
 
-# Composed CLI command phrase for diagnostic messages (no inline literals)
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_ENVSUBST}"
 
-# Phrase that must appear in stdout when envsubst processes a manifest file.
-# The Execute() method in Envsubst always prints this prefix before the options
-# dict and positional args.
+
 _EXECUTES_PHRASE = "Executing envsubst"
 
-# Hidden git-repo metadata directory that repo tools use
+
 _DOT_REPO = ".repo"
 
-# Manifest directory name within the .repo directory
+
 _MANIFEST_DIR = "manifests"
 
-# Manifest filename for the default manifest
+
 _MANIFEST_FILENAME = "default.xml"
 
-# Manifest path fragment that must appear in stdout when envsubst scans the
-# .repo/manifests directory and finds the default manifest XML file.
+
 _MANIFEST_PATH_FRAGMENT = f"{_DOT_REPO}/{_MANIFEST_DIR}/{_MANIFEST_FILENAME}"
 
-# BAK file suffix created by envsubst to preserve the pre-substitution baseline.
+
 _BAK_SUFFIX = ".bak"
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
+
 _ERROR_PREFIX = "Error:"
 
-# Parametrize tuples for AC-TEST-002: non-default invocation forms.
-# Form 1: --verbose flag (changes output_mode but exits 0 in the same way).
-# Default-args coverage is provided by TestRepoEnvsubstHappyPathDefaultArgs.
+
 _INVOCATION_FORMS = [
     pytest.param((_CLI_FLAG_VERBOSE,), id="verbose-flag"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Shared setup helper
-# ---------------------------------------------------------------------------
 
 
 def _setup_envsubst_repo(
@@ -126,11 +113,6 @@ def _setup_envsubst_repo(
         git_user_email=_GIT_USER_EMAIL,
         project_path=_PROJECT_PATH,
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo envsubst with default args exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -241,11 +223,6 @@ class TestRepoEnvsubstHappyPathDefaultArgs:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every invocation form of 'repo envsubst' has a happy-path test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoEnvsubstInvocationForms:
     """AC-TEST-002: happy-path test for each distinct invocation form of 'repo envsubst'.
@@ -318,11 +295,6 @@ class TestRepoEnvsubstInvocationForms:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

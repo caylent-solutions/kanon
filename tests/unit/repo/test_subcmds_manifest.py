@@ -1,17 +1,3 @@
-# Copyright (C) 2025 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the subcmds/manifest.py module."""
 
 import pytest
@@ -65,7 +51,7 @@ def test_output_format_xml_file(tmp_path):
     cmd = _get_cmd(tmp_path)
     opt, args = cmd.OptionParser.parse_args(["--output-file", str(outpath)])
     cmd.Execute(opt, args)
-    # Normalize the output a bit as we don't exactly care.
+
     normalize = lambda data: "\n".join(x.strip() for x in data.splitlines() if x.strip())
     assert (
         normalize(outpath.read_text())
@@ -86,7 +72,7 @@ def test_output_format_xml_stdout(tmp_path, capsys):
     cmd = _get_cmd(tmp_path)
     opt, args = cmd.OptionParser.parse_args(["--format", "xml"])
     cmd.Execute(opt, args)
-    # Normalize the output a bit as we don't exactly care.
+
     normalize = lambda data: "\n".join(x.strip() for x in data.splitlines() if x.strip())
     stdout = capsys.readouterr().out
     assert (
@@ -160,11 +146,10 @@ def test_manifest_options_setup():
     cmd = manifest.Manifest()
     opts, args = cmd.OptionParser.parse_args([])
 
-    # Verify default option values ('-' means stdout, which is default for output_file)
     assert opts.output_file == "-" or opts.output_file is None
     assert opts.format == "xml"
     assert opts.pretty is False
-    # peg_rev defaults may be True or None depending on parser setup
+
     assert opts.peg_rev is None or opts.peg_rev is False
 
 
@@ -197,14 +182,14 @@ def test_manifest_options_revision_as_head():
     """Test parsing -r option."""
     cmd = manifest.Manifest()
     opts, args = cmd.OptionParser.parse_args(["-r"])
-    # Check that -r option is parsed (may not have exact attribute name)
+
     assert hasattr(opts, "revision_as_HEAD") or hasattr(opts, "peg_rev")
 
 
 @pytest.mark.unit
 def test_manifest_command_properties():
     """Test Manifest command properties."""
-    # Manifest is not COMMON
+
     assert manifest.Manifest.COMMON is False
     assert manifest.Manifest.helpSummary is not None
     assert len(manifest.Manifest.helpSummary) > 0

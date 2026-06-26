@@ -25,11 +25,6 @@ from kanon_cli.completions.catalog_versions import (
 )
 
 
-# ---------------------------------------------------------------------------
-# _parse_ls_remote_output
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestParseLsRemoteOutput:
     """_parse_ls_remote_output() splits git ls-remote output into (tags, branches)."""
@@ -63,7 +58,7 @@ class TestParseLsRemoteOutput:
         """refs/tags/release/v3 -- last component is 'v3'."""
         output = "abc123\trefs/tags/release/v3\n"
         tags, branches = _parse_ls_remote_output(output)
-        # Last component "v3" is kept in tags list; filtering happens separately
+
         assert tags == ["v3"]
         assert branches == []
 
@@ -86,11 +81,6 @@ class TestParseLsRemoteOutput:
         tags, branches = _parse_ls_remote_output(output)
         assert tags == ["1.0.0"]
         assert branches == []
-
-
-# ---------------------------------------------------------------------------
-# _run_ls_remote
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -132,18 +122,13 @@ class TestRunLsRemote:
                 _run_ls_remote("https://example.com/repo.git", timeout=2)
 
 
-# ---------------------------------------------------------------------------
-# complete() -- main function
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestComplete:
     """complete() integrates PEP 440 filter, cache, dedup, sort, prefix filter."""
 
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -199,9 +184,6 @@ class TestComplete:
         with patch.object(cv, "_run_ls_remote", return_value=ls_remote_output):
             result = complete("")
 
-        # Tags: 1.0.0a1, 1.0.0, 2.0.0 pass; not-a-version excluded
-        # Branches: main, develop pass unfiltered
-        # Sorted: tags by PEP 440 version ordering first, then branches alphabetically
         assert result == ["1.0.0a1", "1.0.0", "2.0.0", "develop", "main"]
 
     def test_not_a_version_tag_excluded(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -228,9 +210,8 @@ class TestComplete:
         with patch.object(cv, "_run_ls_remote", return_value=ls_remote_output):
             result = complete("")
 
-        # "release/v3" should NOT appear -- only extracted last component "v3" may appear
         assert "release/v3" not in result
-        # "v3" is valid PEP 440 (normalizes to 3), so it passes filter
+
         assert "v3" in result
         assert "1.0.0" in result
 
@@ -242,7 +223,6 @@ class TestComplete:
         with patch.object(cv, "_run_ls_remote", return_value=ls_remote_output):
             result = complete("")
 
-        # Branches pass through without PEP 440 filter
         assert "not-a-version" in result
         assert "main" in result
 
@@ -288,7 +268,6 @@ class TestComplete:
     def test_cache_miss_calls_fetch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Cache miss triggers inline fetch."""
         self._setup_env(monkeypatch, tmp_path)
-        # No cache directory -- miss
 
         with patch.object(cv, "_run_ls_remote", return_value="sha1\trefs/tags/1.0.0\n"):
             result = complete("")
@@ -327,9 +306,9 @@ class TestComplete:
         mock_log.assert_called()
 
     def test_missing_catalog_source_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Missing KANON_CATALOG_SOURCE: empty result, error logged."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        """Missing KANON_CATALOG_SOURCES: empty result, error logged."""
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(cv, "log_completion_error") as mock_log:
             result = complete("")
@@ -345,7 +324,6 @@ class TestComplete:
         with patch.object(cv, "_run_ls_remote", return_value=ls_remote_output):
             result = complete("")
 
-        # PEP 440 ordering: 1.0.0a1 < 1.0.0 < 2.0.0
         tags_only = [r for r in result if r not in ("main", "develop")]
         assert tags_only == ["1.0.0a1", "1.0.0", "2.0.0"]
 
@@ -360,18 +338,13 @@ class TestComplete:
         assert result == ["1.0.0", "alpha", "zebra"]
 
 
-# ---------------------------------------------------------------------------
-# _fetch_and_cache_versions
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestFetchAndCacheVersions:
     """_fetch_and_cache_versions() runs git ls-remote, writes tags.txt + fetched_at.txt."""
 
     def test_writes_cache_on_success(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """On success, tags.txt is written with filtered+sorted entries."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         entry_dir = tmp_path / "entry"
 
         ls_output = "sha1\trefs/tags/1.0.0\nsha2\trefs/heads/main\n"
@@ -392,11 +365,6 @@ class TestFetchAndCacheVersions:
                 _fetch_and_cache_versions("https://example.com/repo.git", entry_dir)
 
 
-# ---------------------------------------------------------------------------
-# _handle()
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestHandle:
     """_handle() is the argparse entry point; always exits 0."""
@@ -408,8 +376,8 @@ class TestHandle:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """_handle() prints one name per line and exits 0."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         import argparse
 
@@ -429,8 +397,8 @@ class TestHandle:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """_handle() with empty complete() result exits 0 with empty stdout."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         import argparse
 
@@ -449,8 +417,8 @@ class TestHandle:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """When refresh_only=True, _handle() does not print to stdout."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         import argparse
 
@@ -463,19 +431,14 @@ class TestHandle:
         assert result == 0
 
 
-# ---------------------------------------------------------------------------
-# _write_stderr_diagnostic
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestWriteStderrDiagnostic:
     """_write_stderr_diagnostic() writes to stderr when stderr is a tty."""
 
     def test_writes_to_stderr_when_tty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When sys.stderr.isatty() is True, diagnostic line is written."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
         err_lines: list[str] = []
 
@@ -500,8 +463,8 @@ class TestWriteStderrDiagnostic:
 
     def test_no_stderr_when_not_tty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When sys.stderr.isatty() is False, NO line is written to stderr."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
         err_lines: list[str] = []
 
@@ -523,11 +486,6 @@ class TestWriteStderrDiagnostic:
         assert err_lines == [], f"Expected no stderr output, got: {err_lines!r}"
 
 
-# ---------------------------------------------------------------------------
-# _inline_fetch env restoration
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestInlineFetchEnvRestore:
     """_inline_fetch() restores KANON_COMPLETION_TIMEOUT after fetch."""
@@ -536,7 +494,7 @@ class TestInlineFetchEnvRestore:
         """When KANON_COMPLETION_TIMEOUT was already set, _inline_fetch restores it."""
         from kanon_cli.completions.catalog_versions import _inline_fetch
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.setenv("KANON_COMPLETION_TIMEOUT", "99")
         entry_dir = tmp_path / "entry"
 
@@ -554,30 +512,20 @@ class TestInlineFetchEnvRestore:
         assert os.environ.get("KANON_COMPLETION_TIMEOUT") == "99"
 
 
-# ---------------------------------------------------------------------------
-# complete() -- malformed catalog source
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteMalformedSource:
-    """complete() returns [] on malformed KANON_CATALOG_SOURCE (no @)."""
+    """complete() returns [] on malformed KANON_CATALOG_SOURCES (no @)."""
 
     def test_invalid_source_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """complete() with invalid KANON_CATALOG_SOURCE logs error and returns []."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "no-at-sign-here")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        """complete() with invalid KANON_CATALOG_SOURCES logs error and returns []."""
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "no-at-sign-here")
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(cv, "log_completion_error") as mock_log:
             result = complete("")
 
         assert result == []
         mock_log.assert_called_once()
-
-
-# ---------------------------------------------------------------------------
-# register()
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -624,11 +572,6 @@ class TestRegister:
         assert args_without.refresh_only is False
 
 
-# ---------------------------------------------------------------------------
-# _spawn_background_refresh
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestSpawnBackgroundRefresh:
     """_spawn_background_refresh() spawns a detached subprocess for cache refresh."""
@@ -650,19 +593,14 @@ class TestSpawnBackgroundRefresh:
         assert call_kwargs["stderr"] == subprocess.DEVNULL
 
 
-# ---------------------------------------------------------------------------
-# complete() -- stale cache + bg disabled
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteStaleNoBg:
     """complete() -- stale cache with KANON_COMPLETION_REFRESH_BG=0 does inline fetch."""
 
     def test_stale_no_bg_calls_inline_fetch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Stale cache + KANON_COMPLETION_REFRESH_BG=0: inline fetch replaces stale data."""
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://example.com/repo.git@main")
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://example.com/repo.git@main")
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "0")
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)

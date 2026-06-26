@@ -15,7 +15,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
+
+
+def _store_base() -> Path:
+    """Return the shared artifact store base (``<KANON_HOME>/store``).
+
+    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
+    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
+    The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
+    per-test temporary directory.
+    """
+    return Path(os.environ["KANON_HOME"]) / "store"
 
 
 def _write_kanonenv(directory: Path, content: str) -> Path:
@@ -29,8 +39,10 @@ def _minimal_kanonenv_content(name: str = "primary") -> str:
     """Return a minimal .kanon content string for a single source."""
     return (
         f"KANON_SOURCE_{name}_URL=https://example.com/repo.git\n"
-        f"KANON_SOURCE_{name}_REVISION=main\n"
+        f"KANON_SOURCE_{name}_REF=main\n"
         f"KANON_SOURCE_{name}_PATH=meta.xml\n"
+        f"KANON_SOURCE_{name}_NAME={name}\n"
+        f"KANON_SOURCE_{name}_GITBASE=https://example.com\n"
     )
 
 
@@ -53,7 +65,7 @@ class TestInstallUsesEmbeddedPythonAPI:
         def capturing_run(cmd, *args, **kwargs):
             if isinstance(cmd, (list, tuple)) and cmd and cmd[0] == "repo":
                 subprocess_calls.append(list(cmd))
-            # Allow git ls-remote through (used by version resolution)
+
             return original_subprocess_run(cmd, *args, **kwargs)
 
         with (
@@ -62,7 +74,7 @@ class TestInstallUsesEmbeddedPythonAPI:
             patch("kanon_cli.repo.repo_sync"),
             patch("subprocess.run", side_effect=capturing_run),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(subprocess_calls) == 0, (
             f"Expected zero subprocess calls to 'repo' binary, but found: {subprocess_calls}"
@@ -89,9 +101,9 @@ class TestInstallWithoutPipx:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir()
+        assert (_store_base() / ".kanon-data" / "sources" / "primary").is_dir()
 
 
 @pytest.mark.integration
@@ -115,10 +127,11 @@ class TestInstallWithoutRepoOnPath:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (tmp_path / ".gitignore").is_file()
-        gitignore_content = (tmp_path / ".gitignore").read_text()
+        store_base = _store_base()
+        assert (store_base / ".gitignore").is_file()
+        gitignore_content = (store_base / ".gitignore").read_text()
         assert ".packages/" in gitignore_content
         assert ".kanon-data/" in gitignore_content
 
@@ -128,15 +141,17 @@ class TestInstallVersionConstraintResolution:
     """AC-FUNC-011: Install with version constraint resolves to correct tag."""
 
     def test_install_version_constraint_resolves_to_correct_tag(self, tmp_path: Path) -> None:
-        """Verify that a KANON_SOURCE_*_REVISION with a PEP 440 constraint
+        """Verify that a KANON_SOURCE_*_REF with a PEP 440 constraint
         resolves to the best matching tag via git ls-remote before repo_init is called.
         """
         kanonenv = _write_kanonenv(
             tmp_path,
             (
                 "KANON_SOURCE_primary_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_primary_REVISION=refs/tags/~=1.0.0\n"
+                "KANON_SOURCE_primary_REF=refs/tags/~=1.0.0\n"
                 "KANON_SOURCE_primary_PATH=meta.xml\n"
+                "KANON_SOURCE_primary_NAME=primary\n"
+                "KANON_SOURCE_primary_GITBASE=https://example.com\n"
             ),
         )
 
@@ -154,7 +169,7 @@ class TestInstallVersionConstraintResolution:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.subprocess.run", return_value=mock_ls_remote),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(captured_revision) == 1, "repo_init should have been called once"
         assert captured_revision[0] == "refs/tags/1.0.3", (
@@ -170,10 +185,11 @@ class TestInstallSubdirectoryAutoDiscovery:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Verify that running install from a subdirectory finds the .kanon in
-        a parent directory and writes output files (e.g. .gitignore) relative to
-        that parent directory -- not the subdirectory.
+        a parent directory and writes managed artifacts (e.g. .gitignore) under
+        the shared store -- independent of the subdirectory the command runs in.
         """
         _write_kanonenv(tmp_path, _minimal_kanonenv_content())
+        store_base = _store_base()
 
         subdir = tmp_path / "subproject" / "nested"
         subdir.mkdir(parents=True)
@@ -191,13 +207,11 @@ class TestInstallSubdirectoryAutoDiscovery:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(discovered, lock_file_path=discovered.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(discovered, lock_file_path=discovered.parent / ".kanon.lock")
 
-        assert (tmp_path / ".gitignore").is_file(), (
-            "install() should write .gitignore relative to the .kanon parent directory"
-        )
-        assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir(), (
-            "install() should create .kanon-data/ relative to the .kanon parent directory"
+        assert (store_base / ".gitignore").is_file(), "install() should write .gitignore under the shared store"
+        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
+            "install() should create .kanon-data/ under the shared store"
         )
 
 
@@ -214,8 +228,10 @@ class TestInstallMarketplaceDisabled:
             (
                 "KANON_MARKETPLACE_INSTALL=false\n"
                 "KANON_SOURCE_primary_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_primary_REVISION=main\n"
+                "KANON_SOURCE_primary_REF=main\n"
                 "KANON_SOURCE_primary_PATH=meta.xml\n"
+                "KANON_SOURCE_primary_NAME=primary\n"
+                "KANON_SOURCE_primary_GITBASE=https://example.com\n"
             ),
         )
 
@@ -234,23 +250,11 @@ class TestInstallMarketplaceDisabled:
             patch("kanon_cli.repo.repo_sync"),
             patch("subprocess.run", side_effect=capturing_run),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(claude_calls) == 0, (
             f"Expected no claude CLI subprocess calls when KANON_MARKETPLACE_INSTALL=false, but got: {claude_calls}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Regression test for the relative .kanon path bug.
-#
-# `kanon install .kanon` (relative positional argument) previously crashed
-# with `ManifestParseError: manifest_file must be abspath` because the CLI
-# handler passed `pathlib.Path('.kanon')` straight through to the repo
-# manifest parser. This regression test exercises the full end-to-end CLI
-# path (subprocess, file:// manifest, real repo_init/envsubst/sync) with a
-# relative argument to confirm the CLI boundary normalizes the path.
-# ---------------------------------------------------------------------------
 
 
 def _git_relpath(args: list[str], cwd: Path) -> None:
@@ -265,7 +269,7 @@ def _build_file_url_manifest_fixture(base: Path) -> tuple[str, str]:
     Returns (manifest_url, fetch_base_url) suitable for a `.kanon` file's
     KANON_SOURCE_<name>_URL and a manifest's <remote fetch=...>.
     """
-    # Content repo: a single project with a README, then a bare clone.
+
     content_work = base / "content-work"
     content_work.mkdir(parents=True)
     _git_relpath(["init", "-b", "main"], cwd=content_work)
@@ -277,7 +281,6 @@ def _build_file_url_manifest_fixture(base: Path) -> tuple[str, str]:
     content_bare = base / "content-bare"
     _git_relpath(["clone", "--bare", str(content_work), str(content_bare)], cwd=base)
 
-    # Manifest repo referencing content-bare via a file:// fetch URL.
     manifest_work = base / "manifest-work"
     manifest_work.mkdir(parents=True)
     _git_relpath(["init", "-b", "main"], cwd=manifest_work)
@@ -331,20 +334,17 @@ class TestInstallRelativeKanonPath:
             "GITBASE=https://example.com/\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             f"KANON_SOURCE_primary_URL={manifest_url}\n"
-            "KANON_SOURCE_primary_REVISION=main\n"
-            "KANON_SOURCE_primary_PATH=default.xml\n",
+            "KANON_SOURCE_primary_REF=main\n"
+            "KANON_SOURCE_primary_PATH=default.xml\n"
+            "KANON_SOURCE_primary_NAME=primary\n"
+            "KANON_SOURCE_primary_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
         env = dict(os.environ)
-        # Use the manifest bare repo itself as the catalog source, so that
-        # _resolve_ref_to_sha (git ls-remote) can succeed without a network call.
-        # The manifest_url already has the file:// prefix; append @main to form
-        # the <git-url>@<ref> catalog source format.
-        env["KANON_CATALOG_SOURCE"] = f"{manifest_url}@main"
-        # The manifest fixture uses file:// URLs for its <remote fetch=...> entries.
-        # KANON_ALLOW_INSECURE_REMOTES=1 disables the HTTPS-by-default security check
-        # so the install can proceed with the local file:// bare repos.
+
+        env["KANON_CATALOG_SOURCES"] = f"{manifest_url}@main"
+
         env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
 
         result = subprocess.run(
@@ -365,9 +365,10 @@ class TestInstallRelativeKanonPath:
         assert "manifest_file must be abspath" not in result.stderr, (
             f"ManifestParseError must not appear in stderr; got: {result.stderr!r}"
         )
-        # The install lifecycle creates .kanon-data/sources/<name>/ with .repo/ inside.
-        source_dir = workspace / ".kanon-data" / "sources" / "primary" / ".repo"
+
+        store_base = Path(env["KANON_HOME"]) / "store"
+        source_dir = store_base / ".kanon-data" / "sources" / "primary" / ".repo"
         assert source_dir.is_dir(), (
-            f"Expected {source_dir} to exist after install; contents of workspace: "
-            f"{sorted(p.name for p in workspace.iterdir())!r}"
+            f"Expected {source_dir} to exist after install; contents of store base: "
+            f"{sorted(p.name for p in store_base.iterdir()) if store_base.exists() else 'MISSING'!r}"
         )

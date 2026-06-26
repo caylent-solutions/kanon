@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Integration tests for BV-09: envsubst .bak preserves first-run content.
 
 Invokes the kanon repo envsubst command via subprocess.run against a real
@@ -33,10 +19,6 @@ import sys
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _MANIFEST_DIR = pathlib.Path(".repo") / "manifests"
 _MANIFEST_NAME = "default.xml"
 _GIT_USER_NAME = "BV09 Test User"
@@ -52,11 +34,6 @@ _ORIGINAL_MANIFEST = """\
 """
 
 _FETCH_URL = "https://integration.example.com/repos"
-
-
-# ---------------------------------------------------------------------------
-# Workspace setup helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -151,11 +128,6 @@ def _run_envsubst(workspace: pathlib.Path, fetch_url: str) -> subprocess.Complet
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-005: BV-09 end-to-end scenario via subprocess
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_bv09_bak_preserved_across_two_runs(tmp_path: pathlib.Path) -> None:
     """AC-TEST-005: .bak is created once and preserved across two envsubst runs.
@@ -173,7 +145,6 @@ def test_bv09_bak_preserved_across_two_runs(tmp_path: pathlib.Path) -> None:
     original_bytes = manifest_path.read_bytes()
     bak_path = manifests_dir / (_MANIFEST_NAME + ".bak")
 
-    # --- First run ---
     result_1 = _run_envsubst(workspace, _FETCH_URL)
     assert result_1.returncode == 0, (
         f"First envsubst run must exit 0. Got {result_1.returncode}.\n"
@@ -190,7 +161,6 @@ def test_bv09_bak_preserved_across_two_runs(tmp_path: pathlib.Path) -> None:
         f"Expected {original_bytes!r}, got {bak_after_first!r}"
     )
 
-    # Confirm substitution happened in the manifest
     manifest_after_first = manifest_path.read_text(encoding="utf-8")
     assert _FETCH_URL in manifest_after_first, (
         f"Expected manifest to contain substituted URL after first run. Got: {manifest_after_first!r}"
@@ -199,7 +169,6 @@ def test_bv09_bak_preserved_across_two_runs(tmp_path: pathlib.Path) -> None:
         f"Expected placeholder to be replaced after first run. Got: {manifest_after_first!r}"
     )
 
-    # --- Second run ---
     result_2 = _run_envsubst(workspace, _FETCH_URL)
     assert result_2.returncode == 0, (
         f"Second envsubst run must exit 0. Got {result_2.returncode}.\n"

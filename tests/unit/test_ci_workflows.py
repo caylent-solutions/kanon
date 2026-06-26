@@ -1,15 +1,21 @@
 """Tests for CI workflow configuration.
 
-Validates that the GitHub Actions workflow files include the repo module
-in the CI test and lint pipeline according to E0-F9-S1-T1 requirements:
+Validates the single-Linux-set CI contract for the two validation workflows
+(`pr-validation.yml`, `main-validation.yml`) per FR-6 / FR-8 of the
+windows-support-removal spec:
 
-- AC-FUNC-001: CI workflow includes repo module unit tests in test matrix
-- AC-FUNC-002: CI workflow runs integration tests parallel with unit tests
-- AC-FUNC-003: CI workflow ruff check covers src/kanon_cli/repo/
-- AC-FUNC-004: CI workflow ruff format check covers src/kanon_cli/repo/
-- AC-FUNC-005: All workflow run steps use shell: bash
-- AC-FUNC-006: Workflow changes follow existing conventions
-- AC-LINT-001: Workflow YAML is valid
+- AC-1: No `runs-on: windows-latest` job remains in either validation
+  workflow.
+- The two-set Linux/Windows matrix is collapsed: each test tier (unit /
+  integration / functional / scenario) runs exactly once on a Linux runner
+  with the bare tier marker (for example `-m "unit"`, `-m "integration"`),
+  with no per-OS marker filter (an `and not <os>_only` exclusion).
+- Surviving conventions are preserved: every `run` step uses `shell: bash`,
+  the workflow YAML is valid, the integration job runs in parallel with the
+  unit job, and the ruff check / format-check steps cover `src/`.
+
+The contract assertions below fail if a `windows-latest` leg or a per-OS
+marker filter is reintroduced into either workflow.
 """
 
 import pathlib
@@ -24,6 +30,13 @@ PR_WORKFLOW = WORKFLOWS_DIR / "pr-validation.yml"
 MAIN_WORKFLOW = WORKFLOWS_DIR / "main-validation.yml"
 
 WORKFLOW_FILES = [PR_WORKFLOW, MAIN_WORKFLOW]
+WORKFLOW_IDS = ["pr-validation", "main-validation"]
+
+
+TEST_TIERS = ["unit", "integration", "functional", "scenario"]
+
+
+PER_OS_MARKER_FILTER = re.compile(r"and not (windows|linux)_only")
 
 
 def _load_workflow(path: pathlib.Path) -> dict:
@@ -55,16 +68,26 @@ def _collect_run_steps(workflow: dict) -> list[dict]:
     return steps
 
 
+def _job_run_text(job: dict) -> str:
+    """Concatenate the `run` text of every run step in a job.
+
+    Args:
+        job: Parsed job dict.
+
+    Returns:
+        Newline-joined `run` command text for the job.
+    """
+    return "\n".join(step.get("run", "") for step in job.get("steps", []) if "run" in step)
+
+
 @pytest.mark.unit
-@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=["pr-validation", "main-validation"])
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
 def test_workflow_yaml_is_valid(workflow_path: pathlib.Path):
     """Validate that each workflow YAML file is valid and parsable.
 
     Given: A workflow YAML file exists
     When: The file is loaded with yaml.safe_load
     Then: It parses without error and contains a 'jobs' key
-
-    AC-LINT-001
     """
     assert workflow_path.is_file(), f"Workflow file must exist: {workflow_path}"
     workflow = _load_workflow(workflow_path)
@@ -73,15 +96,13 @@ def test_workflow_yaml_is_valid(workflow_path: pathlib.Path):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=["pr-validation", "main-validation"])
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
 def test_all_run_steps_use_shell_bash(workflow_path: pathlib.Path):
     """Validate that every run step in each workflow uses shell: bash.
 
     Given: A workflow YAML file with run steps
     When: Each run step's shell attribute is inspected
-    Then: Every run step has shell: bash
-
-    AC-FUNC-005
+    Then: Every run step has shell: bash so it fails the job on non-zero exit
     """
     workflow = _load_workflow(workflow_path)
     run_steps = _collect_run_steps(workflow)
@@ -94,41 +115,82 @@ def test_all_run_steps_use_shell_bash(workflow_path: pathlib.Path):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=["pr-validation", "main-validation"])
-def test_workflow_has_integration_tests_job(workflow_path: pathlib.Path):
-    """Validate that each workflow includes an integration tests job.
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
+def test_no_windows_latest_runner(workflow_path: pathlib.Path):
+    """Validate that no job targets the windows-latest runner (AC-1, FR-6).
 
     Given: A workflow YAML file
-    When: The jobs are inspected
-    Then: A job named 'integration' (or similar) exists that runs integration tests
-
-    AC-FUNC-002
+    When: The `runs-on` of every job is inspected
+    Then: No job runs on `windows-latest`; the two-set matrix is collapsed to a
+        single Linux set. This fails if a Windows leg is reintroduced.
     """
     workflow = _load_workflow(workflow_path)
     jobs = workflow.get("jobs", {})
-    integration_jobs = {name: job for name, job in jobs.items() if "integration" in name.lower()}
-    assert integration_jobs, (
-        f"Workflow {workflow_path.name} must contain an integration tests job. Found jobs: {list(jobs.keys())}"
+    assert jobs, f"Workflow {workflow_path.name} must contain jobs"
+    windows_jobs = {name: job.get("runs-on") for name, job in jobs.items() if job.get("runs-on") == "windows-latest"}
+    assert not windows_jobs, (
+        f"Workflow {workflow_path.name} must not contain any windows-latest job "
+        f"(single-Linux-set contract, FR-6/AC-1). Offending jobs: {sorted(windows_jobs)}"
     )
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=["pr-validation", "main-validation"])
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
+def test_no_per_os_marker_filter(workflow_path: pathlib.Path):
+    """Validate that no run step threads a per-OS pytest marker filter (FR-6).
+
+    Given: A workflow YAML file
+    When: Every run step's command text is inspected
+    Then: No step contains an `and not <os>_only` marker filter. Each tier runs
+        with the bare tier marker on the single Linux set. This fails if a
+        per-OS filter is reintroduced.
+    """
+    workflow = _load_workflow(workflow_path)
+    run_steps = _collect_run_steps(workflow)
+    offending = [
+        step.get("name", "<unnamed>") for step in run_steps if PER_OS_MARKER_FILTER.search(step.get("run", ""))
+    ]
+    assert not offending, (
+        f"Workflow {workflow_path.name} must not thread a per-OS marker filter "
+        f"(an 'and not <os>_only' exclusion) into any run step "
+        f"(single-Linux-set contract, FR-6). Offending steps: {offending}"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
+def test_workflow_has_integration_tests_job(workflow_path: pathlib.Path):
+    """Validate that each workflow includes exactly one integration tests job.
+
+    Given: A workflow YAML file
+    When: The jobs are inspected
+    Then: Exactly one job whose name references 'integration' exists, since the
+        Windows integration leg is removed and only the Linux leg survives.
+    """
+    workflow = _load_workflow(workflow_path)
+    jobs = workflow.get("jobs", {})
+    integration_jobs = {name: job for name, job in jobs.items() if "integration" in name.lower()}
+    assert len(integration_jobs) == 1, (
+        f"Workflow {workflow_path.name} must contain exactly one integration tests job "
+        f"(single Linux leg). Found: {sorted(integration_jobs)}"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
 def test_integration_job_runs_in_parallel_with_unit_tests(workflow_path: pathlib.Path):
-    """Validate that integration tests job runs in parallel with unit tests.
+    """Validate that the integration tests job runs in parallel with unit tests.
 
-    Given: A workflow YAML with both validate (unit) and integration jobs
+    Given: A workflow YAML with both a unit-tests job and an integration job
     When: The 'needs' dependency of the integration job is inspected
-    Then: The integration job does NOT depend on the validate job (runs in parallel)
-
-    AC-FUNC-002
+    Then: The integration job does NOT depend on the unit-tests job (parallel)
     """
     workflow = _load_workflow(workflow_path)
     jobs = workflow.get("jobs", {})
     integration_jobs = {name: job for name, job in jobs.items() if "integration" in name.lower()}
     assert integration_jobs, f"No integration job found in {workflow_path.name}"
 
-    unit_job_names = {name for name in jobs if "validate" in name.lower()}
+    unit_job_names = {name for name in jobs if "unit" in name.lower()}
 
     for job_name, job in integration_jobs.items():
         needs = job.get("needs", [])
@@ -143,75 +205,136 @@ def test_integration_job_runs_in_parallel_with_unit_tests(workflow_path: pathlib
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=["pr-validation", "main-validation"])
-def test_integration_job_invokes_integration_mark(workflow_path: pathlib.Path):
-    """Validate that the integration job runs pytest with the integration marker.
-
-    Given: A workflow with an integration job
-    When: The run steps of that job are inspected
-    Then: At least one step runs pytest with '-m integration'
-
-    AC-FUNC-002
-    """
-    workflow = _load_workflow(workflow_path)
-    jobs = workflow.get("jobs", {})
-    integration_jobs = {name: job for name, job in jobs.items() if "integration" in name.lower()}
-    assert integration_jobs, f"No integration job found in {workflow_path.name}"
-
-    for job_name, job in integration_jobs.items():
-        run_commands = [step.get("run", "") for step in job.get("steps", []) if "run" in step]
-        full_run_text = "\n".join(run_commands)
-        assert "-m integration" in full_run_text, (
-            f"Integration job '{job_name}' in {workflow_path.name} must run "
-            f"pytest with '-m integration'. Run steps found:\n{full_run_text}"
-        )
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=["pr-validation", "main-validation"])
-def test_unit_tests_step_runs_with_unit_marker(workflow_path: pathlib.Path):
-    """Validate that the unit tests step uses the 'unit' pytest marker.
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
+def test_unit_tier_runs_once_with_bare_marker(workflow_path: pathlib.Path):
+    """Validate that the unit tier runs once with the bare 'unit' marker.
 
     Given: A workflow YAML file
-    When: The run steps are inspected
-    Then: A step exists that runs pytest with '-m unit'
-
-    AC-FUNC-001
+    When: The run steps are inspected for the unit-tier pytest invocation
+    Then: Exactly one run step selects the unit tier with the bare marker
+        `-m "unit"` (no per-OS filter), on the single Linux set.
     """
     workflow = _load_workflow(workflow_path)
-    jobs = workflow.get("jobs", {})
-    found = False
-    for job in jobs.values():
-        for step in job.get("steps", []):
-            run = step.get("run", "")
-            if "pytest" in run and "-m unit" in run:
-                found = True
-                break
-        if found:
-            break
-    assert found, (
-        f"Workflow {workflow_path.name} must have a step that runs pytest with '-m unit'. "
-        "This ensures the unit test matrix includes all unit tests."
+    run_steps = _collect_run_steps(workflow)
+    bare_unit = re.compile(r'-m "unit"')
+    unit_steps = [step for step in run_steps if bare_unit.search(step.get("run", ""))]
+    assert len(unit_steps) == 1, (
+        f'Workflow {workflow_path.name} must run the unit tier exactly once with the bare marker -m "unit" '
+        f"on the single Linux set. Matching steps: {[s.get('name', '<unnamed>') for s in unit_steps]}"
     )
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=["pr-validation", "main-validation"])
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
+def test_integration_tier_runs_once_with_bare_marker(workflow_path: pathlib.Path):
+    """Validate that the integration tier runs once with the bare marker.
+
+    Given: A workflow YAML file
+    When: The integration job's run steps are inspected
+    Then: The integration job runs pytest with the bare marker `-m "integration"`
+        (no per-OS filter), on the single Linux set.
+    """
+    workflow = _load_workflow(workflow_path)
+    jobs = workflow.get("jobs", {})
+    integration_jobs = {name: job for name, job in jobs.items() if "integration" in name.lower()}
+    assert len(integration_jobs) == 1, f"Expected exactly one integration job in {workflow_path.name}"
+
+    bare_integration = re.compile(r'-m "integration"')
+    for job_name, job in integration_jobs.items():
+        run_text = _job_run_text(job)
+        assert bare_integration.search(run_text), (
+            f"Integration job '{job_name}' in {workflow_path.name} must run pytest with the bare "
+            f'marker -m "integration" (no per-OS filter). Run steps found:\n{run_text}'
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
+def test_functional_tier_runs_once_with_bare_marker(workflow_path: pathlib.Path):
+    """Validate that the functional tier runs once with the bare marker.
+
+    Given: A workflow YAML file
+    When: The run steps are inspected for the functional-tier pytest invocation
+    Then: Exactly one run step selects the functional tier with the bare marker
+        `-m "functional"` (no per-OS filter), on the single Linux set.
+    """
+    workflow = _load_workflow(workflow_path)
+    run_steps = _collect_run_steps(workflow)
+    bare_functional = re.compile(r'-m "functional"')
+    functional_steps = [step for step in run_steps if bare_functional.search(step.get("run", ""))]
+    assert len(functional_steps) == 1, (
+        f"Workflow {workflow_path.name} must run the functional tier exactly once with the bare "
+        f'marker -m "functional" on the single Linux set. '
+        f"Matching steps: {[s.get('name', '<unnamed>') for s in functional_steps]}"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
+def test_scenario_tier_runs_once_without_platform_override(workflow_path: pathlib.Path):
+    """Validate that the scenario tier runs once with no per-OS override.
+
+    Given: A workflow YAML file
+    When: The run steps are inspected for the scenario-tier invocation
+    Then: Exactly one run step invokes `make test-scenarios` and no scenario
+        run step passes a `PYTEST_PLATFORM_MARK` override, so the make target
+        expands to the bare marker `-m "scenario"` on the single Linux set.
+    """
+    workflow = _load_workflow(workflow_path)
+    run_steps = _collect_run_steps(workflow)
+    scenario_steps = [step for step in run_steps if "test-scenarios" in step.get("run", "")]
+    assert len(scenario_steps) == 1, (
+        f"Workflow {workflow_path.name} must run the scenario tier exactly once via "
+        f"`make test-scenarios` on the single Linux set. "
+        f"Matching steps: {[s.get('name', '<unnamed>') for s in scenario_steps]}"
+    )
+    for step in scenario_steps:
+        run = step.get("run", "")
+        assert "PYTEST_PLATFORM_MARK" not in run, (
+            f"Scenario step '{step.get('name', '<unnamed>')}' in {workflow_path.name} must not pass a "
+            f'PYTEST_PLATFORM_MARK override; the bare make target runs -m "scenario". Run command: {run!r}'
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
+@pytest.mark.parametrize("tier", TEST_TIERS)
+def test_each_tier_runs_exactly_once(workflow_path: pathlib.Path, tier: str):
+    """Validate that each test tier is invoked on exactly one runner.
+
+    Given: A workflow YAML file and a test tier
+    When: The jobs whose name references the tier are counted
+    Then: Exactly one job runs the tier, proving the Windows leg was removed and
+        the tier is not duplicated across two OS sets.
+    """
+    workflow = _load_workflow(workflow_path)
+    jobs = workflow.get("jobs", {})
+    tier_jobs = {name: job for name, job in jobs.items() if tier in name.lower()}
+    assert len(tier_jobs) == 1, (
+        f"Workflow {workflow_path.name} must run the '{tier}' tier in exactly one job "
+        f"(single Linux set). Found: {sorted(tier_jobs)}"
+    )
+    only_job = next(iter(tier_jobs.values()))
+    assert only_job.get("runs-on") != "windows-latest", (
+        f"The '{tier}' tier job in {workflow_path.name} must not run on windows-latest"
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
 def test_ruff_check_covers_src_repo(workflow_path: pathlib.Path):
     """Validate that the ruff check step covers src/kanon_cli/repo/.
 
     Given: A workflow YAML file
     When: The run steps are inspected for ruff check invocations
     Then: The ruff check command covers src/ (which includes src/kanon_cli/repo/)
-    or uses make lint which does the same
-
-    AC-FUNC-003
+        or uses make lint which does the same
     """
     workflow = _load_workflow(workflow_path)
     run_steps = _collect_run_steps(workflow)
     lint_steps = [step for step in run_steps if "ruff" in step.get("run", "") or "make lint" in step.get("run", "")]
     assert lint_steps, f"Workflow {workflow_path.name} must have a ruff check or make lint step"
-    # Each lint step must cover src/ (which includes src/kanon_cli/repo/)
+
     for step in lint_steps:
         run = step.get("run", "")
         step_name = step.get("name", "<unnamed>")
@@ -230,16 +353,14 @@ def test_ruff_check_covers_src_repo(workflow_path: pathlib.Path):
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=["pr-validation", "main-validation"])
+@pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
 def test_ruff_format_check_covers_src_repo(workflow_path: pathlib.Path):
     """Validate that the ruff format check step covers src/kanon_cli/repo/.
 
     Given: A workflow YAML file
     When: The run steps are inspected for ruff format check invocations
     Then: The ruff format --check command covers src/ (which includes src/kanon_cli/repo/)
-    or uses make lint which does the same
-
-    AC-FUNC-004
+        or uses make lint which does the same
     """
     workflow = _load_workflow(workflow_path)
     run_steps = _collect_run_steps(workflow)

@@ -33,56 +33,39 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
-# Nonexistent repo-dir path used in argument-parser tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-rebase-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-rebase-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-rebase-option-99"
 
-# Value-requiring option used in AC-TEST-003: requires exactly one argument
-# value. Supplying it without a value triggers exit 2 with
-# "--whitespace option requires 1 argument" on stderr.
+
 _OPTION_REQUIRING_VALUE = "--whitespace"
 
-# Error message substring expected in stderr when the option is supplied
-# without a value (argument-parser-level missing-argument error).
+
 _MISSING_ARG_PHRASE = "requires"
 
-# Phrase expected in stderr for unknown flag errors (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
+
 _HELP_USAGE_PHRASE = "repo rebase"
 
-# Phrase expected in stderr when the .repo/manifest.xml is absent (AC-TEST-004).
-# The embedded repo tool prints "error parsing manifest" when .repo is absent.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest file named in stderr for precondition failures (AC-TEST-004).
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# A generic project reference used in argument-parser-level tests (AC-TEST-002
-# and AC-TEST-003). These tests exercise flag or option errors and do not
-# require the .repo directory to exist -- the argument parser rejects the
-# command before any filesystem access.
+
 _SOME_PROJECT_NAME = "some-project"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
-
-
-# ---------------------------------------------------------------------------
-# Shared determinism helper -- DRY extraction for _is_deterministic tests.
-# ---------------------------------------------------------------------------
 
 
 def _assert_deterministic(
@@ -129,11 +112,6 @@ def _assert_deterministic(
         f"  first:  {output_a!r}\n"
         f"  second: {output_b!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo rebase --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -187,11 +165,6 @@ class TestRepoRebaseHelp:
         state, confirming the determinism requirement of AC-FUNC-001.
         """
         _assert_deterministic(tmp_path, ["--help"], _EXIT_SUCCESS, compare_stdout=True)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -277,11 +250,6 @@ class TestRepoRebaseUnknownFlag:
             _EXIT_ARGPARSE_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Value-requiring option without its argument produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -376,11 +344,6 @@ class TestRepoRebaseMissingOptionValue:
             _EXIT_ARGPARSE_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -528,11 +491,6 @@ class TestRepoRebasePreconditionFailure:
         assert _MISSING_REPO_PHRASE in result.stderr, (
             f"Expected {_MISSING_REPO_PHRASE!r} in stderr for missing .repo.\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Combined channel and determinism validation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

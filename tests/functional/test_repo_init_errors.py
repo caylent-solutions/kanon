@@ -27,55 +27,35 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# NOTE: _run_kanon is imported from tests.functional.conftest (canonical
-# definition). No _git helper is needed because all tests here exercise
-# argument-parsing and subcommand precondition failures that do not require
-# a real .repo directory or git repositories.
-# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
-
-# Nonexistent repo-dir path component used in argument-parser tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-init-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-init-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-init-option-99"
 
-# Named option exercised in AC-TEST-003: requires exactly one argument value.
-# Supplying it without a value triggers exit 2 with "option requires 1 argument".
+
 _OPTION_REQUIRING_VALUE = "--manifest-url"
 _OPTION_REQUIRING_VALUE_ALT = "--manifest-name"
 _OPTION_REQUIRING_VALUE_DEPTH = "--manifest-depth"
 
-# Error message substring expected in stderr when the URL option is supplied
-# without a value (argparse-level missing-argument error).
+
 _MISSING_ARG_PHRASE = "requires"
 
-# Phrase expected in stderr when the manifest URL is absent (AC-TEST-004).
-# The embedded repo tool prints 'manifest url is required.' to stderr.
+
 _MISSING_URL_PHRASE = "manifest url is required"
 
-# Phrase expected in stderr for unknown flag errors (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
+
 _HELP_USAGE_PHRASE = "repo init"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo init --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -223,11 +203,6 @@ class TestRepoInitHelp:
             f"  first:  {result_a.stdout!r}\n"
             f"  second: {result_b.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -405,11 +380,6 @@ class TestRepoInitUnknownFlag:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Missing required argument to a named option produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -612,11 +582,6 @@ class TestRepoInitMissingRequiredArg:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoInitPreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failures exit 1 with clear message.
@@ -732,11 +697,6 @@ class TestRepoInitPreconditionFailure:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

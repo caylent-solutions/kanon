@@ -40,9 +40,6 @@ def test_drift_manifest_xml_includes_remote_and_default_so_repo_init_accepts_it(
     """
     bare_path = create_drift_fixture(tmp_path)
 
-    # Read the manifest from the bare repo and verify structural correctness
-    # using byte-level string checks (no XML parser required for controlled
-    # fixture content -- avoids B314 bandit issue on untrusted-XML scanner).
     manifest_text = _read_manifest_text_from_bare(bare_path)
 
     remote_pos = manifest_text.find("<remote ")
@@ -66,8 +63,6 @@ def test_drift_manifest_xml_includes_remote_and_default_so_repo_init_accepts_it(
     client_dir.mkdir()
     repo_dot_dir = str(client_dir / ".repo")
 
-    # run_from_args raises RepoCommandError on non-zero exit; returning normally
-    # confirms the manifest schema was accepted (exit code 0).
     run_from_args(
         [
             "init",

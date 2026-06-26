@@ -32,9 +32,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Checkout Happy Test User"
 _GIT_USER_EMAIL = "repo-checkout-happy@example.com"
@@ -42,22 +39,21 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "checkout-test-project"
 
-# Branch names used in checkout tests -- each test uses a unique name to avoid
-# cross-test interference when the same synced repo is reused.
+
 _BRANCH_DEFAULT = "feature/default-checkout"
 _BRANCH_WITH_PROJECT_NAME = "feature/checkout-by-name"
 _BRANCH_WITH_PROJECT_PATH = "feature/checkout-by-path"
 
-# Flag name constants
+
 _FLAG_ALL = "--all"
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT_CODE = 0
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
+
 _ERROR_PREFIX = "Error:"
 
 
@@ -110,11 +106,6 @@ def _setup_started_repo(
     )
 
     return checkout_dir, repo_dir
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo checkout with default args exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -181,11 +172,6 @@ class TestRepoCheckoutHappyPathDefaultArgs:
             f"{_BRANCH_DEFAULT!r} after 'kanon repo checkout', "
             f"but current branch is {current_branch!r}."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo checkout has a happy-path test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -281,11 +267,6 @@ class TestRepoCheckoutPositionalArgHappyPath:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoCheckoutChannelDiscipline:
     """AC-CHANNEL-001: stdout vs stderr channel discipline for 'kanon repo checkout'.
@@ -370,11 +351,6 @@ class TestRepoCheckoutChannelDiscipline:
             f"Python traceback found in stderr of successful 'kanon repo checkout'.\n"
             f"  stderr: {channel_result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
 
 
 def _git_current_branch(project_dir: pathlib.Path) -> str:

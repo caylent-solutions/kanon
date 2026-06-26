@@ -14,13 +14,7 @@ import pytest
 from kanon_cli.repo import manifest_xml
 
 
-# Convenience alias -- keeps every call-site short.
 _check = manifest_xml.XmlManifest._CheckLocalPath
-
-
-# ---------------------------------------------------------------------------
-# PATH-006  dot-dot component
-# ---------------------------------------------------------------------------
 
 
 _DOTDOT_CASES = [
@@ -69,11 +63,6 @@ class TestPath006DotDotComponent:
         assert result is not None, "'..' must be rejected even with dir_ok=True"
 
 
-# ---------------------------------------------------------------------------
-# PATH-007  .git component
-# ---------------------------------------------------------------------------
-
-
 _GIT_CASES = [
     ("git_alone", ".git"),
     ("git_at_start", ".git/config"),
@@ -118,11 +107,6 @@ class TestPath007GitComponent:
         """A normal path like 'gitconfig' does not contain a '.git' component."""
         result = _check("gitconfig")
         assert result is None, f"'gitconfig' must not be rejected: {result!r}"
-
-
-# ---------------------------------------------------------------------------
-# PATH-008  .repo component
-# ---------------------------------------------------------------------------
 
 
 _REPO_CASES = [
@@ -174,11 +158,6 @@ class TestPath008RepoComponent:
         assert result is None, f"'myrepo/file.txt' must not be rejected: {result!r}"
 
 
-# ---------------------------------------------------------------------------
-# PATH-009  trailing slash without dir_ok
-# ---------------------------------------------------------------------------
-
-
 _TRAILING_SLASH_CASES = [
     ("single_component", "foo/"),
     ("nested_path", "foo/bar/"),
@@ -216,11 +195,6 @@ class TestPath009TrailingSlashWithoutDirOk:
         """A path without a trailing slash does not trigger the dir rejection."""
         result = _check("foo/bar")
         assert result is None, f"'foo/bar' must not be rejected: {result!r}"
-
-
-# ---------------------------------------------------------------------------
-# PATH-010  path escaping root via ..
-# ---------------------------------------------------------------------------
 
 
 _ESCAPE_CASES = [
@@ -272,11 +246,6 @@ class TestPath010EscapingRootViaDotDot:
         assert result is not None, "'..' alone must be rejected as a root-escape attempt"
 
 
-# ---------------------------------------------------------------------------
-# PATH-011  absolute path without abs_ok
-# ---------------------------------------------------------------------------
-
-
 _ABSOLUTE_PATH_CASES = [
     ("root_only", "/"),
     ("absolute_simple", "/abs/path"),
@@ -284,9 +253,7 @@ _ABSOLUTE_PATH_CASES = [
     ("absolute_leading_slash", "/foo"),
 ]
 
-# Subset of absolute paths whose rejection message is "path cannot be outside".
-# "/" alone is caught earlier by the trailing-slash (dirs) check, so it cannot
-# be used to verify the absolute-path message.
+
 _ABSOLUTE_PATH_OUTSIDE_MSG_CASES = [
     ("absolute_simple", "/abs/path"),
     ("absolute_nested", "/etc/passwd"),

@@ -1,17 +1,3 @@
-# Copyright (C) 2023 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit test for repo_logging module."""
 
 import contextlib
@@ -73,17 +59,8 @@ class TestRepoLogger(unittest.TestCase):
     def test_log_with_format_string(self):
         """Test different log levels with format strings."""
 
-        # Set color output to "always" for consistent test results.
-        # This ensures the logger's behavior is uniform across different
-        # environments and git configurations.
         SetDefaultColoring("always")
 
-        # Regex pattern to match optional ANSI color codes.
-        # \033    - Escape character
-        # \[      - Opening square bracket
-        # [0-9;]* - Zero or more digits or semicolons
-        # m       - Ending 'm' character
-        # ?       - Makes the entire group optional
         opt_color = r"(\033\[[0-9;]*m)?"
 
         for level in (logging.INFO, logging.WARN, logging.ERROR):
@@ -161,7 +138,7 @@ class TestLogColoringFormatter(unittest.TestCase):
         formatter = _LogColoringFormatter()
         record = logging.LogRecord("test", logging.ERROR, "path", 1, "test message", (), None)
         result = formatter.format(record)
-        # Should contain ANSI codes or message
+
         self.assertIn("test message", result)
 
     def test_formatter_format_returns_plain_for_info(self):
@@ -250,7 +227,7 @@ class TestLogAggregatedErrorsWithNoErrors(unittest.TestCase):
         """log_aggregated_errors should handle None aggregate_errors."""
         logger = RepoLogger(__name__)
         logger.log_aggregated_errors(RepoExitError(aggregate_errors=None))
-        # Should call error for separator and message
+
         self.assertGreater(mock_error.call_count, 0)
 
     @mock.patch.object(RepoLogger, "error")
@@ -258,7 +235,7 @@ class TestLogAggregatedErrorsWithNoErrors(unittest.TestCase):
         """log_aggregated_errors should handle empty aggregate_errors."""
         logger = RepoLogger(__name__)
         logger.log_aggregated_errors(RepoExitError(aggregate_errors=[]))
-        # Should call error for separator and single error message
+
         self.assertGreater(mock_error.call_count, 1)
 
     @mock.patch.object(RepoLogger, "error")
@@ -269,7 +246,7 @@ class TestLogAggregatedErrorsWithNoErrors(unittest.TestCase):
         logger = RepoLogger(__name__)
         errors = [Exception(f"error{i}") for i in range(MAX_PRINT_ERRORS)]
         logger.log_aggregated_errors(RepoExitError(aggregate_errors=errors))
-        # Should not call error with "+N additional" message
+
         calls = [str(call) for call in mock_error.call_args_list]
         additional_calls = [c for c in calls if "additional" in c]
         self.assertEqual(len(additional_calls), 0)
@@ -282,7 +259,7 @@ class TestLogAggregatedErrorsWithNoErrors(unittest.TestCase):
         logger = RepoLogger(__name__)
         errors = [Exception(f"error{i}") for i in range(MAX_PRINT_ERRORS + 1)]
         logger.log_aggregated_errors(RepoExitError(aggregate_errors=errors))
-        # Should call error with "+1 additional" message
+
         calls = [str(call) for call in mock_error.call_args_list]
         additional_calls = [c for c in calls if "+1 additional" in c or "call('+%d additional" in c]
         self.assertGreater(len(additional_calls), 0)

@@ -19,9 +19,10 @@ def register(subparsers) -> None:
         help="Full teardown: uninstall, remove dirs",
         description=(
             "Execute the full Kanon clean lifecycle.\n\n"
-            "If KANON_MARKETPLACE_INSTALL=true, runs the uninstall script\n"
-            "and removes the marketplace directory. Then removes .packages/\n"
-            "and .kanon-data/ directories.\n\n"
+            "If any dependency set KANON_SOURCE_<alias>_MARKETPLACE=true, runs\n"
+            "the uninstall script and removes the marketplace directory. Then\n"
+            "removes .packages/ and .kanon-data/ directories and prunes the\n"
+            "content-addressed entries from the shared KANON_HOME store.\n\n"
             "With --orphans, before the normal teardown kanon also unregisters\n"
             "any kanon-owned marketplaces recorded in .kanon.lock that are no\n"
             "longer referenced by .kanon (pruning them from ~/.claude)."
@@ -67,11 +68,6 @@ def _run(args) -> None:
             sys.exit(1)
         print(f"kanon clean: found {args.kanonenv_path}")
 
-    # The downstream repo manifest parser enforces an absolute `manifest_file`
-    # at src/kanon_cli/repo/manifest_xml.py:410. Resolve here at the CLI
-    # boundary so `kanon clean .kanon` (relative argument) behaves identically
-    # to auto-discovery, and fail-fast with a clear message if the file is
-    # missing.
     args.kanonenv_path = args.kanonenv_path.resolve()
     if not args.kanonenv_path.is_file():
         print(f"Error: .kanon file not found: {args.kanonenv_path}", file=sys.stderr)

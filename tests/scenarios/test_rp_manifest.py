@@ -14,11 +14,6 @@ import pytest
 from tests.scenarios.conftest import make_plain_repo, run_kanon
 
 
-# ---------------------------------------------------------------------------
-# Shared fixture
-# ---------------------------------------------------------------------------
-
-
 def _build_rp_ro_repo(base: pathlib.Path) -> pathlib.Path:
     """Build content repos + bare manifest repo, run init + sync, return checkout dir."""
     content_repos = base / "content-repos"
@@ -79,11 +74,6 @@ def rp_ro_checkout(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
     """Module-scoped synced repo checkout shared across RP-manifest-* tests."""
     base = tmp_path_factory.mktemp("rp_manifest")
     return _build_rp_ro_repo(base)
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario

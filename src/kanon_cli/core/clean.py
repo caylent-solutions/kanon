@@ -3,22 +3,25 @@
 Performs full Kanon teardown in the following order:
   1. Resolve symlinks in kanonenv_path so teardown targets the real project directory
   2. Determine marketplace state: consult .kanon.lock (marketplace_registered field)
-     when present; fall back to the .kanon KANON_MARKETPLACE_INSTALL flag for old
-     lockfiles or when no lockfile exists (back-compat, AC-8).
-  3. Resolve the artifact base directory via resolve_workspace_base_dir: when
-     KANON_WORKSPACE_DIR is set, remove artifacts from that directory; otherwise
-     remove from the directory containing .kanon.
+     when present; fall back to the .kanon per-dependency
+     KANON_SOURCE_<alias>_MARKETPLACE flags (registered when ANY dependency opts
+     in) for old lockfiles or when no lockfile exists (back-compat, AC-8).
+  3. Resolve the artifact base directory via resolve_workspace_base_dir: the
+     shared KANON_HOME store (<KANON_HOME>/store, default ~/.kanon/store), from
+     which .packages/ and .kanon-data/ are removed.
   4. If marketplace was registered: uninstall marketplace plugins via claude CLI,
      then remove CLAUDE_MARKETPLACES_DIR.
   5. Remove .packages/ directory (ignore_errors=True)
   6. Remove .kanon-data/ directory (ignore_errors=True)
+  7. Prune the content-addressed store entries via prune_store (spec Section 3.5)
 """
 
 import pathlib
 import shutil
 import sys
 
-from kanon_cli.core.install import resolve_workspace_base_dir
+from kanon_cli.constants import SOURCE_MARKETPLACE_KEY
+from kanon_cli.core.install import prune_store, resolve_workspace_base_dir
 from kanon_cli.core.marketplace import (
     locate_claude_binary,
     remove_marketplace,
@@ -54,6 +57,21 @@ def remove_kanon_dir(base_dir: pathlib.Path) -> None:
         base_dir: Project root directory.
     """
     shutil.rmtree(base_dir / ".kanon-data", ignore_errors=True)
+
+
+def remove_store_entries(base_dir: pathlib.Path) -> None:
+    """Prune the content-addressed store entries from the KANON_HOME store.
+
+    Delegates to ``prune_store`` (spec Section 3.5 / FR-16): removes the
+    content-addressed entries directory plus the per-entry lock roots and the
+    publish temp dir, leaving the store base directory itself in place. This is
+    the store-prune half of ``kanon clean`` alongside the per-project
+    ``.packages/`` and ``.kanon-data/`` removal.
+
+    Args:
+        base_dir: The resolved store base directory (``<KANON_HOME>/store``).
+    """
+    prune_store(base_dir)
 
 
 def _print_remove_summary(packages_dir: pathlib.Path) -> None:
@@ -136,8 +154,6 @@ def _prune_orphaned_marketplaces(lockfile: Lockfile | None, current_source_names
         print("kanon clean: no orphaned sources in .kanon.lock; nothing to prune.")
         return
 
-    # Marketplaces still provided by a source that remains in .kanon must not be
-    # pruned even if an orphaned source also registered them.
     referenced: set[str] = set()
     for source in lockfile.sources:
         if source.name in current:
@@ -167,20 +183,22 @@ def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
          from the real project directory even when .kanon is a symlink.
       2. Parse .kanon.
       3. Resolve the artifact base directory via ``resolve_workspace_base_dir``:
-         when ``KANON_WORKSPACE_DIR`` is set, artifacts are removed from that
-         directory; otherwise from the directory containing .kanon.  This
-         mirrors the resolution used by install so clean removes exactly what
-         install wrote.
+         the shared ``KANON_HOME`` store (``<KANON_HOME>/store``, default
+         ``~/.kanon/store``).  This mirrors the resolution used by install so
+         clean removes exactly what install wrote.
       4. Determine marketplace state from .kanon.lock (marketplace_registered) when
-         present; fall back to the .kanon KANON_MARKETPLACE_INSTALL flag for old
-         lockfiles or when no lockfile exists.
+         present; fall back to the .kanon per-dependency
+         KANON_SOURCE_<alias>_MARKETPLACE flags (registered when ANY dependency
+         opts in) for old lockfiles or when no lockfile exists.
       5. If marketplace was registered: run uninstall, remove marketplace dir.
-      6. Remove .packages/ and .kanon-data/.
+      6. Remove .packages/ and .kanon-data/, then prune the content-addressed
+         store entries (spec Section 3.5 / FR-16).
 
-    The lockfile-first lookup ensures that an env-override install
-    (KANON_MARKETPLACE_INSTALL=true at install time, while .kanon stores false) is
-    cleaned up correctly: the lockfile records the actual install-time state, so
-    clean does not rely on the potentially stale .kanon flag.
+    The lockfile-first lookup ensures that an install whose registered set differs
+    from the current .kanon flags (e.g. a dependency's
+    KANON_SOURCE_<alias>_MARKETPLACE was flipped off after install) is cleaned up
+    correctly: the lockfile records the actual install-time state, so clean does
+    not rely on the potentially stale .kanon flags.
 
     Args:
         kanonenv_path: Path to the .kanon configuration file. May be a symlink;
@@ -198,40 +216,31 @@ def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
     kanonenv_path = kanonenv_path.resolve()
     print(f"kanon clean: parsing {kanonenv_path}...")
     config = parse_kanonenv(kanonenv_path)
-    base_dir = resolve_workspace_base_dir(kanonenv_path.parent)
-    kanon_flag_marketplace_install = config["KANON_MARKETPLACE_INSTALL"]
+    base_dir = resolve_workspace_base_dir()
+
+    kanon_flag_marketplace_install = any(bool(source[SOURCE_MARKETPLACE_KEY]) for source in config["sources"].values())
     globals_dict = config["globals"]
 
     marketplace_dir_str = globals_dict.get("CLAUDE_MARKETPLACES_DIR", "")
 
-    # Determine whether a marketplace was registered, preferring lockfile state
-    # over the .kanon flag so that env-override installs are cleaned up correctly.
-    lockfile_path = base_dir / ".kanon.lock"
+    lockfile_path = kanonenv_path.parent / ".kanon.lock"
     lockfile = _read_lockfile_if_present(lockfile_path)
 
     if orphans:
-        # Orphaned-source prune runs BEFORE the normal teardown and does not
-        # require .packages/.  It unregisters the marketplaces of sources that
-        # are recorded in .kanon.lock but no longer declared in the current
-        # .kanon.  Removal candidates come ONLY from the per-source ledgers in
-        # the lockfile (see _prune_orphaned_marketplaces).
         current_source_names = config["KANON_SOURCES"]
         _prune_orphaned_marketplaces(lockfile, current_source_names)
 
     if lockfile is not None and lockfile.marketplace_registered:
-        # Lockfile records a registration -- use its stored directory.
         effective_marketplace_install = True
         effective_marketplace_dir_str = lockfile.marketplace_dir
     else:
-        # No lockfile, or lockfile lacks a registration (old lockfile migrated to
-        # marketplace_registered=False, or fresh install with false).  Fall back to
-        # the .kanon flag for back-compat (AC-8).
         effective_marketplace_install = kanon_flag_marketplace_install
         effective_marketplace_dir_str = marketplace_dir_str
 
     if effective_marketplace_install and not effective_marketplace_dir_str:
         print(
-            "Error: KANON_MARKETPLACE_INSTALL=true but CLAUDE_MARKETPLACES_DIR is not defined in .kanon",
+            "Error: a KANON_SOURCE_<alias>_MARKETPLACE=true dependency is declared "
+            "but CLAUDE_MARKETPLACES_DIR is not defined in .kanon",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -253,4 +262,6 @@ def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
     remove_packages_dir(base_dir)
     print("kanon clean: removing .kanon-data/...")
     remove_kanon_dir(base_dir)
+    print("kanon clean: pruning content-addressed store entries...")
+    remove_store_entries(base_dir)
     print("kanon clean: done.")

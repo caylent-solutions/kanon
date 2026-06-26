@@ -39,7 +39,7 @@ def _run_kanon(
 def _fixture_dir() -> pathlib.Path:
     """Return the path to the broken-soft-spot-2 fixture directory."""
     here = pathlib.Path(__file__).parent
-    # tests/integration/ -> tests/fixtures/catalog/broken-soft-spot-2/
+
     return here.parent / "fixtures" / "catalog" / "broken-soft-spot-2"
 
 
@@ -121,11 +121,9 @@ class TestCatalogAuditSourceNameSubprocess:
         trigger the source-name-derivation logic.
         """
         fixture = _fixture_dir()
-        # Run with --check metadata to verify the CLI accepts multiple check names
+
         result_snd = _run_kanon(["catalog", "audit", str(fixture), "--check", "source-name-derivation"])
-        # The source-name-derivation check must be isolated; metadata findings
-        # should not appear when only source-name-derivation is selected.
-        # No M001/M002 codes expected from --check source-name-derivation run
+
         snd_output = result_snd.stdout
         assert "M001" not in snd_output and "M002" not in snd_output, (
             f"Metadata finding codes should not appear in source-name-derivation output.\nstdout: {snd_output}"

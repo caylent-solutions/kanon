@@ -14,11 +14,6 @@ import pytest
 from tests.scenarios.conftest import make_plain_repo, run_kanon
 
 
-# ---------------------------------------------------------------------------
-# Shared fixture
-# ---------------------------------------------------------------------------
-
-
 def _build_rp_ro_repo(base: pathlib.Path) -> pathlib.Path:
     """Build content repos + bare manifest repo, run init + sync, return checkout dir."""
     content_repos = base / "content-repos"
@@ -81,11 +76,6 @@ def rp_ro_checkout(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
     return _build_rp_ro_repo(base)
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestRPInfo:
     """RP-info-01..07: kanon repo info subcommand."""
@@ -97,7 +87,7 @@ class TestRPInfo:
             f"repo info exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
         combined = result.stdout + result.stderr
-        # Pass criteria: manifest name or info appears in output
+
         assert combined, "Expected non-empty output from repo info"
 
     def test_rp_info_02_diff(self, rp_ro_checkout: pathlib.Path) -> None:

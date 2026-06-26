@@ -1,35 +1,29 @@
-"""Unit tests for kanon catalog audit --check tag-format covering <project>-referenced tags.
+"""Unit tests for kanon catalog audit --check tag-format covering <project revision> pinnability.
 
-R3 resolution: T1 chose path (a) -- R3 == R89 / soft-spot 5; no new check required.
-Interpretation: spec section 0.4 uses '<project>' as an XML element designator that
-points to the manifest-repo tag surface already covered by soft-spot 5 (section 3.5).
-The existing '--check tag-format' implementation already scans git ls-remote --tags
-of the manifest repo and flags every non-PEP-440 last-path-component, covering every
-tag that any '<project revision="..."/>' element might reference.
+These tests verify that '--check tag-format' validates every '<project revision>'
+in the catalog against the SAME pinnable rule that 'kanon validate marketplace'
+enforces (spec Section 4.5 / Section 6 / FR-22, AMENDED 2026-06-25): a revision
+must be a pinnable ref -- an exact tag 'refs/tags/<path>/<pep440>', a branch ref
+'refs/heads/<name>', or a 40-hex commit SHA. A bare branch, the '*' wildcard, and
+a single or compound version-range constraint (e.g. '>=0.1.0,<1.0.0') are all
+rejected as ERROR findings (code T002), so catalog audit and validate marketplace
+agree.
 
-Decision source: the cleanup-2026-05 ambiguities analysis, row 1,
-resolved as '(a) R3 == R89 / soft-spot 5; no new check required.'
-Reference: the cleanup-2026-05 impl-gaps spec, section 6.
-
-These tests verify that the EXISTING '--check tag-format' check:
-1. Warns when the manifest repo contains a non-PEP-440 tag that a '<project>' element
-   pins via its 'revision' attribute (warning path).
-2. Emits zero warnings when the manifest repo contains only PEP-440 tags (happy path).
-3. Warns for each non-PEP-440 tag referenced via '<project revision="...">' elements,
-   naming the offending tag in the warning message.
+This is the alignment fix: previously '--check tag-format' inspected only the
+manifest repo's git tag surface (T001 WARN about non-PEP-440 tag names) and never
+validated the '<project revision>' attribute, so it silently ACCEPTED a range
+revision that validate marketplace correctly REJECTED. The T002 check closes that
+gap by reusing the shared '_is_pinnable_revision' predicate (DRY).
 
 The tests use a synthetic in-memory catalog fixture (an XML file written under
 tmp_path/repo-specs/) with '<project revision="..."/>' elements, combined with an
 injected ls_remote_callable stub that simulates git ls-remote --tags output for the
 manifest repo. This approach avoids real network or git operations.
-
-AC-FUNC-002, AC-FUNC-004, AC-FUNC-005, AC-TEST-001, AC-TEST-002, AC-CYCLE-001.
 """
 
 from __future__ import annotations
 
 import pathlib
-import textwrap
 
 import pytest
 
@@ -37,30 +31,26 @@ from kanon_cli.commands.catalog import AuditFinding, _check_tag_format
 from tests.unit.conftest import _make_ls_remote_stub
 
 
-# ---------------------------------------------------------------------------
-# Fixture builder helpers
-# ---------------------------------------------------------------------------
-
-
 def _build_catalog_fixture(
     tmp_path: pathlib.Path,
     entry_name: str,
     project_revisions: list[str],
     remote_name: str = "origin",
-    remote_fetch: str = "https://example.com/repo.git",
+    remote_fetch: str = "https://example.com/repo",
 ) -> pathlib.Path:
     """Build a synthetic manifest repo fixture under tmp_path.
 
     Creates a repo-specs/ directory with a single '*-marketplace.xml' file
     whose '<project>' elements each use one of the provided 'revision' values.
-    The revision values represent tag names that the catalog author pinned;
-    these tags exist in the manifest repo and would be returned by
-    git ls-remote --tags.
+
+    The XML is assembled with xml.etree so attribute values containing special
+    characters (e.g. '<' in a version range like '>=0.1.0,<1.0.0') are escaped
+    correctly and the manifest stays well-formed.
 
     Args:
         tmp_path: Temporary directory to use as the manifest repo root.
         entry_name: The '<catalog-metadata><name>' for the fixture entry.
-        project_revisions: List of tag/revision values to use as
+        project_revisions: List of revision values to use as
             '<project revision="...">' attributes. One '<project>' element is
             created per revision.
         remote_name: The name attribute for the '<remote>' element.
@@ -69,34 +59,37 @@ def _build_catalog_fixture(
     Returns:
         Path to the tmp_path root (manifest repo root containing repo-specs/).
     """
+    import xml.etree.ElementTree as ET
+
     repo_specs_dir = tmp_path / "repo-specs"
     repo_specs_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build the project elements for each revision
-    project_elements = "\n".join(
-        f'  <project name="tool-{i}" remote="{remote_name}" path="tools/tool-{i}" revision="{rev}" />'
-        for i, rev in enumerate(project_revisions)
-    )
+    manifest = ET.Element("manifest")
+    metadata = ET.SubElement(manifest, "catalog-metadata")
+    for tag, text in (
+        ("name", entry_name),
+        ("display-name", "Test Tool"),
+        ("description", "A test tool fixture."),
+        ("version", "1.0.0"),
+    ):
+        ET.SubElement(metadata, tag).text = text
 
-    xml_content = textwrap.dedent(f"""\
-        <?xml version="1.0"?>
-        <!-- Fixture catalog for test_catalog_audit_project_tag_format.
-             Entry '{entry_name}' with project revisions: {project_revisions}.
-             Used to verify --check tag-format covers <project>-referenced tags. -->
-        <manifest>
-          <catalog-metadata>
-            <name>{entry_name}</name>
-            <display-name>Test Tool</display-name>
-            <description>A test tool fixture.</description>
-            <version>1.0.0</version>
-          </catalog-metadata>
-          <remote name="{remote_name}" fetch="{remote_fetch}" />
-        {project_elements}
-        </manifest>
-    """)
+    ET.SubElement(manifest, "remote", {"name": remote_name, "fetch": remote_fetch})
+
+    for i, rev in enumerate(project_revisions):
+        ET.SubElement(
+            manifest,
+            "project",
+            {
+                "name": f"tool-{i}",
+                "remote": remote_name,
+                "path": f"tools/tool-{i}",
+                "revision": rev,
+            },
+        )
 
     xml_file = repo_specs_dir / f"{entry_name}-marketplace.xml"
-    xml_file.write_text(xml_content, encoding="utf-8")
+    ET.ElementTree(manifest).write(str(xml_file), encoding="utf-8", xml_declaration=True)
 
     return tmp_path
 
@@ -118,406 +111,234 @@ def _run_tag_format_check(
     return _check_tag_format(target_path, stub)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: Happy path -- <project> pinned to PEP-440 tag => zero warnings
-# ---------------------------------------------------------------------------
+_VALID_EXACT_REVISION = "refs/tags/tools/tool/1.0.0"
 
 
 @pytest.mark.unit
-class TestProjectTagFormatHappyPath:
-    """Happy path: when the manifest repo contains only PEP-440 tags, zero warnings.
-
-    This covers the case where every '<project revision="...">' element pins a
-    PEP-440-canonical tag. The '--check tag-format' check scans ALL manifest-repo
-    tags and emits no warnings when all are valid PEP 440 versions.
-
-    Satisfies: AC-FUNC-004, AC-TEST-002.
-    """
+class TestProjectRevisionPinnableHappyPath:
+    """A pinnable '<project revision>' (tag / branch-ref / sha) produces zero T002 findings."""
 
     @pytest.mark.parametrize(
-        ("entry_name", "revisions", "manifest_repo_tags"),
+        "revisions",
         [
-            (
-                "my-tool",
-                ["1.0.0"],
-                ["1.0.0"],
-            ),
-            (
-                "multi-version-tool",
-                ["1.0.0", "2.0.0"],
-                ["1.0.0", "2.0.0"],
-            ),
-            (
-                "prerelease-tool",
-                ["1.0.0a1"],
-                ["1.0.0a1"],
-            ),
-            (
-                "calendar-version-tool",
-                ["2026.4.1"],
-                ["2026.4.1"],
-            ),
+            ["refs/tags/tools/tool/1.0.0"],
+            ["refs/tags/tools/tool/1.0.0", "refs/tags/tools/tool/2.0.0"],
+            ["refs/tags/tools/tool/1.0.0a1"],
+            ["refs/tags/tools/tool/2026.4.1"],
+            ["refs/tags/deep/nested/path/tool/3.4.5"],
+            ["refs/heads/main"],
+            ["refs/heads/feature/my-branch"],
+            ["a" * 40],
+            ["refs/tags/tools/tool/1.0.0", "refs/heads/main", "b" * 40],
         ],
     )
-    def test_pep440_project_revisions_produce_zero_warnings(
+    def test_pinnable_revisions_produce_zero_t002(
         self,
         tmp_path: pathlib.Path,
-        entry_name: str,
         revisions: list[str],
-        manifest_repo_tags: list[str],
     ) -> None:
-        """A catalog with <project revision="<pep440>"> and PEP-440 manifest tags.
+        """A catalog whose every '<project revision>' is pinnable emits no T002 findings."""
+        target_path = _build_catalog_fixture(tmp_path, "pinnable-tool", revisions)
+        findings = _run_tag_format_check(target_path, ["1.0.0", "2.0.0"])
 
-        When all manifest repo tags are canonical PEP 440, '--check tag-format'
-        emits zero warnings. The '<project revision="...">' value is a PEP-440 tag.
-
-        Args:
-            tmp_path: Pytest tmp_path fixture.
-            entry_name: Catalog entry name for the fixture.
-            revisions: Revision values used in '<project revision="...">' elements.
-            manifest_repo_tags: Tags returned by the simulated git ls-remote --tags.
-        """
-        target_path = _build_catalog_fixture(tmp_path, entry_name, revisions)
-        findings = _run_tag_format_check(target_path, manifest_repo_tags)
-
-        assert findings == [], (
-            f"Expected zero warnings for PEP-440 project revisions {revisions!r}, "
-            f"manifest tags {manifest_repo_tags!r}, got: {findings}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: Warning path -- <project> pinned to non-PEP-440 tag => warning
-# ---------------------------------------------------------------------------
+        t002 = [f for f in findings if f.code == "T002"]
+        assert t002 == [], f"Expected zero T002 findings for pinnable revisions {revisions!r}, got: {t002}"
 
 
 @pytest.mark.unit
-class TestProjectTagFormatWarningPath:
-    """Warning path: when a <project revision="..."> pins a non-PEP-440 tag, a warning fires.
-
-    The manifest repo contains the non-PEP-440 tag that the '<project>' element
-    references. The '--check tag-format' check scans ALL manifest-repo tags
-    (which includes tags pinned by '<project>' elements) and emits one WARN per
-    non-PEP-440 last-path-component.
-
-    This proves R3 == R89 / soft-spot 5: the existing '--check tag-format' check
-    covers '<project>'-referenced tags.
-
-    Satisfies: AC-FUNC-005, AC-TEST-002.
-    """
+class TestProjectRevisionRangeRejected:
+    """A non-exact '<project revision>' is rejected as a T002 ERROR (alignment with validate marketplace)."""
 
     @pytest.mark.parametrize(
-        ("entry_name", "non_pep440_revision", "expected_tag_in_warning"),
+        "revision",
         [
-            (
-                "legacy-tool",
-                "release-2024",
-                "release-2024",
-            ),
-            (
-                "v-prefixed-tool",
-                "v1.0.0",
-                "v1.0.0",
-            ),
-            (
-                "rc-tool",
-                "release-candidate",
-                "release-candidate",
-            ),
-            (
-                "latest-tool",
-                "latest-stable",
-                "latest-stable",
-            ),
+            ">=0.1.0,<1.0.0",
+            "~=1.2.0",
+            ">=1.0.0",
+            "main",
+            "*",
+            "refs/tags/tools/tool/*",
+            "refs/tags/tools/tool/1.2.x",
+            "v1.0.0",
+            "release-2024",
         ],
     )
-    def test_non_pep440_project_revision_produces_warning(
+    def test_non_exact_revision_produces_t002_error(
         self,
         tmp_path: pathlib.Path,
-        entry_name: str,
-        non_pep440_revision: str,
-        expected_tag_in_warning: str,
+        revision: str,
     ) -> None:
-        """A catalog with <project revision="<non-pep440>"> triggers a WARN.
+        """Every non-exact-tag revision shape produces exactly one T002 ERROR naming the revision."""
+        target_path = _build_catalog_fixture(tmp_path, "bad-tool", [revision])
+        findings = _run_tag_format_check(target_path, ["1.0.0"])
 
-        When the manifest repo contains a non-PEP-440 tag (matching the
-        '<project revision="...">' value), '--check tag-format' emits exactly
-        one WARN finding naming the offending tag. This demonstrates that the
-        check covers '<project>'-referenced tags.
+        t002 = [f for f in findings if f.code == "T002"]
+        assert len(t002) == 1, f"Expected exactly one T002 ERROR for non-exact revision {revision!r}, got: {t002}"
+        assert t002[0].kind == "error", f"Expected kind='error' for T002, got: {t002[0].kind!r}"
+        assert revision in t002[0].message, f"Expected revision {revision!r} named in message, got: {t002[0].message!r}"
 
-        Args:
-            tmp_path: Pytest tmp_path fixture.
-            entry_name: Catalog entry name for the fixture.
-            non_pep440_revision: Non-PEP-440 tag used as '<project revision="...">'.
-            expected_tag_in_warning: The tag string expected in the warning message.
-        """
-        target_path = _build_catalog_fixture(tmp_path, entry_name, [non_pep440_revision])
-        # Simulate the manifest repo containing the same non-PEP-440 tag
-        findings = _run_tag_format_check(target_path, [non_pep440_revision])
-
-        warn_findings = [f for f in findings if f.kind == "warn"]
-        assert len(warn_findings) == 1, (
-            f"Expected exactly one WARN for non-PEP-440 project revision {non_pep440_revision!r}, got: {warn_findings}"
-        )
-        assert expected_tag_in_warning in warn_findings[0].message, (
-            f"Expected '{expected_tag_in_warning}' in warning message, got: {warn_findings[0].message!r}"
-        )
-
-    def test_non_pep440_project_revision_warning_code_is_t001(
+    def test_range_revision_rejected_identically_to_validate_marketplace(
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """The warning for a non-PEP-440 <project>-referenced tag has code T001.
+        """A version-range revision is rejected by catalog audit just as validate marketplace rejects it.
 
-        Args:
-            tmp_path: Pytest tmp_path fixture.
+        This is the core finding-#4 assertion: validate marketplace's
+        validate_tag_format rejects '>=0.1.0,<1.0.0'; catalog audit's
+        tag-format check must reject it identically (both reuse the shared
+        '_is_pinnable_revision' predicate, so the verdicts agree).
         """
-        target_path = _build_catalog_fixture(tmp_path, "test-tool", ["release-2024"])
-        findings = _run_tag_format_check(target_path, ["release-2024"])
+        from pathlib import Path
 
-        assert len(findings) == 1
-        assert findings[0].code == "T001", (
-            f"Expected T001 finding code for non-PEP-440 project revision, got: {findings[0].code}"
+        from kanon_cli.core.marketplace_validator import validate_tag_format
+
+        range_revision = ">=0.1.0,<1.0.0"
+        target_path = _build_catalog_fixture(tmp_path, "range-tool", [range_revision])
+
+        audit_findings = _run_tag_format_check(target_path, ["1.0.0"])
+        audit_t002 = [f for f in audit_findings if f.code == "T002"]
+
+        xml_files = list((target_path / "repo-specs").glob("*-marketplace.xml"))
+        marketplace_errors = validate_tag_format([Path(p) for p in xml_files], target_path)
+
+        assert len(audit_t002) == 1, f"catalog audit must reject the range revision (one T002 ERROR), got: {audit_t002}"
+        assert len(marketplace_errors) == 1, (
+            f"validate marketplace must reject the range revision, got: {marketplace_errors}"
         )
+        assert range_revision in audit_t002[0].message
+        assert range_revision in marketplace_errors[0]
 
-    def test_non_pep440_project_revision_warning_is_warn_not_error(
+    def test_t002_remediation_points_at_validate_marketplace(
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """The finding for a non-PEP-440 <project>-referenced tag is WARN, not ERROR.
+        """The T002 remediation names an exact-tag form and the validate marketplace cross-check."""
+        target_path = _build_catalog_fixture(tmp_path, "bad-tool", [">=0.1.0,<1.0.0"])
+        findings = _run_tag_format_check(target_path, ["1.0.0"])
 
-        Per spec section 0.4, tag-format findings are warnings only; no error-level
-        findings are produced by '--check tag-format'.
-
-        Args:
-            tmp_path: Pytest tmp_path fixture.
-        """
-        target_path = _build_catalog_fixture(tmp_path, "test-tool", ["release-2024"])
-        findings = _run_tag_format_check(target_path, ["release-2024"])
-
-        assert len(findings) == 1
-        assert findings[0].kind == "warn", f"Expected kind='warn' for tag-format finding, got: {findings[0].kind!r}"
-
-    def test_non_pep440_project_revision_warning_mentions_unaddressable(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """The warning for a non-PEP-440 <project>-referenced tag mentions 'unaddressable'.
-
-        This confirms the message text is identical to the standard T001 message,
-        proving the existing check (not a new one) is responsible for the finding.
-
-        Args:
-            tmp_path: Pytest tmp_path fixture.
-        """
-        target_path = _build_catalog_fixture(tmp_path, "test-tool", ["release-2024"])
-        findings = _run_tag_format_check(target_path, ["release-2024"])
-
-        assert len(findings) == 1
-        assert "unaddressable" in findings[0].message, (
-            f"Expected 'unaddressable' in T001 warning message, got: {findings[0].message!r}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: Verify existing check covers <project>-referenced tags
-# ---------------------------------------------------------------------------
+        t002 = [f for f in findings if f.code == "T002"]
+        assert len(t002) == 1
+        assert "refs/tags/" in t002[0].remediation
+        assert "validate marketplace" in t002[0].remediation
 
 
 @pytest.mark.unit
-class TestExistingCheckCoversProjectReferencedTags:
-    """The existing '--check tag-format' covers tags reached via <project> elements.
+class TestMixedProjectRevisions:
+    """A mix of exact-tag and non-exact revisions yields T002 only for the non-exact ones."""
 
-    This is the core AC-FUNC-002 assertion for path (a): the existing implementation
-    of '_check_tag_format' scans ALL manifest-repo tags, including those that
-    '<project revision="...">' elements reference. No new check is needed because
-    the manifest repo's git ls-remote --tags output already includes these tags.
+    def test_only_non_exact_revisions_produce_t002(self, tmp_path: pathlib.Path) -> None:
+        """Exact-tag revisions are silent; only non-exact revisions produce T002 errors."""
+        exact = ["refs/tags/tools/tool/1.0.0", "refs/tags/tools/tool/2.0.0"]
+        non_exact = [">=0.1.0,<1.0.0", "main"]
+        target_path = _build_catalog_fixture(tmp_path, "mixed-tool", exact + non_exact)
 
-    The test structure demonstrates this by:
-    1. Building a catalog fixture with '<project revision="non-pep440-tag"/>' elements.
-    2. Providing a stub that returns the same non-PEP-440 tag from git ls-remote --tags.
-    3. Asserting the existing warning fires and names the offending tag.
+        findings = _run_tag_format_check(target_path, ["1.0.0", "2.0.0"])
+        t002 = [f for f in findings if f.code == "T002"]
 
-    Satisfies: AC-FUNC-002.
-    """
-
-    def test_existing_check_warns_for_project_non_pep440_revision(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """The existing _check_tag_format warns for a non-PEP-440 <project> revision.
-
-        When the manifest repo contains the non-PEP-440 tag 'release-2024'
-        (the same tag pinned by '<project revision="release-2024"/>'), the existing
-        '--check tag-format' emits one WARN finding naming 'release-2024'.
-        This proves R3 is already satisfied by the existing implementation.
-
-        Args:
-            tmp_path: Pytest tmp_path fixture.
-        """
-        non_pep440_tag = "release-2024"
-        target_path = _build_catalog_fixture(
-            tmp_path,
-            "my-tool",
-            [non_pep440_tag],
+        assert len(t002) == len(non_exact), (
+            f"Expected {len(non_exact)} T002 errors for non-exact revisions {non_exact!r}, got {len(t002)}: {t002}"
         )
-        findings = _run_tag_format_check(target_path, [non_pep440_tag])
-
-        warn_findings = [f for f in findings if f.kind == "warn"]
-        assert len(warn_findings) >= 1, (
-            f"Expected at least one WARN for non-PEP-440 project revision '{non_pep440_tag}', got: {findings}"
-        )
-        assert any(non_pep440_tag in f.message for f in warn_findings), (
-            f"Expected '{non_pep440_tag}' in at least one WARN message, "
-            f"got messages: {[f.message for f in warn_findings]}"
-        )
-
-    def test_existing_check_zero_warnings_for_pep440_project_revision(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """The existing _check_tag_format emits zero warnings for a PEP-440 <project> revision.
-
-        When the manifest repo contains only PEP-440 tags (including those pinned
-        by '<project revision="..."/>' elements), zero T001 warnings are emitted.
-        This is the control case that confirms the happy path also works correctly.
-
-        Args:
-            tmp_path: Pytest tmp_path fixture.
-        """
-        pep440_tag = "1.0.0"
-        target_path = _build_catalog_fixture(tmp_path, "my-tool", [pep440_tag])
-        findings = _run_tag_format_check(target_path, [pep440_tag])
-
-        assert findings == [], f"Expected zero warnings for PEP-440 project revision '{pep440_tag}', got: {findings}"
-
-    def test_mixed_project_revisions_only_warn_for_non_pep440(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """Mixed catalog: only the non-PEP-440 <project> revision produces a warning.
-
-        When a catalog contains multiple '<project>' elements -- some with PEP-440
-        revisions and some with non-PEP-440 revisions -- the existing check warns
-        only for the non-PEP-440 ones and is silent for the PEP-440 ones.
-
-        Args:
-            tmp_path: Pytest tmp_path fixture.
-        """
-        pep440_revisions = ["1.0.0", "2.0.0"]
-        non_pep440_revisions = ["release-2024", "v1.0.0"]
-        all_revisions = pep440_revisions + non_pep440_revisions
-
-        target_path = _build_catalog_fixture(tmp_path, "mixed-tool", all_revisions)
-        # Simulate the manifest repo containing all tags (PEP-440 and non-PEP-440)
-        findings = _run_tag_format_check(target_path, all_revisions)
-
-        warn_findings = [f for f in findings if f.kind == "warn"]
-        # Expect exactly one warning per non-PEP-440 tag
-        assert len(warn_findings) == len(non_pep440_revisions), (
-            f"Expected {len(non_pep440_revisions)} warnings for non-PEP-440 revisions "
-            f"{non_pep440_revisions!r}, got {len(warn_findings)}: {warn_findings}"
-        )
-
-        warned_messages = [f.message for f in warn_findings]
-        for non_pep440 in non_pep440_revisions:
-            assert any(non_pep440 in msg for msg in warned_messages), (
-                f"Expected warning for non-PEP-440 revision '{non_pep440}', "
-                f"but no warning message contained it. Messages: {warned_messages}"
-            )
-        # Verify the warned tags are exactly the non-PEP-440 revisions by
-        # checking the warned tag names directly from findings rather than
-        # doing a substring search (which could match '1.0.0' inside 'v1.0.0').
-        warned_tags = set()
-        for f in warn_findings:
-            # Extract the tag name from messages like "Tag 'X' is unaddressable..."
-            # by checking which of the all_revisions appears in the message.
-            for rev in all_revisions:
-                if f"'{rev}'" in f.message:
-                    warned_tags.add(rev)
-        for pep440 in pep440_revisions:
-            assert pep440 not in warned_tags, (
-                f"Expected no warning for PEP-440 revision '{pep440}', "
-                f"but it appeared as a warned tag. Warned tags: {warned_tags}"
-            )
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: End-to-end demonstration
-# ---------------------------------------------------------------------------
+        messages = " ".join(f.message for f in t002)
+        for rev in non_exact:
+            assert rev in messages, f"Expected non-exact revision {rev!r} named in a T002 message: {messages!r}"
+        for rev in exact:
+            assert rev not in messages, f"Exact-tag revision {rev!r} must not be flagged: {messages!r}"
 
 
 @pytest.mark.unit
-class TestAcCycle001EndToEnd:
-    """AC-CYCLE-001: end-to-end cycle for path (a) via the CLI entry point.
+class TestInheritedDefaultRevision:
+    """A project that inherits a non-exact '<default revision>' is rejected via T002."""
 
-    Builds a fixture catalog whose '<project>' pins a non-PEP-440 tag,
-    invokes the existing '_check_tag_format' through the AUDIT_CHECK_REGISTRY
-    (not directly), and asserts the warning lists both the tag source and
-    the offending tag.
+    def test_inherited_branch_default_revision_produces_t002(self, tmp_path: pathlib.Path) -> None:
+        """A '<project>' inheriting a branch '<default revision>' produces a T002 ERROR.
 
-    For path (a), the 'source' is the manifest repo whose ls-remote output
-    contains the '<project>'-referenced tag. The warning message names the
-    tag itself; the manifest repo IS the source.
-
-    Satisfies: AC-CYCLE-001 (path (a)).
-    """
-
-    def test_ac_cycle_001_non_pep440_project_tag_warns_via_registry(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """AC-CYCLE-001: invoke '--check tag-format' via AUDIT_CHECK_REGISTRY check.
-
-        The test:
-        1. Builds a fixture catalog with '<project revision="release-2024"/>'.
-        2. Uses a subprocess mock to feed 'release-2024' as a manifest repo tag.
-        3. Invokes _check_tag_format directly with the stub.
-        4. Asserts the resulting WARN names 'release-2024' and is kind=warn, code=T001.
-
-        This is the path (a) end-to-end cycle: the existing check, given the
-        manifest repo's tag list (which includes the '<project>'-referenced tag),
-        produces the expected warning. No new check surface is needed.
-
-        Args:
-            tmp_path: Pytest tmp_path fixture.
+        The project omits its own 'revision'; the inherited default 'main' is a
+        branch, so the exact-tag rule rejects it and the T002 finding flags the
+        inherited source.
         """
-        non_pep440_tag = "release-2024"
-        target_path = _build_catalog_fixture(tmp_path, "cycle-tool", [non_pep440_tag])
-        findings = _run_tag_format_check(target_path, [non_pep440_tag])
+        import xml.etree.ElementTree as ET
 
-        # Assert the warning fires
-        warn_findings = [f for f in findings if f.kind == "warn"]
-        assert len(warn_findings) == 1, (
-            f"AC-CYCLE-001: expected exactly 1 WARN for non-PEP-440 project revision "
-            f"'{non_pep440_tag}', got: {warn_findings}"
+        repo_specs_dir = tmp_path / "repo-specs"
+        repo_specs_dir.mkdir(parents=True, exist_ok=True)
+
+        manifest = ET.Element("manifest")
+        metadata = ET.SubElement(manifest, "catalog-metadata")
+        for tag, text in (
+            ("name", "inherit-tool"),
+            ("display-name", "Inherit Tool"),
+            ("description", "Inherited default revision fixture."),
+            ("version", "1.0.0"),
+        ):
+            ET.SubElement(metadata, tag).text = text
+        ET.SubElement(manifest, "default", {"revision": "main", "remote": "origin"})
+        ET.SubElement(manifest, "remote", {"name": "origin", "fetch": "https://example.com/repo"})
+        ET.SubElement(manifest, "project", {"name": "tool-0", "remote": "origin", "path": "tools/tool-0"})
+
+        xml_file = repo_specs_dir / "inherit-tool-marketplace.xml"
+        ET.ElementTree(manifest).write(str(xml_file), encoding="utf-8", xml_declaration=True)
+
+        findings = _run_tag_format_check(tmp_path, ["1.0.0"])
+        t002 = [f for f in findings if f.code == "T002"]
+
+        assert len(t002) == 1, f"Expected one T002 for inherited branch default, got: {t002}"
+        assert "inherited <default revision>" in t002[0].message, (
+            f"Expected the inherited-default source named, got: {t002[0].message!r}"
         )
 
-        finding = warn_findings[0]
-        assert finding.code == "T001", f"AC-CYCLE-001: expected T001 code, got: {finding.code!r}"
-        assert non_pep440_tag in finding.message, (
-            f"AC-CYCLE-001: expected '{non_pep440_tag}' in warning message, got: {finding.message!r}"
-        )
-        assert "unaddressable" in finding.message, (
-            f"AC-CYCLE-001: expected 'unaddressable' in warning message, got: {finding.message!r}"
-        )
+    def test_inherited_branch_ref_default_revision_produces_no_t002(self, tmp_path: pathlib.Path) -> None:
+        """A '<project>' inheriting a refs/heads/<name> '<default revision>' produces no T002.
 
-    def test_ac_cycle_001_pep440_project_tag_no_warning(
-        self,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """AC-CYCLE-001 control case: PEP-440 <project> revision => zero warnings.
-
-        With PEP-440 tags in the manifest repo, '--check tag-format' emits no
-        warnings regardless of '<project>' elements present in the catalog.
-
-        Args:
-            tmp_path: Pytest tmp_path fixture.
+        The project omits its own 'revision'; the inherited default
+        'refs/heads/main' is a pinnable branch ref, so the pinnable rule accepts
+        it and no T002 finding fires.
         """
-        pep440_tag = "1.0.0"
-        target_path = _build_catalog_fixture(tmp_path, "cycle-tool", [pep440_tag])
-        findings = _run_tag_format_check(target_path, [pep440_tag])
+        import xml.etree.ElementTree as ET
 
-        assert findings == [], (
-            f"AC-CYCLE-001 control: expected zero warnings for PEP-440 project revision '{pep440_tag}', got: {findings}"
-        )
+        repo_specs_dir = tmp_path / "repo-specs"
+        repo_specs_dir.mkdir(parents=True, exist_ok=True)
+
+        manifest = ET.Element("manifest")
+        metadata = ET.SubElement(manifest, "catalog-metadata")
+        for tag, text in (
+            ("name", "inherit-ref-tool"),
+            ("display-name", "Inherit Ref Tool"),
+            ("description", "Inherited branch-ref default revision fixture."),
+            ("version", "1.0.0"),
+        ):
+            ET.SubElement(metadata, tag).text = text
+        ET.SubElement(manifest, "default", {"revision": "refs/heads/main", "remote": "origin"})
+        ET.SubElement(manifest, "remote", {"name": "origin", "fetch": "https://example.com/repo"})
+        ET.SubElement(manifest, "project", {"name": "tool-0", "remote": "origin", "path": "tools/tool-0"})
+
+        xml_file = repo_specs_dir / "inherit-ref-tool-marketplace.xml"
+        ET.ElementTree(manifest).write(str(xml_file), encoding="utf-8", xml_declaration=True)
+
+        findings = _run_tag_format_check(tmp_path, ["1.0.0"])
+        t002 = [f for f in findings if f.code == "T002"]
+
+        assert t002 == [], f"Expected no T002 for inherited branch-ref default, got: {t002}"
+
+
+@pytest.mark.unit
+class TestT001AndT002Coexist:
+    """T001 (repo tag PEP 440 WARN) and T002 (project revision exactness ERROR) are independent."""
+
+    def test_non_pep440_repo_tag_and_non_exact_revision_both_fire(self, tmp_path: pathlib.Path) -> None:
+        """A non-PEP-440 repo tag yields a T001 WARN while a non-exact revision yields a T002 ERROR."""
+        target_path = _build_catalog_fixture(tmp_path, "both-tool", [">=0.1.0,<1.0.0"])
+
+        findings = _run_tag_format_check(target_path, ["release-2024"])
+
+        t001 = [f for f in findings if f.code == "T001"]
+        t002 = [f for f in findings if f.code == "T002"]
+
+        assert len(t001) == 1, f"Expected one T001 WARN for the non-PEP-440 repo tag, got: {t001}"
+        assert t001[0].kind == "warn"
+        assert len(t002) == 1, f"Expected one T002 ERROR for the non-exact revision, got: {t002}"
+        assert t002[0].kind == "error"
+
+    def test_clean_catalog_produces_no_findings(self, tmp_path: pathlib.Path) -> None:
+        """PEP-440 repo tags plus an exact-tag revision produce zero findings."""
+        target_path = _build_catalog_fixture(tmp_path, "clean-tool", [_VALID_EXACT_REVISION])
+        findings = _run_tag_format_check(target_path, ["1.0.0", "2.0.0"])
+        assert findings == [], f"Expected zero findings for a clean catalog, got: {findings}"

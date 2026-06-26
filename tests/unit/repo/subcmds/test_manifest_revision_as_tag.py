@@ -26,10 +26,6 @@ from kanon_cli.repo.subcmds.manifest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Constants -- no literals embedded in assertions.
-# ---------------------------------------------------------------------------
-
 _TAG_NAME = "v1.2.3"
 _TAG_REFS_PATH = f"refs/tags/{_TAG_NAME}"
 _PROJECT_NAME_A = "platform/art"
@@ -45,11 +41,6 @@ _MINIMAL_XML_WITH_REVISION = (
 _MINIMAL_XML_NO_REVISION = (
     f'<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n  <project name="{_PROJECT_NAME_A}" />\n</manifest>\n'
 )
-
-
-# ---------------------------------------------------------------------------
-# Helper factories
-# ---------------------------------------------------------------------------
 
 
 def _make_manifest_cmd() -> Manifest:
@@ -80,11 +71,6 @@ def _make_project_mock(relpath: str, tag: str | None) -> MagicMock:
     else:
         project.work_git.describe.return_value = tag
     return project
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 (part 1): ``--revision-as-tag`` is registered in _Options().
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -142,11 +128,6 @@ class TestRevisionAsTagFlagRegistered:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 (part 2): ``_lookup_exact_tag`` helper.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestLookupExactTag:
     """``_lookup_exact_tag`` must resolve project commit to ``refs/tags/<name>``.
@@ -196,11 +177,6 @@ class TestLookupExactTag:
         assert result == expected, f"Expected {expected!r} for tag {raw_tag!r}, got {result!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 (part 3): ``_apply_revision_as_tag`` helper.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestApplyRevisionAsTag:
     """``_apply_revision_as_tag`` must replace ``revision`` DOM attributes with tags.
@@ -217,7 +193,7 @@ class TestApplyRevisionAsTag:
         returns a tag for the project's path.
         """
         doc = xml.dom.minidom.parseString(_MINIMAL_XML_WITH_REVISION.encode("utf-8"))
-        # lookup_fn returns the tag refs path for the project relpath.
+
         lookup_fn = MagicMock(return_value=_TAG_REFS_PATH)
 
         _apply_revision_as_tag(doc, _PROJECT_NAME_A, lookup_fn)

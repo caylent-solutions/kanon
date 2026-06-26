@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 6: undefined env vars silently preserved.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 6 -- after expandvars() processes
@@ -33,10 +19,6 @@ import pytest
 
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
-
-# ---------------------------------------------------------------------------
-# XML fixtures
-# ---------------------------------------------------------------------------
 
 _MANIFEST_WITH_DEFINED_AND_UNDEFINED = """\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -63,21 +45,11 @@ _MANIFEST_WITH_TWO_UNDEFINED = """\
 """
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_cmd():
     """Return an Envsubst instance without invoking __init__ parent chain."""
     cmd = Envsubst.__new__(Envsubst)
     cmd.manifest = mock.MagicMock()
     return cmd
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Warning logged for each unresolved variable
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -135,11 +107,6 @@ def test_warning_logged_for_each_unresolved_variable(tmp_path, caplog):
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Unresolved variables preserved in output
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_unresolved_variables_preserved_in_output(tmp_path):
     """AC-TEST-002: Undefined ${VAR} patterns must remain literally in the output.
@@ -174,11 +141,6 @@ def test_unresolved_variables_preserved_in_output(tmp_path):
         "Expected ${UNDEFINED_VAR_TWO} to be preserved literally in the output "
         f"manifest, but it was removed or expanded.\nOutput content:\n{result_content}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- Summary printed at end listing all unresolved variables
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -248,11 +210,6 @@ def test_summary_printed_listing_all_unresolved_variables(tmp_path, caplog, caps
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-004 / AC-CYCLE-001 -- Command does not fail on unresolved variables
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_command_does_not_fail_on_unresolved_variables(tmp_path):
     """AC-FUNC-004: Execute() must not raise an exception for undefined variables.
@@ -275,13 +232,7 @@ def test_command_does_not_fail_on_unresolved_variables(tmp_path):
     with mock.patch("glob.glob", return_value=[str(manifest_path)]):
         with mock.patch("os.path.getsize", return_value=100):
             with mock.patch.dict(os.environ, env, clear=True):
-                # Must not raise -- undefined vars are warnings, not errors.
                 cmd.Execute(mock.MagicMock(), [])
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001 -- Full envsubst lifecycle: defined expanded, undefined preserved
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -336,11 +287,6 @@ def test_envsubst_lifecycle_defined_expanded_undefined_preserved(tmp_path, caplo
         "Expected a WARNING log record mentioning 'UNDEFINED' for the undefined variable, "
         f"but none found.\nAll log records: {[(r.levelno, r.message) for r in caplog.records]!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Parametrized -- no warnings emitted when all variables are defined
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

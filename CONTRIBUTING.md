@@ -35,6 +35,7 @@ We use the following tools to maintain code quality:
 
 - **Ruff**: For code formatting and linting
 - **yamllint**: For YAML validation and formatting
+- **no-comments gate**: Forbids `#` comments in kanon-owned Python (see below)
 - **pre-commit**: For automated checks on commit
 
 Before submitting a pull request, ensure your code passes all checks:
@@ -54,6 +55,37 @@ To run all pre-commit checks:
 ```bash
 make pre-commit-check
 ```
+
+### No-Comments Policy
+
+All first-party kanon Python (everything under `src/kanon_cli/`, `tests/`,
+`scripts/`, `tools/` and `.devcontainer/`, excluding the vendored
+`src/kanon_cli/repo/` subtree and generated directories such as `__pycache__`
+and `.venv`) must contain no `#` comments. Docstrings
+are the sanctioned way to describe what code does: put intent in module, class,
+and function docstrings rather than inline comments. Code that needs an inline
+`#` note to be understood should be refactored or renamed so it reads clearly on
+its own.
+
+Only two `#` lines are allowed, and only at the very top of a file:
+
+- A line-1 shebang (for example `#!/usr/bin/env python3`).
+- A PEP 263 encoding cookie on line 1 or line 2 (for example
+  `# -*- coding: utf-8 -*-`).
+
+A `#` character inside a string literal is part of the string, not a comment, so
+it is never flagged.
+
+The gate is enforced three ways, all running the same
+`tools/lint/check_no_comments.py` check:
+
+- Run it locally with `make lint-no-comments`. It is also wired into
+  `make lint-check`, so `make lint` and `make check` run it too.
+- The `no-comments` pre-commit hook runs it on staged Python files; install the
+  hooks with `make install-hooks`.
+- CI enforces it through the `lint-check` job (which runs `make lint-check`) in
+  both `pr-validation.yml` and `main-validation.yml`, so no separate workflow
+  step is needed.
 
 ## Commit Message Conventions
 
@@ -142,6 +174,13 @@ Integration tests live in `tests/integration` and verify modules load and run en
 make test-integration
 ```
 
+Some integration fixtures `git init` fresh repos and reference them as `@main`,
+so your environment must set `git config --global init.defaultBranch main`
+before running them. See the "Test prerequisites" section in
+[docs/integration-testing.md](docs/integration-testing.md) for the full
+explanation. CI sets this automatically via `.github/actions/setup-kanon`, and
+the kanon devcontainer sets it in its postcreate script.
+
 ### Functional Tests
 
 Functional tests are located in the `tests/functional` directory. They test the CLI commands as used by actual users.
@@ -206,7 +245,7 @@ Use descriptive branch names with type prefixes:
 
 The PR title **must** follow conventional commit format because it becomes the squash commit message that drives semantic versioning:
 
-- `feat: add new bootstrap template` -> triggers MINOR bump
+- `feat: add new search filter option` -> triggers MINOR bump
 - `fix(install): handle missing kanon config` -> triggers PATCH bump
 - `docs: update CLI reference` -> no version bump
 - `feat!: redesign manifest format` -> triggers MAJOR bump

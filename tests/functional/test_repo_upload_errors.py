@@ -39,81 +39,64 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all domain literals must appear here only.
-# No inline literals in test bodies, f-string diagnostics, or parametrize
-# data tuples.
-# ---------------------------------------------------------------------------
 
-# Nonexistent repo-dir path component used in argument-parser tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-upload-errors-repo-dir"
 
-# CLI token constants
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_UPLOAD = "upload"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
 _CLI_FLAG_HELP = "--help"
 
-# Full 'kanon repo upload' command phrase used in f-string diagnostics.
+
 _CLI_UPLOAD_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_UPLOAD}"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-upload-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-upload-option-99"
 
-# Named options exercised in AC-TEST-003: each requires exactly one argument
-# value. Supplying them without a value triggers exit 2 with
-# "<option> option requires 1 argument" on stderr.
+
 _OPTION_REQUIRING_VALUE = "--jobs"
 _OPTION_REQUIRING_VALUE_ALT_A = "--branch"
 _OPTION_REQUIRING_VALUE_ALT_B = "--topic"
 
-# Error message substring expected in stderr when an option is supplied
-# without its required value (argparse-level missing-argument error).
+
 _MISSING_ARG_PHRASE = "requires 1 argument"
 
-# Phrase expected in stderr for unknown flag errors (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
-# The upload help header contains "repo upload".
+
 _HELP_USAGE_PHRASE = "repo upload"
 
-# Flag expected to be documented in --help output (AC-TEST-001 detail
-# assertion). '--dry-run' is a primary upload flag documented in help text.
+
 _HELP_DOCUMENTED_FLAG = "--dry-run"
 
-# Phrase expected in stderr when the .repo directory is absent (AC-TEST-004).
-# The embedded repo tool prints "error parsing manifest" to stderr.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest filename expected in the stderr error message for AC-TEST-004.
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
 
-# Parametrize data for AC-TEST-002: (bad_flag, test_id)
+
 _UNKNOWN_FLAGS: list[tuple[str, str]] = [
     (_UNKNOWN_FLAG_PRIMARY, "primary-unknown-flag"),
     (_UNKNOWN_FLAG_ALT_A, "alt-a-not-real-flag"),
     (_UNKNOWN_FLAG_ALT_B, "alt-b-bogus-option"),
 ]
 
-# Parametrize data for AC-TEST-003: (option_flag, test_id)
+
 _OPTIONS_REQUIRING_VALUE: list[tuple[str, str]] = [
     (_OPTION_REQUIRING_VALUE, "jobs"),
     (_OPTION_REQUIRING_VALUE_ALT_A, "branch"),
     (_OPTION_REQUIRING_VALUE_ALT_B, "topic"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo upload --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -263,11 +246,6 @@ class TestRepoUploadHelp:
             f"  first:  {result_a.stdout!r}\n"
             f"  second: {result_b.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -438,11 +416,6 @@ class TestRepoUploadUnknownFlag:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Named option without its required value produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -625,11 +598,6 @@ class TestRepoUploadMissingRequiredArg:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoUploadPreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failures exit 1 with clear message.
@@ -764,11 +732,6 @@ class TestRepoUploadPreconditionFailure:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

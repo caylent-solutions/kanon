@@ -31,9 +31,8 @@ jobs:
       - uses: actions/cache/save@v4
         with:
           path: |
-            .packages
-            .kanon-data
-          key: kanon-packages-${{ hashFiles('.kanon') }}
+            ~/.kanon
+          key: kanon-store-${{ hashFiles('.kanon.lock') }}
 
   build:
     needs: kanon-install
@@ -43,9 +42,8 @@ jobs:
       - uses: actions/cache/restore@v4
         with:
           path: |
-            .packages
-            .kanon-data
-          key: kanon-packages-${{ hashFiles('.kanon') }}
+            ~/.kanon
+          key: kanon-store-${{ hashFiles('.kanon.lock') }}
       - name: Run tests
         shell: bash
         run: echo "Run your project tests here"
@@ -64,16 +62,29 @@ jobs:
         run: kanon clean .kanon
 ```
 
-## Overriding GITBASE in Pipelines
+## Where install artifacts live
 
-CI/CD pipelines can override `GITBASE` to use internal Git mirrors:
+`kanon install` writes its fetched data into the shared `KANON_HOME` store
+(`$KANON_HOME`, default `~/.kanon`), content-addressed and deduped across
+projects. Cache that directory between runs (keyed on `.kanon.lock`) to
+avoid re-cloning; the example above caches `~/.kanon`. Set `KANON_HOME`
+(or the `--home` / `--store-dir` flag) to relocate the store, for example
+to a path that your CI runner caches by default.
+
+## Overriding the org base in pipelines
+
+Each dependency carries its own org base in
+`KANON_SOURCE_<alias>_GITBASE` inside `.kanon`. To point a dependency at an
+internal Git mirror without editing the committed file, override that
+dependency's `KANON_SOURCE_<alias>_GITBASE` via an environment variable
+(environment variables take precedence over `.kanon` file values):
 
 ```yaml
 - name: Kanon Install
   shell: bash
   run: kanon install .kanon
   env:
-    GITBASE: https://git.internal.company.com/kanon-packages/
+    KANON_SOURCE_my_dep_GITBASE: https://git.internal.company.com/kanon-packages
 ```
 
 The `.kanon` value is overridden by the environment variable. No file changes needed.

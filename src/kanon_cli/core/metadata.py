@@ -7,7 +7,7 @@ returns a :class:`CatalogMetadata` dataclass. A *catalog entry* is any
 Every entry -- whether a packaged Claude marketplace or a plain package --
 carries the same required metadata fields.
 
-Every command that consumes marketplace metadata (``kanon list``,
+Every command that consumes marketplace metadata (``kanon search``,
 ``kanon add``, ``kanon outdated``, ``kanon why``, ``kanon catalog audit``,
 ``kanon validate metadata``) uses this module to avoid schema-check drift.
 
@@ -50,17 +50,10 @@ from kanon_cli.constants import (
     RECOMMENDED_CHAR_RE,
 )
 
-# A catalog *entry* is any manifest that declares a <catalog-metadata> block.
-# Entries are identified by this content marker rather than by a filename
-# convention: an entry manifest may use ANY name (e.g. widget-pkg.xml,
-# my-tool.xml, foo-marketplace.xml). Manifests without the marker -- shared
-# <include> targets such as remote.xml -- are not entries (but remain valid
-# manifests: `validate xml` still checks them and entries still <include> them).
+
 _CATALOG_METADATA_MARKER = "<catalog-metadata"
 
-# The marker is ignored when it appears only inside an XML comment -- e.g. an
-# <include> file (remote.xml) whose comment documents the scheme in prose. Such
-# a file is not a catalog entry, so comments are stripped before the check.
+
 _XML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
@@ -101,11 +94,6 @@ def find_catalog_entry_files(repo_root: Path) -> list[Path]:
     return sorted(entries)
 
 
-# New-scheme-only: catalog metadata MUST be carried as nested child elements of
-# <catalog-metadata>. The legacy "flat-attribute" scheme put these fields as
-# attributes ON the element (e.g. <catalog-metadata name="..." display-name="..."/>)
-# and is no longer supported. Any of these keys present as an *attribute* on the
-# <catalog-metadata> element identifies the old scheme.
 _OLD_FLAT_ATTRIBUTE_KEYS = frozenset(KANON_CATALOG_METADATA_REQUIRED_FIELDS) | frozenset(
     KANON_CATALOG_METADATA_RECOMMENDED_FIELDS
 )
@@ -232,9 +220,7 @@ def _parse_catalog_metadata(xml_path: Path) -> CatalogMetadata:
         raise CatalogMetadataParseError(f"{xml_path}: malformed XML -- {exc}") from exc
 
     root = tree.getroot()
-    # defusedxml.ElementTree.parse() guarantees a non-None root on success;
-    # XMLParseError (caught above) handles every failure path.  The cast
-    # narrows the type for mypy without runtime cost or -O brittleness.
+
     root = cast(Element, root)
     blocks = root.findall("catalog-metadata")
 
@@ -248,18 +234,14 @@ def _parse_catalog_metadata(xml_path: Path) -> CatalogMetadata:
     block = blocks[0]
     _check_duplicate_children(block, xml_path)
 
-    # New-scheme-only: reject the legacy flat-attribute scheme explicitly so the
-    # operator gets a clear migration message instead of a generic missing-field error.
     flat_attrs = set(block.attrib) & _OLD_FLAT_ATTRIBUTE_KEYS
     if flat_attrs:
         raise CatalogMetadataParseError(_old_flat_attribute_message(xml_path, flat_attrs))
 
-    # Build a tag -> text mapping for quick lookup.
     children: dict[str, str | None] = {}
     for child in block:
         children[child.tag] = child.text
 
-    # Validate and read required fields.
     def _require(tag: str) -> str:
         raw = children.get(tag)
         if raw is None or not raw.strip():
@@ -273,7 +255,6 @@ def _parse_catalog_metadata(xml_path: Path) -> CatalogMetadata:
     description = _require("description")
     version = _require("version")
 
-    # Gather recommended fields; collect absent ones for the warning.
     missing_recommended: list[str] = []
 
     def _optional(tag: str) -> str | None:
@@ -289,7 +270,6 @@ def _parse_catalog_metadata(xml_path: Path) -> CatalogMetadata:
     owner_name = _optional("owner-name")
     owner_email = _optional("owner-email")
 
-    # Keywords handling: comma-separated text from <keywords> element.
     if "keywords" not in children:
         missing_recommended.append("keywords")
         keywords: list[str] = []
@@ -408,9 +388,6 @@ def audit_catalog_metadata(xml_path: Path) -> list[MetadataAuditIssue]:
 
     block = blocks[0]
 
-    # New-scheme-only: flag the unsupported old flat-attribute scheme explicitly
-    # (metadata as attributes on <catalog-metadata>) instead of reporting it as a
-    # set of generic missing-required-field errors.
     flat_attrs = set(block.attrib) & _OLD_FLAT_ATTRIBUTE_KEYS
     if flat_attrs:
         issues.append(
@@ -422,7 +399,6 @@ def audit_catalog_metadata(xml_path: Path) -> list[MetadataAuditIssue]:
         )
         return issues
 
-    # Check for duplicate child tags.
     seen_tags: set[str] = set()
     for child in block:
         if child.tag in seen_tags:
@@ -439,14 +415,11 @@ def audit_catalog_metadata(xml_path: Path) -> list[MetadataAuditIssue]:
             )
         seen_tags.add(child.tag)
 
-    # If duplicate tags were found, field-level checks are unreliable -- return early.
     if any(i.code == "M006" for i in issues):
         return issues
 
-    # Build tag -> stripped text mapping.
     children: dict[str, str | None] = {child.tag: child.text for child in block}
 
-    # Check required fields.
     for tag_name in KANON_CATALOG_METADATA_REQUIRED_FIELDS:
         raw = children.get(tag_name)
         if raw is None or not raw.strip():
@@ -462,7 +435,6 @@ def audit_catalog_metadata(xml_path: Path) -> list[MetadataAuditIssue]:
                 )
             )
 
-    # Check recommended fields.
     for tag_name in KANON_CATALOG_METADATA_RECOMMENDED_FIELDS:
         if tag_name not in children:
             issues.append(

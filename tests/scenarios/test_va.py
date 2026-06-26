@@ -23,10 +23,6 @@ from tests.scenarios.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
 _VALID_XML_MANIFEST = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     "<manifest>\n"
@@ -78,11 +74,6 @@ def _init_empty_committed_repo(repo_dir: pathlib.Path) -> pathlib.Path:
     return repo_dir
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestVA:
     def test_va_01_validate_xml_with_manifests(self, tmp_path: pathlib.Path) -> None:
@@ -130,7 +121,6 @@ class TestVA:
             commit_message="Add manifest",
         )
 
-        # Run from a different directory, pointing --repo-root at the repo
         outside_dir = tmp_path / "outside"
         outside_dir.mkdir()
 
@@ -151,7 +141,7 @@ class TestVA:
     def test_va_04_validate_empty_repo_specs(self, tmp_path: pathlib.Path) -> None:
         """VA-04: Validate xml in a repo with an empty repo-specs directory exits 1."""
         repo_dir = tmp_path / "test-va04"
-        # Create repo-specs directory but add no XML files, then empty commit
+
         repo_dir.mkdir(parents=True)
         init_git_work_dir(repo_dir)
         (repo_dir / "repo-specs").mkdir()

@@ -28,18 +28,9 @@ from kanon_cli.repo.error import ManifestInvalidPathError
 from kanon_cli.repo.main import run_from_args
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Exclude Journey Test User"
 _GIT_USER_EMAIL = "exclude-journey-test@example.com"
 _MANIFEST_FILENAME = "default.xml"
-
-
-# ---------------------------------------------------------------------------
-# Shared git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -64,11 +55,6 @@ def _init_git_repo(work_dir: pathlib.Path) -> None:
 def _make_bare_clone(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> None:
     """Clone work_dir into a bare repository at bare_dir."""
     _git(["clone", "--bare", str(work_dir), str(bare_dir)], cwd=work_dir.parent)
-
-
-# ---------------------------------------------------------------------------
-# Repo setup helpers
-# ---------------------------------------------------------------------------
 
 
 def _create_content_repo_with_pkg_dir(
@@ -197,11 +183,6 @@ def _build_manifest_xml(
         "  </project>\n"
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -659,7 +640,6 @@ def test_full_lifecycle_install_with_exclude(tmp_path: pathlib.Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
-    # Run the full init+sync lifecycle (mirrors what kanon install does for each source).
     _repo_init_and_sync(workspace, f"file://{manifest_bare}")
 
     marketplace_dir = workspace / "marketplace-dir"
@@ -668,7 +648,6 @@ def test_full_lifecycle_install_with_exclude(tmp_path: pathlib.Path) -> None:
         f"but it was not found."
     )
 
-    # Plugin content (src, lib, README.md) must be linked.
     assert os.path.islink(str(marketplace_dir / "src")), (
         f"Expected 'src' symlink inside {marketplace_dir} after lifecycle install with exclude='tests'."
     )
@@ -679,7 +658,6 @@ def test_full_lifecycle_install_with_exclude(tmp_path: pathlib.Path) -> None:
         f"Expected 'README.md' symlink inside {marketplace_dir} after lifecycle install with exclude='tests'."
     )
 
-    # Tests folder must be absent.
     assert not (marketplace_dir / "tests").exists(), (
         f"Expected 'tests' to be absent from {marketplace_dir} because exclude='tests', but it was found."
     )

@@ -23,11 +23,6 @@ from kanon_cli.core.manifest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_xml(path: pathlib.Path, content: str) -> None:
     """Write content to path, creating parent directories if needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -67,11 +62,6 @@ def _manifest_no_remotes() -> str:
     """)
 
 
-# ---------------------------------------------------------------------------
-# walk_includes_collecting_remotes
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestWalkIncludesCollectingRemotes:
     """Tests for walk_includes_collecting_remotes."""
@@ -109,7 +99,7 @@ class TestWalkIncludesCollectingRemotes:
 
     def test_included_file_remote_is_found(self, tmp_path: pathlib.Path) -> None:
         """A <remote> defined only in an included file is collected."""
-        # Helper defines the remote.
+
         helper = tmp_path / "helpers.xml"
         _write_xml(
             helper,
@@ -120,7 +110,7 @@ class TestWalkIncludesCollectingRemotes:
             </manifest>
         """),
         )
-        # Root only has the include.
+
         root = tmp_path / "root.xml"
         _write_xml(
             root,
@@ -136,7 +126,7 @@ class TestWalkIncludesCollectingRemotes:
 
     def test_diamond_include_visits_once(self, tmp_path: pathlib.Path) -> None:
         """A file included via two paths is visited only once (diamond deduplication)."""
-        # common.xml defines one remote.
+
         common = tmp_path / "common.xml"
         _write_xml(
             common,
@@ -147,7 +137,7 @@ class TestWalkIncludesCollectingRemotes:
             </manifest>
         """),
         )
-        # left.xml includes common.
+
         left = tmp_path / "left.xml"
         _write_xml(
             left,
@@ -158,7 +148,7 @@ class TestWalkIncludesCollectingRemotes:
             </manifest>
         """),
         )
-        # right.xml also includes common.
+
         right = tmp_path / "right.xml"
         _write_xml(
             right,
@@ -169,7 +159,7 @@ class TestWalkIncludesCollectingRemotes:
             </manifest>
         """),
         )
-        # root includes both left and right.
+
         root = tmp_path / "root.xml"
         _write_xml(
             root,
@@ -182,7 +172,7 @@ class TestWalkIncludesCollectingRemotes:
         """),
         )
         result = walk_includes_collecting_remotes(root, tmp_path)
-        # "common" appears exactly once even though it is reachable via two paths.
+
         assert result == {"common": "https://common.example.com"}
 
     def test_first_definition_wins_on_duplicate_name(self, tmp_path: pathlib.Path) -> None:
@@ -261,11 +251,6 @@ class TestWalkIncludesCollectingRemotes:
         assert result == {"named": "https://named.example.com"}
 
 
-# ---------------------------------------------------------------------------
-# collect_remote_url_findings
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCollectRemoteUrlFindings:
     """Tests for collect_remote_url_findings covering all RawFinding codes."""
@@ -277,7 +262,7 @@ class TestCollectRemoteUrlFindings:
         xml = repo_specs / "tool-marketplace.xml"
         _write_xml(xml, _manifest_no_remotes())
         result = collect_remote_url_findings(tmp_path, env={})
-        # The file has a project referencing "origin" with no <remote name="origin">.
+
         assert len(result) == 1
         finding = result[0]
         assert isinstance(finding, RawFinding)
@@ -292,8 +277,7 @@ class TestCollectRemoteUrlFindings:
         repo_specs.mkdir()
         xml = repo_specs / "tool-marketplace.xml"
         _write_xml(xml, _simple_manifest("local", "file:///tmp/test"))
-        # env=None means no override; file:// should be rejected.
-        # But env=None uses {} not os.environ, so no KANON_ALLOW_INSECURE_REMOTES.
+
         result = collect_remote_url_findings(tmp_path, env=None)
         error_codes = [f.code for f in result if f.kind == "error"]
         assert "R002" in error_codes, f"Expected R002 with env=None, got codes: {error_codes}"
@@ -385,7 +369,7 @@ class TestCollectRemoteUrlFindings:
         """KANON_ALLOW_INSECURE_REMOTES=1 suppresses R002 but not R001 or R003."""
         repo_specs = tmp_path / "repo-specs"
         repo_specs.mkdir()
-        # file:// -> normally R002.
+
         xml = repo_specs / "tool-marketplace.xml"
         _write_xml(xml, _simple_manifest("local", "file:///tmp/repos"))
         result = collect_remote_url_findings(tmp_path, env={"KANON_ALLOW_INSECURE_REMOTES": "1"})
@@ -419,24 +403,14 @@ class TestCollectRemoteUrlFindings:
         assert result == []
 
 
-# ---------------------------------------------------------------------------
-# TestRemoteUrlPlaceholder -- AC-TEST-001
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "fetch_url,env,expect_r002,expect_info_or_warn",
     [
-        # Unset variable -- no R002, an INFO/WARN finding instead.
         ("${GITBASE}", {}, False, True),
-        # Variable set to HTTPS scheme -- no R002, no INFO/WARN (resolved OK).
         ("${GITBASE}", {"GITBASE": "https://github.com/org"}, False, False),
-        # Variable set to non-HTTPS scheme -- R002 on resolved scheme.
         ("${GITBASE}", {"GITBASE": "http://github.com/org"}, True, False),
-        # Literal http:// -- always R002.
         ("http://github.com/org", {}, True, False),
-        # Mixed: literal insecure scheme with placeholder host -- R002 from literal scheme.
         ("http://${HOST}/org", {}, True, False),
     ],
 )

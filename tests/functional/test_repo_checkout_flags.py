@@ -37,38 +37,28 @@ import pytest
 from tests.functional.conftest import _run_kanon
 from tests.functional.test_repo_checkout_happy import _setup_started_repo
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
-# Error exit code for argument-parsing errors.
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Expected exit code for successful invocations.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests that
-# do not require a real initialized repository (e.g. boolean-with-inline-value
-# negative tests that fail at parse time before repo discovery).
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-checkout-flags-repo-dir"
 
-# Inline-value token for boolean-flag negative tests.
-# optparse exits 2 with '--<flag> option does not take a value' when a
-# store_true or store_false flag is supplied with an inline value.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Non-integer token for --jobs negative test.
-# optparse exits 2 with 'invalid integer value' when a non-int is supplied.
+
 _JOBS_NON_INT_VALUE = "notanumber"
 
-# Valid integer value for the -j/--jobs flag.
+
 _VALID_JOBS_INT = "1"
 
-# Valid --jobs argument used in tests that require a real synced repo.
+
 _VALID_JOBS_ARG = "--jobs=1"
 
-# Branch names for individual flag behavior tests.
+
 _BRANCH_VERBOSE_FLAG = "feature/checkout-verbose-flag"
 _BRANCH_QUIET_FLAG = "feature/checkout-quiet-flag"
 _BRANCH_JOBS_FLAG = "feature/checkout-jobs-flag"
@@ -79,14 +69,13 @@ _BRANCH_FUNC_QUIET = "feature/checkout-func-quiet"
 _BRANCH_FUNC_THIS_MANIFEST = "feature/checkout-func-this-manifest"
 _BRANCH_CHANNEL_VALID = "feature/checkout-channel-valid"
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# Boolean store_true flags from _CommonOptions() that checkout inherits.
-# These accept no value; negative test uses inline-value syntax.
+
 _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("-v", "short-verbose"),
     ("--verbose", "long-verbose"),
@@ -94,7 +83,7 @@ _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("--this-manifest-only", "this-manifest-only"),
 ]
 
-# Boolean store_false flags from _CommonOptions() that checkout inherits.
+
 _BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     ("-q", "short-quiet"),
     ("--quiet", "long-quiet"),
@@ -103,8 +92,7 @@ _BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     ("--all-manifests", "all-manifests"),
 ]
 
-# Long-form boolean flags (store_true and store_false) used in AC-TEST-002
-# negative tests. Short-form flags cannot use '--flag=value' syntax in optparse.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--verbose", "verbose"),
     ("--outer-manifest", "outer-manifest"),
@@ -115,19 +103,11 @@ _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--all-manifests", "all-manifests"),
 ]
 
-# Non-integer values for the --jobs parametrize test.
+
 _NON_INTEGER_JOBS_VALUES: list[str] = ["notanumber", "1.5", "abc", "two"]
 
-# Branch name used in negative tests that do not require a real initialized
-# repository (e.g. argument-parser rejection tests that fail before repo
-# discovery). The value is intentionally nonexistent.
+
 _NONEXISTENT_BRANCH_NAME = "some-branch"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/checkout.py
-# (Also covers AC-FUNC-001: every documented flag behaves per its help text.)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -297,11 +277,6 @@ class TestRepoCheckoutFlagsValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with typed or inline values
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoCheckoutFlagsInvalidValues:
     """AC-TEST-002: Every flag that accepts typed or inline values has a negative test.
@@ -461,11 +436,6 @@ class TestRepoCheckoutFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoCheckoutFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -604,11 +574,6 @@ class TestRepoCheckoutFlagsAbsenceDefaults:
             f"{result.returncode}, expected {_EXPECTED_EXIT_CODE}.\n"
             f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -750,11 +715,6 @@ class TestRepoCheckoutFlagsDocumentedBehavior:
             f"{result.returncode}, expected {_EXPECTED_EXIT_CODE}.\n"
             f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

@@ -32,21 +32,12 @@ from tests.integration.test_add_core import (
     _run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- per CLAUDE.md "ALL CODE MUST BE DYNAMIC AND
-# INPUT-DRIVEN"; subcheck names live here, not inside the test body.
-# ---------------------------------------------------------------------------
 
 EXPECTED_DOCTOR_SUBCHECK_NAMES: list[str] = [
     "kanon_hash consistency",
     "no orphaned lock entries",
     "no branch drift",
 ]
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -63,7 +54,8 @@ class TestDoctorDefaultSubcheckOutput:
         Steps:
         1. Create a synthetic catalog bare repo with a `foo` entry tagged 1.0.0.
         2. Run `kanon add foo --catalog-source <synthetic-url>` (writes .kanon).
-        3. Run `kanon install` (writes .kanon.lock using [catalog].source).
+        3. Run `kanon install` (hermetic: installs the sources declared in .kanon
+           and writes the schema-v4 .kanon.lock; no catalog source is consulted).
         4. Run `kanon doctor` (no flags) in the workspace.
         5. Assert exit code is 0.
         6. For each name in EXPECTED_DOCTOR_SUBCHECK_NAMES, assert that at least
@@ -82,7 +74,6 @@ class TestDoctorDefaultSubcheckOutput:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
 
-        # Step 2: kanon add foo --catalog-source <url>
         add_result = _run_kanon(
             ["add", "foo", "--catalog-source", catalog_source],
             cwd=workspace,
@@ -92,9 +83,8 @@ class TestDoctorDefaultSubcheckOutput:
             f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
         )
 
-        # Step 3: kanon install (reads [catalog].source from .kanon file)
         env_without_catalog = dict(os.environ)
-        env_without_catalog.pop("KANON_CATALOG_SOURCE", None)
+        env_without_catalog.pop("KANON_CATALOG_SOURCES", None)
 
         install_result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install"],
@@ -108,7 +98,6 @@ class TestDoctorDefaultSubcheckOutput:
             f"stdout: {install_result.stdout!r}\nstderr: {install_result.stderr!r}"
         )
 
-        # Step 4 + 5: kanon doctor (no flags) must exit 0
         doctor_result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "doctor"],
             capture_output=True,
@@ -123,7 +112,6 @@ class TestDoctorDefaultSubcheckOutput:
 
         stdout_lines = doctor_result.stdout.splitlines()
 
-        # Step 6: each expected subcheck name must appear as `[ok] <name>`
         for subcheck_name in EXPECTED_DOCTOR_SUBCHECK_NAMES:
             pattern = re.compile(r"^\[ok\] " + re.escape(subcheck_name) + r"$")
             matching_lines = [line for line in stdout_lines if pattern.match(line)]

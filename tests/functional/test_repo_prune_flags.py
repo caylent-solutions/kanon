@@ -36,10 +36,6 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Prune Flags Test User"
 _GIT_USER_EMAIL = "repo-prune-flags@example.com"
@@ -51,34 +47,28 @@ _PROJECT_PATH = "prune-flags-test-project"
 _MANIFEST_BARE_DIR_NAME = "manifest-bare.git"
 _GIT_BRANCH_MAIN = "main"
 
-# Error exit code for argument-parsing errors.
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests that
-# do not require a real initialized repository (e.g. boolean-with-inline-value
-# negative tests that fail at parse time before repo discovery).
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-prune-flags-repo-dir"
 
-# Inline-value token for boolean-flag negative tests.
-# optparse exits 2 with '--<flag> option does not take a value' when a
-# store_true or store_false flag is supplied with an inline value.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Non-integer token for --jobs negative test.
-# optparse exits 2 with 'invalid integer value' when a non-int is supplied.
+
 _JOBS_NON_INT_VALUE = "notanumber"
 
-# Valid integer value for the -j/--jobs flag.
+
 _VALID_JOBS_INT = "1"
 
-# Valid --jobs argument used in tests that require a real synced repo.
+
 _VALID_JOBS_ARG = "--jobs=1"
 
-# Canonical optparse phrase emitted when a boolean flag receives an inline value.
+
 _OPTPARSE_NO_VALUE_PHRASE = "does not take a value"
 
-# Boolean store_true flags from _CommonOptions (dest=output_mode, default=None).
-# These accept no value; negative test uses inline-value syntax.
+
 _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("-v", "short-verbose"),
     ("--verbose", "long-verbose"),
@@ -86,7 +76,7 @@ _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("--this-manifest-only", "this-manifest-only"),
 ]
 
-# Boolean store_false flags from _CommonOptions (default=None).
+
 _BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     ("-q", "short-quiet"),
     ("--quiet", "long-quiet"),
@@ -95,8 +85,7 @@ _BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     ("--all-manifests", "all-manifests"),
 ]
 
-# Long-form boolean flags (store_true and store_false) used in AC-TEST-002
-# negative tests. Short-form flags cannot use '--flag=value' syntax in optparse.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--verbose", "verbose"),
     ("--outer-manifest", "outer-manifest"),
@@ -106,19 +95,6 @@ _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--no-this-manifest-only", "no-this-manifest-only"),
     ("--all-manifests", "all-manifests"),
 ]
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
-# NOTE: _git is imported from tests.functional.conftest (canonical definition).
-#
-# The helpers below (_init_git_work_dir, _clone_as_bare,
-# _create_bare_content_repo, _create_manifest_repo, _setup_synced_repo)
-# follow the same pattern as test_repo_prune_happy.py. Consolidating them
-# into a shared module requires touching files outside this task's Changes
-# Manifest. This duplication is tracked in proposal E1-F2-S12-T4 as a
-# follow-up DRY cleanup.
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -258,12 +234,6 @@ def _setup_synced_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Pa
         f"  stderr: {sync_result.stderr!r}"
     )
     return checkout_dir, repo_dir
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every flag in subcmds/prune.py
-# (Also covers AC-FUNC-001: every documented flag behaves per its help text.)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -421,11 +391,6 @@ class TestRepoPruneFlagsValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with invalid values
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoPruneFlagsInvalidValues:
     """AC-TEST-002: Every flag that accepts typed values has a negative test.
@@ -505,11 +470,6 @@ class TestRepoPruneFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoPruneFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -552,11 +512,6 @@ class TestRepoPruneFlagsAbsenceDefaults:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

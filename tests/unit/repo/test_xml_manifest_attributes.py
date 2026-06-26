@@ -24,10 +24,6 @@ from kanon_cli.repo.error import ManifestInvalidPathError
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers (mirrors the pattern used in test_xml_manifest_happy.py)
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -65,11 +61,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
     m.Load()
     return m
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: valid-value tests -- one per documented <manifest> attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -616,12 +607,6 @@ class TestManifestAttributeValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: invalid-value tests -- each raises ManifestParseError or
-#              ManifestInvalidPathError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestManifestAttributeInvalidValues:
     """AC-TEST-002: Every attribute has invalid-value tests.
@@ -941,11 +926,6 @@ class TestManifestAttributeInvalidValues:
         assert str(exc_info.value), "Expected a non-empty error message from ManifestParseError"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: required attribute omission raises with message naming attribute
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestManifestRequiredAttributeOmission:
     """AC-TEST-003: Omitting a required attribute raises with the attribute name.
@@ -1044,11 +1024,6 @@ class TestManifestRequiredAttributeOmission:
         assert expected_attr_in_msg in str(exc_info.value).lower(), (
             f"Expected '{expected_attr_in_msg}' in error message but got: {exc_info.value!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

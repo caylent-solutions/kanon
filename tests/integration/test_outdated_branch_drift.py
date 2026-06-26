@@ -20,31 +20,17 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Minimal .kanon file content for a branch-pinned source.
-# {name_upper} -- uppercased source name for env-var key
-# {name_lower} -- lowercased source name for path
-# {url} -- file:// URL to the bare project repo
-# {revision} -- branch name (e.g. "main")
+
 _KANON_BRANCH_TEMPLATE = textwrap.dedent("""\
-    GITBASE=file:///unused
-    CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces
-    KANON_MARKETPLACE_INSTALL=false
     KANON_SOURCE_{name_upper}_URL={url}
-    KANON_SOURCE_{name_upper}_REVISION={revision}
+    KANON_SOURCE_{name_upper}_REF={revision}
     KANON_SOURCE_{name_upper}_PATH=./{name_lower}
+    KANON_SOURCE_{name_upper}_NAME={name_upper}
+    KANON_SOURCE_{name_upper}_GITBASE=https://example.com
 """)
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -85,11 +71,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _create_project_repo_with_two_commits(
     base: pathlib.Path,
     name: str,
@@ -110,13 +91,11 @@ def _create_project_repo_with_two_commits(
     work_dir.mkdir(parents=True, exist_ok=True)
     _init_git_work_dir(work_dir)
 
-    # First commit -- SHA A
     (work_dir / "README.md").write_text(f"# {name} initial\n")
     _git(["add", "."], cwd=work_dir)
     _git(["commit", "-m", "Initial commit"], cwd=work_dir)
     sha_a = _git_output(["rev-parse", "HEAD"], cwd=work_dir)
 
-    # Second commit -- SHA B (HEAD)
     (work_dir / "README.md").write_text(f"# {name} second\n")
     _git(["add", "."], cwd=work_dir)
     _git(["commit", "-m", "Second commit"], cwd=work_dir)
@@ -176,11 +155,6 @@ def _create_manifest_repo(
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     extra_env: dict[str, str] | None = None,
@@ -188,7 +162,7 @@ def _run_kanon(
 ) -> subprocess.CompletedProcess[str]:
     """Run the kanon CLI via the same Python interpreter."""
     env = dict(os.environ)
-    env.pop("KANON_CATALOG_SOURCE", None)
+    env.pop("KANON_CATALOG_SOURCES", None)
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
@@ -198,11 +172,6 @@ def _run_kanon(
         env=env,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Integration tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -249,25 +218,18 @@ class TestOutdatedBranchDrift:
         )
         kanon_file.chmod(0o644)
 
-        # Write a lockfile with SHA A (the older commit)
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 5\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            f"source = {catalog_source!r}\n"
-            f'url = "file://{manifest_bare}"\n'
-            'revision_spec = "main"\n'
-            'resolved_ref = "refs/heads/main"\n'
-            f'resolved_sha = "{"b" * 40}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "MYLIB"\n'
             'name = "MYLIB"\n'
             f"url = {project_url!r}\n"
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{sha_a}"\n'
             'path = "./mylib"\n'
@@ -327,25 +289,18 @@ class TestOutdatedBranchDrift:
         )
         kanon_file.chmod(0o644)
 
-        # Write lockfile with the current HEAD SHA (no drift)
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 5\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            f"source = {catalog_source!r}\n"
-            f'url = "file://{manifest_bare}"\n'
-            'revision_spec = "main"\n'
-            'resolved_ref = "refs/heads/main"\n'
-            f'resolved_sha = "{"b" * 40}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "STABLE"\n'
             'name = "STABLE"\n'
             f"url = {project_url!r}\n"
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{sha_b}"\n'
             'path = "./stable"\n'
@@ -369,7 +324,10 @@ class TestOutdatedBranchDrift:
         )
         assert sha_b_12 in result.stdout, f"Expected HEAD SHA {sha_b_12!r} in output:\n{result.stdout}"
         assert "none" in result.stdout, f"Expected upgrade-type=none in output:\n{result.stdout}"
-        assert "drift" not in result.stdout, f"Expected no drift when locked SHA == HEAD:\n{result.stdout}"
+
+        stable_row = next(line for line in result.stdout.splitlines() if line.startswith("STABLE") and "|" in line)
+        assert "none" in stable_row, f"Expected upgrade-type=none in STABLE row:\n{stable_row}"
+        assert "drift" not in stable_row, f"Expected no drift when locked SHA == HEAD:\n{stable_row}"
 
     def test_branch_pinned_no_lockfile_live_resolve(self, tmp_path: pathlib.Path) -> None:
         """AC-FUNC-003: no lockfile -- current is live-resolved HEAD, upgrade-type=none."""
@@ -399,7 +357,6 @@ class TestOutdatedBranchDrift:
         )
         kanon_file.chmod(0o644)
 
-        # No lockfile -- live resolve should pick current HEAD
         result = _run_kanon(
             [
                 "outdated",
@@ -446,22 +403,16 @@ class TestOutdatedBranchDrift:
 
         lock_file = workspace / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 5\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            f"source = {catalog_source!r}\n"
-            f'url = "file://{manifest_bare}"\n'
-            'revision_spec = "main"\n'
-            'resolved_ref = "refs/heads/main"\n'
-            f'resolved_sha = "{"b" * 40}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "EQUAL"\n'
             'name = "EQUAL"\n'
             f"url = {project_url!r}\n"
-            'revision_spec = "main"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{sha_a}"\n'
             'path = "./equal"\n'
@@ -483,8 +434,7 @@ class TestOutdatedBranchDrift:
         assert result.returncode == 0, (
             f"Expected exit 0, got {result.returncode}.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # Both latest-matching-spec and latest-available must be the same HEAD SHA
-        # Count occurrences of sha_b_12 -- should appear at least twice (both columns)
+
         count = result.stdout.count(sha_b_12)
         assert count >= 2, (
             f"Expected {sha_b_12!r} to appear in both latest-matching-spec and "

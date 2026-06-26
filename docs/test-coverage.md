@@ -175,7 +175,7 @@ resulting file state.
 
 ### Verification command
 
-```
+```bash
 pytest tests/integration/test_remove_*.py -v
 ```
 
@@ -215,7 +215,7 @@ declarations.
 | findings.md row | Behaviour | Test file | Class | Line |
 |----------------:|-----------|-----------|-------|-----:|
 | 53 | install / basic (bare after add) | `tests/integration/test_install_after_add.py` | `TestInstallAfterAdd` | 42 |
-| 53 | install / basic (flag-passed deprecation path) | `tests/integration/test_install_command.py` | `TestInstallDeprecationWarningSubprocess` | 90 |
+| 53 | install / basic (legacy env-var deprecation path) | `tests/integration/test_install_command.py` | `TestInstallDeprecationWarningSubprocess` | 90 |
 | 54 | install / lockfile-consistent-replay | `tests/integration/test_install_lockfile_replay.py` | `TestLockfileReplay` | 191 |
 | 55 | install / refresh-lock | `tests/integration/test_install_refresh_lock.py` | `TestRefreshLockRebuildsLockfile` | 184 |
 | 55 | install / refresh-lock (cycle) | `tests/integration/test_install_refresh_lock.py` | `TestRefreshLockCycle` | 271 |
@@ -230,8 +230,9 @@ declarations.
 
 - Row 53 maps to two test classes. `TestInstallAfterAdd` (E22) guards the defect-fixed
   path where bare `kanon install` after `kanon add` must succeed without re-passing
-  `--catalog-source`. `TestInstallDeprecationWarningSubprocess` covers the flag-present
-  path and legacy env-var deprecation notices.
+  `--catalog-source` (install is hermetic and accepts no catalog source).
+  `TestInstallDeprecationWarningSubprocess` covers the legacy `REPO_URL` / `REPO_REV`
+  env-var deprecation notices, which emit a `--catalog-source` migration hint on stderr.
 - Row 54 maps to `TestLockfileReplay` (class name `TestLockfileReplay`, not `TestReplay`
   as the spec draft used). The class exercises first-install lockfile creation and
   second-install lockfile-consistent replay at lines 194-306.
@@ -251,7 +252,7 @@ declarations.
 
 ### Verification command
 
-```
+```bash
 pytest tests/integration/test_install_*.py -v
 ```
 
@@ -326,7 +327,7 @@ real-catalog R002 content defects.
 
 ### Verification command
 
-```
+```bash
 pytest tests/integration/test_catalog_audit_*.py tests/unit/test_catalog_audit_*.py -v
 ```
 
@@ -397,7 +398,7 @@ test was required per spec §4 E46.
 
 ### Verification command
 
-```
+```bash
 pytest tests/integration/test_validate_xml.py tests/integration/test_validate_marketplace.py tests/integration/test_validate_metadata.py tests/integration/test_completion_bash.py tests/integration/test_completion_zsh.py -v
 ```
 
@@ -424,7 +425,7 @@ new multi-step test was required because:
   and 85 (multi-source-install) end-to-end via a six-entry synthetic fixture lifecycle.
 - E26 (DEFECT-011) authors `TestStrictLockOrphanErrorMessage` and E34 (DEFECT-014) authors
   `TestStrictLockDefaultAutoPrune`, which together cover row 81 (install-detect-orphan):
-  the structured error message path and the default auto-prune path respectively.
+  the structured error message path and the `--reconcile` prune path respectively.
 - E36 (FIXTURE-DEFECT-001) resolves the manifest schema defect that blocked row 80
   (upgrade-via-refresh-lock-source) and row 82 (install-detect-drift) by replacing the
   legacy static seeds with runtime-generated fixtures that include the required `<remote>`
@@ -468,8 +469,9 @@ new multi-step test was required because:
 - Row 81 requires two classes because E26 and E34 cover distinct sub-scenarios. E26
   (`TestStrictLockOrphanErrorMessage`) guards that the structured orphan-naming error message
   is emitted with each orphan source named and a remediation hint. E34
-  (`TestStrictLockDefaultAutoPrune`) guards that bare `kanon install` (no `--strict-lock` flag)
-  automatically prunes orphaned entries and emits one INFO line per pruned entry.
+  (`TestStrictLockDefaultAutoPrune`) guards that `kanon install --reconcile` prunes orphaned
+  entries and emits one INFO line per pruned entry (a plain `kanon install` fails fast on the
+  drift instead).
 - Row 84 requires two classes because the collision-then-force user journey spans two
   command sub-paths. `TestAddCollisionError` guards that `kanon add` exits non-zero when a
   source name collision is detected and that the error message names both the existing and
@@ -482,7 +484,7 @@ new multi-step test was required because:
 
 ### Verification command
 
-```
+```bash
 pytest tests/integration/test_install_*.py tests/integration/test_add_*.py tests/integration/test_remove_*.py tests/integration/test_full_lifecycle_synthetic.py tests/scenarios/ -v
 ```
 

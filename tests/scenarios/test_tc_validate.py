@@ -22,10 +22,6 @@ from tests.scenarios.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# XML content constants
-# ---------------------------------------------------------------------------
-
 _VALID_XML_MANIFEST = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     "<manifest>\n"
@@ -34,8 +30,7 @@ _VALID_XML_MANIFEST = (
     "</manifest>\n"
 )
 
-# A valid marketplace manifest: dest prefixed with ${CLAUDE_MARKETPLACES_DIR}
-# so the marketplace validator accepts it (mirrors the VA-02 / MK-fixture pattern).
+
 _VALID_MARKETPLACE_MANIFEST = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     "<manifest>\n"
@@ -52,11 +47,6 @@ _VALID_MARKETPLACE_MANIFEST = (
     "  </catalog-metadata>\n"
     "</manifest>\n"
 )
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _init_committed_repo(
@@ -92,17 +82,8 @@ def _build_mk19_validate_fixture(base: pathlib.Path) -> pathlib.Path:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestTCValidate:
-    # ------------------------------------------------------------------
-    # TC-validate-01: validate xml --repo-root=<path>
-    # ------------------------------------------------------------------
-
     def test_tc_validate_01_validate_xml_repo_root(self, tmp_path: pathlib.Path) -> None:
         """TC-validate-01: kanon validate xml --repo-root <path> exits 0 for a valid repo."""
         repo_dir = _init_committed_repo(
@@ -121,10 +102,6 @@ class TestTCValidate:
             f"Expected 'valid' in output: stdout={result.stdout!r} stderr={result.stderr!r}"
         )
 
-    # ------------------------------------------------------------------
-    # TC-validate-02: validate marketplace --repo-root=<path> (mk19-validate fixture)
-    # ------------------------------------------------------------------
-
     def test_tc_validate_02_validate_marketplace_mk19_fixture(self, tmp_path: pathlib.Path) -> None:
         """TC-validate-02: kanon validate marketplace --repo-root uses mk19-validate fixture layout."""
         mk19_repo = _build_mk19_validate_fixture(tmp_path / "fixtures")
@@ -139,10 +116,6 @@ class TestTCValidate:
             f"Expected 'passed' or 'valid' in output: stdout={result.stdout!r} stderr={result.stderr!r}"
         )
 
-    # ------------------------------------------------------------------
-    # TC-validate-03: auto-detect via git rev-parse
-    # ------------------------------------------------------------------
-
     def test_tc_validate_03_auto_detect_repo_root(self, tmp_path: pathlib.Path) -> None:
         """TC-validate-03: kanon validate xml without --repo-root auto-detects from git checkout."""
         repo_dir = _init_committed_repo(
@@ -151,7 +124,6 @@ class TestTCValidate:
             commit_message="TC-validate-03 manifests",
         )
 
-        # Run from inside the git repo; no --repo-root flag supplied.
         result = run_kanon("validate", "xml", cwd=repo_dir)
 
         assert result.returncode == 0, (
@@ -162,13 +134,9 @@ class TestTCValidate:
             f"Expected 'valid' in output: stdout={result.stdout!r} stderr={result.stderr!r}"
         )
 
-    # ------------------------------------------------------------------
-    # TC-validate-04: rejected when neither flag nor git root works
-    # ------------------------------------------------------------------
-
     def test_tc_validate_04_rejected_without_repo_root(self, tmp_path: pathlib.Path) -> None:
         """TC-validate-04: kanon validate xml from a non-git directory exits non-zero."""
-        # tmp_path itself is not a git repo; no --repo-root is supplied.
+
         non_git_dir = tmp_path / "not-a-repo"
         non_git_dir.mkdir()
 

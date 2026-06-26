@@ -16,11 +16,6 @@ from pathlib import Path
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def fixture_project_repo(tmp_path: Path) -> Path:
     """Create a local git repo with tags and branches per AC-FUNC-001."""
@@ -52,7 +47,6 @@ def fixture_project_repo(tmp_path: Path) -> Path:
         capture_output=True,
     )
 
-    # Tags per AC-FUNC-001: 1.0.0, 2.0.0, 1.0.0a1, not-a-version
     for tag in ["1.0.0", "2.0.0", "1.0.0a1", "not-a-version"]:
         subprocess.run(
             ["git", "-C", str(repo), "tag", tag],
@@ -60,7 +54,6 @@ def fixture_project_repo(tmp_path: Path) -> Path:
             capture_output=True,
         )
 
-    # Branch per AC-FUNC-001: feature/foo
     subprocess.run(
         ["git", "-C", str(repo), "branch", "feature/foo"],
         check=True,
@@ -78,7 +71,8 @@ def _run_complete_project_versions(
 ) -> subprocess.CompletedProcess[str]:
     """Invoke `kanon __complete_project_versions <repo_url> <current_token>` as subprocess."""
     env = {k: v for k, v in os.environ.items()}
-    env["KANON_CACHE_DIR"] = str(cache_dir)
+
+    env["KANON_HOME"] = str(cache_dir.parent)
     env["KANON_COMPLETION_REFRESH_BG"] = "0"
     if extra_env:
         env.update(extra_env)
@@ -95,11 +89,6 @@ def _run_complete_project_versions(
         text=True,
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -187,7 +176,7 @@ class TestCompleteProjectVersionsSubprocess:
         cache_dir = tmp_path / "cache"
         log_path = tmp_path / "errors.log"
         env = {k: v for k, v in os.environ.items()}
-        env["KANON_CACHE_DIR"] = str(cache_dir)
+        env["KANON_HOME"] = str(cache_dir.parent)
         env["KANON_COMPLETION_LOG"] = str(log_path)
         env["KANON_COMPLETION_REFRESH_BG"] = "0"
 
@@ -197,7 +186,7 @@ class TestCompleteProjectVersionsSubprocess:
                 "-m",
                 "kanon_cli",
                 "__complete_project_versions",
-                "",  # empty URL -- malformed
+                "",
                 "",
             ],
             capture_output=True,
@@ -215,7 +204,7 @@ class TestCompleteProjectVersionsSubprocess:
         """Non-existent repo URL returns empty stdout, exit 0, error logged."""
         cache_dir = tmp_path / "cache"
         env = {k: v for k, v in os.environ.items()}
-        env["KANON_CACHE_DIR"] = str(cache_dir)
+        env["KANON_HOME"] = str(cache_dir.parent)
         env["KANON_COMPLETION_REFRESH_BG"] = "0"
 
         result = subprocess.run(
@@ -266,7 +255,7 @@ class TestCompleteProjectVersionsSubprocess:
         """AC-FUNC-004: missing current_token (second positional) fails with non-zero exit."""
         cache_dir = tmp_path / "cache"
         env = {k: v for k, v in os.environ.items()}
-        env["KANON_CACHE_DIR"] = str(cache_dir)
+        env["KANON_HOME"] = str(cache_dir.parent)
 
         result = subprocess.run(
             [
@@ -275,14 +264,12 @@ class TestCompleteProjectVersionsSubprocess:
                 "kanon_cli",
                 "__complete_project_versions",
                 f"file://{fixture_project_repo}",
-                # current_token intentionally omitted -- only one positional
             ],
             capture_output=True,
             text=True,
             env=env,
         )
 
-        # With only repo_url provided and current_token required, argparse exits non-zero
         assert result.returncode != 0, (
             f"expected non-zero exit when current_token omitted, got 0 (stdout={result.stdout!r})"
         )

@@ -1,23 +1,31 @@
-"""CS (Catalog Source PEP 440 Constraints) scenarios from `docs/integration-testing.md` §14.
+"""CS (Catalog Source PEP 440 Constraints) scenarios from `docs/integration-testing.md`.
 
 Tests that ``--catalog-source <url>@<constraint>`` resolves PEP 440 constraints
 (``==``, ``~=``, ``>=``, ``<=``, ``<``, ``>``, ``!=``, ranges, ``latest``, ``*``)
-before cloning, and that plain branches/tags pass through unchanged.
+to the correct catalog-repo tag before reading the catalog, and that plain
+branches/tags pass through unchanged.
 
 Mode: pre-merge editable mode (``uv run pytest``). The editable install is already
 present in the dev environment, so no extra setup is required.  The doc says to run
 the category twice (pre-merge editable + post-release PyPI); this file automates the
 pre-merge pass only -- the post-release pass is a CI release-gate concern.
 
-Fixture: ``cs_catalog_bare`` (class-scoped) -- a bare git repo with tags
-1.0.0, 1.0.1, 1.1.0, 1.2.0, 2.0.0, 2.1.0, 3.0.0 and a ``catalog/test-entry/``
-directory at every tag, matching the doc §14 fixture setup exactly.
+3.0.0 surface: ``kanon bootstrap`` was removed; the catalog-source constraint
+resolution it exercised is now driven through ``kanon search`` (the doc maps
+``bootstrap list`` to ``kanon search``). Each scenario resolves a constraint and
+asserts the resolved tag via ``search``.
 
-Verification strategy: each scenario calls ``kanon bootstrap test-entry`` with a
-unique ``--output-dir`` (one per test invocation).  The bootstrapped ``version.txt``
-contains the tag name that was cloned, enabling a precise assertion of the resolved
-tag.  ``bootstrap list`` is also called to verify the entry appears in the listing
-(doc pass criteria: "stdout contains ``test-entry``").
+Fixture: ``cs_catalog_bare`` (class-scoped) -- a bare git repo tagged
+1.0.0, 1.0.1, 1.1.0, 1.2.0, 2.0.0, 2.1.0, 3.0.0. Each tag publishes a *single*
+catalog entry whose name encodes the tag (``entry_<tag>``, e.g. ``entry_2_0_0``),
+so the entry listed by ``kanon search`` uniquely identifies which catalog-repo
+tag the constraint resolved to. HEAD on ``main`` is the 3.0.0 commit (the highest
+semver tag).
+
+Verification strategy: each scenario runs
+``kanon search --catalog-source <url>@<constraint>`` (flag delivery) or the same
+with ``KANON_CATALOG_SOURCES`` (env delivery) and asserts that stdout lists the
+entry published at the expected tag and lists no entry from any other tag.
 """
 
 from __future__ import annotations
@@ -33,24 +41,15 @@ from tests.scenarios.conftest import (
     run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Scenario table: (cs_id, constraint, delivery, expected_tag)
-#
-# delivery is "flag" or "env" -- controls how the catalog-source is passed.
-# expected_tag is the highest semver tag the constraint must resolve to.
-#
-# Available tags: 1.0.0, 1.0.1, 1.1.0, 1.2.0, 2.0.0, 2.1.0, 3.0.0
-# ---------------------------------------------------------------------------
 
 _CS_SCENARIOS: list[tuple[str, str, str, str]] = [
-    # id       constraint          delivery   expected_tag
     ("CS-01", "*", "flag", "3.0.0"),
     ("CS-02", "*", "env", "3.0.0"),
     ("CS-03", "latest", "flag", "3.0.0"),
     ("CS-04", "latest", "env", "3.0.0"),
-    ("CS-05", "~=1.0.0", "flag", "1.0.1"),  # >=1.0.0,<1.1.0 → 1.0.1
+    ("CS-05", "~=1.0.0", "flag", "1.0.1"),
     ("CS-06", "~=1.0.0", "env", "1.0.1"),
-    ("CS-07", "~=2.0.0", "flag", "2.0.0"),  # >=2.0.0,<2.1.0 → 2.0.0
+    ("CS-07", "~=2.0.0", "flag", "2.0.0"),
     ("CS-08", "~=2.0.0", "env", "2.0.0"),
     ("CS-09", ">=1.0.0,<2.0.0", "flag", "1.2.0"),
     ("CS-10", ">=1.0.0,<2.0.0", "env", "1.2.0"),
@@ -64,43 +63,72 @@ _CS_SCENARIOS: list[tuple[str, str, str, str]] = [
     ("CS-18", "<=2.0.0", "env", "2.0.0"),
     ("CS-19", "==1.1.0", "flag", "1.1.0"),
     ("CS-20", "==1.1.0", "env", "1.1.0"),
-    ("CS-21", "!=1.0.0", "flag", "3.0.0"),  # highest non-excluded
+    ("CS-21", "!=1.0.0", "flag", "3.0.0"),
     ("CS-22", "!=1.0.0", "env", "3.0.0"),
     ("CS-23", ">1.0.0,<2.0.0", "flag", "1.2.0"),
     ("CS-24", ">1.0.0,<2.0.0", "env", "1.2.0"),
-    ("CS-25", "main", "flag", "3.0.0"),  # plain branch -- HEAD of main is 3.0.0
-    ("CS-26", "2.0.0", "flag", "2.0.0"),  # plain tag passthrough
+    ("CS-25", "main", "flag", "3.0.0"),
+    ("CS-26", "2.0.0", "flag", "2.0.0"),
 ]
 
 _CS_TAGS = ("1.0.0", "1.0.1", "1.1.0", "1.2.0", "2.0.0", "2.1.0", "3.0.0")
-_CATALOG_ENTRY = "test-entry"
 
 
-# ---------------------------------------------------------------------------
-# Class-scoped fixture -- built once, shared across all 26 CS scenarios
-# ---------------------------------------------------------------------------
+_CATALOG_SOURCES_ENV = "KANON_CATALOG_SOURCES"
+
+
+def _entry_name_for_tag(tag: str) -> str:
+    """Return the unique catalog entry name published at the given tag.
+
+    The tag's dots are replaced with underscores so the name is a valid catalog
+    entry identifier (e.g. ``2.0.0`` -> ``entry_2_0_0``). Because each tag
+    publishes exactly this one entry, the entry listed by ``kanon search``
+    pinpoints which catalog-repo tag the constraint resolved to.
+    """
+    return f"entry_{tag.replace('.', '_')}"
+
+
+def _marketplace_xml(entry_name: str, version: str) -> str:
+    """Return a valid catalog-metadata XML body for a single entry at a version."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<manifest>\n"
+        "  <catalog-metadata>\n"
+        f"    <name>{entry_name}</name>\n"
+        f"    <display-name>{entry_name} Display</display-name>\n"
+        f"    <description>CS catalog entry published at tag {version}.</description>\n"
+        f"    <version>=={version}</version>\n"
+        "    <type>library</type>\n"
+        "    <owner-name>CS Owner</owner-name>\n"
+        "    <owner-email>cs@example.com</owner-email>\n"
+        "    <keywords>cs constraint</keywords>\n"
+        "  </catalog-metadata>\n"
+        "</manifest>\n"
+    )
 
 
 def _build_cs_catalog_repo(parent: pathlib.Path) -> pathlib.Path:
-    """Build a bare catalog repo matching the §14 fixture specification.
+    """Build a bare catalog repo whose every tag publishes a unique entry.
 
-    Each tag commit contains:
-    - ``catalog/test-entry/version.txt`` -- content is the tag name (used
-      to verify which tag was cloned after ``kanon bootstrap test-entry``).
-
-    Tags: 1.0.0, 1.0.1, 1.1.0, 1.2.0, 2.0.0, 2.1.0, 3.0.0.
-    HEAD on ``main`` is the 3.0.0 commit (highest semver tag).
+    Each tag commit replaces ``repo-specs/`` with a single
+    ``<entry>-marketplace.xml`` whose entry name encodes the tag
+    (``entry_<tag>``). Tags: 1.0.0, 1.0.1, 1.1.0, 1.2.0, 2.0.0, 2.1.0, 3.0.0.
+    HEAD on ``main`` is the 3.0.0 commit (the highest semver tag), so plain
+    ``main`` resolves to the 3.0.0 entry.
     """
     work = parent / "cs-catalog.work"
     bare = parent / "cs-catalog.git"
     init_git_work_dir(work)
 
-    entry_dir = work / "catalog" / _CATALOG_ENTRY
-    entry_dir.mkdir(parents=True)
+    repo_specs = work / "repo-specs"
+    repo_specs.mkdir()
 
     for tag in _CS_TAGS:
-        (entry_dir / "version.txt").write_text(tag)
-        run_git(["add", "catalog"], work)
+        for stale in repo_specs.glob("*.xml"):
+            stale.unlink()
+        entry_name = _entry_name_for_tag(tag)
+        (repo_specs / f"{entry_name}-marketplace.xml").write_text(_marketplace_xml(entry_name, tag), encoding="utf-8")
+        run_git(["add", "-A"], work)
         run_git(["commit", "-m", f"release {tag}"], work)
         run_git(["tag", tag], work)
 
@@ -114,25 +142,16 @@ def cs_catalog_bare(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
     return _build_cs_catalog_repo(parent)
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestCS:
-    """CS-01..CS-26: Catalog Source PEP 440 Constraints.
+    """CS-01..CS-26: Catalog Source PEP 440 Constraints (3.0.0 ``search`` surface).
 
-    Each scenario:
-    1. Calls ``kanon bootstrap list`` to verify ``test-entry`` appears in the
-       listing (doc pass criteria: "stdout contains ``test-entry``").
-    2. Calls ``kanon bootstrap test-entry --output-dir <out>`` to clone and
-       copy catalog files, then reads ``version.txt`` from the output dir to
-       assert the exact resolved tag.
+    Each scenario runs ``kanon search`` with the catalog source pinned at a PEP
+    440 constraint and asserts that the entry published at the expected tag is
+    listed (and no entry from any other tag is). Both delivery modes are covered:
 
-    Both delivery modes are covered:
     - ``flag``: ``--catalog-source <url>@<constraint>``
-    - ``env``: ``KANON_CATALOG_SOURCE=<url>@<constraint>``
+    - ``env``: ``KANON_CATALOG_SOURCES=<url>@<constraint>``
     """
 
     @pytest.mark.parametrize(
@@ -154,66 +173,45 @@ class TestCS:
         Mode: pre-merge editable mode (kanon installed via ``uv run``).
         The bare repo is shared across all 26 scenarios via a class-scoped fixture.
 
-        Verification: ``kanon bootstrap test-entry`` copies ``version.txt`` from
-        the resolved tag into the output dir; the file content confirms the tag.
+        Verification: ``kanon search`` lists the unique entry published at the
+        resolved tag; the entry name pinpoints the resolved tag exactly.
         """
         catalog_url = cs_catalog_bare.as_uri()
         catalog_source = f"{catalog_url}@{constraint}"
-        out_dir = tmp_path / "out"
-        out_dir.mkdir()
+        expected_entry = _entry_name_for_tag(expected_tag)
 
         if delivery == "flag":
-            list_result = run_kanon(
-                "bootstrap",
-                "list",
+            result = run_kanon(
+                "search",
                 "--catalog-source",
                 catalog_source,
-                cwd=tmp_path,
-            )
-            bootstrap_result = run_kanon(
-                "bootstrap",
-                _CATALOG_ENTRY,
-                "--catalog-source",
-                catalog_source,
-                "--output-dir",
-                str(out_dir),
                 cwd=tmp_path,
             )
         else:
-            list_result = run_kanon(
-                "bootstrap",
-                "list",
+            result = run_kanon(
+                "search",
                 cwd=tmp_path,
-                extra_env={"KANON_CATALOG_SOURCE": catalog_source},
-            )
-            bootstrap_result = run_kanon(
-                "bootstrap",
-                _CATALOG_ENTRY,
-                "--output-dir",
-                str(out_dir),
-                cwd=tmp_path,
-                extra_env={"KANON_CATALOG_SOURCE": catalog_source},
+                extra_env={_CATALOG_SOURCES_ENV: catalog_source},
             )
 
-        # Post-branch deprecation: bootstrap is a shim that exits 3 (spec R352-R368).
-        # The catalog is never resolved; no files are created in out_dir.
-        assert list_result.returncode == 3, (
-            f"{cs_id}: bootstrap list expected exit 3 (shim), got {list_result.returncode}\n"
-            f"stdout={list_result.stdout!r}\nstderr={list_result.stderr!r}"
-        )
-        assert "DEPRECATED" in list_result.stderr, (
-            f"{cs_id}: expected deprecation message on stderr from bootstrap list: {list_result.stderr!r}"
+        assert result.returncode == 0, (
+            f"{cs_id}: kanon search (@{constraint}) expected exit 0, got {result.returncode}\n"
+            f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
 
-        assert bootstrap_result.returncode == 3, (
-            f"{cs_id}: bootstrap {_CATALOG_ENTRY!r} expected exit 3 (shim), got {bootstrap_result.returncode}\n"
-            f"stdout={bootstrap_result.stdout!r}\nstderr={bootstrap_result.stderr!r}"
+        listed_entries = result.stdout.split()
+        assert expected_entry in listed_entries, (
+            f"{cs_id}: constraint {constraint!r} must resolve to tag {expected_tag!r} "
+            f"(entry {expected_entry!r}); got entries {listed_entries!r}\n"
+            f"stderr={result.stderr!r}"
         )
-        assert "DEPRECATED" in bootstrap_result.stderr, (
-            f"{cs_id}: expected deprecation message on stderr from bootstrap {_CATALOG_ENTRY!r}: "
-            f"{bootstrap_result.stderr!r}"
-        )
-        # The shim must not clone or write any files.
-        assert not (out_dir / "version.txt").exists(), (
-            f"{cs_id}: version.txt must NOT exist (shim must not resolve catalog): {out_dir}"
-        )
+
+        for other_tag in _CS_TAGS:
+            if other_tag == expected_tag:
+                continue
+            other_entry = _entry_name_for_tag(other_tag)
+            assert other_entry not in listed_entries, (
+                f"{cs_id}: constraint {constraint!r} resolved to the wrong tag; "
+                f"entry {other_entry!r} (tag {other_tag!r}) must NOT be listed.\n"
+                f"stdout={result.stdout!r}"
+            )

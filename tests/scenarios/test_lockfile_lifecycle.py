@@ -52,10 +52,6 @@ from tests.scenarios.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_ENV = {
     **os.environ,
     "GIT_AUTHOR_NAME": "Test",
@@ -63,11 +59,6 @@ _GIT_ENV = {
     "GIT_COMMITTER_NAME": "Test",
     "GIT_COMMITTER_EMAIL": "t@t.com",
 }
-
-
-# ---------------------------------------------------------------------------
-# Shared fixture helpers
-# ---------------------------------------------------------------------------
 
 
 def _git_capturing(args: list[str], cwd: pathlib.Path) -> str:
@@ -123,7 +114,6 @@ def _sha_for_ref(repo: pathlib.Path, ref: str) -> str:
 
 def _run_install(
     project_dir: pathlib.Path,
-    catalog_uri: str,
     *,
     refresh_lock: bool = False,
     refresh_lock_source: str | None = None,
@@ -131,12 +121,17 @@ def _run_install(
 ) -> subprocess.CompletedProcess:
     """Invoke ``kanon install [--refresh-lock[--source <name>]] [--strict-lock]`` as a subprocess.
 
+    ``kanon install`` is hermetic (schema v4 / FR-7): it installs exactly the
+    sources declared in ``.kanon`` and pinned in ``.kanon.lock`` and never resolves
+    a remote catalog. The subprocess is therefore run with ``KANON_CATALOG_SOURCE``
+    scrubbed and no ``--catalog-source`` flag; supplying either would be rejected
+    fail-fast by ``HermeticInstallCatalogSourceError``.
+
     ``KANON_ALLOW_INSECURE_REMOTES=1`` is set per-test so ``file://`` fixture URLs
     pass the HTTPS enforcement gate (AC-FUNC-005 / AC-SEC-001).
 
     Args:
         project_dir: Working directory for the subprocess.
-        catalog_uri: Catalog source URI passed via ``KANON_CATALOG_SOURCE``.
         refresh_lock: When True, passes ``--refresh-lock``.
         refresh_lock_source: When set, passes ``--refresh-lock-source <name>``.
         strict_lock: When True, passes ``--strict-lock`` (npm-ci: error on any drift).
@@ -156,8 +151,8 @@ def _run_install(
     env = {
         **os.environ,
         "KANON_ALLOW_INSECURE_REMOTES": "1",
-        "KANON_CATALOG_SOURCE": catalog_uri,
     }
+    env.pop("KANON_CATALOG_SOURCE", None)
     return subprocess.run(
         cmd,
         cwd=str(project_dir),
@@ -190,11 +185,13 @@ def _write_kanon_for_source(
     """
     lines = [
         "GITBASE=https://unused.example.com",
-        "CLAUDE_MARKETPLACES_DIR=/tmp/kanon-test-mktplc",
+        f"CLAUDE_MARKETPLACES_DIR={project_dir / 'kanon-test-mktplc'}",
         "KANON_MARKETPLACE_INSTALL=false",
         f"KANON_SOURCE_{source_name}_URL={manifest_url}",
-        f"KANON_SOURCE_{source_name}_REVISION={revision_spec}",
+        f"KANON_SOURCE_{source_name}_REF={revision_spec}",
         f"KANON_SOURCE_{source_name}_PATH=manifest.xml",
+        f"KANON_SOURCE_{source_name}_NAME={source_name}",
+        f"KANON_SOURCE_{source_name}_GITBASE={manifest_url}",
     ]
     kanon_path = project_dir / ".kanon"
     kanon_path.write_text("\n".join(lines) + "\n")
@@ -291,36 +288,6 @@ def _add_tag_to_manifest_bare(
     _git_capturing(["tag", "-a", new_tag, "-m", f"Release {new_tag}"], clone)
     _git_capturing(["push", "origin", "HEAD:main", "--tags"], clone)
     return _git_capturing(["rev-parse", f"refs/tags/{new_tag}"], clone)
-
-
-def _build_catalog_bare(base_dir: pathlib.Path) -> pathlib.Path:
-    """Build a minimal bare catalog repo with a tagged commit on ``main``.
-
-    The catalog repo only needs to be fetchable; no actual entry XML files are
-    required for these tests (marketplace install is disabled).
-
-    Args:
-        base_dir: Parent directory where the catalog bare repo is created.
-
-    Returns:
-        Absolute path to the bare catalog repo.
-    """
-    work = base_dir / "catalog-work"
-    work.mkdir(parents=True, exist_ok=True)
-    init_git_work_dir(work)
-    (work / "repo-specs" / ".gitkeep").parent.mkdir(parents=True)
-    (work / "repo-specs" / ".gitkeep").write_text("")
-    run_git(["add", "repo-specs"], work)
-    run_git(["commit", "-m", "Initial catalog"], work)
-    run_git(["tag", "-a", "1.0.0", "-m", "Release 1.0.0"], work)
-    bare = base_dir / "catalog.git"
-    run_git(["clone", "--bare", str(work), str(bare)], base_dir)
-    return bare.resolve()
-
-
-# ---------------------------------------------------------------------------
-# Refresh-regression helpers (shared with TestRefreshRegression)
-# ---------------------------------------------------------------------------
 
 
 def _build_manifest_source_fixture(
@@ -434,8 +401,10 @@ def _write_kanon_for_refresh(
     url = manifest_bare.as_uri()
     lines = [
         f"KANON_SOURCE_{source_name}_URL={url}",
-        f"KANON_SOURCE_{source_name}_REVISION={revision}",
+        f"KANON_SOURCE_{source_name}_REF={revision}",
         f"KANON_SOURCE_{source_name}_PATH=manifest.xml",
+        f"KANON_SOURCE_{source_name}_NAME={source_name}",
+        f"KANON_SOURCE_{source_name}_GITBASE={url}",
     ]
     kanon_path = project_dir / ".kanon"
     kanon_path.write_text("\n".join(lines) + "\n")
@@ -443,38 +412,12 @@ def _write_kanon_for_refresh(
     return kanon_path
 
 
-# ---------------------------------------------------------------------------
-# Parametrise: constraint-type cases from FINDINGS.md CENTERPIECE
-# ---------------------------------------------------------------------------
-
-# Each entry: (constraint_id, initial_tags, revision_spec, newer_in_range_tag)
-# Where:
-#   constraint_id    -- short label used in test IDs
-#   initial_tags     -- list of tags to publish before the first install
-#   revision_spec    -- the PEP 440 constraint or branch ref written to .kanon
-#   newer_in_range_tag -- a tag that is in-range but published AFTER the first install;
-#                         a fresh plain install must NOT pick it up.
-#
-# Branch-ref (last entry): initial_tags are the version tags on the repo, revision_spec
-# is a branch ref ("main"). After the initial install the tip is already the latest commit;
-# a newer commit (not a new tag) is pushed to main. The fresh install must still replay
-# the locked SHA, not the new tip.
 _PIN_RETENTION_CASES: list[tuple[str, list[str], str, str]] = [
-    # exact == pin -- any newer tag is out-of-range by definition, but the assertion
-    # is the same: the locked pin never silently updates.
     ("exact_eq", ["1.0.0", "1.5.0", "1.7.0"], "==1.7.0", "1.8.0"),
-    # compatible-release ~= -- locked 1.7.0 retained when 1.8.0 published (FINDINGS.md)
     ("compat_release_tilde", ["1.0.0", "1.5.0", "1.7.0"], "~=1.2", "1.8.0"),
-    # explicit range >=,< -- locked 1.7.0 retained when 1.9.0 published (FINDINGS.md)
     ("explicit_range_ge_lt", ["1.0.0", "1.5.0", "1.7.0"], ">=1.0,<2.0", "1.9.0"),
-    # two-major range >=1.0,<3.0 -- 2.1.0 locked; 2.2.0 in-range not auto-adopted (FINDINGS.md)
     ("two_major_range", ["1.0.0", "2.0.0", "2.1.0"], ">=1.0,<3.0", "2.2.0"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Test classes
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario
@@ -535,12 +478,10 @@ class TestPinRetention:
         scratch = tmp_path / "scratch"
         scratch.mkdir()
 
-        # Build the content bare repo (needed by the manifest XML's <remote fetch>).
         content_bare_dir = fixtures / "content"
         content_bare_dir.mkdir()
         make_bare_repo_with_tags(content_bare_dir, f"{constraint_id}-content", initial_tags)
 
-        # Build the manifest bare repo: each initial tag gets a distinct commit.
         manifest_bare, content_fetch_url = _build_manifest_repo_with_tags(
             fixtures,
             constraint_id,
@@ -548,15 +489,9 @@ class TestPinRetention:
             content_bare_dir,
         )
 
-        # Build the catalog bare repo (required by kanon install).
-        catalog_bare = _build_catalog_bare(fixtures / "catalog")
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
-
-        # Write .kanon with the PEP 440 constraint.
         _write_kanon_for_source(project, constraint_id.upper(), manifest_bare.as_uri(), revision_spec)
 
-        # Step 1: initial install -- resolves the constraint and writes .kanon.lock.
-        r1 = _run_install(project, catalog_uri)
+        r1 = _run_install(project)
         assert r1.returncode == 0, (
             f"[{constraint_id}] Initial kanon install failed (exit {r1.returncode}):"
             f"\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
@@ -566,19 +501,15 @@ class TestPinRetention:
         locked_sha = _resolved_sha_from_lock(lock_path, constraint_id.upper())
         locked_content = lock_path.read_bytes()
 
-        # Step 2: publish the newer in-range tag on the manifest fixture.
         _add_tag_to_manifest_bare(scratch, manifest_bare, newer_tag, content_fetch_url, constraint_id)
 
-        # Step 3: FRESH plain install (no --refresh-lock). Must replay the locked pin.
-        # Remove .kanon-data to simulate a fresh install on a clean workspace while
-        # keeping .kanon.lock (the lock file remains).
         kanon_data = project / ".kanon-data"
         if kanon_data.exists():
             import shutil
 
             shutil.rmtree(str(kanon_data))
 
-        r2 = _run_install(project, catalog_uri)
+        r2 = _run_install(project)
         assert r2.returncode == 0, (
             f"[{constraint_id}] Fresh plain install failed (exit {r2.returncode}):"
             f"\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
@@ -586,8 +517,6 @@ class TestPinRetention:
         replayed_sha = _resolved_sha_from_lock(lock_path, constraint_id.upper())
         replayed_content = lock_path.read_bytes()
 
-        # The lockfile pin must be byte-identical to the initial install.
-        # If it differs, the resolver silently adopted the newer tag -- a regression.
         assert replayed_sha == locked_sha, (
             f"ERROR: [{constraint_id}] pin-retention contract broken for revision_spec={revision_spec!r}.\n"
             f"  Fresh plain install adopted the newer tag instead of replaying the locked version.\n"
@@ -626,7 +555,6 @@ class TestPinRetention:
         scratch = tmp_path / "scratch"
         scratch.mkdir()
 
-        # Build a content repo + manifest repo.
         content_bare_dir = fixtures / "content"
         content_bare_dir.mkdir()
         make_bare_repo_with_tags(content_bare_dir, "branchref-content", ["1.0.0"])
@@ -638,14 +566,9 @@ class TestPinRetention:
             content_bare_dir,
         )
 
-        catalog_bare = _build_catalog_bare(fixtures / "catalog")
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
-
-        # Track the floating branch "main".
         _write_kanon_for_source(project, "BRANCHREF", manifest_bare.as_uri(), "main")
 
-        # Initial install: records branch tip SHA.
-        r1 = _run_install(project, catalog_uri)
+        r1 = _run_install(project)
         assert r1.returncode == 0, (
             f"Initial kanon install failed (exit {r1.returncode}):\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         )
@@ -654,7 +577,6 @@ class TestPinRetention:
         locked_sha = _resolved_sha_from_lock(lock_path, "BRANCHREF")
         locked_content = lock_path.read_bytes()
 
-        # Advance main tip (new commit on manifest repo).
         clone = scratch / "branch-advance-clone"
         clone.mkdir()
         _git_capturing(["clone", str(manifest_bare), str(clone)], scratch)
@@ -667,14 +589,13 @@ class TestPinRetention:
         new_tip_sha = _git_capturing(["rev-parse", "HEAD"], clone)
         assert new_tip_sha != locked_sha, "Fixture setup error: new tip SHA must differ from locked SHA"
 
-        # FRESH plain install -- remove .kanon-data but keep .kanon.lock.
         kanon_data = project / ".kanon-data"
         if kanon_data.exists():
             import shutil
 
             shutil.rmtree(str(kanon_data))
 
-        r2 = _run_install(project, catalog_uri)
+        r2 = _run_install(project)
         assert r2.returncode == 0, (
             f"Fresh plain install failed (exit {r2.returncode}):\nstdout={r2.stdout!r}\nstderr={r2.stderr!r}"
         )
@@ -736,13 +657,10 @@ class TestRefreshRegression:
         project.mkdir()
 
         _content_bare, manifest_bare, content_fetch_url = _build_manifest_source_fixture(fixtures / "src", "SRC")
-        catalog_bare = _build_catalog_bare(fixtures / "catalog")
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
 
         _write_kanon_for_refresh(project, "SRC", manifest_bare, "main")
 
-        # Step 4: initial install.
-        r1 = _run_install(project, catalog_uri)
+        r1 = _run_install(project)
         assert r1.returncode == 0, (
             f"Initial kanon install failed (exit {r1.returncode}):\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         )
@@ -750,16 +668,12 @@ class TestRefreshRegression:
         assert lock_path.exists(), ".kanon.lock not created after initial install"
         sha_before = _resolved_sha_from_lock(lock_path, "SRC")
 
-        # Step 5: advance main, changing manifest.xml to reproduce BUG-1 conflict.
         advance_root = tmp_path / "advance"
         advance_root.mkdir()
         sha_new_tip = _advance_manifest_branch(advance_root, manifest_bare, content_fetch_url, "SRC")
         assert sha_new_tip != sha_before, "Fixture setup error: new tip SHA must differ from the initial SHA"
 
-        # Step 6: refresh-lock over the existing .kanon-data.
-        # Before the fix: exits 1 with unhandled GitCommandError.
-        # After the fix: exits 0 and the lockfile pin advances to sha_new_tip.
-        r2 = _run_install(project, catalog_uri, refresh_lock=True)
+        r2 = _run_install(project, refresh_lock=True)
         assert r2.returncode == 0, (
             f"ERROR: kanon install --refresh-lock failed (exit {r2.returncode}) over existing checkout.\n"
             f"  If E51-F1-S1-T1 has landed, this is a real regression of the BUG-1 fix.\n"
@@ -791,13 +705,10 @@ class TestRefreshRegression:
         project.mkdir()
 
         _content_bare, manifest_bare, content_fetch_url = _build_manifest_source_fixture(fixtures / "src", "SRC")
-        catalog_bare = _build_catalog_bare(fixtures / "catalog")
-        catalog_uri = f"{catalog_bare.as_uri()}@main"
 
         _write_kanon_for_refresh(project, "SRC", manifest_bare, "main")
 
-        # Initial install.
-        r1 = _run_install(project, catalog_uri)
+        r1 = _run_install(project)
         assert r1.returncode == 0, (
             f"Initial kanon install failed (exit {r1.returncode}):\nstdout={r1.stdout!r}\nstderr={r1.stderr!r}"
         )
@@ -805,16 +716,12 @@ class TestRefreshRegression:
         assert lock_path.exists(), ".kanon.lock not created after initial install"
         sha_before = _resolved_sha_from_lock(lock_path, "SRC")
 
-        # Advance main (changing manifest.xml to trigger the dirty-tree conflict).
         advance_root = tmp_path / "advance"
         advance_root.mkdir()
         sha_new_tip = _advance_manifest_branch(advance_root, manifest_bare, content_fetch_url, "SRC")
         assert sha_new_tip != sha_before, "Fixture setup error: new tip SHA must differ from the initial SHA"
 
-        # Refresh-lock-source over the existing .kanon-data.
-        # Before the fix: exits 1 with unhandled GitCommandError.
-        # After the fix: exits 0 and the lockfile pin for SRC advances.
-        r2 = _run_install(project, catalog_uri, refresh_lock_source="SRC")
+        r2 = _run_install(project, refresh_lock_source="SRC")
         assert r2.returncode == 0, (
             f"ERROR: kanon install --refresh-lock-source SRC failed (exit {r2.returncode}) "
             f"over existing checkout.\n"

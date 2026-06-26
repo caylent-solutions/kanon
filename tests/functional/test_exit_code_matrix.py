@@ -33,37 +33,18 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.constants import EXIT_CODE_DEPRECATED
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# NOTE: _run_kanon is imported from tests.functional.conftest (canonical
-# definition). No _git helper is used in this file because git operations
-# are not needed for the exit-code-matrix scenarios.
-#
-# The helpers _write_kanonenv and _make_repo_root below are local to this
-# file because they serve the specific fixture shapes needed for this task.
-# Consolidating all helpers across functional test files into a shared module
-# requires touching multiple files outside this task's Changes Manifest; that
-# DRY cleanup is tracked as a follow-up.
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Shared constants and helpers
-# ---------------------------------------------------------------------------
 
 _VALID_KANONENV_CONTENT = (
     "KANON_SOURCE_primary_URL=https://example.com/primary.git\n"
-    "KANON_SOURCE_primary_REVISION=main\n"
+    "KANON_SOURCE_primary_REF=main\n"
     "KANON_SOURCE_primary_PATH=repo-specs/manifest.xml\n"
+    "KANON_SOURCE_primary_NAME=primary\n"
+    "KANON_SOURCE_primary_GITBASE=https://example.com\n"
 )
 
-_INVALID_KANONENV_CONTENT = (
-    "KANON_MARKETPLACE_INSTALL=false\n"
-    # No KANON_SOURCE_* variables -- parser raises ValueError('No sources found')
-)
+_INVALID_KANONENV_CONTENT = "KANON_MARKETPLACE_INSTALL=false\n"
 
 
 def _write_kanonenv(
@@ -114,11 +95,6 @@ def _make_repo_root_with_xml(
     return repo_root
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: install success exits 0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestInstallSuccessExitsZero:
     """AC-TEST-001: install success exits 0.
@@ -148,7 +124,7 @@ class TestInstallSuccessExitsZero:
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
             try:
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
                 exit_code = 0
             except SystemExit as exc:
                 exit_code = exc.code
@@ -172,7 +148,7 @@ class TestInstallSuccessExitsZero:
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
             try:
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
             except SystemExit:
                 pass
 
@@ -201,17 +177,12 @@ class TestInstallSuccessExitsZero:
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
             try:
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
             except SystemExit:
                 pass
 
         captured = capsys.readouterr()
         assert captured.err == "", f"install success must produce no output on stderr; got stderr={captured.err!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: install fs error exits 1
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -303,11 +274,6 @@ class TestInstallFsErrorExitsOne:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: install manifest parse error exits 1
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestInstallManifestParseErrorExitsOne:
     """AC-TEST-003: install manifest parse error exits 1.
@@ -363,9 +329,9 @@ class TestInstallManifestParseErrorExitsOne:
         )
 
     def test_missing_source_revision_exits_1(self, tmp_path: pathlib.Path) -> None:
-        """install with a source missing KANON_SOURCE_*_REVISION exits 1.
+        """install with a source missing KANON_SOURCE_*_REF exits 1.
 
-        An incomplete source definition (URL and PATH defined, REVISION absent)
+        An incomplete source definition (URL and PATH defined, REF absent)
         must cause exit 1, not a crash.
         """
         incomplete = (
@@ -373,7 +339,7 @@ class TestInstallManifestParseErrorExitsOne:
         )
         result = _run_kanon("install", str(_write_kanonenv(tmp_path, incomplete)))
         assert result.returncode == 1, (
-            f"install with incomplete source (missing REVISION) must exit 1; got {result.returncode}.\n"
+            f"install with incomplete source (missing REF) must exit 1; got {result.returncode}.\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
@@ -382,7 +348,7 @@ class TestInstallManifestParseErrorExitsOne:
         "missing_suffix,kept_pairs",
         [
             (
-                "REVISION",
+                "REF",
                 [
                     ("URL", "https://example.com/repo.git"),
                     ("PATH", "repo-specs/manifest.xml"),
@@ -392,7 +358,7 @@ class TestInstallManifestParseErrorExitsOne:
                 "PATH",
                 [
                     ("URL", "https://example.com/repo.git"),
-                    ("REVISION", "main"),
+                    ("REF", "main"),
                 ],
             ),
         ],
@@ -416,11 +382,6 @@ class TestInstallManifestParseErrorExitsOne:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: repo sync network error exits 1
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -454,7 +415,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 when repo_sync fails with a network error; got exit code {exc_info.value.code!r}"
@@ -485,7 +446,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         captured = capsys.readouterr()
         assert "Error" in captured.err, f"repo sync failure must write 'Error' to stderr; got stderr={captured.err!r}"
@@ -515,7 +476,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         captured = capsys.readouterr()
         assert "Error:" not in captured.out, (
@@ -555,16 +516,11 @@ class TestRepoSyncNetworkErrorExitsOne:
                 ),
                 patch("kanon_cli.version.resolve_version", return_value="main"),
             ):
-                main(["install", str(kanonenv), "--catalog-source", DEFAULT_CATALOG_SOURCE])
+                main(["install", str(kanonenv)])
 
         assert exc_info.value.code == 1, (
             f"install must exit 1 for network error {error_message!r}; got exit code {exc_info.value.code!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005: validate xml schema error exits 1
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -697,11 +653,6 @@ class TestValidateXmlSchemaErrorExitsOne:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-006: --help exits 0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestHelpExitsZero:
     """AC-TEST-006: --help exits 0 for all core commands.
@@ -768,9 +719,6 @@ class TestHelpExitsZero:
             ("install", "--help"),
             ("clean", "--help"),
             ("validate", "--help"),
-            # NOTE: ("bootstrap", "--help") is intentionally absent. bootstrap was
-            # removed in a major release; `bootstrap --help` now exits 3 with the
-            # deprecation message (see TestBootstrapExitsThree below).
         ],
     )
     def test_help_flags_exit_0_for_all_commands(self, command_args: tuple) -> None:
@@ -785,47 +733,6 @@ class TestHelpExitsZero:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# bootstrap exits 3 (EXIT_CODE_DEPRECATED) for every invocation
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.functional
-class TestBootstrapExitsThree:
-    """`kanon bootstrap ...` exits 3 (EXIT_CODE_DEPRECATED) for every invocation.
-
-    bootstrap was removed in a major release. Every invocation -- bare, with an
-    entry, with `list`, with `--help`, or with an unknown flag -- exits 3 with
-    the deprecation message on stderr.
-    """
-
-    @pytest.mark.parametrize(
-        "command_args",
-        [
-            ("bootstrap",),
-            ("bootstrap", "list"),
-            ("bootstrap", "kanon"),
-            ("bootstrap", "--help"),
-            ("bootstrap", "-h"),
-            ("bootstrap", "history", "--marketplace-install"),
-        ],
-    )
-    def test_bootstrap_exits_3(self, command_args: tuple) -> None:
-        result = _run_kanon(*command_args)
-        assert result.returncode == EXIT_CODE_DEPRECATED, (
-            f"'kanon {' '.join(command_args)}' must exit {EXIT_CODE_DEPRECATED}; got {result.returncode}.\n"
-            f"  stdout: {result.stdout!r}\n"
-            f"  stderr: {result.stderr!r}"
-        )
-        assert "DEPRECATED" in result.stderr
-        assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-007: --version exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -881,11 +788,6 @@ class TestVersionExitsZero:
         assert "Error:" not in result.stderr, (
             f"'kanon --version' must not produce 'Error:' on stderr.\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-008: argparse error exits 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -973,11 +875,6 @@ class TestArgparseErrorExitsTwo:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: POSIX exit code convention across all core commands
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestPosixExitCodeConvention:
     """AC-FUNC-001: Exit codes follow POSIX convention: 0 success, 1 application error, 2 argparse error.
@@ -1037,11 +934,6 @@ class TestPosixExitCodeConvention:
         assert parse_error_result.returncode == 2, (
             f"Expected exit 2 for unknown flag; got {parse_error_result.returncode}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline (consolidated cross-command)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

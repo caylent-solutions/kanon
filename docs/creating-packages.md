@@ -24,9 +24,9 @@ Packages contain any files (scripts, configs, templates) accessed via `.packages
 
 Use [semantic versioning](https://semver.org/) for Git tags:
 
-- **MAJOR** — breaking changes (renamed tasks, removed config, changed behavior)
-- **MINOR** — new features (new tasks, new config options)
-- **PATCH** — bug fixes (corrected config, fixed task behavior)
+- **MAJOR** -- breaking changes (renamed tasks, removed config, changed behavior)
+- **MINOR** -- new features (new tasks, new config options)
+- **PATCH** -- bug fixes (corrected config, fixed task behavior)
 
 Tag format: `1.0.0`, `2.1.3`, etc.
 

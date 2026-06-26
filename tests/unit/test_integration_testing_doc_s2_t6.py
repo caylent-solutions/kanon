@@ -30,7 +30,7 @@ def _load_doc() -> str:
 class TestT6KSFixtureReset:
     def test_section_17_includes_reset_step(self) -> None:
         doc = _load_doc()
-        # Slice §17 from its heading to the start of §18.
+
         start = doc.find("## 17. Category 16: PEP 440 Constraints in `.kanon`")
         end = doc.find("## 18. Category 17:")
         assert start >= 0 and end > start, "Could not locate §17 in doc"
@@ -50,8 +50,7 @@ class TestT6KSFixtureReset:
 
     def test_reset_documented_in_prose(self) -> None:
         doc = _load_doc()
-        # The fix also adds an explanatory note describing why the reset is
-        # required.
+
         assert "CS-catalog HEAD reset" in doc, (
             "§17 must include a prose note explaining why the cs-catalog reset is required"
         )

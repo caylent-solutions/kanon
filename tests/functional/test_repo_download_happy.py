@@ -45,9 +45,6 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon, _setup_synced_repo
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no hard-coded domain literals in test logic
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Download Happy Test User"
 _GIT_USER_EMAIL = "repo-download-happy@example.com"
@@ -55,43 +52,36 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "download-test-project"
 
-# Gerrit-style change ID and patch set used across all tests.
-# Change 123 maps to refs/changes/23/123/1 (change_id % 100 == 23).
+
 _CHANGE_ID = 123
 _PATCH_SET_ID = 1
-_CHANGE_DIR_BUCKET = _CHANGE_ID % 100  # 23
+_CHANGE_DIR_BUCKET = _CHANGE_ID % 100
 
-# The downloadable file content committed to the bare repo to create the
-# change that will be fetched.
+
 _DOWNLOAD_CONTENT_FILE = "download-change.txt"
 _DOWNLOAD_CONTENT_TEXT = "content for download happy-path test"
 _DOWNLOAD_COMMIT_MSG = "Add downloadable change for functional test"
 
-# Gerrit-style ref name that maps change ID 123 / patchset 1.
+
 _GERRIT_REF = f"refs/changes/{_CHANGE_DIR_BUCKET:02d}/{_CHANGE_ID}/{_PATCH_SET_ID}"
 
-# Expected exit code for all happy-path invocations.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# CLI token constants.
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_DOWNLOAD = "download"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
 
-# Formatted positional change argument strings for diagnostics.
+
 _CHANGE_WITH_PATCHSET = f"{_CHANGE_ID}/{_PATCH_SET_ID}"
 _CHANGE_ONLY = str(_CHANGE_ID)
-
-
-# ---------------------------------------------------------------------------
-# Helper: create a Gerrit-style change ref in the bare content repo
-# ---------------------------------------------------------------------------
 
 
 def _add_gerrit_change_to_bare_repo(
@@ -121,23 +111,18 @@ def _add_gerrit_change_to_bare_repo(
     with tempfile.TemporaryDirectory() as work_str:
         work = pathlib.Path(work_str)
 
-        # Clone the bare repo into a temporary working directory.
         _git(["clone", str(bare_repo), str(work / "work")], cwd=work)
         work_dir = work / "work"
 
-        # Configure identity for the new commit.
         _git(["config", "user.name", _GIT_USER_NAME], cwd=work_dir)
         _git(["config", "user.email", _GIT_USER_EMAIL], cwd=work_dir)
 
-        # Commit a new file on a detached branch from the current HEAD.
         (work_dir / _DOWNLOAD_CONTENT_FILE).write_text(_DOWNLOAD_CONTENT_TEXT, encoding="utf-8")
         _git(["add", _DOWNLOAD_CONTENT_FILE], cwd=work_dir)
         _git(["commit", "-m", _DOWNLOAD_COMMIT_MSG], cwd=work_dir)
 
-        # Push the new commit to the bare repo as the Gerrit-style ref.
         _git(["push", "origin", f"HEAD:{_GERRIT_REF}"], cwd=work_dir)
 
-        # Retrieve and return the new commit SHA1.
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=str(work_dir),
@@ -216,11 +201,6 @@ def _setup_download_repo(
     return checkout_dir, repo_dir, change_sha
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo download with default args exits 0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoDownloadHappyPathDefaultArgs:
     """AC-TEST-001 / AC-FUNC-001: 'kanon repo download' with default args exits 0.
@@ -284,8 +264,6 @@ class TestRepoDownloadHappyPathDefaultArgs:
             f"  stderr: {result.stderr!r}"
         )
 
-        # The download command checks out the fetched commit, leaving the
-        # project worktree in detached HEAD state at the change commit.
         project_dir = checkout_dir / _PROJECT_PATH
         head_result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -302,11 +280,6 @@ class TestRepoDownloadHappyPathDefaultArgs:
             f"but got {actual_head!r} after "
             f"'kanon repo download {_PROJECT_NAME} {_CHANGE_WITH_PATCHSET}'."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo download has a happy-path test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -387,11 +360,6 @@ class TestRepoDownloadPositionalArgHappyPath:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

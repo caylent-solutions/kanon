@@ -28,68 +28,49 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
-# Nonexistent repo-dir path used in argument-parser tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-checkout-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-checkout-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-checkout-option-99"
 
-# Value-requiring option used in AC-TEST-003: requires exactly one argument
-# value. Supplying it without a value triggers exit 2 with
-# "--jobs option requires 1 argument" on stderr.
+
 _OPTION_REQUIRING_VALUE = "--jobs"
 _OPTION_REQUIRING_VALUE_ALT = "-j"
 
-# Error message substring expected in stderr when the option is supplied
-# without a value (argument-parser-level missing-argument error).
+
 _MISSING_ARG_PHRASE = "requires"
 
-# Phrase expected in stderr for unknown flag errors (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
+
 _HELP_USAGE_PHRASE = "repo checkout"
 
-# Phrase expected in the --help output referencing the required positional.
+
 _HELP_BRANCHNAME_PHRASE = "branchname"
 
-# Phrase expected in stderr for no-arg 'repo checkout' (AC-TEST-003 proof
-# test): the embedded tool raises UsageError -- exit 1, not 2.
+
 _USAGE_ERROR_PHRASE = "UsageError"
 
-# Phrase expected in stderr when the .repo/manifest.xml is absent (AC-TEST-004).
-# The embedded repo tool prints "error parsing manifest" when .repo is absent.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest file named in stderr for precondition failures (AC-TEST-004).
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# A valid branch name used in precondition-failure tests (tests that reach
-# the repo tool layer rather than the argument parser).
+
 _VALID_BRANCH_NAME = "feature/test-precondition"
 
-# A generic branch name used in argument-parser-level tests (AC-TEST-002 and
-# AC-TEST-003). These tests exercise flag or option errors and do not require
-# the .repo directory to exist -- the argument parser rejects the command
-# before any network or filesystem access.
+
 _SOME_BRANCH_NAME = "some-branch"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
-
-
-# ---------------------------------------------------------------------------
-# Shared determinism helper -- DRY extraction for _is_deterministic tests.
-# ---------------------------------------------------------------------------
 
 
 def _assert_deterministic(
@@ -136,11 +117,6 @@ def _assert_deterministic(
         f"  first:  {output_a!r}\n"
         f"  second: {output_b!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo checkout --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -216,11 +192,6 @@ class TestRepoCheckoutHelp:
         state, confirming the determinism requirement of AC-FUNC-001.
         """
         _assert_deterministic(tmp_path, ["--help"], _EXIT_SUCCESS, compare_stdout=True)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -308,11 +279,6 @@ class TestRepoCheckoutUnknownFlag:
             _EXIT_ARGPARSE_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Value-requiring option without its argument produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -442,11 +408,6 @@ class TestRepoCheckoutMissingOptionValue:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoCheckoutPreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failures exit 1 with clear message.
@@ -573,11 +534,6 @@ class TestRepoCheckoutPreconditionFailure:
             _EXIT_PRECONDITION_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Combined channel and determinism validation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

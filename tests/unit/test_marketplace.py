@@ -19,6 +19,7 @@ import pytest
 
 from kanon_cli.core.marketplace import (
     _get_timeout,
+    create_dirsymlink,
     discover_marketplace_entries,
     discover_plugins,
     discover_registered_marketplace_names,
@@ -362,7 +363,7 @@ class TestUninstallMarketplacePlugins:
 
     def test_remove_uses_name_not_path(self, tmp_path: pathlib.Path) -> None:
         """Bug fix verification: uninstall orchestration passes marketplace name to remove."""
-        # Directory name differs from marketplace.json name to verify the name is used
+
         mp_dir = tmp_path / "marketplaces" / "dir-name-differs"
         mp_dir.mkdir(parents=True)
         claude_plugin = mp_dir / ".claude-plugin"
@@ -576,11 +577,10 @@ class TestRegisterDirectCheckoutMarketplaces:
         marketplace_dir = tmp_path / "marketplaces"
         marketplace_dir.mkdir()
 
-        # Project with linkfile -- should NOT be registered by this function.
         _create_project_with_marketplace_json(source_dir, "linked", "linked")
-        # Project without linkfile but with marketplace.json -- SHOULD be registered.
+
         _create_project_with_marketplace_json(source_dir, "direct", "direct")
-        # Project without linkfile and without marketplace.json -- NOT registered.
+
         plain_dir = source_dir / "plain"
         plain_dir.mkdir(parents=True)
 
@@ -611,7 +611,6 @@ class TestRegisterDirectCheckoutMarketplaces:
         marketplace_dir = tmp_path / "marketplaces"
         marketplace_dir.mkdir()
 
-        # Create a project with a marketplace.json that has NO 'name' field.
         project_dir = source_dir / "bad-plugin"
         claude_plugin_dir = project_dir / ".claude-plugin"
         claude_plugin_dir.mkdir(parents=True)
@@ -644,8 +643,6 @@ class TestDiscoverRegisteredMarketplaceNames:
         marketplace_dir.mkdir()
         _create_marketplace(marketplace_dir, "mp-current", plugins=["plug-a"])
 
-        # An entry that is a directory but has NO .claude-plugin/marketplace.json
-        # (e.g. a linkfile target that does not point at a marketplace root).
         no_json_entry = marketplace_dir / "not-a-marketplace"
         no_json_entry.mkdir()
         (no_json_entry / "some-file.txt").write_text("not a marketplace manifest")
@@ -661,8 +658,7 @@ class TestDiscoverRegisteredMarketplaceNames:
         """Multiple valid marketplaces are returned sorted (and de-duplicated)."""
         marketplace_dir = tmp_path / "marketplaces"
         marketplace_dir.mkdir()
-        # Create in non-sorted creation order; the manifest 'name' fields are the
-        # values that must come back sorted.
+
         _create_marketplace(marketplace_dir, "zeta-dir", plugins=[])
         _create_marketplace(marketplace_dir, "alpha-dir", plugins=[])
         _create_marketplace(marketplace_dir, "mike-dir", plugins=[])
@@ -676,3 +672,81 @@ class TestDiscoverRegisteredMarketplaceNames:
         """A non-existent marketplace_dir yields an empty list (tolerant, not an error)."""
         result = discover_registered_marketplace_names(tmp_path / "does-not-exist")
         assert result == [], f"Missing marketplace_dir must return []; got: {result!r}"
+
+
+@pytest.mark.unit
+class TestCreateDirsymlink:
+    """create_dirsymlink creates a POSIX directory symlink."""
+
+    def test_creates_symlink_pointing_at_target_directory(self, tmp_path: pathlib.Path) -> None:
+        """create_dirsymlink creates a symlink at link_path pointing at target on POSIX."""
+        target = tmp_path / "real-target"
+        target.mkdir()
+        (target / "sentinel.txt").write_text("content")
+        link = tmp_path / "the-link"
+
+        create_dirsymlink(link, target)
+
+        assert link.is_symlink(), f"Expected symlink at {link}"
+        assert link.is_dir(), "Expected symlink to resolve to a directory"
+        assert (link / "sentinel.txt").is_file(), "Expected sentinel.txt accessible through link"
+
+    def test_fails_fast_when_link_path_already_exists_as_directory(self, tmp_path: pathlib.Path) -> None:
+        """create_dirsymlink raises OSError when link_path exists as a plain directory."""
+        target = tmp_path / "real-target"
+        target.mkdir()
+        link = tmp_path / "already-a-dir"
+        link.mkdir()
+
+        with pytest.raises(OSError):
+            create_dirsymlink(link, target)
+
+    def test_fails_fast_when_target_does_not_exist(self, tmp_path: pathlib.Path) -> None:
+        """create_dirsymlink raises OSError when target path does not exist."""
+        target = tmp_path / "nonexistent-target"
+        link = tmp_path / "the-link"
+
+        create_dirsymlink(link, target)
+        assert link.is_symlink(), "create_dirsymlink must create the symlink even for a dangling target"
+
+
+@pytest.mark.unit
+class TestRegisterDirectCheckoutMarketplacesUsesSymlink:
+    """register_direct_checkout_marketplaces must route its directory link through create_dirsymlink."""
+
+    def test_register_direct_checkout_marketplaces_calls_create_dirsymlink(self, tmp_path: pathlib.Path) -> None:
+        """register_direct_checkout_marketplaces calls create_dirsymlink for directory links."""
+        source_dir = tmp_path / "source"
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        _create_project_with_marketplace_json(source_dir, "mp-name", "mp-name")
+        manifest_xml = _write_manifest_xml(tmp_path, "mp-name")
+
+        with patch("kanon_cli.core.marketplace.create_dirsymlink") as mock_helper:
+            register_direct_checkout_marketplaces(manifest_xml, source_dir, marketplace_dir)
+
+        mock_helper.assert_called_once()
+        call_args = mock_helper.call_args
+
+        assert call_args[0][0] == marketplace_dir / "mp-name", (
+            "create_dirsymlink must be called with link_path = marketplace_dir / name"
+        )
+
+    def test_register_produces_working_directory_link_on_posix(self, tmp_path: pathlib.Path) -> None:
+        """register_direct_checkout_marketplaces produces a usable directory link on POSIX."""
+        source_dir = tmp_path / "source"
+        marketplace_dir = tmp_path / "marketplaces"
+        marketplace_dir.mkdir()
+
+        _create_project_with_marketplace_json(source_dir, "my-mp", "my-mp")
+        manifest_xml = _write_manifest_xml(tmp_path, "my-mp")
+
+        register_direct_checkout_marketplaces(manifest_xml, source_dir, marketplace_dir)
+
+        link = marketplace_dir / "my-mp"
+        assert link.is_symlink(), f"Expected symlink at {link}"
+        assert link.is_dir(), "Expected symlink to resolve to a directory"
+        assert (link / ".claude-plugin" / "marketplace.json").is_file(), (
+            "marketplace.json must be accessible through the link"
+        )

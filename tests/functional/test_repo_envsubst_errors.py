@@ -38,101 +38,72 @@ import pytest
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# NOTE: _run_kanon is imported from tests.functional.conftest (canonical
-# definition). No _git helper or repo-init setup is needed because all tests
-# here exercise argument-parsing and subcommand precondition outcomes that do
-# not require a fully initialized .repo directory. envsubst is a
-# MirrorSafeCommand and does not parse manifest.xml at startup.
-# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all domain literals extracted here;
-# no inline literals in test logic, f-string diagnostics, or parametrize tuples.
-# ---------------------------------------------------------------------------
-
-# Nonexistent repo-dir path component used in argument-parser tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-envsubst-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-envsubst-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-envsubst-option-99"
 
-# Flag with unexpected inline value exercised in AC-TEST-003.
-# 'repo envsubst' defines --verbose as a boolean store_true flag; the optparse
-# parser rejects '--verbose=unexpected' because boolean flags cannot accept an
-# inline value, producing exit 2 with '--verbose option does not take a value'.
+
 _BOOL_FLAG_WITH_VALUE = "--verbose=unexpected"
 _BOOL_FLAG_WITH_VALUE_ALT_A = "--quiet=badvalue"
 _BOOL_FLAG_WITH_VALUE_ALT_B = "--outer-manifest=nope"
 
-# Base flag name extracted from _BOOL_FLAG_WITH_VALUE, used in the assertion
-# that the error message names the offending flag.
+
 _BOOL_FLAG_BASE_NAME = "--verbose"
 
-# Phrase produced by optparse when a boolean flag is supplied with an inline
-# value (AC-TEST-003).
+
 _BOOL_FLAG_VALUE_PHRASE = "does not take a value"
 
-# Phrase expected in stderr when an unknown option is supplied (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
-# The embedded repo tool writes "repo envsubst" in its Usage line.
+
 _HELP_USAGE_PHRASE = "repo envsubst"
 
-# Phrase expected in the --help output: a common flag mentioned in the help.
+
 _HELP_VERBOSE_OPTION = "--verbose"
 
-# CLI tokens for composing the subcommand invocation.
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_ENVSUBST = "envsubst"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
 _CLI_FLAG_HELP = "--help"
 
-# Composed CLI command phrase for diagnostic messages (no inline literals).
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_ENVSUBST}"
 
-# Phrase emitted to stderr when no .repo/manifests/**/*.xml files are found.
-# This is the diagnostic the envsubst subcommand prints via _LOG.warning()
-# when Execute() cannot match any XML manifest files.
+
 _NO_FILES_PHRASE = "No files matched glob pattern"
 
-# Glob pattern string emitted in the "no files" diagnostic message.
-# Imported from Envsubst.path so this constant stays aligned with the
-# production source: if Envsubst.path changes, _MANIFEST_GLOB_PATTERN
-# reflects the new value automatically.
+
 _MANIFEST_GLOB_PATTERN = Envsubst.path
 
-# Composed "no files" diagnostic phrase used in stderr assertions.
+
 _NO_FILES_STDERR_PHRASE = f"{_NO_FILES_PHRASE}: {_MANIFEST_GLOB_PATTERN}"
 
-# Traceback marker used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 
-# Parametrize table for AC-TEST-002 parametrized tests.
+
 _UNKNOWN_FLAGS: list[tuple[str, str]] = [
     (_UNKNOWN_FLAG_PRIMARY, "unknown-flag-xyzzy"),
     (_UNKNOWN_FLAG_ALT_A, "not-a-real-envsubst-flag"),
     (_UNKNOWN_FLAG_ALT_B, "bogus-envsubst-option-99"),
 ]
 
-# Parametrize table for AC-TEST-003 parametrized tests.
+
 _BOOL_FLAGS_WITH_VALUE: list[tuple[str, str]] = [
     (_BOOL_FLAG_WITH_VALUE, "verbose-with-value"),
     (_BOOL_FLAG_WITH_VALUE_ALT_A, "quiet-with-value"),
     (_BOOL_FLAG_WITH_VALUE_ALT_B, "outer-manifest-with-value"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo envsubst --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -260,11 +231,6 @@ class TestRepoEnvsubstHelp:
             f"  first:  {result_a.stdout!r}\n"
             f"  second: {result_b.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -438,11 +404,6 @@ class TestRepoEnvsubstUnknownFlag:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Boolean flag with inline value produces exit 2
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoEnvsubstBoolFlagWithValue:
     """AC-TEST-003: Boolean flag supplied with an inline value produces exit 2.
@@ -601,11 +562,6 @@ class TestRepoEnvsubstBoolFlagWithValue:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition outcome with no manifests found
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoEnvsubstNoManifestsFound:
     """AC-TEST-004: 'repo envsubst' with no manifests exits 0 with a clear diagnostic.
@@ -728,11 +684,6 @@ class TestRepoEnvsubstNoManifestsFound:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

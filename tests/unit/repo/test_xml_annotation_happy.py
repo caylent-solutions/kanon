@@ -35,10 +35,6 @@ from kanon_cli.repo.error import ManifestParseError
 from kanon_cli.repo.project import Annotation
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern used in test_xml_notice_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -192,11 +188,6 @@ def _get_remote(manifest: manifest_xml.XmlManifest, remote_name: str):
     return remotes[remote_name]
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <annotation> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestAnnotationMinimumRequired:
     """Verify that an <annotation> element with minimum required attributes parses correctly.
@@ -330,11 +321,6 @@ class TestAnnotationMinimumRequired:
         assert project.annotations[0].value == ann_value, (
             f"Expected annotation.value={ann_value!r} but got: {project.annotations[0].value!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <annotation> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -489,11 +475,6 @@ class TestAnnotationAllDocumentedAttributes:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <annotation> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestAnnotationDefaultBehavior:
     """Verify that the default behavior of <annotation> is as documented.
@@ -646,11 +627,6 @@ class TestAnnotationDefaultBehavior:
         assert ann.name == ann_name, f"Expected name={ann_name!r} but got: {ann.name!r}"
         assert ann.value == ann_value, f"Expected value={ann_value!r} but got: {ann.value!r}"
         assert ann.keep == ann_keep, f"Expected keep={ann_keep!r} but got: {ann.keep!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

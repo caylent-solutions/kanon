@@ -34,6 +34,7 @@ Failure contract (spec Section 11.3):
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 import subprocess
 import sys
@@ -80,11 +81,6 @@ def _write_stderr_diagnostic(exc: BaseException) -> None:
     """
     if sys.stderr.isatty():
         sys.stderr.write(f"{_COMPLETER_NAME}: {type(exc).__name__}: {exc}\n")
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _run_ls_remote(url: str, timeout: int) -> str:
@@ -142,12 +138,12 @@ def _parse_ls_remote_output(output: str) -> tuple[list[str], list[str]]:
             continue
         _sha, ref = line.split("\t", 1)
         ref = ref.strip()
-        # Skip annotated-tag deref lines
+
         if ref.endswith("^{}"):
             continue
         if ref.startswith("refs/tags/"):
             suffix = ref[len("refs/tags/") :]
-            # Last path component only (handles refs/tags/release/v3 -> "v3")
+
             last_component = suffix.rsplit("/", 1)[-1]
             tags.append(last_component)
         elif ref.startswith("refs/heads/"):
@@ -250,11 +246,6 @@ def _inline_fetch(url: str, entry_dir: Path, timeout: int) -> list[str]:
         return []
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def complete(repo_url: str, current_token: str) -> list[str]:
     """Return project versions that start with *current_token*.
 
@@ -276,12 +267,11 @@ def complete(repo_url: str, current_token: str) -> list[str]:
     Returns:
         Sorted list of matching version strings, or [] on any error.
     """
-    # Step 1: completion disabled guard
+
     enabled = int(os.environ.get("KANON_COMPLETION_ENABLED", KANON_COMPLETION_ENABLED))
     if enabled == 0:
         return []
 
-    # Step 2: canonicalize repo URL (for cache key derivation only)
     try:
         canonical_url = canonicalize_repo_url(repo_url)
     except ValueError as exc:
@@ -289,7 +279,6 @@ def complete(repo_url: str, current_token: str) -> list[str]:
         _write_stderr_diagnostic(exc)
         return []
 
-    # Step 3: check cache (keyed on canonical URL)
     entry_dir = project_entry_dir(canonical_url)
     tags_path = entry_dir / _TAGS_FILENAME
     fetched_path = entry_dir / "fetched_at.txt"
@@ -301,36 +290,21 @@ def complete(repo_url: str, current_token: str) -> list[str]:
     fetched_at = read_epoch(fetched_path)
     now = int(time.time())
 
-    # The original repo_url is used for git ls-remote so the transport is preserved.
     if fetched_at is not None:
         age = now - fetched_at
         if age <= ttl:
-            # Cache hit
             versions = read_entries(tags_path)
         else:
-            # Cache stale
             versions = read_entries(tags_path)
             if refresh_bg == 1:
-                _repo_url_for_bg = repo_url
-                _entry_dir_for_bg = entry_dir
-
-                def _refresh_fn() -> None:
-                    _fetch_and_cache_versions(_repo_url_for_bg, _entry_dir_for_bg)
-
-                fork_background_refresh(_refresh_fn)
+                refresh_fn = functools.partial(_fetch_and_cache_versions, repo_url, entry_dir)
+                fork_background_refresh(refresh_fn)
             else:
                 versions = _inline_fetch(repo_url, entry_dir, timeout)
     else:
-        # Cache miss -- inline fetch
         versions = _inline_fetch(repo_url, entry_dir, timeout)
 
-    # Filter by prefix (case-sensitive)
     return [v for v in versions if v.startswith(current_token)]
-
-
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
 
 
 def register(

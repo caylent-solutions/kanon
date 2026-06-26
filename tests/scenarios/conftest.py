@@ -27,10 +27,8 @@ from typing import Iterable
 
 import pytest
 
+from tests.conftest import _isolation_env
 
-# ---------------------------------------------------------------------------
-# Path constants
-# ---------------------------------------------------------------------------
 
 INTEGRATION_DOC = pathlib.Path(__file__).resolve().parents[2] / "docs" / "integration-testing.md"
 
@@ -38,10 +36,6 @@ _DEFAULT_GIT_USER_NAME = "Kanon Scenario Test"
 _DEFAULT_GIT_USER_EMAIL = "scenario-test@kanon.example"
 _DEFAULT_GIT_BRANCH = "main"
 
-
-# ---------------------------------------------------------------------------
-# Doc parsing helpers
-# ---------------------------------------------------------------------------
 
 _HEADING_RE = re.compile(r"^### ([A-Z][A-Za-z-]*-\d+):\s*(.+)$", re.MULTILINE)
 
@@ -61,11 +55,6 @@ def scenario_block(scenario_id: str) -> str:
     return m.group(0)
 
 
-# ---------------------------------------------------------------------------
-# Subprocess wrappers
-# ---------------------------------------------------------------------------
-
-
 def run_kanon(
     *args: str,
     cwd: pathlib.Path | str | None = None,
@@ -81,7 +70,9 @@ def run_kanon(
         raise ValueError("Provide either 'env' or 'extra_env', not both.")
     resolved_env: dict[str, str] | None
     if env is not None:
-        resolved_env = env
+        resolved_env = dict(env)
+        for key, value in _isolation_env().items():
+            resolved_env.setdefault(key, value)
     elif extra_env is not None:
         resolved_env = dict(os.environ)
         resolved_env.update(extra_env)
@@ -130,11 +121,6 @@ def clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pat
     """Clone work_dir into bare_dir; return resolved bare_dir."""
     run_git(["clone", "--bare", str(work_dir), str(bare_dir)], work_dir.parent)
     return bare_dir.resolve()
-
-
-# ---------------------------------------------------------------------------
-# Synthetic git fixture builders
-# ---------------------------------------------------------------------------
 
 
 def make_bare_repo_with_tags(parent: pathlib.Path, name: str, tags: Iterable[str]) -> pathlib.Path:
@@ -206,11 +192,6 @@ def cs_catalog_repo(parent: pathlib.Path) -> pathlib.Path:
     return make_bare_repo_with_tags(parent, "cs-catalog", _CS_CATALOG_TAGS)
 
 
-# ---------------------------------------------------------------------------
-# XML manifest builders (escape `<`/`>`/`&` per E2-F3-S2-T5)
-# ---------------------------------------------------------------------------
-
-
 def xml_escape(value: str) -> str:
     return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -280,40 +261,59 @@ def pk_xml(
     return mk_rx_xml(parent, fetch_url, project_name, revision, filename=filename)
 
 
-# ---------------------------------------------------------------------------
-# Kanonenv builder
-# ---------------------------------------------------------------------------
-
-
 def write_kanonenv(
     target_dir: pathlib.Path,
     sources: Iterable[tuple[str, str, str, str]],
     *,
     marketplace_install: str | None = None,
+    marketplace_aliases: Iterable[str] = (),
     extra_lines: Iterable[str] = (),
 ) -> pathlib.Path:
-    """Write a `.kanon` file declaring `sources` as KANON_SOURCE_<name>_* triplets.
+    """Write a `.kanon` file declaring `sources` as KANON_SOURCE_<alias>_* blocks.
 
-    Each `sources` entry: `(name, url, revision, path)`. `marketplace_install`
-    appends `KANON_MARKETPLACE_INSTALL=<value>`. `extra_lines` are appended
-    verbatim.
+    Each `sources` entry: `(alias, url, ref, path)`. The required `_NAME`
+    (the alias) and `_GITBASE` (the source url) block keys are filled in
+    automatically so the alias-keyed block parses (spec Section 5.1).
+
+    Marketplace install is a per-dependency opt-in in 3.0.0 (FR-17): a source
+    registers its claude marketplace only when its
+    `KANON_SOURCE_<alias>_MARKETPLACE=true` flag is set. Pass each alias that
+    should opt in via `marketplace_aliases`; the helper emits that per-alias
+    flag for each one. Aliases not listed (and the absence of any flag) leave
+    the marketplace path disabled for that dependency, which is the default.
+
+    `marketplace_install` appends the legacy global
+    `KANON_MARKETPLACE_INSTALL=<value>` header. That global key was removed in
+    3.0.0 and is ignored by the parser; it is retained here only so existing
+    no-marketplace scenarios that pass `marketplace_install="false"` keep their
+    verbatim `.kanon` shape. New marketplace-bearing scenarios must use
+    `marketplace_aliases` instead, never `marketplace_install="true"`.
+
+    `extra_lines` are appended verbatim.
     """
+    source_list = list(sources)
     lines: list[str] = []
-    for name, url, revision, path in sources:
+    marketplace_alias_set = set(marketplace_aliases)
+    for name, url, revision, path in source_list:
         lines.append(f"KANON_SOURCE_{name}_URL={url}")
-        lines.append(f"KANON_SOURCE_{name}_REVISION={revision}")
+        lines.append(f"KANON_SOURCE_{name}_REF={revision}")
         lines.append(f"KANON_SOURCE_{name}_PATH={path}")
+        lines.append(f"KANON_SOURCE_{name}_NAME={name}")
+        lines.append(f"KANON_SOURCE_{name}_GITBASE={url}")
+        if name in marketplace_alias_set:
+            lines.append(f"KANON_SOURCE_{name}_MARKETPLACE=true")
+            marketplace_alias_set.discard(name)
+    if marketplace_alias_set:
+        raise ValueError(
+            f"marketplace_aliases references unknown source aliases: {sorted(marketplace_alias_set)!r}; "
+            f"declared sources: {[s[0] for s in source_list]!r}"
+        )
     if marketplace_install is not None:
         lines.append(f"KANON_MARKETPLACE_INSTALL={marketplace_install}")
     lines.extend(extra_lines)
     target = target_dir / ".kanon"
     target.write_text("\n".join(lines) + "\n")
     return target
-
-
-# ---------------------------------------------------------------------------
-# Lifecycle wrappers
-# ---------------------------------------------------------------------------
 
 
 def kanon_install(working_dir: pathlib.Path, **kwargs) -> subprocess.CompletedProcess:
@@ -324,11 +324,6 @@ def kanon_install(working_dir: pathlib.Path, **kwargs) -> subprocess.CompletedPr
 def kanon_clean(working_dir: pathlib.Path, **kwargs) -> subprocess.CompletedProcess:
     """Run `kanon clean` from `working_dir`."""
     return run_kanon("clean", cwd=working_dir, **kwargs)
-
-
-# ---------------------------------------------------------------------------
-# Shared pytest fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)

@@ -10,10 +10,16 @@ codes to pipeline actions.
 | ---- | ------- | ------------ |
 | `0` | Success | Command completed successfully. |
 | `1` | Runtime / usage error | Application-level failure (see below). |
-| `2` | argparse error | Invalid command-line arguments. |
-| `3` | Deprecated invocation | Invoked via a deprecated interface. |
+| `2` | argparse error | Invalid command-line arguments (including a removed/unknown subcommand). |
 
-**Future codes reserved.** Exit codes 4 and above are unassigned.
+**No deprecated-invocation exit code.** kanon 3.0.0 removed `kanon
+bootstrap` and `kanon list` outright; neither is a registered subcommand,
+so invoking them produces an argparse `invalid choice` usage error (exit
+`2`) rather than a dedicated deprecation code. The `EXIT_CODE_DEPRECATED`
+(`3`) constant remains defined in the source but is not emitted by any
+command.
+
+**Future codes reserved.** Exit codes 3 and above are unassigned.
 kanon will not emit them without a corresponding spec change.
 
 ### Code `0` -- success
@@ -30,101 +36,81 @@ Check stderr for an `ERROR:` line with the specific cause.
 ### Code `2` -- argparse usage error
 
 Command-line arguments were invalid. argparse emits this when a
-required positional is missing, an unknown flag is supplied, or a flag
-value fails type conversion. Correct the invocation and retry.
-
-### Code `3` -- deprecated invocation
-
-The command was invoked via a deprecated interface. No work was
-performed. The WARN message on stderr names the exact replacement
-command. See
-[docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md).
+required positional is missing, an unknown flag is supplied, a flag
+value fails type conversion, or a removed/unknown subcommand (such as
+`kanon bootstrap` or `kanon list`) is named. Correct the invocation and
+retry. For removed commands, see
+[docs/migration-to-add.md](migration-to-add.md).
 
 ## Per-subcommand reference
 
 The table shows which codes each subcommand can emit.
 `y` = the code is reachable. `--` = not reachable.
 
-| Subcommand | `0` | `1` | `2` | `3` |
-| ---------- | --- | --- | --- | --- |
-| `kanon list` | y | y | y | -- |
-| `kanon add` | y | y | y | -- |
-| `kanon remove` | y | y | y | -- |
-| `kanon outdated` | y | y | y | -- |
-| `kanon why` | y | y | y | -- |
-| `kanon catalog audit` | y | y | y | -- |
-| `kanon validate xml` | y | y | y | -- |
-| `kanon validate marketplace` | y | y | y | -- |
-| `kanon validate metadata` | y | y | y | -- |
-| `kanon install` | y | y | y | -- |
-| `kanon doctor` | y | y | y | -- |
-| `kanon bootstrap` | -- | -- | -- | y (all invocations) |
-| `kanon bootstrap list` | -- | -- | -- | y (all invocations) |
-| `kanon clean` | y | y | y | -- |
-| `kanon completion` | y | y | y | -- |
-| `kanon repo` | y | y | y | -- |
+| Subcommand | `0` | `1` | `2` |
+| ---------- | --- | --- | --- |
+| `kanon search` | y | y | y |
+| `kanon add` | y | y | y |
+| `kanon remove` | y | y | y |
+| `kanon outdated` | y | y | y |
+| `kanon why` | y | y | y |
+| `kanon catalog audit` | y | y | y |
+| `kanon validate xml` | y | y | y |
+| `kanon validate marketplace` | y | y | y |
+| `kanon validate metadata` | y | y | y |
+| `kanon validate lockfile` | y | y | y |
+| `kanon install` | y | y | y |
+| `kanon doctor` | y | y | y |
+| `kanon marketplace` | y | y | y |
+| `kanon clean` | y | y | y |
+| `kanon completion` | y | y | y |
+| `kanon repo` | y | y | y |
+
+Removed commands (`kanon bootstrap`, `kanon list`) are not registered
+subcommands; invoking them yields the argparse `invalid choice` usage
+error (exit `2`). See the note below.
 
 ### Notes on `kanon clean`
 
 `kanon clean` exits `0` on a successful teardown, `1` on a runtime error
-(for example, a missing `.kanon` file or `KANON_MARKETPLACE_INSTALL=true`
-with no `CLAUDE_MARKETPLACES_DIR` defined), and `2` on an argparse error.
+(for example, a missing `.kanon` file, or a dependency with
+`KANON_SOURCE_<alias>_MARKETPLACE=true` while no `CLAUDE_MARKETPLACES_DIR`
+is defined), and `2` on an argparse error.
 The `--orphans` flag does not introduce a new exit code: it only changes
 what cleanup is performed (additionally pruning orphaned-source
 marketplaces from `~/.claude` before the normal teardown), not which codes
 the command can emit.
 
-### Notes on `kanon bootstrap` and `kanon bootstrap list`
+### Notes on removed commands (`kanon bootstrap`, `kanon list`)
 
-`kanon bootstrap` was removed in a major release (a breaking change)
-and is retained only as a uniform deprecation shim. **Every**
-invocation -- any args, any flags, including `--help`/`-h`, unknown
-flags, `kanon bootstrap list`, and bare `kanon bootstrap` -- prints a
-deprecation message to stderr and exits with status `3` without
-performing any work. There is no invocation that exits `0`, and no
-argparse "unrecognized arguments" error: every flag is swallowed and
-routed to the same message. The shim does not delegate, does not read
-manifest-repo content, and does not touch the filesystem.
+`kanon bootstrap` and `kanon list` were **removed in kanon 3.0.0** (a
+breaking change). There is **no compatibility shim**: neither is a
+registered subcommand. Every invocation -- any args, any flags,
+including `--help`/`-h`, `kanon bootstrap list`, and bare `kanon
+bootstrap` -- fails at argument parsing with an argparse `invalid choice`
+usage error and exits with status `2`. No work is performed; the
+filesystem and manifest repo are never read.
 
-The message includes a per-invocation "CLOSEST REPLACEMENT" line:
-`kanon bootstrap list` maps to
-`kanon list --catalog-source <git-url>@<ref>`, and any other entry maps
-to `kanon add <entry> --catalog-source <git-url>@<ref>`.
+`kanon list` was renamed to `kanon search`; `kanon bootstrap`'s
+catalog-discovery and add functionality is replaced by `kanon search` +
+`kanon add` + `kanon install`.
 
-See [docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md)
+See [docs/migration-to-add.md](migration-to-add.md)
 for the full migration guide.
 
 ## Using this table in CI
 
-### Treat exit 3 as a hard failure
+### Removed commands fail with exit 2
 
-`kanon bootstrap` and `kanon bootstrap list` exit `3` to force
-migration at the CI / script boundary. A script that calls either
-command will fail immediately, which prevents stale tooling from
-running silently.
+`kanon bootstrap` and `kanon list` are no longer registered subcommands,
+so a script that calls either fails immediately with the argparse
+`invalid choice` usage error (exit `2`). This forces migration at the CI
+/ script boundary and prevents stale tooling from running silently.
 
-If your CI pipeline surfaces exit `3`, update the script to use the
-replacement command (`kanon add` or `kanon list`). Follow the migration
+If your CI pipeline surfaces this error, update the script to use the
+replacement command (`kanon add` / `kanon search`). Follow the migration
 guide at
-[docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md).
-
-Example -- GitHub Actions step that detects exit `3` and fails with a
-diagnostic message:
-
-```yaml
-- name: Run kanon
-  run: |
-    set +e
-    kanon bootstrap mypackage
-    exit_code=$?
-    if [ "$exit_code" -eq 3 ]; then
-      echo "ERROR: 'kanon bootstrap' is deprecated." >&2
-      echo "Replace with 'kanon add mypackage'." >&2
-      echo "See docs/migration-bootstrap-to-add.md." >&2
-      exit 1
-    fi
-    exit "$exit_code"
-```
+[docs/migration-to-add.md](migration-to-add.md).
 
 ### Distinguish argparse errors from runtime errors
 
@@ -141,28 +127,29 @@ catalog was unavailable":
 #!/usr/bin/env bash
 set -euo pipefail
 
-kanon list
+kanon search
 rc=$?
 
 case $rc in
   0) echo "OK" ;;
   1) echo "ERROR: runtime failure -- check stderr" >&2; exit 1 ;;
-  2) echo "ERROR: bad arguments -- check syntax" >&2; exit 2 ;;
-  3) echo "ERROR: deprecated command -- see migration guide" >&2; exit 1 ;;
+  2) echo "ERROR: bad arguments (or removed command) -- check syntax" >&2; exit 2 ;;
   *) echo "ERROR: unexpected exit code $rc" >&2; exit 1 ;;
 esac
 ```
 
 ### `kanon install` and lockfile drift
 
-`kanon install` follows the npm-like reconcile model. Plain
-`kanon install` reconciles `.kanon` against `.kanon.lock` (prune removed
-sources, resolve added/changed sources, replay unchanged ones) and exits
-`0`; ordinary `.kanon` edits do not produce a non-zero exit. To make the
-lockfile authoritative in CI, run `kanon install --strict-lock`: it exits
-`1` on any drift (an orphaned lock entry or a `kanon_hash` mismatch) and
-never mutates the lockfile. `kanon install --refresh-lock` forces a full
-rebuild and exits `0` on success. See
+`kanon install` treats the committed lockfile as authoritative by
+default. Plain `kanon install` runs the consistency check before
+resolving and exits `1` (fail fast) on any drift between `.kanon` and
+`.kanon.lock` -- an alias-set drift or a per-alias ref-spec mismatch --
+and never mutates the lockfile. To reconcile a drifted pair, run
+`kanon install --reconcile`: it prunes removed sources, resolves
+added/changed sources, replays unchanged ones, rewrites the lock, and
+exits `0`. `kanon install --refresh-lock` forces a full rebuild and exits
+`0` on success. `--strict-lock` additionally fails on an orphaned lock
+entry that survives a `kanon_hash` match. See
 [docs/lockfile.md -- Install reconcile model](lockfile.md#install-reconcile-model).
 
 ### Gate on `kanon doctor` for workspace health checks
@@ -174,7 +161,7 @@ and unreachable catalog sources before a build proceeds:
 ```yaml
 - name: Workspace health check
   env:
-    KANON_CATALOG_SOURCE: >-
+    KANON_CATALOG_SOURCES: >-
       https://example.com/org/manifest-repo.git@main
   run: kanon doctor
 ```
@@ -184,7 +171,7 @@ to stderr.
 
 ## See also
 
-- [docs/list-and-add.md](list-and-add.md) -- `kanon list`, `kanon add`,
+- [docs/list-and-add.md](list-and-add.md) -- `kanon search`, `kanon add`,
   `kanon remove`
 - [docs/outdated-and-why.md](outdated-and-why.md) -- `kanon outdated`,
   `kanon why`
@@ -194,5 +181,5 @@ to stderr.
 - [docs/cli/validate.md](cli/validate.md) -- `kanon validate`
 - [docs/lockfile.md](lockfile.md) -- lockfile format consumed by
   `kanon install`, `kanon doctor`, `kanon outdated`, `kanon why`
-- [docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md)
+- [docs/migration-to-add.md](migration-to-add.md)
   -- full migration guide for `kanon bootstrap` users

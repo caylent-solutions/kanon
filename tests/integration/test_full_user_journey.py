@@ -32,33 +32,20 @@ from kanon_cli.core.install import install
 from kanon_cli.repo import RepoCommandError
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Journey Test User"
 _GIT_USER_EMAIL = "journey-test@example.com"
 _MANIFEST_FILENAME = "default.xml"
 _CONTENT_FILE_NAME = "README.md"
 _CONTENT_FILE_TEXT = "hello from journey content repo"
-_CATALOG_PKG_NAME = "my-pkg"
 _MARKETPLACE_NAME = "test-marketplace"
 _PLUGIN_NAME = "test-plugin"
 _MARKETPLACE_DIR_REL = ".claude-marketplaces"
 _GITIGNORE_PACKAGES = ".packages/"
 _GITIGNORE_KANON_DATA = ".kanon-data/"
-# Dummy catalog source used in catalog_source= arguments so install() passes
-# catalog-source validation.  The _resolve_ref_to_sha function is mocked by
-# the integration conftest autouse fixture, so the URL need not be real.
-_DUMMY_CATALOG_SOURCE = "https://example.com/catalog.git@main"
-# Minimal well-formed manifest XML written by fake_repo_sync helpers so that
-# install()'s include-walker can parse the manifest path after sync.
+
+
 _EMPTY_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
-
-
-# ---------------------------------------------------------------------------
-# Low-level git helper
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -79,11 +66,6 @@ def _git(args: list[str], cwd: pathlib.Path) -> None:
     )
     if result.returncode != 0:
         raise RuntimeError(f"git {args!r} failed in {cwd!r}:\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}")
-
-
-# ---------------------------------------------------------------------------
-# Shared git repo creation helpers
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -228,39 +210,6 @@ def _create_manifest_repo(
     return _clone_as_bare(work_dir, base / f"{subdir_name}-bare.git")
 
 
-def _create_catalog_repo(base: pathlib.Path, kanonenv_content: str) -> pathlib.Path:
-    """Create a local catalog git repo with a catalog/<pkg>/.kanon structure.
-
-    The catalog repo has a catalog/ subdirectory containing _CATALOG_PKG_NAME
-    with a pre-configured .kanon file. This matches what resolve_catalog_dir
-    expects: after git clone, it looks for a 'catalog/' subdirectory in the
-    cloned repo root.
-
-    Args:
-        base: Parent directory under which repos are created.
-        kanonenv_content: Content to write into the catalog's .kanon template.
-
-    Returns:
-        The absolute path to the bare catalog git repo (for use as url in
-        '<url>@<ref>' format with --catalog-source).
-    """
-    work_dir = base / "catalog-work"
-    work_dir.mkdir(parents=True, exist_ok=True)
-    _init_git_work_dir(work_dir)
-
-    catalog_dir = work_dir / "catalog"
-    catalog_dir.mkdir()
-    pkg_dir = catalog_dir / _CATALOG_PKG_NAME
-    pkg_dir.mkdir()
-    (pkg_dir / ".kanon").write_text(kanonenv_content, encoding="utf-8")
-    (pkg_dir / "README.md").write_text(f"# {_CATALOG_PKG_NAME}\n", encoding="utf-8")
-
-    _git(["add", "."], cwd=work_dir)
-    _git(["commit", "-m", "Add catalog package"], cwd=work_dir)
-
-    return _clone_as_bare(work_dir, base / "catalog-bare.git")
-
-
 def _create_mock_claude_binary(bin_dir: pathlib.Path) -> pathlib.Path:
     """Create a mock claude binary that logs all invocations to a file.
 
@@ -315,11 +264,6 @@ def _write_empty_manifest(repo_dir: str, manifest_filename: str = _MANIFEST_FILE
     manifest_path.write_text(_EMPTY_MANIFEST_XML, encoding="utf-8")
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: test_full_journey_bootstrap_install_clean
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestFullJourneyBootstrapInstallClean:
     """AC-TEST-001: write .kanon directly -> install -> verify -> clean -> verify clean state."""
@@ -333,9 +277,10 @@ class TestFullJourneyBootstrapInstallClean:
         3. Create a local catalog repo with a .kanon pointing at the manifest repo.
         4. Create a project directory and write .kanon directly from the catalog template.
         5. Run: kanon install (with mocked repo operations so no network needed).
-        6. Verify .packages/ populated, .kanon-data/ created, .gitignore updated.
+        6. Verify the shared store has .packages/ populated, .kanon-data/ created,
+           and .gitignore updated.
         7. Run: kanon clean.
-        8. Verify .packages/ gone, .kanon-data/ gone.
+        8. Verify the store .packages/ gone, .kanon-data/ gone.
         """
         repos_dir = tmp_path / "repos"
         repos_dir.mkdir()
@@ -350,10 +295,11 @@ class TestFullJourneyBootstrapInstallClean:
 
         kanonenv_content = (
             f"KANON_SOURCE_main_URL=file://{manifest_bare}\n"
-            "KANON_SOURCE_main_REVISION=main\n"
+            "KANON_SOURCE_main_REF=main\n"
             "KANON_SOURCE_main_PATH=default.xml\n"
+            "KANON_SOURCE_main_NAME=main\n"
+            "KANON_SOURCE_main_GITBASE=https://example.com\n"
         )
-        catalog_bare = _create_catalog_repo(repos_dir, kanonenv_content)
 
         project_dir = tmp_path / "project"
         project_dir.mkdir()
@@ -378,28 +324,23 @@ class TestFullJourneyBootstrapInstallClean:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=f"file://{catalog_bare}@main",
             )
 
-        assert (project_dir / ".packages").is_dir(), ".packages/ must exist after install"
-        assert (project_dir / ".packages" / "synced-pkg").is_symlink(), (
-            ".packages/synced-pkg must be a symlink after install"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert (store_base / ".packages").is_dir(), ".packages/ must exist in the store after install"
+        assert (store_base / ".packages" / "synced-pkg").is_symlink(), (
+            ".packages/synced-pkg must be a symlink in the store after install"
         )
-        assert (project_dir / ".kanon-data").is_dir(), ".kanon-data/ must exist after install"
-        gitignore = (project_dir / ".gitignore").read_text(encoding="utf-8")
-        assert _GITIGNORE_PACKAGES in gitignore, ".gitignore must contain .packages/"
-        assert _GITIGNORE_KANON_DATA in gitignore, ".gitignore must contain .kanon-data/"
+        assert (store_base / ".kanon-data").is_dir(), ".kanon-data/ must exist in the store after install"
+        gitignore = (store_base / ".gitignore").read_text(encoding="utf-8")
+        assert _GITIGNORE_PACKAGES in gitignore, "store .gitignore must contain .packages/"
+        assert _GITIGNORE_KANON_DATA in gitignore, "store .gitignore must contain .kanon-data/"
 
         clean(kanonenv_path)
 
-        assert not (project_dir / ".packages").exists(), ".packages/ must be absent after clean"
-        assert not (project_dir / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
+        assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
         assert kanonenv_path.is_file(), ".kanon must survive clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: test_full_journey_bootstrap_install_marketplace_clean
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -430,11 +371,13 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
 
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
-            f"KANON_MARKETPLACE_INSTALL=true\n"
             f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}\n"
             f"KANON_SOURCE_mp_URL=https://example.com/mp.git\n"
-            f"KANON_SOURCE_mp_REVISION=main\n"
-            f"KANON_SOURCE_mp_PATH=default.xml\n",
+            f"KANON_SOURCE_mp_REF=main\n"
+            f"KANON_SOURCE_mp_PATH=default.xml\n"
+            f"KANON_SOURCE_mp_NAME=mp\n"
+            f"KANON_SOURCE_mp_GITBASE=https://example.com\n"
+            f"KANON_SOURCE_mp_MARKETPLACE=true\n",
             encoding="utf-8",
         )
 
@@ -478,7 +421,6 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
         assert len(register_calls) >= 1, f"Expected at least one marketplace register call, got: {register_calls!r}"
@@ -500,15 +442,11 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
         ):
             clean(kanonenv_path)
 
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         assert len(uninstall_calls) >= 1, f"Expected at least one plugin uninstall call, got: {uninstall_calls!r}"
         assert len(remove_calls) >= 1, f"Expected at least one marketplace remove call, got: {remove_calls!r}"
-        assert not (project_dir / ".packages").exists(), ".packages/ must be absent after clean"
-        assert not (project_dir / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: test_full_journey_bootstrap_install_validate_clean
-# ---------------------------------------------------------------------------
+        assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
 
 
 @pytest.mark.integration
@@ -550,13 +488,13 @@ class TestFullJourneyBootstrapInstallValidateClean:
         marketplace_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
-            '  <remote name="origin" fetch="https://github.com/caylent-solutions/" />\n'
-            '  <default revision="main" remote="origin" />\n'
+            '  <remote name="origin" fetch="https://example.invalid/caylent-solutions/" />\n'
+            '  <default revision="refs/tags/some-plugin/1.0.0" remote="origin" />\n'
             "  <project\n"
             '    name="some-plugin"\n'
             '    path="some-plugin-path"\n'
             '    remote="origin"\n'
-            '    revision="main"\n'
+            '    revision="refs/tags/some-plugin/1.0.0"\n'
             "  >\n"
             '    <linkfile src="plugin.sh" dest="${CLAUDE_MARKETPLACES_DIR}/some-plugin.sh" />\n'
             "  </project>\n"
@@ -579,8 +517,10 @@ class TestFullJourneyBootstrapInstallValidateClean:
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
             f"KANON_SOURCE_main_URL=file://{manifest_repo_bare}\n"
-            "KANON_SOURCE_main_REVISION=main\n"
-            "KANON_SOURCE_main_PATH=default.xml\n",
+            "KANON_SOURCE_main_REF=main\n"
+            "KANON_SOURCE_main_PATH=default.xml\n"
+            "KANON_SOURCE_main_NAME=main\n"
+            "KANON_SOURCE_main_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -596,10 +536,10 @@ class TestFullJourneyBootstrapInstallValidateClean:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
-        assert (project_dir / ".kanon-data").is_dir(), ".kanon-data/ must exist after install"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert (store_base / ".kanon-data").is_dir(), ".kanon-data/ must exist in the store after install"
 
         xml_result = _run_kanon(
             "validate",
@@ -627,13 +567,8 @@ class TestFullJourneyBootstrapInstallValidateClean:
 
         clean(kanonenv_path)
 
-        assert not (project_dir / ".packages").exists(), ".packages/ must be absent after clean"
-        assert not (project_dir / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: test_full_journey_with_version_constraints
-# ---------------------------------------------------------------------------
+        assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
 
 
 @pytest.mark.integration
@@ -645,7 +580,7 @@ class TestFullJourneyWithVersionConstraints:
 
         Steps:
         1. Create a manifest repo bare with tags 1.0.0 and 1.1.0 and 2.0.0.
-        2. Create a .kanon with KANON_SOURCE_main_REVISION=refs/tags/>=1.0.0,<2.0.0.
+        2. Create a .kanon with KANON_SOURCE_main_REF=refs/tags/>=1.0.0,<2.0.0.
         3. Mock resolve_version to return refs/tags/1.1.0 (highest matching).
         4. Run install. Verify the mock was called with the constraint.
         5. Clean. Verify clean state.
@@ -667,8 +602,10 @@ class TestFullJourneyWithVersionConstraints:
         constraint = "refs/tags/>=1.0.0,<2.0.0"
         kanonenv_path.write_text(
             f"KANON_SOURCE_main_URL=file://{manifest_bare}\n"
-            f"KANON_SOURCE_main_REVISION={constraint}\n"
-            "KANON_SOURCE_main_PATH=default.xml\n",
+            f"KANON_SOURCE_main_REF={constraint}\n"
+            "KANON_SOURCE_main_PATH=default.xml\n"
+            "KANON_SOURCE_main_NAME=main\n"
+            "KANON_SOURCE_main_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -691,7 +628,6 @@ class TestFullJourneyWithVersionConstraints:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
         assert len(resolved_calls) == 1, f"resolve_version must be called once per source, got: {resolved_calls!r}"
@@ -702,13 +638,9 @@ class TestFullJourneyWithVersionConstraints:
 
         clean(kanonenv_path)
 
-        assert not (project_dir / ".packages").exists(), ".packages/ must be absent after clean"
-        assert not (project_dir / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005: test_full_journey_auto_discover_from_subdirectory
-# ---------------------------------------------------------------------------
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
 
 
 @pytest.mark.integration
@@ -725,9 +657,9 @@ class TestFullJourneyAutoDiscoverFromSubdirectory:
         2. Create project/src/deep/nested/ subdirectory.
         3. Change cwd to the nested subdir.
         4. Call install (with auto-discovery via find_kanonenv) from nested dir.
-        5. Verify .packages/ and .kanon-data/ created relative to project/.
+        5. Verify .packages/ and .kanon-data/ created in the shared store.
         6. Call clean from nested dir (using auto-discovery).
-        7. Verify clean state relative to project/.
+        7. Verify clean state in the shared store.
         """
         project_dir = tmp_path / "project"
         project_dir.mkdir()
@@ -735,8 +667,10 @@ class TestFullJourneyAutoDiscoverFromSubdirectory:
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
-            "KANON_SOURCE_build_PATH=default.xml\n",
+            "KANON_SOURCE_build_REF=main\n"
+            "KANON_SOURCE_build_PATH=default.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -764,22 +698,17 @@ class TestFullJourneyAutoDiscoverFromSubdirectory:
             install(
                 discovered,
                 lock_file_path=discovered.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
-        assert (project_dir / ".packages").is_dir(), ".packages/ must be created relative to project/"
-        assert (project_dir / ".packages" / "auto-pkg").is_symlink(), ".packages/auto-pkg must be a symlink"
-        assert (project_dir / ".kanon-data").is_dir(), ".kanon-data/ must be relative to project/"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert (store_base / ".packages").is_dir(), ".packages/ must be created in the shared store"
+        assert (store_base / ".packages" / "auto-pkg").is_symlink(), ".packages/auto-pkg must be a symlink in the store"
+        assert (store_base / ".kanon-data").is_dir(), ".kanon-data/ must be created in the shared store"
 
         clean(discovered)
 
-        assert not (project_dir / ".packages").exists(), ".packages/ must be absent after clean"
-        assert not (project_dir / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-006: test_full_journey_multi_source_with_marketplace
-# ---------------------------------------------------------------------------
+        assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
 
 
 @pytest.mark.integration
@@ -801,14 +730,18 @@ class TestFullJourneyMultiSourceWithMarketplace:
 
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
-            f"KANON_MARKETPLACE_INSTALL=true\n"
             f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}\n"
             "KANON_SOURCE_mp_URL=https://example.com/mp.git\n"
-            "KANON_SOURCE_mp_REVISION=main\n"
+            "KANON_SOURCE_mp_REF=main\n"
             "KANON_SOURCE_mp_PATH=default.xml\n"
+            "KANON_SOURCE_mp_NAME=mp\n"
+            "KANON_SOURCE_mp_GITBASE=https://example.com\n"
+            "KANON_SOURCE_mp_MARKETPLACE=true\n"
             "KANON_SOURCE_pkgs_URL=https://example.com/pkgs.git\n"
-            "KANON_SOURCE_pkgs_REVISION=main\n"
-            "KANON_SOURCE_pkgs_PATH=meta.xml\n",
+            "KANON_SOURCE_pkgs_REF=main\n"
+            "KANON_SOURCE_pkgs_PATH=meta.xml\n"
+            "KANON_SOURCE_pkgs_NAME=pkgs\n"
+            "KANON_SOURCE_pkgs_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -863,14 +796,14 @@ class TestFullJourneyMultiSourceWithMarketplace:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         assert "mp" in synced_sources, f"'mp' source must be synced, got: {synced_sources!r}"
         assert "pkgs" in synced_sources, f"'pkgs' source must be synced, got: {synced_sources!r}"
         assert len(register_calls) >= 1, f"Expected marketplace register call, got: {register_calls!r}"
-        assert (project_dir / ".packages" / "non-mp-pkg").is_symlink(), (
-            ".packages/non-mp-pkg must be a symlink from the pkgs source"
+        assert (store_base / ".packages" / "non-mp-pkg").is_symlink(), (
+            ".packages/non-mp-pkg must be a symlink in the store from the pkgs source"
         )
 
         with (
@@ -891,37 +824,39 @@ class TestFullJourneyMultiSourceWithMarketplace:
 
         assert len(uninstall_calls) >= 1, f"Expected plugin uninstall call during clean, got: {uninstall_calls!r}"
         assert len(remove_calls) >= 1, f"Expected marketplace remove call during clean, got: {remove_calls!r}"
-        assert not (project_dir / ".packages").exists(), ".packages/ must be absent after clean"
-        assert not (project_dir / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-007: test_full_journey_env_var_overrides
-# ---------------------------------------------------------------------------
+        assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
 
 
 @pytest.mark.integration
 class TestFullJourneyEnvVarOverrides:
-    """AC-TEST-007: GITBASE env var overrides .kanon value during install."""
+    """AC-TEST-007: per-alias _GITBASE env var overrides .kanon value during install."""
 
     def test_full_journey_env_var_overrides(self, tmp_path: pathlib.Path) -> None:
-        """Env var override of GITBASE is applied during envsubst.
+        """Env var override of a source's per-alias _GITBASE is applied during envsubst.
+
+        ``kanon add`` records the org base per dependency in
+        ``KANON_SOURCE_<alias>_GITBASE`` and writes no global ``GITBASE`` line, so
+        install promotes the source's per-alias value into ``GITBASE`` for that
+        source's substitution. CI/CD can override a dependency's base by setting
+        ``KANON_SOURCE_<alias>_GITBASE`` in the environment (env values take
+        precedence over file values).
 
         Steps:
-        1. Create .kanon with GITBASE=default-base.
-        2. Run install with GITBASE=override-base in environment.
+        1. Create .kanon with KANON_SOURCE_main_GITBASE=default-base.
+        2. Run install with KANON_SOURCE_main_GITBASE=override-base in environment.
         3. Verify repo_envsubst was called with env_vars containing GITBASE=override-base.
-        4. Clean.
         """
         project_dir = tmp_path / "project"
         project_dir.mkdir()
 
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
-            "GITBASE=default-base\n"
             "KANON_SOURCE_main_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_main_REVISION=main\n"
-            "KANON_SOURCE_main_PATH=default.xml\n",
+            "KANON_SOURCE_main_REF=main\n"
+            "KANON_SOURCE_main_PATH=default.xml\n"
+            "KANON_SOURCE_main_NAME=main\n"
+            "KANON_SOURCE_main_GITBASE=default-base\n",
             encoding="utf-8",
         )
 
@@ -933,9 +868,9 @@ class TestFullJourneyEnvVarOverrides:
         def fake_repo_sync_env(repo_dir: str, **kwargs) -> None:
             _write_empty_manifest(repo_dir)
 
-        original_gitbase = os.environ.get("GITBASE")
+        original_gitbase = os.environ.get("KANON_SOURCE_main_GITBASE")
         try:
-            os.environ["GITBASE"] = "override-base"
+            os.environ["KANON_SOURCE_main_GITBASE"] = "override-base"
             with (
                 patch("kanon_cli.repo.repo_init"),
                 patch("kanon_cli.repo.repo_envsubst", side_effect=fake_repo_envsubst),
@@ -944,13 +879,12 @@ class TestFullJourneyEnvVarOverrides:
                 install(
                     kanonenv_path,
                     lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                    catalog_source=_DUMMY_CATALOG_SOURCE,
                 )
         finally:
             if original_gitbase is None:
-                os.environ.pop("GITBASE", None)
+                os.environ.pop("KANON_SOURCE_main_GITBASE", None)
             else:
-                os.environ["GITBASE"] = original_gitbase
+                os.environ["KANON_SOURCE_main_GITBASE"] = original_gitbase
 
         assert len(envsubst_calls) == 1, f"Expected one repo_envsubst call, got: {len(envsubst_calls)}"
         called_env = envsubst_calls[0]
@@ -960,12 +894,8 @@ class TestFullJourneyEnvVarOverrides:
 
         clean(kanonenv_path)
 
-        assert not (project_dir / ".packages").exists(), ".packages/ must be absent after clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-008: test_full_journey_install_twice_then_clean
-# ---------------------------------------------------------------------------
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
 
 
 @pytest.mark.integration
@@ -987,8 +917,10 @@ class TestFullJourneyInstallTwiceThenClean:
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
-            "KANON_SOURCE_build_PATH=default.xml\n",
+            "KANON_SOURCE_build_REF=main\n"
+            "KANON_SOURCE_build_PATH=default.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -1007,12 +939,12 @@ class TestFullJourneyInstallTwiceThenClean:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
-        first_gitignore = (project_dir / ".gitignore").read_text(encoding="utf-8")
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        first_gitignore = (store_base / ".gitignore").read_text(encoding="utf-8")
         assert first_gitignore.count(_GITIGNORE_PACKAGES) == 1, (
-            ".packages/ must appear exactly once after first install"
+            ".packages/ must appear exactly once in the store .gitignore after first install"
         )
 
         with (
@@ -1023,29 +955,23 @@ class TestFullJourneyInstallTwiceThenClean:
             install(
                 kanonenv_path,
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                catalog_source=_DUMMY_CATALOG_SOURCE,
             )
 
-        second_gitignore = (project_dir / ".gitignore").read_text(encoding="utf-8")
+        second_gitignore = (store_base / ".gitignore").read_text(encoding="utf-8")
         assert second_gitignore.count(_GITIGNORE_PACKAGES) == 1, (
-            ".packages/ must appear exactly once after second install (idempotency)"
+            ".packages/ must appear exactly once in the store .gitignore after second install (idempotency)"
         )
         assert second_gitignore.count(_GITIGNORE_KANON_DATA) == 1, (
-            ".kanon-data/ must appear exactly once after second install (idempotency)"
+            ".kanon-data/ must appear exactly once in the store .gitignore after second install (idempotency)"
         )
-        assert (project_dir / ".packages" / "idempotent-pkg").is_symlink(), (
-            ".packages/idempotent-pkg must still be a symlink after second install"
+        assert (store_base / ".packages" / "idempotent-pkg").is_symlink(), (
+            ".packages/idempotent-pkg must still be a symlink in the store after second install"
         )
 
         clean(kanonenv_path)
 
-        assert not (project_dir / ".packages").exists(), ".packages/ must be absent after clean"
-        assert not (project_dir / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-009: test_full_journey_error_recovery
-# ---------------------------------------------------------------------------
+        assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
 
 
 @pytest.mark.integration
@@ -1068,11 +994,15 @@ class TestFullJourneyErrorRecovery:
         kanonenv_path = project_dir / ".kanon"
         kanonenv_path.write_text(
             "KANON_SOURCE_bad_URL=https://invalid.example.com/bad.git\n"
-            "KANON_SOURCE_bad_REVISION=main\n"
+            "KANON_SOURCE_bad_REF=main\n"
             "KANON_SOURCE_bad_PATH=default.xml\n"
+            "KANON_SOURCE_bad_NAME=bad\n"
+            "KANON_SOURCE_bad_GITBASE=https://example.com\n"
             "KANON_SOURCE_good_URL=https://example.com/good.git\n"
-            "KANON_SOURCE_good_REVISION=main\n"
-            "KANON_SOURCE_good_PATH=default.xml\n",
+            "KANON_SOURCE_good_REF=main\n"
+            "KANON_SOURCE_good_PATH=default.xml\n"
+            "KANON_SOURCE_good_NAME=good\n"
+            "KANON_SOURCE_good_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
 
@@ -1095,19 +1025,19 @@ class TestFullJourneyErrorRecovery:
                 install(
                     kanonenv_path,
                     lock_file_path=kanonenv_path.parent / ".kanon.lock",
-                    catalog_source=_DUMMY_CATALOG_SOURCE,
                 )
 
-        partial_exists = (project_dir / ".kanon-data" / "sources" / "good").is_dir() or (
-            project_dir / ".kanon-data" / "sources" / "bad"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        partial_exists = (store_base / ".kanon-data" / "sources" / "good").is_dir() or (
+            store_base / ".kanon-data" / "sources" / "bad"
         ).is_dir()
-        assert partial_exists, "Some partial state (.kanon-data/sources/) must exist after failed install"
+        assert partial_exists, "Some partial state (store .kanon-data/sources/) must exist after failed install"
 
         clean(kanonenv_path)
 
-        assert not (project_dir / ".packages").exists(), (
-            ".packages/ must be absent after clean (even after partial install)"
+        assert not (store_base / ".packages").exists(), (
+            ".packages/ must be absent from the store after clean (even after partial install)"
         )
-        assert not (project_dir / ".kanon-data").exists(), (
-            ".kanon-data/ must be absent after clean (even after partial install)"
+        assert not (store_base / ".kanon-data").exists(), (
+            ".kanon-data/ must be absent from the store after clean (even after partial install)"
         )

@@ -44,10 +44,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -131,11 +127,6 @@ def _build_manifest_no_remote_with_default(default_attrs: str = "") -> str:
     """
     default_elem = f"  <default {default_attrs} />\n" if default_attrs else "  <default />\n"
     return f'<?xml version="1.0" encoding="UTF-8"?>\n<manifest>\n{default_elem}</manifest>\n'
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests -- one per documented <default> attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -432,11 +423,6 @@ class TestDefaultValidValues:
         assert d.sync_tags is False, f"AC-TEST-001: expected default.sync_tags=False but got: {d.sync_tags!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Invalid-value tests -- raise ManifestParseError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDefaultInvalidValues:
     """AC-TEST-002: Every attribute has invalid-value tests that raise ManifestParseError.
@@ -695,11 +681,6 @@ class TestDefaultInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: No strictly required attributes -- validation of referential constraints
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDefaultRequiredAttributeConstraints:
     """AC-TEST-003: Omitting optional attributes is permitted; referential constraints raise.
@@ -840,11 +821,6 @@ class TestDefaultRequiredAttributeConstraints:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Attribute validation happens at parse time (during m.Load())
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDefaultAttributeValidatedAtParseTime:
     """AC-FUNC-001: Every documented attribute of <default> is validated at parse time.
@@ -961,11 +937,6 @@ class TestDefaultAttributeValidatedAtParseTime:
             f"AC-FUNC-001: expected default.revisionExpr='refs/heads/stable' after m.Load() but got: {d.revisionExpr!r}"
         )
         assert d.sync_j == 2, f"AC-FUNC-001: expected default.sync_j=2 after m.Load() but got: {d.sync_j!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

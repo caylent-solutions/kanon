@@ -125,7 +125,7 @@ class TestValidateMarketplaceLifecycle:
             tmp_path / "repo-specs" / "history" / "claude-history-marketplace.xml",
             textwrap.dedent("""\
                 <manifest>
-                  <project name="proj" path=".packages/proj" remote="r" revision="main">
+                  <project name="proj" path=".packages/proj" remote="r" revision="refs/tags/ex/proj/1.0.0">
                     <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
                   </project>
                   <catalog-metadata>

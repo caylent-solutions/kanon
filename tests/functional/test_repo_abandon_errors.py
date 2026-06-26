@@ -29,62 +29,45 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
-# Nonexistent repo-dir path component used across all tests in this module.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-abandon-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-abandon-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-abandon-option-99"
 
-# Value-requiring option used in AC-TEST-003: requires exactly one argument
-# value. Supplying it without a value triggers exit 2 with
-# "--jobs option requires 1 argument" on stderr.
+
 _OPTION_REQUIRING_VALUE = "--jobs"
 
-# Error message substring expected in stderr when the option is supplied
-# without a value (argparse-level missing-argument error).
+
 _MISSING_ARG_PHRASE = "requires"
 
-# Phrase expected in stderr for unknown flag errors (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
+
 _HELP_USAGE_PHRASE = "repo abandon"
 
-# Phrase expected in stderr when the .repo/manifest.xml is absent (AC-TEST-004).
-# The embedded repo tool prints "error parsing manifest" when .repo is absent.
+
 _MISSING_REPO_PHRASE = "error parsing manifest"
 
-# Manifest file named in stderr for precondition failures (AC-TEST-004).
+
 _MANIFEST_FILE_NAME = "manifest.xml"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
 
-# A valid branch name used in precondition-failure tests (tests that reach
-# the repo tool layer rather than the argument parser).
+
 _VALID_BRANCH_NAME = "feature/test-abandon-precondition"
 
-# A dummy branch name used as a positional argument in argument-parser tests.
-# The value is intentionally fictitious so the embedded repo tool reaches the
-# argument-parser layer rather than performing real git operations.
+
 _DUMMY_BRANCH_NAME = "some-branch"
 
-# The --all flag documented in 'repo abandon --help' output.
+
 _ALL_FLAG = "--all"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo abandon --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -232,11 +215,6 @@ class TestRepoAbandonHelp:
             f"  first:  {result_a.stdout!r}\n"
             f"  second: {result_b.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -397,11 +375,6 @@ class TestRepoAbandonUnknownFlag:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Value-requiring option without its argument produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -573,11 +546,6 @@ class TestRepoAbandonMissingOptionValue:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoAbandonPreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failures exit 1 with clear message.
@@ -722,11 +690,6 @@ class TestRepoAbandonPreconditionFailure:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline across all error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

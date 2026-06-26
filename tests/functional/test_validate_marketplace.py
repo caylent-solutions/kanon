@@ -17,11 +17,6 @@ import pytest
 from tests.functional.conftest import _run_kanon
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_xml(path: Path, content: str) -> Path:
     """Write an XML file, creating parent directories as needed.
 
@@ -81,11 +76,6 @@ def _valid_marketplace_xml(
     ET.SubElement(meta, "description").text = "d"
     ET.SubElement(meta, "version").text = "1.0.0"
     return ET.tostring(root, encoding="unicode")
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: linkfile dest validation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -182,11 +172,6 @@ class TestLinkfileDestValidation:
         assert "bad" in result.stderr, (
             f"AC-TEST-001: expected error mentioning project 'bad'.\nstderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: include chain cycle detection
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -298,9 +283,6 @@ class TestIncludeChainCycleDetection:
 
         result = _run_kanon("validate", "marketplace", "--repo-root", str(repo_root))
 
-        # The cycle is detected and visited nodes are skipped -- no error is emitted
-        # for the cycle itself, and no infinite loop occurs. The validator exits 0
-        # and emits nothing to stderr (silent-cycle behavior).
         assert result.returncode == 0, (
             f"AC-TEST-002: circular includes must be silently skipped (exit 0).\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
@@ -309,11 +291,6 @@ class TestIncludeChainCycleDetection:
             f"AC-TEST-002: circular includes must not produce any stderr output.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: uniqueness, tag format, branch format, constraint format
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -370,25 +347,28 @@ class TestProjectUniquenessValidation:
 
 @pytest.mark.functional
 class TestTagFormatValidation:
-    """AC-TEST-003: revision tag format, branch format, and constraint format."""
+    """AC-54 / AC-TEST-003: pinnable revision tag format (spec Section 4.5 / FR-22, AMENDED 2026-06-25)."""
 
     @pytest.mark.parametrize(
         "valid_revision",
         [
             "refs/tags/example/proj/1.0.0",
             "refs/tags/example/proj/2.3.4",
-            "main",
-            "~=1.2.0",
-            ">=1.0.0",
-            ">=1.0.0,<2.0.0",
-            "*",
+            "refs/tags/example/proj/2024.6",
+            "refs/tags/deep/nested/proj/1.2.0a1",
+            "refs/heads/main",
+            "refs/heads/feature/my-branch",
+            "a" * 40,
         ],
     )
-    def test_valid_revision_format_exits_zero(self, tmp_path: Path, valid_revision: str) -> None:
-        """AC-TEST-003 positive: valid revision formats pass validation.
+    def test_pinnable_revision_exits_zero(self, tmp_path: Path, valid_revision: str) -> None:
+        """AC-54 positive: an exact tag, a refs/heads/<name> branch ref, or a 40-hex SHA passes.
 
-        Covers refs/tags semver, allowed branch names, version constraints,
-        compound constraints, and the wildcard format.
+        Covers full PEP 440 trailing components (releases, calver, prereleases)
+        on deep tag paths, plus branch refs and commit SHAs -- the pinnable
+        content scheme. The fixture's <project remote="r"> has no resolvable
+        <remote> definition, so the existence check is skipped and only the
+        pinnable-format check runs.
         """
         repo_root = _make_repo(tmp_path)
         _write_xml(
@@ -399,7 +379,7 @@ class TestTagFormatValidation:
         result = _run_kanon("validate", "marketplace", "--repo-root", str(repo_root))
 
         assert result.returncode == 0, (
-            f"AC-TEST-003: expected exit 0 for valid revision={valid_revision!r}.\n"
+            f"AC-54: expected exit 0 for pinnable revision={valid_revision!r}.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
         assert result.stderr == "", f"AC-CHANNEL-001: expected no stderr on success.\nstderr: {result.stderr!r}"
@@ -407,15 +387,20 @@ class TestTagFormatValidation:
     @pytest.mark.parametrize(
         "invalid_revision",
         [
+            "main",
+            "*",
+            "~=1.2.0",
+            ">=1.0.0",
+            ">=1.0.0,<2.0.0",
+            "refs/tags/example/proj/*",
             "refs/tags/no-semver",
             "random-string",
-            "refs/heads/main",
             "develop",
             "feature/my-branch",
         ],
     )
-    def test_invalid_revision_format_exits_one(self, tmp_path: Path, invalid_revision: str) -> None:
-        """AC-TEST-003 negative: invalid revision formats fail validation.
+    def test_non_pinnable_revision_format_exits_one(self, tmp_path: Path, invalid_revision: str) -> None:
+        """AC-54 negative: bare branches, the wildcard, constraints, and malformed shapes fail.
 
         AC-CHANNEL-001: error goes to stderr, not stdout.
         """
@@ -437,11 +422,6 @@ class TestTagFormatValidation:
         assert "error" not in result.stdout.lower(), (
             f"AC-CHANNEL-001: error must not leak to stdout.\nstdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: marketplace-specific rules layered over generic xml validation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -484,7 +464,7 @@ class TestMarketplaceSpecificRules:
         generic XML validator.
         """
         repo_root = _make_repo(tmp_path)
-        # Write only a non-marketplace XML file -- this should not be discovered.
+
         _write_xml(
             repo_root / "repo-specs" / "catalog.xml",
             '<manifest><remote name="r" fetch="https://example.com" /></manifest>',
@@ -492,7 +472,6 @@ class TestMarketplaceSpecificRules:
 
         result = _run_kanon("validate", "marketplace", "--repo-root", str(repo_root))
 
-        # No marketplace files found -- the command exits 1 with the "no files" error.
         assert result.returncode == 1, (
             f"AC-FUNC-001: expected exit 1 when only non-marketplace XML exists.\n"
             f"stdout: {result.stdout!r}\nstderr: {result.stderr!r}"
@@ -537,15 +516,10 @@ class TestMarketplaceSpecificRules:
         assert result.returncode == 1, (
             f"AC-FUNC-001: expected exit 1 for multiple errors.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # Both errors must appear in stderr
+
         assert "invalid" in result.stderr.lower() or "error" in result.stderr.lower(), (
             f"AC-FUNC-001: expected error messages in stderr.\nstderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline (summary)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -580,7 +554,7 @@ class TestStdoutStderrDiscipline:
         assert result.returncode == 0, (
             f"Expected exit 0 for valid marketplace.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # The validator prints "Validating ..." progress and "All N ... passed." on stdout.
+
         assert result.stdout.strip() != "", (
             f"AC-CHANNEL-001: expected non-empty stdout on success.\nstdout: {result.stdout!r}"
         )
@@ -598,7 +572,7 @@ class TestStdoutStderrDiscipline:
         assert result.returncode == 1, (
             f"Expected exit 1 for invalid marketplace.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
-        # "Found N validation error(s):" appears on stderr.
+
         assert "error" in result.stderr.lower(), (
             f"AC-CHANNEL-001: expected error summary on stderr.\nstderr: {result.stderr!r}"
         )

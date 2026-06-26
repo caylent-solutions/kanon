@@ -10,6 +10,7 @@ Covers the clean command lifecycle from the CLI boundary:
 """
 
 import json as _json
+import os
 import pathlib
 import subprocess
 import textwrap
@@ -20,13 +21,18 @@ import pytest
 from kanon_cli.cli import main
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
+def _store_base() -> pathlib.Path:
+    """Return the shared artifact store base (``<KANON_HOME>/store``).
+
+    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
+    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
+    The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
+    per-test temporary directory.
+    """
+    return pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
 
 def _write_kanonenv(directory: pathlib.Path, extra_lines: str = "") -> pathlib.Path:
@@ -41,8 +47,10 @@ def _write_kanonenv(directory: pathlib.Path, extra_lines: str = "") -> pathlib.P
     """
     base = (
         "KANON_SOURCE_primary_URL=https://example.com/primary.git\n"
-        "KANON_SOURCE_primary_REVISION=main\n"
+        "KANON_SOURCE_primary_REF=main\n"
         "KANON_SOURCE_primary_PATH=meta.xml\n"
+        "KANON_SOURCE_primary_NAME=primary\n"
+        "KANON_SOURCE_primary_GITBASE=https://example.com\n"
     )
     kanonenv = directory / ".kanon"
     kanonenv.write_text(base + extra_lines)
@@ -53,7 +61,8 @@ def _create_install_artifacts(base_dir: pathlib.Path, packages: list[str]) -> No
     """Create .packages/ and .kanon-data/ artifacts as install would.
 
     Args:
-        base_dir: Project root directory.
+        base_dir: Shared artifact store base (``<KANON_HOME>/store``), where
+            install()/clean() manage ``.packages/`` and ``.kanon-data/``.
         packages: List of package names to create under .packages/.
     """
     packages_dir = base_dir / ".packages"
@@ -67,11 +76,6 @@ def _create_install_artifacts(base_dir: pathlib.Path, packages: list[str]) -> No
     (kanon_data / "metadata.txt").write_text("source=primary\n")
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: kanon clean removes .packages/ and .kanon-data/
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestCleanRemovesArtifacts:
     """AC-TEST-001: kanon clean removes .packages/ and .kanon-data/ via CLI."""
@@ -82,15 +86,16 @@ class TestCleanRemovesArtifacts:
     ) -> None:
         """AC-TEST-001: invoking 'kanon clean' removes .packages/ and .kanon-data/."""
         kanonenv = _write_kanonenv(tmp_path)
-        _create_install_artifacts(tmp_path, ["tool-a", "tool-b"])
+        store_base = _store_base()
+        _create_install_artifacts(store_base, ["tool-a", "tool-b"])
 
-        assert (tmp_path / ".packages").exists(), "precondition: .packages/ must exist before clean"
-        assert (tmp_path / ".kanon-data").exists(), "precondition: .kanon-data/ must exist before clean"
+        assert (store_base / ".packages").exists(), "precondition: .packages/ must exist before clean"
+        assert (store_base / ".kanon-data").exists(), "precondition: .kanon-data/ must exist before clean"
 
         main(["clean", str(kanonenv)])
 
-        assert not (tmp_path / ".packages").exists(), "kanon clean must remove .packages/"
-        assert not (tmp_path / ".kanon-data").exists(), "kanon clean must remove .kanon-data/"
+        assert not (store_base / ".packages").exists(), "kanon clean must remove .packages/"
+        assert not (store_base / ".kanon-data").exists(), "kanon clean must remove .kanon-data/"
 
     def test_clean_removes_nested_packages_content(
         self,
@@ -98,19 +103,15 @@ class TestCleanRemovesArtifacts:
     ) -> None:
         """AC-TEST-001: clean removes all nested content inside .packages/."""
         kanonenv = _write_kanonenv(tmp_path)
-        nested = tmp_path / ".packages" / "tool-a" / "subdir"
+        store_base = _store_base()
+        nested = store_base / ".packages" / "tool-a" / "subdir"
         nested.mkdir(parents=True)
         (nested / "file.txt").write_text("content")
-        (tmp_path / ".kanon-data").mkdir()
+        (store_base / ".kanon-data").mkdir(parents=True)
 
         main(["clean", str(kanonenv)])
 
-        assert not (tmp_path / ".packages").exists(), "kanon clean must remove .packages/ including nested content"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: kanon clean with KANON_MARKETPLACE_INSTALL=true removes marketplace dir
-# ---------------------------------------------------------------------------
+        assert not (store_base / ".packages").exists(), "kanon clean must remove .packages/ including nested content"
 
 
 @pytest.mark.integration
@@ -128,9 +129,18 @@ class TestCleanWithMarketplace:
 
         kanonenv = _write_kanonenv(
             tmp_path,
-            (f"KANON_MARKETPLACE_INSTALL=true\nCLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"),
+            (
+                f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
+                "KANON_SOURCE_toola_URL=https://example.com/repo.git\n"
+                "KANON_SOURCE_toola_REF=main\n"
+                "KANON_SOURCE_toola_PATH=repo-specs/manifest.xml\n"
+                "KANON_SOURCE_toola_NAME=toola\n"
+                "KANON_SOURCE_toola_GITBASE=https://example.com\n"
+                "KANON_SOURCE_toola_MARKETPLACE=true\n"
+            ),
         )
-        _create_install_artifacts(tmp_path, ["tool-a"])
+        store_base = _store_base()
+        _create_install_artifacts(store_base, ["tool-a"])
 
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
             main(["clean", str(kanonenv)])
@@ -138,8 +148,8 @@ class TestCleanWithMarketplace:
         assert not marketplace_dir.exists(), (
             "kanon clean with KANON_MARKETPLACE_INSTALL=true must remove CLAUDE_MARKETPLACES_DIR"
         )
-        assert not (tmp_path / ".packages").exists(), "kanon clean with marketplace=true must also remove .packages/"
-        assert not (tmp_path / ".kanon-data").exists(), (
+        assert not (store_base / ".packages").exists(), "kanon clean with marketplace=true must also remove .packages/"
+        assert not (store_base / ".kanon-data").exists(), (
             "kanon clean with marketplace=true must also remove .kanon-data/"
         )
 
@@ -153,17 +163,12 @@ class TestCleanWithMarketplace:
         (other_dir / "keep.txt").write_text("user data")
 
         kanonenv = _write_kanonenv(tmp_path)
-        _create_install_artifacts(tmp_path, ["tool-a"])
+        _create_install_artifacts(_store_base(), ["tool-a"])
 
         main(["clean", str(kanonenv)])
 
         assert other_dir.exists(), "clean must not remove directories it does not own"
         assert (other_dir / "keep.txt").exists(), "clean must not remove user files"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: kanon clean is idempotent
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -176,14 +181,15 @@ class TestCleanIdempotent:
     ) -> None:
         """AC-TEST-003: 'kanon clean' on a directory without artifacts exits zero."""
         kanonenv = _write_kanonenv(tmp_path)
+        store_base = _store_base()
 
-        assert not (tmp_path / ".packages").exists(), "precondition: .packages/ must not exist"
-        assert not (tmp_path / ".kanon-data").exists(), "precondition: .kanon-data/ must not exist"
+        assert not (store_base / ".packages").exists(), "precondition: .packages/ must not exist"
+        assert not (store_base / ".kanon-data").exists(), "precondition: .kanon-data/ must not exist"
 
         main(["clean", str(kanonenv)])
 
-        assert not (tmp_path / ".packages").exists(), "idempotent clean: .packages/ must remain absent"
-        assert not (tmp_path / ".kanon-data").exists(), "idempotent clean: .kanon-data/ must remain absent"
+        assert not (store_base / ".packages").exists(), "idempotent clean: .packages/ must remain absent"
+        assert not (store_base / ".kanon-data").exists(), "idempotent clean: .kanon-data/ must remain absent"
 
     def test_clean_twice_in_succession_both_succeed(
         self,
@@ -191,22 +197,18 @@ class TestCleanIdempotent:
     ) -> None:
         """AC-TEST-003: running 'kanon clean' twice on the same directory succeeds both times."""
         kanonenv = _write_kanonenv(tmp_path)
-        _create_install_artifacts(tmp_path, ["tool-a"])
+        store_base = _store_base()
+        _create_install_artifacts(store_base, ["tool-a"])
 
         main(["clean", str(kanonenv)])
 
-        assert not (tmp_path / ".packages").exists(), "first clean must remove .packages/"
-        assert not (tmp_path / ".kanon-data").exists(), "first clean must remove .kanon-data/"
+        assert not (store_base / ".packages").exists(), "first clean must remove .packages/"
+        assert not (store_base / ".kanon-data").exists(), "first clean must remove .kanon-data/"
 
         main(["clean", str(kanonenv)])
 
-        assert not (tmp_path / ".packages").exists(), "second clean must not fail when .packages/ absent"
-        assert not (tmp_path / ".kanon-data").exists(), "second clean must not fail when .kanon-data/ absent"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 and AC-CHANNEL-001: preservation of non-managed files and channel discipline
-# ---------------------------------------------------------------------------
+        assert not (store_base / ".packages").exists(), "second clean must not fail when .packages/ absent"
+        assert not (store_base / ".kanon-data").exists(), "second clean must not fail when .kanon-data/ absent"
 
 
 @pytest.mark.integration
@@ -226,7 +228,7 @@ class TestCleanPreservesNonManagedFiles:
         user_file.parent.mkdir(parents=True)
         user_file.write_text("# user code\n")
 
-        _create_install_artifacts(tmp_path, ["tool-a"])
+        _create_install_artifacts(_store_base(), ["tool-a"])
 
         main(["clean", str(kanonenv)])
 
@@ -241,7 +243,7 @@ class TestCleanPreservesNonManagedFiles:
     ) -> None:
         """AC-CHANNEL-001: progress messages from clean go to stdout; stderr must be empty on success."""
         kanonenv = _write_kanonenv(tmp_path)
-        _create_install_artifacts(tmp_path, ["tool-a"])
+        _create_install_artifacts(_store_base(), ["tool-a"])
 
         main(["clean", str(kanonenv)])
 
@@ -253,11 +255,6 @@ class TestCleanPreservesNonManagedFiles:
             f"AC-CHANNEL-001: progress output expected on stdout during clean; stdout={captured.out!r}"
         )
 
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004 / AC-FUNC-005: marketplace-true lifecycle -- install registers,
-# clean unregisters
-# ---------------------------------------------------------------------------
 
 _MANIFEST_WITH_LINKFILE_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
@@ -397,14 +394,19 @@ class TestCleanMarketplaceTrue:
         workspace_dir.mkdir()
         kanonenv = workspace_dir / ".kanon"
         kanonenv.write_text(
-            f"KANON_MARKETPLACE_INSTALL=true\n"
             f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n"
             f"KANON_SOURCE_source_alpha_URL=file://{bare_alpha}\n"
-            f"KANON_SOURCE_source_alpha_REVISION=main\n"
+            f"KANON_SOURCE_source_alpha_REF=main\n"
             f"KANON_SOURCE_source_alpha_PATH=repo-specs/source-alpha-marketplace.xml\n"
+            f"KANON_SOURCE_source_alpha_NAME=source_alpha\n"
+            f"KANON_SOURCE_source_alpha_GITBASE=https://example.com\n"
+            f"KANON_SOURCE_source_alpha_MARKETPLACE=true\n"
             f"KANON_SOURCE_source_bravo_URL=file://{bare_bravo}\n"
-            f"KANON_SOURCE_source_bravo_REVISION=main\n"
+            f"KANON_SOURCE_source_bravo_REF=main\n"
             f"KANON_SOURCE_source_bravo_PATH=repo-specs/source-bravo-marketplace.xml\n"
+            f"KANON_SOURCE_source_bravo_NAME=source_bravo\n"
+            f"KANON_SOURCE_source_bravo_GITBASE=https://example.com\n"
+            f"KANON_SOURCE_source_bravo_MARKETPLACE=true\n"
         )
         kanonenv = kanonenv.resolve()
 
@@ -446,7 +448,6 @@ class TestCleanMarketplaceTrue:
             install(
                 kanonenv,
                 lock_file_path=kanonenv.parent / ".kanon.lock",
-                catalog_source=DEFAULT_CATALOG_SOURCE,
             )
 
         add_argvs = _filter_argvs_by_subcommand(
@@ -462,8 +463,6 @@ class TestCleanMarketplaceTrue:
 
         add_names_in_order: list[str] = []
         for argv in add_argvs:
-            # argv shape: (bin, "plugin", "marketplace", "add", <path>)
-            # the name comes from marketplace.json inside <path>
             entry_path = pathlib.Path(argv[4])
             json_path = entry_path / ".claude-plugin" / "marketplace.json"
             assert json_path.exists(), (

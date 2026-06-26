@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 16: nested variable reference not detected in envsubst.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 16 -- os.path.expandvars() does
@@ -29,10 +15,6 @@ import pytest
 
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
-
-# ---------------------------------------------------------------------------
-# XML fixtures with nested variable references
-# ---------------------------------------------------------------------------
 
 _MANIFEST_WITH_NESTED_VAR = """\
 <?xml version="1.0" encoding="UTF-8"?>
@@ -60,21 +42,11 @@ _MANIFEST_WITH_MULTIPLE_NESTED_VARS = """\
 """
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_cmd():
     """Return an Envsubst instance without invoking __init__ parent chain."""
     cmd = Envsubst.__new__(Envsubst)
     cmd.manifest = mock.MagicMock()
     return cmd
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Warning logged when nested variable pattern is detected
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -100,8 +72,7 @@ def test_warning_logged_for_nested_variable_pattern(tmp_path, caplog):
         cmd.EnvSubst(str(manifest_path))
 
     warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-    # A nested-variable warning must mention the full nested pattern, not just
-    # the inner variable name that the plain unresolved-var scan would catch.
+
     nested_warnings = [r for r in warning_records if "${VAR_${INNER}}" in r.message]
     assert nested_warnings, (
         "Expected at least one WARNING log record containing the full nested "
@@ -109,11 +80,6 @@ def test_warning_logged_for_nested_variable_pattern(tmp_path, caplog):
         "but none found.\n"
         f"All warning records: {[r.message for r in warning_records]!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Warning message includes the full nested pattern text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -143,11 +109,6 @@ def test_warning_includes_full_nested_pattern_text(tmp_path, caplog):
     )
 
 
-# ---------------------------------------------------------------------------
-# No warning for plain (non-nested) variable references
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_no_nested_warning_for_plain_variable_references(tmp_path, caplog):
     """No nested-variable WARNING must be emitted for plain ${VAR} references.
@@ -169,19 +130,12 @@ def test_no_nested_warning_for_plain_variable_references(tmp_path, caplog):
             cmd.EnvSubst(str(manifest_path))
 
     warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
-    # A nested-variable warning must contain a pattern with nested ${...${...}}.
-    # A plain ${PLAIN_VAR} reference must not produce such a warning.
-    # Check that no warning message contains a nested ${...${...} pattern.
+
     multi_brace_warnings = [r for r in warning_records if re.search(r"\$\{[^}]*\$\{", r.message)]
     assert not multi_brace_warnings, (
         "Expected no nested-variable WARNING for plain ${PLAIN_VAR} references, "
         f"but found: {[r.message for r in multi_brace_warnings]!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Parametrized -- multiple nested patterns each produce a warning
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

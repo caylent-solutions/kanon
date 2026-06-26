@@ -30,7 +30,6 @@ import pathlib
 import subprocess
 import sys
 import textwrap
-from urllib.parse import urlparse
 
 import pytest
 
@@ -38,47 +37,6 @@ from tests.integration.test_add_core import (
     _create_manifest_repo_with_tags,
     _run_kanon,
 )
-
-
-def _bare_url_without_ref(catalog_source: str) -> str:
-    """Strip the trailing @<ref> suffix from a catalog-source URL.
-
-    Args:
-        catalog_source: A catalog-source string of the form ``<url>@<ref>``.
-
-    Returns:
-        The URL portion with the ``@<ref>`` suffix removed.
-    """
-    at_idx = catalog_source.rfind("@")
-    if at_idx == -1:
-        return catalog_source
-    return catalog_source[:at_idx]
-
-
-def _derive_expected_gitbase(catalog_source: str) -> str:
-    """Derive the expected GITBASE value from a catalog-source URL.
-
-    Mirrors the derivation rule implemented in
-    ``_derive_gitbase_from_catalog_source`` in ``commands/add.py``:
-
-    - For ``https://``, ``http://``, and ``ssh://`` URLs: scheme + ``://``
-      + netloc (authority) + the first path segment (org/owner prefix).
-    - For ``file://`` URLs: netloc is empty, so the result is
-      scheme + ``://`` + empty netloc + the parent directory of the path,
-      e.g. ``file:///tmp/foo.git`` -> ``file:///tmp``.
-
-    Args:
-        catalog_source: A catalog-source string of the form ``<url>@<ref>``.
-
-    Returns:
-        The expected GITBASE value.
-    """
-    url = _bare_url_without_ref(catalog_source)
-    parsed = urlparse(url)
-    if parsed.scheme == "file":
-        parent_path = str(pathlib.PurePosixPath(parsed.path).parent)
-        return f"{parsed.scheme}://{parsed.netloc}{parent_path}"
-    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 @pytest.mark.integration
@@ -89,20 +47,21 @@ class TestKanonAddNoPlaceholders:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """kanon add writes a derived GITBASE, not literal `<YOUR_GIT_ORG_BASE_URL>`.
+        """kanon add never writes literal `<YOUR_GIT_ORG_BASE_URL>` / `<true|false>`.
 
-        Asserts three independent conditions, each of which can fail individually:
+        Asserts the DEFECT-003 conditions plus the generalized env-var behavior:
 
         1. The generated `.kanon` does NOT contain the literal string
            ``<YOUR_GIT_ORG_BASE_URL>``.
         2. The generated `.kanon` does NOT contain the literal string
            ``<true|false>``.
-        3. The generated `.kanon` contains a ``GITBASE=`` line whose value equals
-           the scheme + authority derived from the catalog-source URL.
+        3. This entry's manifest references no ``${GITBASE}`` placeholder, so add
+           writes NO ``KANON_SOURCE_foo_GITBASE=`` line at all (the env-var line is
+           emitted only when the manifest needs the var). The four structural keys
+           are still written.
 
-        Against unfixed code all three assertions fail because `kanon add`
-        currently writes ``GITBASE=<YOUR_GIT_ORG_BASE_URL>`` and
-        ``KANON_MARKETPLACE_INSTALL=<true|false>`` verbatim (DEFECT-003).
+        The derived-GITBASE value for a manifest that DOES reference ``${GITBASE}``
+        is covered by the dedicated detection test in test_add_env_var_detection.py.
         """
         bare = _create_manifest_repo_with_tags(
             tmp_path / "catalog",
@@ -133,7 +92,7 @@ class TestKanonAddNoPlaceholders:
 
         assert "<YOUR_GIT_ORG_BASE_URL>" not in content, (
             "kanon add wrote the literal placeholder <YOUR_GIT_ORG_BASE_URL> "
-            "into .kanon (DEFECT-003). Expected a derived GITBASE value instead.\n"
+            "into .kanon (DEFECT-003).\n"
             f"Actual .kanon content:\n{content}"
         )
 
@@ -143,20 +102,12 @@ class TestKanonAddNoPlaceholders:
             f"Actual .kanon content:\n{content}"
         )
 
-        expected_gitbase = _derive_expected_gitbase(catalog_source)
-        gitbase_lines = [line for line in content.splitlines() if line.startswith("GITBASE=")]
-        assert gitbase_lines, (
-            "No GITBASE= line found in .kanon. "
-            f"Expected a line starting with 'GITBASE={expected_gitbase}'.\n"
-            f"Actual .kanon content:\n{content}"
+        assert "KANON_SOURCE_foo_GITBASE=" not in content, (
+            "this entry's manifest references no ${GITBASE}, so add must write no "
+            f"per-dependency env-var line.\nActual .kanon content:\n{content}"
         )
-        actual_gitbase_value = gitbase_lines[0].split("=", 1)[1]
-        assert actual_gitbase_value == expected_gitbase, (
-            f"GITBASE value mismatch.\n"
-            f"  Expected: {expected_gitbase!r}\n"
-            f"  Got     : {actual_gitbase_value!r}\n"
-            f"Actual .kanon content:\n{content}"
-        )
+        assert "KANON_SOURCE_foo_URL=" in content
+        assert "KANON_SOURCE_foo_NAME=foo" in content
 
 
 @pytest.mark.integration
@@ -178,8 +129,9 @@ class TestKanonInstallRejectsUnresolvedPlaceholder:
 
         The `.kanon` is hand-written with:
         - ``GITBASE=<YOUR_GIT_ORG_BASE_URL>`` on line 1 (the offending placeholder)
-        - A valid ``KANON_SOURCE_foo_*`` triple so the parser reaches the
-          placeholder-validator step rather than failing on missing sources.
+        - A complete five-key ``KANON_SOURCE_foo_*`` block so the parser succeeds
+          and install reaches the placeholder-validator step rather than failing
+          on missing source variables.
 
         Against unfixed code the test fails because `kanon install` passes the
         literal placeholder through to `repo sync` and fails with a 404 or
@@ -196,29 +148,24 @@ class TestKanonInstallRejectsUnresolvedPlaceholder:
         workspace = tmp_path / "workspace"
         workspace.mkdir()
 
-        # Line 1 is the offending GITBASE placeholder -- the validator must name
-        # line number 1 in its diagnostic.
         kanon_content = textwrap.dedent(f"""\
             GITBASE=<YOUR_GIT_ORG_BASE_URL>
             CLAUDE_MARKETPLACES_DIR=${{HOME}}/.claude-marketplaces
             KANON_MARKETPLACE_INSTALL=false
 
-            [catalog]
-            KANON_CATALOG_SOURCE={catalog_source}
-
             KANON_SOURCE_foo_URL={catalog_source}
-            KANON_SOURCE_foo_REVISION=refs/heads/main
+            KANON_SOURCE_foo_REF=refs/heads/main
             KANON_SOURCE_foo_PATH=repos/foo
+            KANON_SOURCE_foo_NAME=foo
+            KANON_SOURCE_foo_GITBASE=https://example.com
             """)
         kanon_file = workspace / ".kanon"
         kanon_file.write_text(kanon_content)
 
-        # The offending line is line 1 (1-indexed) in the file above.
         offending_line_number = 1
 
-        # Remove catalog-source env var so install does not bypass the .kanon path.
         env = dict(os.environ)
-        env.pop("KANON_CATALOG_SOURCE", None)
+        env.pop("KANON_CATALOG_SOURCES", None)
 
         result = subprocess.run(
             [sys.executable, "-m", "kanon_cli", "install"],

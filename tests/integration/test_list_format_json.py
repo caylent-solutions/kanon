@@ -1,14 +1,18 @@
-"""Integration tests for ``kanon list --format json``.
+"""Integration tests for ``kanon search --format json``.
+
+The catalog discovery command was renamed from ``list`` to ``search`` in the
+3.0.0 release; the ``--format json`` behaviour and the ``KANON_LIST_FORMAT``
+env var are unchanged.
 
 Builds temporary local file:// manifest-repo fixtures (committed git repos
-with *-marketplace.xml files) and invokes 'kanon list --format json
+with *-marketplace.xml files) and invokes 'kanon search --format json
 --catalog-source <file>@<ref>' via subprocess.run.
 
 Covers AC-TEST-002, AC-CYCLE-001:
 - Default mode JSON output: three entries, JSON array of {name, display-name,
   type, description, version}.
-- --all-versions --format json output: {name, version, ref, sha} array.
-- --format json --limit 2 combination with --all-versions.
+- -A/--all --format json output: {name, version, ref, sha} array.
+- --format json --limit 2 combination with -A/--all.
 - KANON_LIST_FORMAT=json env var end-to-end.
 - --format json --tree mutual-exclusion error.
 - Empty catalog with --format json emits [] exit 0.
@@ -24,15 +28,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Git helper constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Full marketplace XML template -- all recommended fields populated to avoid
-# recommended-field warnings polluting stderr assertions.
+
 _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -48,11 +47,6 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
       </catalog-metadata>
     </manifest>
 """)
-
-
-# ---------------------------------------------------------------------------
-# Low-level git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -127,11 +121,6 @@ def _commit_and_tag(work_dir: pathlib.Path, tag: str, message: str) -> None:
     _git(["tag", tag], cwd=work_dir)
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _build_single_version_manifest_repo(
     tmp_path: pathlib.Path,
     entry_names: list[str],
@@ -139,7 +128,7 @@ def _build_single_version_manifest_repo(
 ) -> pathlib.Path:
     """Build a bare git repo with one commit and no version tags.
 
-    Used for default-mode JSON tests where --all-versions is not needed.
+    Used for default-mode JSON tests where -A/--all is not needed.
 
     Args:
         tmp_path: Temporary directory root.
@@ -200,17 +189,16 @@ def _build_multi_version_manifest_repo(
     return bare_dir
 
 
-# ---------------------------------------------------------------------------
-# Runner helpers
-# ---------------------------------------------------------------------------
-
-
 def _kanon_list(
     bare_repo: pathlib.Path,
     extra_args: list[str] | None = None,
     env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run 'kanon list' against a bare repo and return the process.
+    """Run 'kanon search' against a bare repo and return the process.
+
+    The catalog discovery command was renamed from 'list' to 'search' in the
+    3.0.0 release; the JSON-format behaviour (the --format flag and the
+    KANON_LIST_FORMAT env var) is unchanged.
 
     Args:
         bare_repo: Path to the bare git repository.
@@ -225,7 +213,7 @@ def _kanon_list(
         sys.executable,
         "-m",
         "kanon_cli",
-        "list",
+        "search",
         "--catalog-source",
         catalog_source,
     ]
@@ -243,11 +231,6 @@ def _kanon_list(
         cwd=str(bare_repo.parent),
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# Tests: default mode + --format json (AC-TEST-002, AC-FUNC-003)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -325,14 +308,9 @@ class TestDefaultModeJsonFormat:
         proc = _kanon_list(bare_repo, extra_args=["--format", "json"])
 
         assert proc.returncode == 0
-        # Must not raise
+
         parsed = json.loads(proc.stdout)
         assert isinstance(parsed, list)
-
-
-# ---------------------------------------------------------------------------
-# Tests: --detail --format json (AC-FUNC-004)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -353,21 +331,16 @@ class TestDetailModeJsonFormat:
         assert parsed_default == parsed_detail
 
 
-# ---------------------------------------------------------------------------
-# Tests: --all-versions --format json (AC-FUNC-005, AC-CYCLE-001)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestAllVersionsModeJsonFormat:
     """AC-FUNC-005, AC-CYCLE-001: JSON array of {name, version, ref, sha}."""
 
     def test_all_versions_json_parseable(self, tmp_path):
-        """--all-versions --format json produces parseable JSON."""
+        """-A/--all --format json produces parseable JSON."""
         bare_repo = _build_multi_version_manifest_repo(
             tmp_path, ["alpha", "beta", "gamma"], ["1.0.0", "2.0.0", "3.0.0", "4.0.0"]
         )
-        proc = _kanon_list(bare_repo, extra_args=["--all-versions", "--format", "json"])
+        proc = _kanon_list(bare_repo, extra_args=["--all", "--format", "json"])
 
         assert proc.returncode == 0, f"stderr: {proc.stderr}"
         parsed = json.loads(proc.stdout)
@@ -376,7 +349,7 @@ class TestAllVersionsModeJsonFormat:
     def test_all_versions_json_has_required_keys(self, tmp_path):
         """Each object has {name, version, ref, sha}."""
         bare_repo = _build_multi_version_manifest_repo(tmp_path, ["alpha"], ["1.0.0", "2.0.0"])
-        proc = _kanon_list(bare_repo, extra_args=["--all-versions", "--format", "json"])
+        proc = _kanon_list(bare_repo, extra_args=["--all", "--format", "json"])
 
         assert proc.returncode == 0
         parsed = json.loads(proc.stdout)
@@ -390,7 +363,7 @@ class TestAllVersionsModeJsonFormat:
             ["alpha", "beta", "gamma"],
             ["1.0.0", "2.0.0", "3.0.0", "4.0.0"],
         )
-        proc = _kanon_list(bare_repo, extra_args=["--all-versions", "--format", "json"])
+        proc = _kanon_list(bare_repo, extra_args=["--all", "--format", "json"])
 
         assert proc.returncode == 0
         parsed = json.loads(proc.stdout)
@@ -399,7 +372,7 @@ class TestAllVersionsModeJsonFormat:
     def test_all_versions_json_ref_starts_with_refs_tags(self, tmp_path):
         """The 'ref' field starts with 'refs/tags/'."""
         bare_repo = _build_multi_version_manifest_repo(tmp_path, ["alpha"], ["1.0.0"])
-        proc = _kanon_list(bare_repo, extra_args=["--all-versions", "--format", "json"])
+        proc = _kanon_list(bare_repo, extra_args=["--all", "--format", "json"])
 
         assert proc.returncode == 0
         parsed = json.loads(proc.stdout)
@@ -408,14 +381,14 @@ class TestAllVersionsModeJsonFormat:
     def test_all_versions_json_sha_is_non_empty_string(self, tmp_path):
         """The 'sha' field is a non-empty string."""
         bare_repo = _build_multi_version_manifest_repo(tmp_path, ["alpha"], ["1.0.0"])
-        proc = _kanon_list(bare_repo, extra_args=["--all-versions", "--format", "json"])
+        proc = _kanon_list(bare_repo, extra_args=["--all", "--format", "json"])
 
         assert proc.returncode == 0
         parsed = json.loads(proc.stdout)
         assert all(isinstance(obj["sha"], str) and len(obj["sha"]) > 0 for obj in parsed)
 
     def test_all_versions_limit_with_json_format(self, tmp_path):
-        """AC-CYCLE-001: --all-versions --format json --limit 2 returns 2 versions x N entries."""
+        """AC-CYCLE-001: -A/--all --format json --limit 2 returns 2 versions x N entries."""
         bare_repo = _build_multi_version_manifest_repo(
             tmp_path,
             ["alpha", "beta", "gamma"],
@@ -423,27 +396,22 @@ class TestAllVersionsModeJsonFormat:
         )
         proc = _kanon_list(
             bare_repo,
-            extra_args=["--all-versions", "--format", "json", "--limit", "2"],
+            extra_args=["--all", "--format", "json", "--limit", "2"],
         )
 
         assert proc.returncode == 0
         parsed = json.loads(proc.stdout)
-        # 2 newest versions x 3 entries = 6 objects
+
         assert len(parsed) == 6
 
     def test_all_versions_json_output_ends_with_newline(self, tmp_path):
         """AC-FUNC-008: stdout ends with exactly one newline."""
         bare_repo = _build_multi_version_manifest_repo(tmp_path, ["alpha"], ["1.0.0"])
-        proc = _kanon_list(bare_repo, extra_args=["--all-versions", "--format", "json"])
+        proc = _kanon_list(bare_repo, extra_args=["--all", "--format", "json"])
 
         assert proc.returncode == 0
         assert proc.stdout.endswith("\n")
         assert not proc.stdout.endswith("\n\n")
-
-
-# ---------------------------------------------------------------------------
-# Tests: KANON_LIST_FORMAT env var end-to-end (AC-FUNC-002, AC-CYCLE-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -470,10 +438,10 @@ class TestEnvVarJsonFormatIntegration:
         )
 
         assert proc.returncode == 0
-        # names format: plain text, not JSON array
+
         lines = proc.stdout.strip().splitlines()
         assert lines == ["alpha"]
-        # Also must not parse as a JSON array of dicts
+
         try:
             parsed = json.loads(proc.stdout)
             assert not (isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict))
@@ -481,11 +449,11 @@ class TestEnvVarJsonFormatIntegration:
             pass
 
     def test_env_var_json_with_all_versions(self, tmp_path):
-        """AC-CYCLE-001: KANON_LIST_FORMAT=json + --all-versions produces {name, version, ref, sha} array."""
+        """AC-CYCLE-001: KANON_LIST_FORMAT=json + -A/--all produces {name, version, ref, sha} array."""
         bare_repo = _build_multi_version_manifest_repo(tmp_path, ["alpha"], ["1.0.0", "2.0.0"])
         proc = _kanon_list(
             bare_repo,
-            extra_args=["--all-versions"],
+            extra_args=["--all"],
             env_overrides={"KANON_LIST_FORMAT": "json"},
         )
 
@@ -493,11 +461,6 @@ class TestEnvVarJsonFormatIntegration:
         parsed = json.loads(proc.stdout)
         assert isinstance(parsed, list)
         assert set(parsed[0].keys()) == {"name", "version", "ref", "sha"}
-
-
-# ---------------------------------------------------------------------------
-# Tests: --format json --tree mutual exclusion (AC-FUNC-006, AC-CYCLE-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -535,18 +498,13 @@ class TestJsonTreeMutualExclusionIntegration:
         assert proc.stdout == ""
 
 
-# ---------------------------------------------------------------------------
-# Tests: empty catalog + --format json (AC-FUNC-007)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestEmptyCatalogJsonFormatIntegration:
     """AC-FUNC-007: empty catalog with --format json emits [] and exits 0."""
 
     def test_empty_catalog_emits_empty_array(self, tmp_path):
         """Empty manifest repo with --format json produces '[]'."""
-        # Create a manifest repo with no marketplace XML files
+
         work_dir = tmp_path / "work"
         work_dir.mkdir()
         _init_git_work_dir(work_dir)

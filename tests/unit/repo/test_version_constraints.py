@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Tests for version_constraints.py — PEP 440 constraint detection and resolution.
 
 Spec references:
@@ -42,7 +28,7 @@ _DATA = _load_fixture()
 _TAG_PREFIX = _DATA["tag_prefix"]
 _AVAILABLE_TAGS = tuple(_DATA["resolve"]["available_tags"])
 
-# Build parametrize lists for is_version_constraint True cases.
+
 _CONSTRAINT_TRUE_CASES = []
 for suffix in _DATA["is_constraint"]["compatible_release"]:
     _CONSTRAINT_TRUE_CASES.append(pytest.param(f"{_TAG_PREFIX}/{suffix}", id=f"compatible-{suffix}"))
@@ -57,7 +43,7 @@ _CONSTRAINT_TRUE_CASES.append(pytest.param(f"{_TAG_PREFIX}/*", id="wildcard"))
 for suffix in _DATA["is_constraint"]["range"]:
     _CONSTRAINT_TRUE_CASES.append(pytest.param(f"{_TAG_PREFIX}/{suffix}", id=f"range-{suffix}"))
 
-# Build parametrize list for is_version_constraint False cases.
+
 _CONSTRAINT_FALSE_CASES = []
 for suffix in _DATA["is_constraint"]["exact_pins"]:
     _CONSTRAINT_FALSE_CASES.append(pytest.param(f"{_TAG_PREFIX}/{suffix}", id=f"exact-pin-{suffix}"))
@@ -66,7 +52,7 @@ for rev in _DATA["is_constraint"]["non_prefixed_exact_pins"]:
 for rev in _DATA["is_constraint"]["non_constraint_revisions"]:
     _CONSTRAINT_FALSE_CASES.append(pytest.param(rev, id=f"non-constraint-{rev}"))
 
-# Build parametrize list for resolve happy-path cases.
+
 _RESOLVE_CASES = []
 for key in ("patch_compatible", "minor_compatible", "wildcard", "range"):
     case = _DATA["resolve"][key]
@@ -78,7 +64,7 @@ for key in ("patch_compatible", "minor_compatible", "wildcard", "range"):
             id=key,
         )
     )
-# highest_match uses its own tag list.
+
 _hm = _DATA["resolve"]["highest_match"]
 _RESOLVE_CASES.append(
     pytest.param(

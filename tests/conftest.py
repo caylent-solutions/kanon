@@ -2,26 +2,164 @@
 
 from __future__ import annotations
 
+import ast
+import contextlib
 import os
 import pathlib
+import shutil
+import tempfile
 from collections.abc import Generator
 
 import pytest
 
-# Minimal valid .kanon content used across integration and functional tests.
+
+_TMP_ROOT_ENV = "KANON_TEST_TMP_ROOT"
+_TMP_ROOT_DEFAULT = "/var/tmp/kanon-test-runs"
+_KEEP_TMP_ENV = "KANON_TEST_KEEP_TMP"
+_XDIST_WORKER_ENV = "PYTEST_XDIST_WORKER"
+_TEMP_VARS = ("TMPDIR", "TMP", "TEMP")
+
+
+def _reap_dead_run_roots(parent: pathlib.Path) -> None:
+    """Remove managed ``run-<pid>-*`` roots whose owning process is no longer alive.
+
+    Recovers space leaked by a previously interrupted or killed run without ever
+    touching a concurrently live run (its pid still exists), so it is safe to call
+    while another test session is in progress.
+    """
+    if not parent.is_dir():
+        return
+    for child in parent.glob("run-*"):
+        pid = next((int(part) for part in child.name.split("-") if part.isdigit()), None)
+        if pid is None:
+            continue
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            shutil.rmtree(child, ignore_errors=True)
+        except PermissionError:
+            continue
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Point every test temp at a managed, real-filesystem run root.
+
+    The kanon store and the vendored repo tool rely on gitlinks plus atomic
+    renames that do not work on the orbstack workspace mount (fuseblk), and the
+    default ``/tmp`` is a small tmpfs. So pytest's basetemp, ``tmp_path``,
+    ``tmp_path_factory``, the OS tempdir that source ``tempfile.mkdtemp`` and git
+    use, and any ``python -m kanon_cli`` subprocess are all redirected to a per-run
+    directory under ``KANON_TEST_TMP_ROOT`` (default ``/var/tmp/kanon-test-runs``,
+    an env-overridable real filesystem). The whole run root is removed in
+    :func:`pytest_unconfigure`, so nothing accumulates across runs and ``/tmp`` is
+    never touched. Stale roots from a crashed prior run are reaped on startup by
+    dead-pid detection. Under xdist only the controller creates the root; workers
+    inherit ``TMPDIR`` and ``--basetemp`` from it.
+    """
+    if os.environ.get(_XDIST_WORKER_ENV):
+        return
+    parent = pathlib.Path(os.environ.get(_TMP_ROOT_ENV, _TMP_ROOT_DEFAULT))
+    parent.mkdir(parents=True, exist_ok=True)
+    _reap_dead_run_roots(parent)
+    run_root = parent / f"run-{os.getpid()}-{os.urandom(4).hex()}"
+    run_root.mkdir(parents=True, exist_ok=True)
+    for var in _TEMP_VARS:
+        os.environ[var] = str(run_root)
+    tempfile.tempdir = None
+    if getattr(config.option, "basetemp", None) is None:
+        config.option.basetemp = str(run_root / "pytest")
+    config._kanon_run_root = str(run_root)
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    """Remove the managed run root at session end unless ``KANON_TEST_KEEP_TMP`` is set."""
+    if os.environ.get(_KEEP_TMP_ENV) or os.environ.get(_XDIST_WORKER_ENV):
+        return
+    root = getattr(config, "_kanon_run_root", None)
+    if root:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def _isolation_env() -> dict[str, str]:
+    """Return the mandatory temp and home env floor for kanon/git subprocesses.
+
+    A caller that passes a full replacement environment to a subprocess would
+    otherwise drop ``TMPDIR``/``KANON_HOME``/``CLAUDE_CONFIG_DIR`` and let the
+    child's ``tempfile.mkdtemp``, the real ``~/.kanon`` store, and the real
+    ``~/.claude`` config escape the per-test isolation. Subprocess helpers overlay
+    this floor so the isolation cannot be bypassed.
+    """
+    floor: dict[str, str] = {}
+    for var in (*_TEMP_VARS, "KANON_HOME", "CLAUDE_CONFIG_DIR", _TMP_ROOT_ENV):
+        value = os.environ.get(var)
+        if value is not None:
+            floor[var] = value
+    return floor
+
+
+@contextlib.contextmanager
+def managed_repo_dir(tmp_path_factory: pytest.TempPathFactory, name: str) -> Generator[pathlib.Path, None, None]:
+    """Yield a fresh ``tmp_path_factory`` dir and remove it on teardown.
+
+    Session and module scoped fixtures that build real git repositories use this
+    so the inode-heavy git objects are reaped promptly instead of persisting for
+    the whole session inside the run root.
+    """
+    base = tmp_path_factory.mktemp(name)
+    try:
+        yield base
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+_TEXT_IO_METHODS = ("read_text", "write_text")
+
+
+def bare_text_io_calls(source_path: pathlib.Path) -> list[tuple[int, str]]:
+    """Return every bare ``.read_text()`` / ``.write_text()`` callsite in a source file.
+
+    Parses the Python source at ``source_path`` and walks its AST for calls to
+    the ``read_text`` / ``write_text`` ``pathlib.Path`` methods that do NOT pass
+    an explicit ``encoding=`` keyword argument. Those bare callsites adopt the
+    platform default encoding and so behave differently on Windows, which the
+    utf-8 encoding sweep (AC-12 / FR-38) forbids for kanon's own source under
+    ``src/kanon_cli/`` (the vendored ``repo/`` tree is out of scope).
+
+    This is the single shared source of truth for the encoding-sweep unit tests
+    (``test_add.py``, ``test_cache.py``, ``test_cached_catalogs.py``,
+    ``test_install.py``); each test imports this helper rather than inlining its
+    own AST walker (DRY).
+
+    Args:
+        source_path: Path to the Python source file to scan.
+
+    Returns:
+        A list of ``(lineno, method_name)`` tuples, one per bare callsite, in
+        source order. ``method_name`` is ``"read_text"`` or ``"write_text"``.
+    """
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    bare: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr not in _TEXT_IO_METHODS:
+            continue
+        has_encoding = any(kw.arg == "encoding" for kw in node.keywords)
+        if not has_encoding:
+            bare.append((node.lineno, func.attr))
+    return bare
+
+
 MINIMAL_KANONENV = (
-    "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n"
+    "KANON_SOURCE_s_URL=https://example.com/s.git\n"
+    "KANON_SOURCE_s_REF=main\n"
+    "KANON_SOURCE_s_PATH=m.xml\n"
+    "KANON_SOURCE_s_NAME=s\n"
+    "KANON_SOURCE_s_GITBASE=https://example.com\n"
 )
 
-# Default catalog source used by tests that need a catalog source but are not
-# exercising catalog-resolution logic. Uses an RFC 2606 reserved example.com
-# domain so no real network request is ever attempted.  The autouse
-# _scrub_catalog_source_env fixture removes KANON_CATALOG_SOURCE after every
-# test; tests that need this value must either:
-#   (a) pass it as catalog_source=DEFAULT_CATALOG_SOURCE to install(), or
-#   (b) set KANON_CATALOG_SOURCE via monkeypatch.setenv before calling code
-#       that reads the env var, or
-#   (c) request the opt-in _set_default_catalog_source fixture.
+
 DEFAULT_CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
 
 
@@ -68,11 +206,7 @@ def write_manifest_for_sync(directory: pathlib.Path, sub_path: str = "repo-specs
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _SRC_DIR = _REPO_ROOT / "src"
 
-# Disable kanon_cli.repo tracing for all tests. Tracing defaults to ON and
-# writes to <cwd>/TRACE_FILE, which races across tests, grows unbounded, and
-# breaks any test whose cwd is the repo root. Tests never need tracing; setting
-# REPO_TRACE=0 at conftest import time (before any kanon_cli.repo import) turns
-# it off at the module level so every Trace() call short-circuits.
+
 os.environ.setdefault("REPO_TRACE", "0")
 
 
@@ -107,11 +241,15 @@ def sample_kanonenv(tmp_path: pathlib.Path) -> pathlib.Path:
         "CLAUDE_MARKETPLACES_DIR=.claude-marketplaces\n"
         "KANON_MARKETPLACE_INSTALL=false\n"
         "KANON_SOURCE_build_URL=https://example.com/org/build-repo.git\n"
-        "KANON_SOURCE_build_REVISION=main\n"
+        "KANON_SOURCE_build_REF=main\n"
         "KANON_SOURCE_build_PATH=repo-specs/common/meta.xml\n"
+        "KANON_SOURCE_build_NAME=build\n"
+        "KANON_SOURCE_build_GITBASE=https://example.com/org\n"
         "KANON_SOURCE_marketplaces_URL=https://example.com/org/mp-repo.git\n"
-        "KANON_SOURCE_marketplaces_REVISION=main\n"
+        "KANON_SOURCE_marketplaces_REF=main\n"
         "KANON_SOURCE_marketplaces_PATH=repo-specs/common/marketplaces.xml\n"
+        "KANON_SOURCE_marketplaces_NAME=marketplaces\n"
+        "KANON_SOURCE_marketplaces_GITBASE=https://example.com/org\n"
     )
     return kanonenv
 
@@ -140,8 +278,10 @@ def _make_minimal_kanon_file(tmp_path: pathlib.Path, source_name: str = "FOO") -
         f"CLAUDE_MARKETPLACES_DIR=/tmp/mkts\n"
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL=https://github.com/org/catalog\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=./foo\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://github.com/org\n"
     )
     kanon_file.chmod(0o644)
     return kanon_file
@@ -156,7 +296,7 @@ def _write_lockfile(
     (test_why_ambiguous.py) to avoid cross-layer imports.
     """
     from kanon_cli.core.lockfile import (
-        CatalogBlock,
+        CURRENT_SCHEMA_VERSION,
         IncludeEntry,
         Lockfile,
         ProjectEntry,
@@ -178,22 +318,16 @@ def _write_lockfile(
         ]
 
     lockfile = Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash="sha256:" + "a" * 64,
-        catalog=CatalogBlock(
-            source="catalog@HEAD",
-            url="https://github.com/org/catalog",
-            revision_spec="HEAD",
-            resolved_ref="HEAD",
-            resolved_sha="f" * 40,
-        ),
         sources=[
             SourceEntry(
+                alias=source_name,
                 name=source_name,
                 url="https://github.com/org/catalog",
-                revision_spec="main",
+                ref_spec="main",
                 resolved_ref="main",
                 resolved_sha="a" * 40,
                 path="./foo",
@@ -203,7 +337,7 @@ def _write_lockfile(
                         name="proj",
                         url=project_url,
                         canonical_url=canonicalize_repo_url(project_url),
-                        revision_spec="main",
+                        ref_spec="main",
                         resolved_ref="main",
                         resolved_sha="b" * 40,
                     )
@@ -217,15 +351,12 @@ def _write_lockfile(
     return lock_path
 
 
-# ---------------------------------------------------------------------------
-# Doctor consistency test helpers (shared between unit and integration tests)
-# ---------------------------------------------------------------------------
-
-#: Minimal valid .kanon content used by doctor unit tests.
 DOCTOR_MINIMAL_KANON_CONTENT = (
     "KANON_SOURCE_src_URL=https://example.com/org/repo.git\n"
-    "KANON_SOURCE_src_REVISION=main\n"
+    "KANON_SOURCE_src_REF=main\n"
     "KANON_SOURCE_src_PATH=repo-specs/meta.xml\n"
+    "KANON_SOURCE_src_NAME=src\n"
+    "KANON_SOURCE_src_GITBASE=https://example.com/org\n"
     "KANON_MARKETPLACE_INSTALL=false\n"
 )
 
@@ -280,7 +411,7 @@ def write_lockfile_doctor_unit(
         Path to the written .kanon.lock file.
     """
     from kanon_cli.core.lockfile import (
-        CatalogBlock,
+        CURRENT_SCHEMA_VERSION,
         Lockfile,
         SourceEntry,
         write_lockfile,
@@ -297,9 +428,10 @@ def write_lockfile_doctor_unit(
 
     sources = [
         SourceEntry(
+            alias=name,
             name=name,
             url=urls[name],
-            revision_spec=revision_specs[name],
+            ref_spec=revision_specs[name],
             resolved_ref=revision_specs[name],
             resolved_sha=resolved_shas[name],
             path="repo-specs/meta.xml",
@@ -308,17 +440,10 @@ def write_lockfile_doctor_unit(
     ]
 
     lockfile = Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash=kanon_hash_val,
-        catalog=CatalogBlock(
-            source="",
-            url="",
-            revision_spec="",
-            resolved_ref="",
-            resolved_sha="",
-        ),
         sources=sources,
     )
 
@@ -350,8 +475,10 @@ def write_kanon_doctor_integration(
     kanon_file = directory / ".kanon"
     kanon_file.write_text(
         f"KANON_SOURCE_{source_name}_URL={url}\n"
-        f"KANON_SOURCE_{source_name}_REVISION={revision}\n"
+        f"KANON_SOURCE_{source_name}_REF={revision}\n"
         f"KANON_SOURCE_{source_name}_PATH=repo-specs/meta.xml\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://example.com/org\n"
         "KANON_MARKETPLACE_INSTALL=false\n",
         encoding="utf-8",
     )
@@ -378,7 +505,7 @@ def write_lockfile_doctor_integration_multi_source(
         Path to the written .kanon.lock file.
     """
     from kanon_cli.core.lockfile import (
-        CatalogBlock,
+        CURRENT_SCHEMA_VERSION,
         Lockfile,
         SourceEntry,
         write_lockfile,
@@ -386,9 +513,10 @@ def write_lockfile_doctor_integration_multi_source(
 
     source_entries = [
         SourceEntry(
+            alias=s["name"],
             name=s["name"],
             url=s["url"],
-            revision_spec=s["revision_spec"],
+            ref_spec=s["revision_spec"],
             resolved_ref=s["revision_spec"],
             resolved_sha=s["resolved_sha"],
             path="repo-specs/meta.xml",
@@ -397,17 +525,10 @@ def write_lockfile_doctor_integration_multi_source(
     ]
 
     lockfile = Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash=kanon_hash_val,
-        catalog=CatalogBlock(
-            source="",
-            url="",
-            revision_spec="",
-            resolved_ref="",
-            resolved_sha="",
-        ),
         sources=source_entries,
     )
     lock_path = directory / ".kanon.lock"
@@ -440,29 +561,23 @@ def write_lockfile_doctor_integration(
         Path to the written .kanon.lock file.
     """
     from kanon_cli.core.lockfile import (
-        CatalogBlock,
+        CURRENT_SCHEMA_VERSION,
         Lockfile,
         SourceEntry,
         write_lockfile,
     )
 
     lockfile = Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash=kanon_hash_val,
-        catalog=CatalogBlock(
-            source="",
-            url="",
-            revision_spec="",
-            resolved_ref="",
-            resolved_sha="",
-        ),
         sources=[
             SourceEntry(
+                alias=source_name,
                 name=source_name,
                 url=url,
-                revision_spec=revision_spec,
+                ref_spec=revision_spec,
                 resolved_ref=revision_spec,
                 resolved_sha=resolved_sha,
                 path="repo-specs/meta.xml",
@@ -476,10 +591,10 @@ def write_lockfile_doctor_integration(
 
 @pytest.fixture(autouse=True)
 def _scrub_catalog_source_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
-    """Clear KANON_CATALOG_SOURCE after every test function.
+    """Clear KANON_CATALOG_SOURCES after every test function.
 
     Belt-and-suspenders teardown that unconditionally deletes
-    KANON_CATALOG_SOURCE from os.environ after every test, regardless of
+    KANON_CATALOG_SOURCES from os.environ after every test, regardless of
     whether the test or any of its fixtures set it. Prevents env-var leaks
     between tests when a fixture or test directly mutates os.environ without
     using monkeypatch (which would otherwise undo changes automatically).
@@ -488,32 +603,76 @@ def _scrub_catalog_source_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None
     every test in the suite without per-test opt-in.
     """
     yield
-    monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+    monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_kanon_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point KANON_HOME at a per-test temp dir so tests never touch the real ~/.kanon.
+
+    The shared KANON_HOME store (spec Section 7.1 / Section 8 / FR-15) defaults to
+    ``~/.kanon`` when KANON_HOME is unset. ``resolve_workspace_base_dir()`` (the
+    artifact store, ``<KANON_HOME>/store``) and ``cache_dir()`` (the completion /
+    catalog-audit cache, ``<KANON_HOME>/cache``) both resolve under it. Without
+    isolation, every test that drives ``install`` / ``clean`` / completion caching
+    would share a single real-home store and leak state between tests -- e.g. an
+    end-to-end scenario reusing a prior test's repo checkout under
+    ``~/.kanon/store/.kanon-data/sources/...``.
+
+    This autouse fixture sets KANON_HOME to a fresh per-test temporary directory
+    via ``monkeypatch.setenv`` (so it is reverted on teardown AND is inherited by
+    any ``python -m kanon_cli`` subprocess the test spawns). Tests that need a
+    specific KANON_HOME override it with their own ``monkeypatch.setenv`` /
+    ``extra_env`` (which runs after this fixture and therefore wins); tests
+    asserting the unset-default behaviour ``monkeypatch.delenv("KANON_HOME", ...)``
+    likewise override it.
+    """
+    monkeypatch.setenv("KANON_HOME", str(tmp_path_factory.mktemp("kanon_home")))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_claude_config(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point CLAUDE_CONFIG_DIR at a per-test temp dir so the real ~/.claude is never touched.
+
+    A ``claude-marketplace`` install shells out to the real ``claude`` binary
+    (``claude plugin marketplace add`` / ``plugin install`` in
+    ``core/marketplace.py``); that subprocess inherits ``os.environ`` and reads
+    its config from ``CLAUDE_CONFIG_DIR`` (falling back to ``~/.claude`` when
+    unset). Without isolation a test that drives a real marketplace install would
+    register marketplaces and plugins into the developer's real ``~/.claude``,
+    each pointing at the test's temporary marketplace directory; once that temp
+    directory is reaped the registrations dangle and surface as
+    ``failed to load: cache-miss`` errors in Claude Code.
+
+    This autouse fixture sets ``CLAUDE_CONFIG_DIR`` to a fresh per-test temporary
+    directory (reverted on teardown via ``monkeypatch`` and inherited by every
+    spawned ``claude`` and ``python -m kanon_cli`` subprocess), so marketplace
+    registration is fully isolated. Tests that need a specific config override it
+    with their own ``monkeypatch.setenv``.
+    """
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path_factory.mktemp("claude_config")))
 
 
 @pytest.fixture()
 def make_install_args():
-    """Factory fixture that returns a MagicMock with kanonenv_path and catalog_source set.
+    """Factory fixture that returns a MagicMock suitable for the install CLI handler.
 
     Returns a callable that accepts a kanonenv path and returns a MagicMock
     suitable for passing to the install CLI handler _run(args). This allows
     integration and functional tests to invoke the CLI boundary without
     duplicating the argparse namespace setup inline.
 
-    The factory sets ``args.catalog_source`` to ``DEFAULT_CATALOG_SOURCE`` so
-    that tests which do not exercise catalog-resolution logic do not fail with
-    ``MissingCatalogSourceError`` due to the autouse ``_scrub_catalog_source_env``
-    fixture clearing ``KANON_CATALOG_SOURCE`` between every test.  Tests that
-    intentionally exercise the missing-catalog-source error path must override
-    ``args.catalog_source = None`` after calling the factory and must also
-    ensure ``KANON_CATALOG_SOURCE`` is absent (the autouse scrubber guarantees
-    that at test start).
+    ``kanon install`` is hermetic (spec Section 4.3 / FR-14): it is driven solely
+    by the committed ``.kanon`` (+ ``.kanon.lock``), accepts no catalog source, and
+    ignores ``KANON_CATALOG_SOURCES``.  The factory therefore sets only the
+    attributes the install handler actually reads (path, lock file, and the
+    refresh / strict flags).
 
     Args: (none -- use the returned factory)
 
     Returns:
         A factory function that accepts kanonenv_path (Path) and returns a
-        MagicMock with kanonenv_path, lock_file, and catalog_source attributes set.
+        MagicMock with kanonenv_path, lock_file, and the install flags set.
 
     Example::
 
@@ -532,7 +691,6 @@ def make_install_args():
         args = MagicMock()
         args.kanonenv_path = kanonenv_path
         args.lock_file = None
-        args.catalog_source = DEFAULT_CATALOG_SOURCE
         args.refresh_lock = False
         args.refresh_lock_source = None
         args.strict_lock = False
@@ -544,15 +702,15 @@ def make_install_args():
 
 @pytest.fixture()
 def _set_default_catalog_source(monkeypatch: pytest.MonkeyPatch) -> str:
-    """Opt-in fixture: sets KANON_CATALOG_SOURCE to DEFAULT_CATALOG_SOURCE for one test.
+    """Opt-in fixture: sets KANON_CATALOG_SOURCES to DEFAULT_CATALOG_SOURCE for one test.
 
     This fixture is opt-in (no ``autouse=True``).  Tests that invoke code paths
-    which read ``KANON_CATALOG_SOURCE`` from the environment (e.g. subprocess-
+    which read ``KANON_CATALOG_SOURCES`` from the environment (e.g. subprocess-
     based tests, or tests that call ``install()`` without passing the
     ``catalog_source`` keyword argument) can request this fixture by name to
-    inject the standard test value for the duration of that test.
+    inject the standard test value (a single source) for the duration of that test.
 
-    The autouse ``_scrub_catalog_source_env`` fixture clears ``KANON_CATALOG_SOURCE``
+    The autouse ``_scrub_catalog_source_env`` fixture clears ``KANON_CATALOG_SOURCES``
     after every test; this fixture sets it fresh via ``monkeypatch.setenv`` so it
     is automatically reverted by pytest's monkeypatch teardown in addition to
     the scrubber's ``delenv`` -- belt-and-suspenders isolation.
@@ -567,8 +725,8 @@ def _set_default_catalog_source(monkeypatch: pytest.MonkeyPatch) -> str:
             from kanon_cli.core.install import install
             kanonenv = tmp_path / ".kanon"
             kanonenv.write_text("KANON_SOURCE_s_URL=https://example.com/s.git\\n...")
-            # KANON_CATALOG_SOURCE is already set by the fixture
+            # KANON_CATALOG_SOURCES is already set by the fixture
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
     """
-    monkeypatch.setenv("KANON_CATALOG_SOURCE", DEFAULT_CATALOG_SOURCE)
+    monkeypatch.setenv("KANON_CATALOG_SOURCES", DEFAULT_CATALOG_SOURCE)
     return DEFAULT_CATALOG_SOURCE

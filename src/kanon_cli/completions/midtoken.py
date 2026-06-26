@@ -9,7 +9,7 @@ Public API::
 
 Resolution chain:
 1. If KANON_COMPLETION_ENABLED=0, return "" immediately.
-2. Resolve KANON_CATALOG_SOURCE env var to get the manifest repo URL and ref.
+2. Resolve the single KANON_CATALOG_SOURCES entry to get the manifest repo URL and ref.
 3. Derive the cache directory for this catalog source.
 4. Read index.txt from the cache directory.
 5. If index.txt is absent (no cache for this catalog source), raise
@@ -43,17 +43,12 @@ from kanon_cli.completions.cache import (
     read_entries,
 )
 from kanon_cli.constants import (
-    CATALOG_ENV_VAR,
+    CATALOG_SOURCES_ENV_VAR,
     KANON_COMPLETION_ENABLED,
 )
-from kanon_cli.core.catalog import _parse_catalog_source
+from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
 
 _COMPLETER_NAME = "__resolve_entry_to_repo_url"
-
-
-# ---------------------------------------------------------------------------
-# Domain exceptions
-# ---------------------------------------------------------------------------
 
 
 class EntryNotFoundError(LookupError):
@@ -71,7 +66,7 @@ class EntryNotFoundError(LookupError):
 
         Args:
             entry_name: The requested catalog entry name.
-            catalog_source: The KANON_CATALOG_SOURCE value that was searched.
+            catalog_source: The KANON_CATALOG_SOURCES value that was searched.
         """
         super().__init__(
             f"catalog entry {entry_name!r} not found in cached index for"
@@ -82,16 +77,11 @@ class EntryNotFoundError(LookupError):
 
 
 class MidtokenCacheError(RuntimeError):
-    """Raised when the cache is missing or KANON_CATALOG_SOURCE is absent/malformed.
+    """Raised when the cache is missing or KANON_CATALOG_SOURCES is absent/malformed.
 
     The subcommand handler catches this exception, emits empty stdout, and
     logs a structured entry to completion-errors.log.
     """
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _write_stderr_diagnostic(exc: BaseException) -> None:
@@ -108,21 +98,16 @@ def _write_stderr_diagnostic(exc: BaseException) -> None:
         sys.stderr.write(f"{_COMPLETER_NAME}: {type(exc).__name__}: {exc}\n")
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def resolve_entry_to_repo_url(entry_name: str) -> str:
     """Return the catalog source URL for entry_name.
 
     The catalog source URL is the git URL of the manifest repository that
     contains the entry. Because every entry in a catalog is hosted in the same
-    manifest repo, the URL is derived from KANON_CATALOG_SOURCE.
+    manifest repo, the URL is derived from the single KANON_CATALOG_SOURCES entry.
 
     Resolution contract (spec Section 11.5):
     1. KANON_COMPLETION_ENABLED=0 -> return "".
-    2. KANON_CATALOG_SOURCE absent or malformed -> raise MidtokenCacheError.
+    2. KANON_CATALOG_SOURCES absent or malformed -> raise MidtokenCacheError.
     3. Cache directory for this catalog source absent -> raise MidtokenCacheError.
     4. entry_name found in cached index -> return catalog URL.
     5. entry_name NOT found -> raise EntryNotFoundError.
@@ -137,26 +122,27 @@ def resolve_entry_to_repo_url(entry_name: str) -> str:
         disabled.
 
     Raises:
-        MidtokenCacheError: When KANON_CATALOG_SOURCE is absent/malformed or
+        MidtokenCacheError: When KANON_CATALOG_SOURCES is absent/malformed or
             the catalog cache entry does not exist.
         EntryNotFoundError: When entry_name is not found in the cached index.
     """
-    # Step 1: completion disabled guard.
+
     enabled = int(os.environ.get("KANON_COMPLETION_ENABLED", KANON_COMPLETION_ENABLED))
     if enabled == 0:
         return ""
 
-    # Step 2: resolve catalog source.
-    source = os.environ.get(CATALOG_ENV_VAR)
+    try:
+        source = resolve_env_catalog_source()
+    except ValueError as exc:
+        raise MidtokenCacheError(f"malformed {CATALOG_SOURCES_ENV_VAR}: {exc}") from exc
     if not source:
-        raise MidtokenCacheError(f"{CATALOG_ENV_VAR} is not set; cannot resolve entry repo URL")
+        raise MidtokenCacheError(f"{CATALOG_SOURCES_ENV_VAR} is not set; cannot resolve entry repo URL")
 
     try:
         url, ref = _parse_catalog_source(source)
     except ValueError as exc:
-        raise MidtokenCacheError(f"malformed {CATALOG_ENV_VAR}={source!r}: {exc}") from exc
+        raise MidtokenCacheError(f"malformed {CATALOG_SOURCES_ENV_VAR}={source!r}: {exc}") from exc
 
-    # Step 3: locate the catalog cache directory.
     entry_dir = catalog_entry_dir(url, ref)
     index_path = entry_dir / "index.txt"
 
@@ -166,17 +152,11 @@ def resolve_entry_to_repo_url(entry_name: str) -> str:
             f" run 'kanon __complete_catalog_entries' to populate the cache"
         )
 
-    # Step 4+5: search the cached index for entry_name.
     names = read_entries(index_path)
     if entry_name in names:
         return url
 
     raise EntryNotFoundError(entry_name, source)
-
-
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
 
 
 def register(

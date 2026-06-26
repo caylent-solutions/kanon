@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for subcmds/overview.py coverage."""
 
 from unittest import mock
@@ -36,7 +22,6 @@ def test_options():
     parser = mock.MagicMock()
     cmd._Options(parser)
 
-    # Should add multiple options
     assert parser.add_option.call_count >= 3
 
 
@@ -55,7 +40,6 @@ def test_execute_no_branches():
 
     cmd.Execute(opt, [])
 
-    # Should return early, no output
     cmd.GetProjects.assert_called_once()
 
 
@@ -85,7 +69,6 @@ def test_execute_with_branches():
     with mock.patch("builtins.print") as mock_print:
         cmd.Execute(opt, [])
 
-        # Should print output
         assert mock_print.call_count > 0
 
 
@@ -124,7 +107,6 @@ def test_execute_current_branch_only():
     with mock.patch("builtins.print"):
         cmd.Execute(opt, [])
 
-    # Should only process current branch
     assert project.GetUploadableBranch.call_count == 2
 
 
@@ -199,7 +181,6 @@ def test_execute_multiple_projects():
     with mock.patch("builtins.print") as mock_print:
         cmd.Execute(opt, [])
 
-        # Should print for both projects
         assert mock_print.call_count > 0
 
 
@@ -229,7 +210,6 @@ def test_execute_single_commit():
     with mock.patch("builtins.print") as mock_print:
         cmd.Execute(opt, [])
 
-        # Check for singular "commit"
         printed = " ".join(str(call) for call in mock_print.call_args_list)
         assert "commit" in printed.lower()
 
@@ -260,7 +240,6 @@ def test_execute_is_current_branch():
     with mock.patch("builtins.print") as mock_print:
         cmd.Execute(opt, [])
 
-        # Should have asterisk for current branch
         printed = " ".join(str(call) for call in mock_print.call_args_list)
         assert "*" in printed or "feature" in printed
 
@@ -291,7 +270,6 @@ def test_execute_prints_deprecation():
     with mock.patch("builtins.print"):
         cmd.Execute(opt, [])
 
-        # Deprecation message is printed via coloring output, just verify execution
         cmd.GetProjects.assert_called_once()
 
 
@@ -321,8 +299,7 @@ def test_execute_prints_commits():
     with mock.patch("builtins.print") as mock_print:
         cmd.Execute(opt, [])
 
-        # Should print commits
-        assert mock_print.call_count >= 2  # Should print branch info and commits
+        assert mock_print.call_count >= 2
 
 
 @pytest.mark.unit

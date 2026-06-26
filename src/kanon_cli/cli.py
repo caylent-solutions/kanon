@@ -7,8 +7,6 @@ Provides the top-level ``kanon`` command with subcommands:
   - ``kanon clean <kanonenv-path>`` -- Full teardown: uninstall, remove dirs
   - ``kanon validate xml [--repo-root PATH]`` -- Validate manifest XML files
   - ``kanon validate marketplace [--repo-root PATH]`` -- Validate marketplace XML manifests
-  - ``kanon bootstrap <package>`` -- Scaffold a new Kanon project from a catalog entry package
-  - ``kanon bootstrap list`` -- List available catalog entry packages
   - ``kanon repo <repo-args>`` -- Passthrough to the embedded repo tool
   - ``kanon why <project-url>`` -- Explain why a project is in the resolved tree
 """
@@ -24,21 +22,17 @@ from types import FrameType
 
 from kanon_cli import __version__
 from kanon_cli.commands.add import register as register_add
-from kanon_cli.commands.bootstrap import (
-    build_deprecation_message,
-    register as register_bootstrap,
-    select_bootstrap_tail,
-)
 from kanon_cli.commands.catalog import register as register_catalog
 from kanon_cli.commands.clean import register as register_clean
 from kanon_cli.commands.completion import register as register_completion
 from kanon_cli.commands.doctor import register as register_doctor
 from kanon_cli.commands.install import register as register_install
-from kanon_cli.commands.list import register as register_list
+from kanon_cli.commands.marketplace import register as register_marketplace
 from kanon_cli.commands.outdated import register as register_outdated
 from kanon_cli.commands.remove import register as register_remove
 from kanon_cli.commands.why import register as register_why
 from kanon_cli.commands.repo import register as register_repo
+from kanon_cli.commands.search import register as register_search
 from kanon_cli.commands.validate import register as register_validate
 from kanon_cli.completions.catalog_entries import register as register_complete_catalog_entries
 from kanon_cli.completions.catalog_versions import register as register_complete_catalog_versions
@@ -47,14 +41,11 @@ from kanon_cli.completions.project_versions import register as register_complete
 from kanon_cli.completions.cached_catalogs import register as register_complete_cached_catalogs
 from kanon_cli.completions.midtoken import register as register_resolve_entry_to_repo_url
 from kanon_cli.completions.source_names import register as register_complete_source_names
-from kanon_cli.constants import EXIT_CODE_DEPRECATED
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
 from kanon_cli.core.include_walker import InstallError
+from kanon_cli.core.lockfile import LockfileSchemaError
+from kanon_cli.core.update_check import maybe_alert_update
 from kanon_cli.repo import RepoCommandError
-
-# ---------------------------------------------------------------------------
-# JSON output contract (spec Section 13 D3)
-# ---------------------------------------------------------------------------
 
 
 def _emit_json_payload(
@@ -99,17 +90,13 @@ def _emit_json_payload(
     sys.stdout.flush()
 
 
-# ---------------------------------------------------------------------------
-# Top-level help text (spec Section 14)
-# ---------------------------------------------------------------------------
-
 _TOP_LEVEL_HELP: str = """\
 kanon -- declarative dependency manager for git-hosted assets
 
 Usage: kanon <command> [options]
 
 Discovery & management:
-  list             Discover catalog entries
+  search           Discover catalog entries (grouped by source)
   add              Add catalog entries to .kanon
   remove           Remove sources from .kanon
   outdated         Report installable upgrades
@@ -128,21 +115,19 @@ Manifest repo (catalog author):
 Shell integration:
   completion       Generate shell completion script
 
-Deprecated:
-  bootstrap        DEPRECATED -- use 'kanon add' / 'kanon list'. See docs/migration-bootstrap-to-add.md.
-
 Global options (always available):
   --version                      Print kanon version and exit.
   --help                         Show this and exit.
   --quiet / --verbose            Logging verbosity (mutually exclusive).
   --no-color                     Disable ANSI color (also respects NO_COLOR env var).
+  --no-update-check              Skip the PyPI update-available check (or set KANON_SKIP_UPDATE_CHECK=1).
+  --home / --store-dir <path>    Shared kanon home root (store + caches). Precedence: flag > KANON_HOME env > ~/.kanon.
 
 Catalog source (required by commands that resolve a manifest repo; see each subcommand's --help):
-  --catalog-source <url>@<ref>   Override KANON_CATALOG_SOURCE. No default; one of
-                                 --catalog-source or KANON_CATALOG_SOURCE is required
-                                 for list/add/outdated/why/catalog audit. For install
-                                 and doctor, .kanon.lock [catalog].source is used as
-                                 fallback when present and consistent.
+  --catalog-source <url>@<ref>   Override the KANON_CATALOG_SOURCES env var. No default;
+                                 one of --catalog-source or a single KANON_CATALOG_SOURCES
+                                 entry is required for search/add/outdated/why/catalog audit.
+                                 install is hermetic and does not accept a catalog source.
 """
 
 
@@ -246,13 +231,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     register_add(subparsers)
-    register_bootstrap(subparsers)
     register_catalog(subparsers)
     register_clean(subparsers)
     register_completion(subparsers)
     register_doctor(subparsers)
     register_install(subparsers)
-    register_list(subparsers)
+    register_marketplace(subparsers)
+    register_search(subparsers)
     register_outdated(subparsers)
     register_remove(subparsers)
     register_validate(subparsers)
@@ -288,49 +273,22 @@ def main(argv: list[str] | None = None) -> None:
     signal.signal(signal.SIGTERM, _make_signal_handler(signal.SIGTERM))
     signal.signal(signal.SIGINT, _make_signal_handler(signal.SIGINT))
 
-    # `kanon bootstrap` was removed (major release, breaking change). Intercept it
-    # BEFORE argparse so EVERY invocation -- any args/flags, including --help and
-    # unknown flags -- emits the same deprecation message and exits non-zero,
-    # rather than argparse special-casing --help or rejecting unknown flags.
-    raw_argv = sys.argv[1:] if argv is None else argv
-    bootstrap_tail = select_bootstrap_tail(raw_argv)
-    if bootstrap_tail is not None:
-        print(build_deprecation_message(bootstrap_tail), file=sys.stderr)
-        sys.exit(EXIT_CODE_DEPRECATED)
-
     parser = build_parser()
     args = parser.parse_args(argv)
 
     _apply_global_flags(args)
 
+    maybe_alert_update(args, args.command, environ=os.environ)
+
     if args.command is None:
         parser.print_help()
         sys.exit(2)
 
-    # Inject the root parser so subcommands that need to introspect the full
-    # argument tree (e.g., the completion subcommand) can access it without
-    # a circular import.
     args.parser = parser
 
-    # Top-level user-error boundary. Per-command handlers already convert the
-    # kanon user-error types below into a clean stderr message + non-zero exit
-    # (see commands/install.py::_run and commands/clean.py::_run). This wrapper
-    # is the defence-in-depth backstop for any code path that reaches one of
-    # these errors WITHOUT an enclosing per-command try/except -- e.g. a
-    # zero-source .kanon raising ValueError from parse_kanonenv via doctor's
-    # kanon_hash recompute, outdated's top-level parse, or why's live-resolve.
-    # Without this, such an error leaks a raw Python traceback (fail-ugly).
-    #
-    # Only the spec-canonical user-error types are caught. SystemExit (raised
-    # by per-command sys.exit() calls), KeyboardInterrupt, and bare Exception
-    # are deliberately NOT caught: SystemExit must pass through with its own
-    # code, and masking arbitrary exceptions would hide programming bugs behind
-    # a generic clean error.
     try:
         exit_code = args.func(args)
-    except InstallError as exc:
-        # InstallError subclasses already render str(exc) with an "ERROR:"
-        # prefix per the spec-canonical error shape; print it verbatim.
+    except (InstallError, LockfileSchemaError) as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     except (FileNotFoundError, ValueError, OSError, RepoCommandError) as exc:

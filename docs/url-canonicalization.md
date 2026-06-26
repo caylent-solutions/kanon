@@ -78,7 +78,7 @@ assert "https://github.com/caylent-solutions/kanon" in canonical_forms
 
 Error messages follow the spec Section 4 shape:
 
-```
+```text
 ERROR: <one-line summary>
   Input: '<offending input>'
   <remediation>

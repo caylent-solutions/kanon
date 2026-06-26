@@ -1,16 +1,3 @@
-# Copyright (C) 2022 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 """Unit tests for uncovered lines in subcmds/sync.py"""
 
 import json
@@ -36,14 +23,10 @@ class TestRlimitNofile:
 
     def test_import_error_fallback(self):
         """Test fallback when resource module is not available."""
-        # The ImportError path (lines 48-51) is already covered by the module load,
-        # but we can test the function behavior
+
         with mock.patch.dict("sys.modules", {"resource": None}):
-            # Force reimport to test ImportError path
             from kanon_cli.repo.subcmds import sync as sync_module
 
-            # The _rlimit_nofile function should exist and return default
-            # This tests lines 50-51
             assert callable(getattr(sync_module, "_rlimit_nofile", None))
 
 
@@ -53,8 +36,7 @@ class TestThreadingImport:
 
     def test_threading_import_fallback(self):
         """Test fallback to dummy_threading (lines 39-40)."""
-        # This tests the ImportError case for threading
-        # The actual import happens at module level, so we verify the module exists
+
         from kanon_cli.repo.subcmds import sync as sync_module
 
         assert hasattr(sync_module, "_threading")
@@ -71,7 +53,6 @@ class TestPostRepoUpgrade:
             manifest.repodir = tmpdir
             manifest.projects = []
 
-            # Mock platform_utils functions
             with mock.patch("kanon_cli.repo.subcmds.sync.platform_utils") as mock_platform:
                 with mock.patch("kanon_cli.repo.subcmds.sync.Wrapper") as mock_wrapper:
                     mock_platform.islink.return_value = False
@@ -82,7 +63,6 @@ class TestPostRepoUpgrade:
 
                     sync._PostRepoUpgrade(manifest, quiet=True)
 
-                    # Verify symlink was attempted (line 2605)
                     mock_platform.symlink.assert_called_once()
 
     def test_post_repo_upgrade_with_gnupg_setup(self):
@@ -102,7 +82,6 @@ class TestPostRepoUpgrade:
                     wrapper_inst.NeedSetupGnuPG.return_value = True
                     mock_wrapper.return_value = wrapper_inst
 
-                    # Test lines 2610-2614
                     sync._PostRepoUpgrade(manifest, quiet=False)
 
                     wrapper_inst.SetupGnuPG.assert_called_once_with(False)
@@ -119,7 +98,6 @@ class TestPostRepoFetch:
         rp.HasChanges = False
         rp.work_git.describe.return_value = "v2.15"
 
-        # Test line 2648-2649 (verbose path)
         sync._PostRepoFetch(rp, repo_verify=True, verbose=True)
         rp.work_git.describe.assert_called()
 
@@ -138,7 +116,6 @@ class TestPostRepoFetch:
             wrapper_inst.check_repo_rev.return_value = (None, "v2.15")
             mock_wrapper.return_value = wrapper_inst
 
-            # Test lines 2618-2644
             with pytest.raises(RepoChangedException):
                 sync._PostRepoFetch(rp, repo_verify=True, verbose=False)
 
@@ -161,7 +138,6 @@ class TestPostRepoFetch:
             wrapper_inst.check_repo_rev.return_value = (None, "v2.15")
             mock_wrapper.return_value = wrapper_inst
 
-            # Test lines 2641-2642
             with pytest.raises(RepoUnhandledExceptionError):
                 sync._PostRepoFetch(rp, repo_verify=True, verbose=False)
 
@@ -178,7 +154,6 @@ class TestPostRepoFetch:
             wrapper_inst.check_repo_rev.return_value = (None, "v2.15")
             mock_wrapper.return_value = wrapper_inst
 
-            # Test line 2646 (warning path)
             sync._PostRepoFetch(rp, repo_verify=True, verbose=False)
 
 
@@ -193,8 +168,8 @@ class TestFetchTimes:
             manifest.repodir = tmpdir
 
             ft = sync._FetchTimes(manifest)
-            # Don't load, so _saved stays None
-            ft.Save()  # Should return early
+
+            ft.Save()
 
     def test_fetch_times_load_invalid_json(self):
         """Test Load with invalid JSON."""
@@ -203,13 +178,11 @@ class TestFetchTimes:
             manifest.repodir = tmpdir
             json_path = os.path.join(tmpdir, ".repo_fetchtimes.json")
 
-            # Write invalid JSON
             with open(json_path, "w") as f:
                 f.write("{ invalid json")
 
             ft = sync._FetchTimes(manifest)
 
-            # Test lines 2675-2677 (ValueError path)
             with mock.patch("kanon_cli.repo.subcmds.sync.platform_utils") as mock_platform:
                 ft._Load()
                 mock_platform.remove.assert_called_once()
@@ -224,9 +197,8 @@ class TestFetchTimes:
             project = mock.MagicMock()
             project.name = "test_project"
             ft.Set(project, 10.0)
-            ft._Load()  # Initialize _saved
+            ft._Load()
 
-            # Test lines 2691-2692
             with mock.patch("builtins.open", side_effect=OSError("test error")):
                 with mock.patch("kanon_cli.repo.subcmds.sync.platform_utils") as mock_platform:
                     ft.Save()
@@ -246,12 +218,10 @@ class TestLocalSyncState:
             manifest.projects = []
 
             state = sync.LocalSyncState(manifest)
-            state._Load()  # Initialize _state
+            state._Load()
 
-            # Add project data for non-existent directory
             state._state = {"old_project": {sync.LocalSyncState._LAST_FETCH: time.time() - (40 * 24 * 60 * 60)}}
 
-            # Test lines in PruneRemovedProjects - should remove non-existent project
             state.PruneRemovedProjects()
             assert "old_project" not in state._state
 
@@ -287,7 +257,6 @@ class TestSmartSyncSetup:
                     ]
                     mock_server.return_value = server_inst
 
-                    # Test lines around _SmartSyncSetup
                     result = sync_cmd._SmartSyncSetup(opt, smart_sync_path, manifest)
                     assert result is not None
         finally:
@@ -327,7 +296,6 @@ class TestUpdateProjectsRevisionId:
 
         with mock.patch.object(sync_cmd, "GetProjects", return_value=[project]):
             with mock.patch.object(sync_cmd, "ManifestList", return_value=[manifest]):
-                # Test lines 698-701
                 sync_cmd._UpdateProjectsRevisionId(opt, args, superproject_logging_data, manifest)
 
     def test_update_projects_revision_id_with_superproject_mirror(self):
@@ -362,7 +330,6 @@ class TestUpdateProjectsRevisionId:
                     "kanon_cli.repo.subcmds.sync.git_superproject.UseSuperproject",
                     return_value=True,
                 ):
-                    # Test lines 718-728 (mirror warning path)
                     sync_cmd._UpdateProjectsRevisionId(opt, args, superproject_logging_data, manifest)
 
 
@@ -388,7 +355,7 @@ class TestFetchMain:
         args = []
         all_projects = []
         err_event = multiprocessing.Event()
-        err_event.set()  # Simulate error
+        err_event.set()
         ssh_proxy = mock.MagicMock()
         manifest = mock.MagicMock()
         errors = []
@@ -398,7 +365,6 @@ class TestFetchMain:
         fetch_result.projects = set()
 
         with mock.patch.object(sync_cmd, "_Fetch", return_value=fetch_result):
-            # Test lines 1006-1013 (network_only error path)
             with pytest.raises(SyncError):
                 sync_cmd._FetchMain(
                     opt,
@@ -446,7 +412,6 @@ class TestFetchMain:
             with mock.patch.object(sync_cmd, "_ReloadManifest"):
                 with mock.patch.object(sync_cmd, "GetProjects", return_value=all_projects):
                     with mock.patch.object(sync_cmd, "_GCProjects"):
-                        # Test lines 1030-1044
                         result = sync_cmd._FetchMain(
                             opt,
                             args,
@@ -490,12 +455,10 @@ class TestFetchMain:
         manifest = mock.MagicMock()
         errors = []
 
-        # First fetch succeeds but doesn't fetch all projects
         fetch_result1 = mock.MagicMock()
         fetch_result1.success = True
         fetch_result1.projects = set()
 
-        # Second fetch also doesn't make progress (same missing set)
         fetch_result2 = mock.MagicMock()
         fetch_result2.success = False
         fetch_result2.projects = set()
@@ -510,7 +473,6 @@ class TestFetchMain:
 
         with mock.patch.object(sync_cmd, "_Fetch", side_effect=mock_fetch):
             with mock.patch.object(sync_cmd, "_ReloadManifest"):
-                # First returns missing project, second returns same (stall detection)
                 with mock.patch.object(
                     sync_cmd,
                     "GetProjects",
@@ -520,7 +482,6 @@ class TestFetchMain:
                     ],
                 ):
                     with mock.patch.object(sync_cmd, "_GCProjects"):
-                        # Test lines 1035-1044 (stall detection)
                         sync_cmd._FetchMain(
                             opt,
                             args,
@@ -560,7 +521,7 @@ class TestCheckoutWorker:
         project1.relpath = "proj1"
 
         project2 = mock.MagicMock()
-        project2.worktree = None  # No worktree
+        project2.worktree = None
         project2.name = "proj2"
 
         all_projects = [project1, project2]
@@ -581,7 +542,6 @@ class TestCheckoutWorker:
                 return_value={"projects": [project1]},
             ):
                 with mock.patch.object(sync_cmd, "ExecuteInParallel", return_value=True):
-                    # Test line 1121 (filter worktrees)
                     result = sync_cmd._Checkout(all_projects, opt, err_results, checkout_errors)
                     assert result is True
 
@@ -610,7 +570,6 @@ class TestGCProjects:
 
         err_event = mock.MagicMock()
 
-        # Test _GCProjects method exists and can be called
         with mock.patch.object(sync_cmd, "_SetPreciousObjectsState"):
             sync_cmd._GCProjects(projects, opt, err_event)
 
@@ -656,7 +615,6 @@ class TestExecuteHelper:
                         with mock.patch.object(sync_cmd, "_UpdateProjectsRevisionId"):
                             with mock.patch.object(sync_cmd, "GetProjects", return_value=[]):
                                 with mock.patch.object(sync_cmd, "_SyncPhased"):
-                                    # Test lines 1883-1886 (smart_sync path)
                                     sync_cmd._ExecuteHelper(opt, args, errors)
 
     def test_execute_helper_removes_smart_sync_override(self):
@@ -690,7 +648,6 @@ class TestExecuteHelper:
             manifest.repoProject.CurrentBranch = None
             manifest.CloneBundle = True
 
-            # Create the smart_sync_override.xml file
             override_path = os.path.join(tmpdir, "smart_sync_override.xml")
             with open(override_path, "w") as f:
                 f.write("<manifest></manifest>")
@@ -702,7 +659,6 @@ class TestExecuteHelper:
                             with mock.patch.object(sync_cmd, "GetProjects", return_value=[]):
                                 with mock.patch.object(sync_cmd, "_SyncPhased"):
                                     with mock.patch("kanon_cli.repo.subcmds.sync.platform_utils") as mock_platform:
-                                        # Test lines 1888-1896 (remove override)
                                         sync_cmd._ExecuteHelper(opt, args, errors)
                                         mock_platform.remove.assert_called()
 
@@ -743,7 +699,6 @@ class TestExecuteHelper:
                         with mock.patch.object(sync_cmd, "_UpdateProjectsRevisionId"):
                             with mock.patch.object(sync_cmd, "GetProjects", return_value=[]):
                                 with mock.patch.object(sync_cmd, "_SyncPhased"):
-                                    # Test line 1915 (repo_upgraded)
                                     sync_cmd._ExecuteHelper(opt, args, errors)
                                     mock_post_upgrade.assert_called_once()
 
@@ -784,7 +739,6 @@ class TestExecuteHelper:
                     with mock.patch.object(sync_cmd, "_UpdateProjectsRevisionId"):
                         with mock.patch.object(sync_cmd, "GetProjects", return_value=[]):
                             with mock.patch.object(sync_cmd, "_SyncInterleaved") as mock_interleaved:
-                                # Test lines 1962-1965 (interleaved mode)
                                 sync_cmd._ExecuteHelper(opt, args, errors)
                                 mock_interleaved.assert_called_once()
 
@@ -802,7 +756,6 @@ class TestCreateSyncProgressThread:
         stop_event = mock.MagicMock()
 
         with mock.patch("kanon_cli.repo.subcmds.sync._threading.Thread") as mock_thread:
-            # Test lines 2017-2022
             sync_cmd._CreateSyncProgressThread(pm, stop_event)
             mock_thread.assert_called_once()
 
@@ -833,7 +786,6 @@ class TestUpdateManifestLists:
                 side_effect=Exception("test error"),
             ):
                 with mock.patch.object(sync_cmd, "UpdateCopyLinkfileList"):
-                    # Test lines 2043-2072
                     err_update_projects, err_update_linkfiles = sync_cmd._UpdateManifestLists(opt, err_event, errors)
                     assert err_update_projects is True
                     assert len(errors) > 0
@@ -851,7 +803,6 @@ class TestReportErrors:
 
         errors = []
 
-        # Test line 2094
         with pytest.raises(SyncError):
             sync_cmd._ReportErrors(
                 errors,
@@ -894,7 +845,6 @@ class TestSyncPhased:
         with mock.patch("multiprocessing.Manager"):
             with mock.patch("kanon_cli.repo.subcmds.sync.ssh.ProxyManager"):
                 with mock.patch.object(sync_cmd, "_FetchMain", return_value=fetch_result):
-                    # Test line 2156-2157 (early return on network_only)
                     sync_cmd._SyncPhased(
                         opt,
                         args,
@@ -972,7 +922,6 @@ class TestSyncInterleaved:
                                                     sync_cmd,
                                                     "_PrintManifestNotices",
                                                 ):
-                                                    # Test lines 2507-2514 (stall detection)
                                                     with pytest.raises(SyncError):
                                                         sync_cmd._SyncInterleaved(
                                                             opt,
@@ -1011,7 +960,6 @@ class TestPersistentTransport:
                     opener_inst.open.return_value = mock_response
                     mock_opener.return_value = opener_inst
 
-                    # Test lines 2802-2818
                     transport.request("example.com", "/handler", b"<request/>")
         finally:
             if os.path.exists(cookie_file):
@@ -1034,7 +982,6 @@ class TestPersistentTransport:
                 opener_inst.open.return_value = mock_response
                 mock_opener.return_value = opener_inst
 
-                # Test lines 2824 (proxy handling)
                 transport.request("example.com", "/handler", b"<request/>")
 
     def test_persistent_transport_request_persistent_https(self):
@@ -1054,7 +1001,6 @@ class TestPersistentTransport:
                 opener_inst.open.return_value = mock_response
                 mock_opener.return_value = opener_inst
 
-                # Test lines 2841-2844 (persistent-https with proxy)
                 transport.request("example.com", "/handler", b"<request/>")
 
     def test_persistent_transport_request_http_error_501(self):
@@ -1069,14 +1015,13 @@ class TestPersistentTransport:
                 mock_response.read.return_value = b'<?xml version="1.0"?><methodResponse><params><param><value><string>test</string></value></param></params></methodResponse>'
 
                 opener_inst = mock.MagicMock()
-                # First call raises 501, second succeeds
+
                 opener_inst.open.side_effect = [
                     urllib.error.HTTPError("http://example.com", 501, "Not Implemented", {}, None),
                     mock_response,
                 ]
                 mock_opener.return_value = opener_inst
 
-                # Test lines 2867-2873 (HTTP 501 retry)
                 transport.request("example.com", "/handler", b"<request/>")
 
     def test_persistent_transport_request_xml_parse_error(self):
@@ -1100,7 +1045,6 @@ class TestPersistentTransport:
                     unmarshaller = mock.MagicMock()
                     mock_getparser.return_value = (parser, unmarshaller)
 
-                    # Test lines 2881-2882 (ExpatError)
                     with pytest.raises(OSError):
                         transport.request("example.com", "/handler", b"<request/>")
 
@@ -1230,7 +1174,6 @@ class TestAdditionalCoverage:
         )
 
         def mock_callback(pool, pm, results_sets):
-            # Simulate the callback behavior
             for results in results_sets:
                 for result in results:
                     pm.update()
@@ -1255,7 +1198,7 @@ class TestAdditionalCoverage:
                     with mock.patch.object(sync_cmd, "_CreateSyncProgressThread") as mock_thread:
                         thread = mock.MagicMock()
                         mock_thread.return_value = thread
-                        # Test fail_fast path (line 925-928)
+
                         result = sync_cmd._Fetch(projects, opt, err_event, ssh_proxy, errors)
                         assert result.success is False
 
@@ -1272,7 +1215,6 @@ class TestAdditionalCoverage:
             project2.name = "proj2"
             manifest.projects = [project1, project2]
 
-            # Create state file BEFORE creating LocalSyncState object
             state_path = os.path.join(tmpdir, ".repo_localsyncstate.json")
             with open(state_path, "w") as f:
                 json.dump(
@@ -1283,14 +1225,13 @@ class TestAdditionalCoverage:
                         },
                         "proj2": {
                             sync.LocalSyncState._LAST_FETCH: time.time(),
-                            # Missing LAST_CHECKOUT - makes it partial
                         },
                     },
                     f,
                 )
 
             state = sync.LocalSyncState(manifest)
-            # One project missing checkout, so it's partial
+
             assert state.IsPartiallySynced() is True
 
     def test_execute_with_post_sync_hook_failure(self):
@@ -1312,7 +1253,6 @@ class TestAdditionalCoverage:
 
         with mock.patch.object(sync_cmd, "_ExecuteHelper"):
             with mock.patch("kanon_cli.repo.subcmds.sync.RepoHook", return_value=hook):
-                # Test line 1865 (hook failure warning)
                 sync_cmd.Execute(opt, args)
 
     def test_sync_phased_local_only(self):
@@ -1341,7 +1281,6 @@ class TestAdditionalCoverage:
         with mock.patch.object(sync_cmd, "ManifestList", return_value=[]):
             with mock.patch.object(sync_cmd, "_Checkout", return_value=True):
                 with mock.patch.object(sync_cmd, "_PrintManifestNotices"):
-                    # Test local_only skip network (line 2140)
                     sync_cmd._SyncPhased(
                         opt,
                         args,
@@ -1399,7 +1338,6 @@ class TestAdditionalCoverage:
                                                 sync_cmd,
                                                 "_PrintManifestNotices",
                                             ):
-                                                # Test line 2584 (GC when not archive)
                                                 sync_cmd._SyncInterleaved(
                                                     opt,
                                                     args,

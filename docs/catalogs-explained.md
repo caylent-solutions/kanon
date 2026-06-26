@@ -35,15 +35,16 @@ file.
 
 A **catalog source** is a `<git-url>@<ref>` value that identifies a manifest
 repo at a specific revision. You pass it via `--catalog-source` or the
-`KANON_CATALOG_SOURCE` environment variable. For example:
+`KANON_CATALOG_SOURCES` environment variable. For example:
 
 ```text
 https://example.com/org/manifest-repo.git@main
 ```
 
 kanon does not ship a built-in catalog. There is no default catalog source
-after the bootstrap deprecation. Your organization hosts its own manifest repo
-(or uses a shared community one), and you tell kanon where to find it.
+(the `kanon bootstrap` command was removed in 3.0.0). Your organization hosts
+its own manifest repo (or uses a shared community one), and you tell kanon
+where to find it.
 
 ## Who runs manifest repos?
 
@@ -98,7 +99,7 @@ one to your `.kanon` file.
 
 ```bash
 # List every catalog entry in the manifest repo
-kanon list --catalog-source https://example.com/org/manifest-repo.git@main
+kanon search --catalog-source https://example.com/org/manifest-repo.git@main
 ```
 
 Sample output:
@@ -113,8 +114,8 @@ another-tool
 kanon add my-library --catalog-source https://example.com/org/manifest-repo.git@main
 
 # Or export the catalog source so every command uses it automatically
-export KANON_CATALOG_SOURCE=https://example.com/org/manifest-repo.git@main
-kanon list
+export KANON_CATALOG_SOURCES=https://example.com/org/manifest-repo.git@main
+kanon search
 kanon add my-library
 ```
 
@@ -126,6 +127,6 @@ derived source name (e.g., `KANON_SOURCE_my_library_URL`).
 - [creating-manifest-repos.md](creating-manifest-repos.md) -- author and
   publish your own manifest repo
 - [configuration.md](configuration.md) -- full reference for `--catalog-source`
-  and `KANON_CATALOG_SOURCE`, including the complete precedence chain
-- [list-and-add.md](list-and-add.md) -- full reference for `kanon list`,
+  and `KANON_CATALOG_SOURCES`, including the complete precedence chain
+- [list-and-add.md](list-and-add.md) -- full reference for `kanon search`,
   `kanon add`, and `kanon remove`, including all flags and error scenarios

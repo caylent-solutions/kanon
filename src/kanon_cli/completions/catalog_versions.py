@@ -9,7 +9,7 @@ Public API::
 
 Resolution chain:
 1. If KANON_COMPLETION_ENABLED=0, return [] immediately.
-2. Resolve KANON_CATALOG_SOURCE env var to get the manifest repo URL and ref.
+2. Resolve the single KANON_CATALOG_SOURCES entry to get the manifest repo URL and ref.
 3. Check the catalog versions cache (catalogs/<sha>/tags.txt):
    - Cache hit (fetched_at within TTL): return cached entries filtered by prefix.
    - Cache stale (fetched_at past TTL) + KANON_COMPLETION_REFRESH_BG=1:
@@ -49,13 +49,13 @@ from kanon_cli.completions.cache import (
 )
 from kanon_cli.completions.pep440_filter import filter_pep440_tags
 from kanon_cli.constants import (
-    CATALOG_ENV_VAR,
+    CATALOG_SOURCES_ENV_VAR,
     KANON_COMPLETION_CACHE_TTL,
     KANON_COMPLETION_ENABLED,
     KANON_COMPLETION_REFRESH_BG,
     KANON_COMPLETION_TIMEOUT,
 )
-from kanon_cli.core.catalog import _parse_catalog_source
+from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
 
 _COMPLETER_NAME = "__complete_catalog_versions"
 _TAGS_FILENAME = "tags.txt"
@@ -77,11 +77,6 @@ def _write_stderr_diagnostic(exc: BaseException) -> None:
     """
     if sys.stderr.isatty():
         sys.stderr.write(f"{_COMPLETER_NAME}: {type(exc).__name__}: {exc}\n")
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _run_ls_remote(url: str, timeout: int) -> str:
@@ -139,12 +134,12 @@ def _parse_ls_remote_output(output: str) -> tuple[list[str], list[str]]:
             continue
         _sha, ref = line.split("\t", 1)
         ref = ref.strip()
-        # Skip annotated-tag deref lines
+
         if ref.endswith("^{}"):
             continue
         if ref.startswith("refs/tags/"):
             suffix = ref[len("refs/tags/") :]
-            # Last path component only (handles refs/tags/release/v3 -> "v3")
+
             last_component = suffix.rsplit("/", 1)[-1]
             tags.append(last_component)
         elif ref.startswith("refs/heads/"):
@@ -173,8 +168,6 @@ def _sort_versions_and_branches(
     """
     seen: set[str] = set()
 
-    # Sort tags by PEP 440 Version ordering.
-    # valid_tags are guaranteed PEP 440-parseable (filter_pep440_tags was applied).
     sorted_tags: list[str] = []
     for tag in sorted(valid_tags, key=Version):
         if tag not in seen:
@@ -257,7 +250,7 @@ def _spawn_background_refresh(url: str, catalog_source: str) -> None:
 
     Args:
         url: Git repository URL (unused; passed to identify the target for logging).
-        catalog_source: Full ``<url>@<ref>`` value for KANON_CATALOG_SOURCE.
+        catalog_source: Full ``<url>@<ref>`` value for KANON_CATALOG_SOURCES.
     """
     subprocess.Popen(
         [
@@ -269,7 +262,7 @@ def _spawn_background_refresh(url: str, catalog_source: str) -> None:
         ],
         env={
             **os.environ,
-            CATALOG_ENV_VAR: catalog_source,
+            CATALOG_SOURCES_ENV_VAR: catalog_source,
             "KANON_COMPLETION_REFRESH_BG": "0",
         },
         start_new_session=True,
@@ -278,17 +271,12 @@ def _spawn_background_refresh(url: str, catalog_source: str) -> None:
     )
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def complete(current_token: str) -> list[str]:
     """Return catalog versions that start with *current_token*.
 
     Resolution contract:
     1. KANON_COMPLETION_ENABLED=0 -> return [].
-    2. Read KANON_CATALOG_SOURCE from environment.
+    2. Read the single KANON_CATALOG_SOURCES entry from the environment.
     3. Cache-hit within TTL -> return cached entries filtered by prefix.
     4. Cache-stale + KANON_COMPLETION_REFRESH_BG=1 -> return stale + fork bg.
     5. Cache-miss or stale + KANON_COMPLETION_REFRESH_BG=0 -> inline fetch.
@@ -300,27 +288,25 @@ def complete(current_token: str) -> list[str]:
     Returns:
         Sorted list of matching version strings, or [] on any error.
     """
-    # Step 1: completion disabled guard
+
     enabled = int(os.environ.get("KANON_COMPLETION_ENABLED", KANON_COMPLETION_ENABLED))
     if enabled == 0:
         return []
 
-    # Step 2: resolve catalog source
-    source = os.environ.get(CATALOG_ENV_VAR)
-    if not source:
-        missing_exc = ValueError(f"{CATALOG_ENV_VAR} is not set")
-        log_completion_error(_COMPLETER_NAME, missing_exc)
-        _write_stderr_diagnostic(missing_exc)
-        return []
-
     try:
-        url, ref = _parse_catalog_source(source)
+        source = resolve_env_catalog_source()
     except ValueError as exc:
         log_completion_error(_COMPLETER_NAME, exc)
         _write_stderr_diagnostic(exc)
         return []
+    if not source:
+        missing_exc = ValueError(f"{CATALOG_SOURCES_ENV_VAR} is not set")
+        log_completion_error(_COMPLETER_NAME, missing_exc)
+        _write_stderr_diagnostic(missing_exc)
+        return []
 
-    # Step 3: check cache
+    url, ref = _parse_catalog_source(source)
+
     entry_dir = catalog_entry_dir(url, ref)
     tags_path = entry_dir / _TAGS_FILENAME
     fetched_path = entry_dir / "fetched_at.txt"
@@ -335,26 +321,17 @@ def complete(current_token: str) -> list[str]:
     if fetched_at is not None:
         age = now - fetched_at
         if age <= ttl:
-            # Cache hit
             versions = read_entries(tags_path)
         else:
-            # Cache stale
             versions = read_entries(tags_path)
             if refresh_bg == 1:
                 _spawn_background_refresh(url, source)
             else:
                 versions = _inline_fetch(url, entry_dir, timeout)
     else:
-        # Cache miss -- inline fetch
         versions = _inline_fetch(url, entry_dir, timeout)
 
-    # Filter by prefix (case-sensitive)
     return [v for v in versions if v.startswith(current_token)]
-
-
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
 
 
 def register(

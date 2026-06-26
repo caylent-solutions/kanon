@@ -1,26 +1,30 @@
 # kanon validate
 
-Validate manifest XML files and catalog metadata without network access.
+Validate manifest XML files, catalog metadata, and lockfile consistency
+without network access.
 
 ## Synopsis
 
-```
+```bash
 kanon [--no-color] validate <target>
 ```
 
 ### Targets
 
-```
-kanon validate xml        [--repo-root <path>]
+```bash
+kanon validate xml         [--repo-root <path>]
 kanon validate marketplace [--repo-root <path>]
-kanon validate metadata   [--repo-root <path>] [--format {text,json}]
+kanon validate metadata    [--repo-root <path>] [--format {text,json}]
+kanon validate lockfile    [<kanonenv_path>] [--lock-file <path>]
 ```
 
 ## Description
 
 `kanon validate` groups local validation commands that operate entirely without
-network access. Each sub-subcommand targets a different aspect of the manifest
-repository.
+network access. The `xml`, `marketplace`, and `metadata` targets validate a
+manifest repository (catalog-author side); the `lockfile` target validates a
+consumer project's `.kanon` / `.kanon.lock` pair. Each sub-subcommand targets a
+different aspect.
 
 ## Sub-subcommands
 
@@ -71,9 +75,14 @@ manifest correctness.
 - Include chains are intact (all `<include name="...">` files exist).
 - Project path values (`<project path="...">`) are unique across all marketplace
   files.
-- Revision attributes (`<project revision="...">`) use the allowed formats:
-  `refs/tags/...`, PEP 440 version constraints (`~=`, `>=`, `<=`, `!=`, `==`),
-  wildcard (`*`), or a plain branch name.
+- Revision attributes (`<project revision="...">`) use one of the allowed
+  pinnable formats: an exact deep-path tag `refs/tags/<path>/<pep440>`, a
+  branch ref `refs/heads/<name>`, or a 40-hex commit SHA. The wildcard `*`,
+  a bare branch name (e.g. `main` without the `refs/heads/` prefix), and
+  version-range constraints (`>=X,<Y`, `~=`) are rejected. On install a tag
+  or branch revision resolves to a content SHA pinned in `.kanon.lock`
+  (`[[sources.content_pins]]`), so a branch revision does not pin a moving
+  target.
 
 **Exit codes:**
 
@@ -136,7 +145,7 @@ No git operations are performed. No `git ls-remote` calls. No cloning.
 
 `text` (default): one finding per line with `ERROR:`, `WARN:`, or `INFO:` prefix:
 
-```
+```text
 ERROR: [M001] /path/repo-specs/tool-marketplace.xml: required <catalog-metadata> field <name> is missing or contains only whitespace.
 WARN: [S001] /path/repo-specs/tool-marketplace.xml: entry name 'Foo-Bar' normalises to 'foo_bar' via derive_source_name.
 ERROR: [U001] Entry name 'my-tool' is declared in 2 files: /path/a.xml, /path/b.xml.
@@ -196,6 +205,61 @@ kanon validate metadata --repo-root . && echo "No errors -- safe to push"
 
 ---
 
+### `kanon validate lockfile`
+
+Check that a consumer project's `.kanon` declarations agree with its
+`.kanon.lock` entries, without network access. This is the same consistency
+check `kanon install` runs implicitly before it resolves (spec Section 4.5 /
+FR-24), exposed as a standalone command for CI and pre-commit use. The same
+drift this command flags now also makes the default `kanon install` fail
+fast (exit 1) before resolving, without mutating the lock; reconcile it with
+`kanon install --reconcile` or rebuild with `kanon install --refresh-lock`.
+
+**Checks:**
+
+- **Alias uniqueness:** every source alias declared in `.kanon` (the
+  `<alias>` in `KANON_SOURCE_<alias>_*`) is unique.
+- **Alias-set parity:** the set of aliases in `.kanon.lock` equals the set of
+  aliases declared in `.kanon`. An alias present in only one file is reported
+  (added in `.kanon` but missing from the lock, or orphaned in the lock but
+  removed from `.kanon`).
+- **Ref-spec parity:** each `.kanon.lock` entry's `ref_spec` matches the
+  revision declared for that alias in `.kanon`.
+
+No git operations are performed. No `git ls-remote` calls. No cloning.
+
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| `0` | `.kanon` and `.kanon.lock` are consistent. |
+| Non-zero | A drift was found (duplicate alias, alias-set mismatch, or ref-spec mismatch); an actionable message names the offending alias(es) and the remediation (`kanon install --reconcile`, or `kanon install --refresh-lock` to rebuild). |
+
+**Arguments and options:**
+
+| Argument / Option | Description |
+|-------------------|-------------|
+| `<kanonenv_path>` (positional) | Path to the `.kanon` file. Default: auto-discover from the current directory. |
+| `--lock-file <path>` | Path to the lock file. Default: `<kanon-file>.lock` derived from the `.kanon` path. The `KANON_LOCK_FILE` environment variable is consulted when this flag is absent; the CLI flag takes precedence when both are set. |
+
+**Example:**
+
+```bash
+# Validate the auto-discovered .kanon / .kanon.lock pair
+kanon validate lockfile
+
+# Explicit .kanon path
+kanon validate lockfile .kanon
+
+# Explicit lock-file path
+kanon validate lockfile --lock-file /path/to/.kanon.lock
+```
+
+See [docs/lockfile.md](../lockfile.md) for the lockfile format and the
+consistency rules this command enforces.
+
+---
+
 ## Relationship to `kanon catalog audit`
 
 `kanon validate` and `kanon catalog audit` share the same underlying check
@@ -221,4 +285,4 @@ against remote or cached manifest repos.
 
 - `kanon catalog audit` -- full soft-spot audit including remote checks
 - `kanon doctor` -- workspace health checks
-- `kanon list` -- browse catalog entries
+- `kanon search` -- browse catalog entries

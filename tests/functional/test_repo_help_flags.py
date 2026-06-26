@@ -41,71 +41,50 @@ from tests.functional.conftest import (
     _run_kanon,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded domain literals extracted here;
-# no literals in test logic, f-string diagnostics, or parametrize tuples.
-# ---------------------------------------------------------------------------
 
-# Subcommand token for 'help'.
 _SUBCMD_HELP = "help"
 
-# Composed CLI command phrase used in diagnostic messages.
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_SUBCMD_HELP}"
 
-# Expected exit code for all successful invocations.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Argument-parsing error exit code (optparse exits 2).
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Nonexistent repo-dir name. 'help' does not consult .repo state, so all
-# valid-flag tests can use this directory without any setup overhead.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-help-flags-repo-dir"
 
-# Inline-value suffix for negative tests on boolean (store_true) flags.
-# optparse exits 2 with '--<flag> option does not take a value' when a
-# store_true flag is supplied with an inline ``=value`` suffix.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Phrase emitted on stderr when a store_true flag receives an inline value.
+
 _DOES_NOT_TAKE_VALUE_PHRASE = "does not take a value"
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# ---------------------------------------------------------------------------
-# CLI flag token constants for Help._Options() flags.
-# ---------------------------------------------------------------------------
 
 _CLI_FLAG_ALL_SHORT = "-a"
 _CLI_FLAG_ALL_LONG = "--all"
 _CLI_FLAG_HELP_ALL = "--help-all"
 
-# ---------------------------------------------------------------------------
-# Expected output phrases for each flag variant.
-# These phrases confirm that the correct branch of Help.Execute() ran.
-# ---------------------------------------------------------------------------
 
-# Phrase emitted when -a/--all is supplied (full command listing).
 _ALL_COMMANDS_PHRASE = "The complete list of recognized repo commands is:"
 
-# Phrase emitted when --help-all is supplied (per-command help blocks).
+
 _HELP_ALL_PHRASE = "[abandon] Summary"
 
-# Phrase emitted when no flags are supplied (common commands listing).
+
 _COMMON_COMMANDS_PHRASE = "The most commonly used repo commands are:"
 
-# Subcommand name used to verify the full listing (COMMON=False in forall.py).
+
 _FORALL_SUBCMD_NAME = "forall"
 
-# ---------------------------------------------------------------------------
-# Parametrize data tables for AC-TEST-001 valid-value tests.
-# Each entry: (flag_token, expected_phrase, test_id).
-# 'help' exits 0 for all valid-flag invocations (no .repo state required).
-# ---------------------------------------------------------------------------
 
 _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str, str]] = [
     (_CLI_FLAG_ALL_SHORT, _ALL_COMMANDS_PHRASE, "short-all"),
@@ -113,17 +92,11 @@ _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str, str]] = [
     (_CLI_FLAG_HELP_ALL, _HELP_ALL_PHRASE, "long-help-all"),
 ]
 
-# Long-form boolean flags used in AC-TEST-002 negative tests.
-# Only long-form flags support '--flag=value' inline syntax in optparse.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_ALL_LONG, "all"),
     (_CLI_FLAG_HELP_ALL, "help-all"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# Helper: build the canonical help argv prefix.
-# ---------------------------------------------------------------------------
 
 
 def _build_help_argv(repo_dir: pathlib.Path, *extra: str) -> tuple[str, ...]:
@@ -140,11 +113,6 @@ def _build_help_argv(repo_dir: pathlib.Path, *extra: str) -> tuple[str, ...]:
         A tuple of string arguments suitable for passing to ``_run_kanon``.
     """
     return (_CLI_TOKEN_REPO, _CLI_FLAG_REPO_DIR, str(repo_dir), _SUBCMD_HELP) + extra
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/help.py
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -190,11 +158,6 @@ class TestRepoHelpFlagsValidValues:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with invalid values (boolean flags)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -266,11 +229,6 @@ class TestRepoHelpFlagsInvalidValues:
         assert _CLI_FLAG_HELP_ALL in result.stderr, (
             f"Expected {_CLI_FLAG_HELP_ALL!r} in stderr for '{bad_token}'.\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -371,11 +329,6 @@ class TestRepoHelpFlagsAbsenceDefaults:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoHelpFlagsDocumentedBehavior:
     """AC-FUNC-001: Every documented flag behaves per its help text.
@@ -410,11 +363,6 @@ class TestRepoHelpFlagsDocumentedBehavior:
             f"Expected {_FORALL_SUBCMD_NAME!r} in stdout for '{_CLI_COMMAND_PHRASE} {_CLI_FLAG_ALL_LONG}'.\n"
             f"  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

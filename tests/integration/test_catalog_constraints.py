@@ -18,11 +18,6 @@ from kanon_cli.core.catalog import (
 )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-008: Catalog constraints integration tests (10 tests)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestParseCatalogSource:
     """Verify catalog source string parsing into URL and ref."""
@@ -61,12 +56,12 @@ class TestResolveCatalogDir:
 
     def test_raises_missing_catalog_source_error_when_no_source(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """AC-FUNC-002: no flag, no env var raises MissingCatalogSourceError (no bundled fallback)."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         with pytest.raises(MissingCatalogSourceError):
             resolve_catalog_dir(None)
 
     def test_flag_overrides_env_var(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env-repo.git@env-branch")
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://env-repo.git@env-branch")
         flag_catalog = tmp_path / "repo" / "catalog"
         flag_catalog.mkdir(parents=True)
         with patch("kanon_cli.core.catalog._clone_remote_catalog") as mock_clone:
@@ -76,7 +71,7 @@ class TestResolveCatalogDir:
         assert result == flag_catalog
 
     def test_env_var_used_when_no_flag(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", "https://env-repo.git@env-branch")
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://env-repo.git@env-branch")
         env_catalog = tmp_path / "repo" / "catalog"
         env_catalog.mkdir(parents=True)
         with patch("kanon_cli.core.catalog._clone_remote_catalog") as mock_clone:

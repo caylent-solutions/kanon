@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the color.py module."""
 
 import os
@@ -446,15 +432,15 @@ class ColoringParseComplexTests(unittest.TestCase):
         self.config.GetString.return_value = ""
         coloring = color.Coloring(self.config, "test")
         result = coloring._parse("opt", "red", "white", "bold")
-        self.assertIn("31", result)  # red fg
-        self.assertIn("47", result)  # white bg
-        self.assertIn("1", result)  # bold
+        self.assertIn("31", result)
+        self.assertIn("47", result)
+        self.assertIn("1", result)
 
     def test_parse_with_multiple_colors_in_config(self):
         """_parse should handle multiple space-separated values."""
         self.config.GetString.return_value = "red blue"
         coloring = color.Coloring(self.config, "test")
         result = coloring._parse("opt", None, None, None)
-        # First color is fg, second is bg
-        self.assertIn("31", result)  # red fg
-        self.assertIn("44", result)  # blue bg
+
+        self.assertIn("31", result)
+        self.assertIn("44", result)

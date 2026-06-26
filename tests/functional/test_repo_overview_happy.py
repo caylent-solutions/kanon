@@ -28,9 +28,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Overview Happy Test User"
 _GIT_USER_EMAIL = "repo-overview-happy@example.com"
@@ -38,30 +35,18 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "overview-test-project"
 
-# Flag name constants -- referenced by assertions, never as bare strings inside logic
+
 _FLAG_CURRENT_BRANCH = "--current-branch"
 _FLAG_NO_CURRENT_BRANCH = "--no-current-branch"
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT_CODE = 0
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
+
 _ERROR_PREFIX = "Error:"
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
-# NOTE: _setup_synced_repo and _git are imported from
-# tests.functional.conftest (canonical definitions).
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo overview with default args exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -207,11 +192,6 @@ class TestRepoOverviewHappyPathDefaultArgs:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo overview has a happy-path test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoOverviewPositionalArgHappyPath:
     """AC-TEST-002: happy-path test for the project name positional argument.
@@ -354,11 +334,6 @@ class TestRepoOverviewPositionalArgHappyPath:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

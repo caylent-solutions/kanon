@@ -25,23 +25,17 @@ from kanon_cli.completions.cache import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture()
 def real_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Point KANON_CACHE_DIR at a real tmp dir and return it."""
-    monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path))
-    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    """Point KANON_HOME at a real tmp dir and return the resolved cache dir.
+
+    Under the shared KANON_HOME store model the cache lives at
+    ``<KANON_HOME>/cache`` (= ``cache_dir()``), so the returned path is the
+    resolved cache directory rather than the home root itself.
+    """
+    monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.delenv("KANON_COMPLETION_LOG", raising=False)
-    return tmp_path
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: end-to-end cycle
-# ---------------------------------------------------------------------------
+    return tmp_path / "cache"
 
 
 @pytest.mark.integration
@@ -51,14 +45,11 @@ class TestCacheCycleEndToEnd:
         target = catalog_entry_dir("https://x.git", "main") / "index.txt"
         write_entries(target, ["foo", "bar"])
 
-        # File content
         content = target.read_text()
         assert content == "foo\nbar\n"
 
-        # File mode 0600
         assert os.stat(target).st_mode & 0o777 == 0o600
 
-        # Parent dir mode 0700
         assert os.stat(target.parent).st_mode & 0o777 == 0o700
 
     def test_log_completion_error_format_and_mode(self, real_cache: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -78,13 +69,7 @@ class TestCacheCycleEndToEnd:
         )
         assert pattern.match(line), f"Bad line format: {line!r}"
 
-        # File mode 0600
         assert os.stat(log_path).st_mode & 0o777 == 0o600
-
-
-# ---------------------------------------------------------------------------
-# On-disk mode checks via os.stat
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -118,11 +103,6 @@ class TestOnDiskModes:
         d = catalog_entry_dir("https://origin.git", "main")
         write_entries(d / "origin.txt", ["https://origin.git@main"])
         assert os.stat(d / "origin.txt").st_mode & 0o777 == 0o600
-
-
-# ---------------------------------------------------------------------------
-# Read-write round-trips on real filesystem
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

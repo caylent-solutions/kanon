@@ -33,74 +33,55 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- ALL domain literals live here.
-# Zero inline literals in test bodies, f-string diagnostics, or parametrize
-# tuples.
-# ---------------------------------------------------------------------------
 
-# CLI tokens
 _CMD_REPO = "repo"
 _FLAG_REPO_DIR = "--repo-dir"
 _SUBCMD_DIFFMANIFESTS = "diffmanifests"
 _FLAG_HELP = "--help"
 
-# Nonexistent repo-dir name used in argument-parser and precondition tests.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-diffmanifests-errors-repo-dir"
 
-# Manifest filename used in precondition failure tests.
-# The file will not exist because the repo-dir is nonexistent.
+
 _MANIFEST_FILENAME = "default.xml"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-diffmanifests-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-diffmanifests-option-99"
 
-# Phrase produced by optparse when an unknown option is supplied (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
-# The embedded repo tool writes 'repo diffmanifests' in the Usage line.
+
 _HELP_USAGE_PHRASE = "repo diffmanifests"
 
-# A flag name that must appear in --help output, confirming it is
-# subcommand-specific (--raw is registered in Diffmanifests._Options()).
+
 _HELP_EXPECTED_FLAG_PHRASE = "--raw"
 
-# Phrase emitted by ValidateOptions when no positional manifest is supplied
-# (AC-TEST-003). The repo tool exits 2 with this message on stderr.
+
 _MISSING_POSITIONAL_PHRASE = "missing manifests to diff"
 
-# Phrase emitted by the embedded repo tool when the .repo directory is
-# absent but a positional manifest filename IS supplied (AC-TEST-004).
-# The tool emits 'manifest <name> not found' to stderr and exits 1.
+
 _MISSING_MANIFEST_PHRASE = "not found"
 
-# The manifest filename fragment that must appear in the precondition-failure
-# error message (AC-TEST-004).
+
 _MANIFEST_NAME_FRAGMENT = _MANIFEST_FILENAME
 
-# Expected exit codes
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
 
-# Sentinel for empty output.
+
 _EMPTY_OUTPUT = ""
 
-# Parametrize data for AC-TEST-002: unknown flags that must each exit 2
-# and name themselves in stderr. Each tuple is (flag_token, test_id).
+
 _UNKNOWN_FLAGS: list[tuple[str, str]] = [
     (_UNKNOWN_FLAG_PRIMARY, "primary"),
     (_UNKNOWN_FLAG_ALT_A, "alt-a"),
     (_UNKNOWN_FLAG_ALT_B, "alt-b"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo diffmanifests --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -235,11 +216,6 @@ class TestRepoDiffmanifestsHelp:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoDiffmanifestsUnknownFlag:
     """AC-TEST-002: Unknown flag to 'repo diffmanifests' exits 2 with the flag name in stderr.
@@ -358,11 +334,6 @@ class TestRepoDiffmanifestsUnknownFlag:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Missing required positional produces exit 2
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoDiffmanifestsMissingPositional:
     """AC-TEST-003: Missing required positional argument to 'repo diffmanifests' exits 2.
@@ -462,11 +433,6 @@ class TestRepoDiffmanifestsMissingPositional:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -595,11 +561,6 @@ class TestRepoDiffmanifestsPreconditionFailure:
             f"  first:  {result_a.stderr!r}\n"
             f"  second: {result_b.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Determinism and channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

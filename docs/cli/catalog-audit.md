@@ -4,7 +4,7 @@ Audit a manifest repo for catalog soft-spot violations.
 
 ## Synopsis
 
-```
+```bash
 kanon [--no-color] catalog audit [<dir-or-source>] [--check <subset>]
                                   [--format {text,json}] [--strict]
 ```
@@ -57,14 +57,15 @@ regardless of the `--check` value. It cannot be selected or deselected:
 
 | Check | Description |
 |-------|-------------|
-| Legacy `catalog/` directory | Detects the presence of a `catalog/<name>/` directory tree in the audit target (spec Section 4.8). This tree was created by the removed `kanon bootstrap` command and is unused by kanon >= 1.0.0. |
+| Legacy `catalog/` directory | Detects the presence of a `catalog/<name>/` directory tree in the audit target (spec Section 4.8). This tree was created by the `kanon bootstrap` command (removed in 3.0.0) and is unused by the current kanon. |
 
 **Finding code:** `L001` (WARN).
 
 **Finding message:**
-```
+
+```text
 WARN: [L001] Legacy catalog/ directory detected; this directory is unused by
-kanon >= <version> and should be deleted; see docs/migration-bootstrap-to-add.md
+kanon >= <version> and should be deleted; see docs/migration-to-add.md
 ```
 
 where `<version>` is the running kanon CLI version.
@@ -73,7 +74,7 @@ where `<version>` is the running kanon CLI version.
 its own in default mode (exit 0). Under `--strict`, the WARN is treated as an
 error and the exit code becomes 1 (spec Section 15).
 
-See [docs/migration-bootstrap-to-add.md](../migration-bootstrap-to-add.md) for
+See [docs/migration-to-add.md](../migration-to-add.md) for
 migration instructions.
 
 ## Output formats
@@ -82,7 +83,7 @@ migration instructions.
 
 One finding per line, prefixed with `ERROR:`, `WARN:`, or `INFO:`:
 
-```
+```text
 ERROR: [M001] /path/repo-specs/tool-marketplace.xml: required <catalog-metadata> field <description> is missing or contains only whitespace. Add a non-empty <description> element to the <catalog-metadata> block.
 WARN: [M002] /path/repo-specs/tool-marketplace.xml: recommended <catalog-metadata> field <owner-email> is absent. Consider adding <owner-email> to improve catalog discoverability.
 ```
@@ -125,7 +126,7 @@ changes.
 When `--strict` is active AND at least one WARN finding exists, a one-line
 summary is printed to **stderr** after all findings:
 
-```
+```text
 strict mode: <count> warning(s) treated as errors
 ```
 
@@ -133,6 +134,7 @@ where `<count>` is the number of WARN-level findings. This line is always
 printed to stderr so it does not interfere with `--format json` stdout output.
 
 The summary does NOT appear when:
+
 - `--strict` is not passed.
 - `--strict` is passed but zero WARN findings were produced.
 
@@ -151,11 +153,7 @@ kanon catalog audit --check source-name-derivation --strict /path/to/manifest-re
 ## Cache layout
 
 When `<dir-or-source>` is a remote `<git_url>@<ref>` source, the repository is
-cloned into:
-
-```
-${KANON_CACHE_DIR}/catalog-audit/<sha256(canonicalized_url@ref)>/
-```
+cloned into `${KANON_HOME}/cache/catalog-audit/<sha256(canonicalized_url@ref)>/`.
 
 The SHA-256 key is computed over the canonicalized URL and ref, ensuring SSH and
 HTTPS variants of the same repository map to the same cache entry.
@@ -171,8 +169,10 @@ export KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS=7200
 The cache root directory is created with mode `0700` (owner-only access) per
 spec Section 3.6 (trust model / credential isolation).
 
-`KANON_CACHE_DIR` must be set to use a remote audit target. If unset, `kanon
-catalog audit` exits with an error when a remote source is supplied.
+The cache lives under the shared `KANON_HOME` store root. `KANON_HOME`
+resolves from the `--home` / `--store-dir` flag, then the `KANON_HOME`
+environment variable, then the `~/.kanon` default, so a remote audit target
+works without setting `KANON_HOME` explicitly.
 
 ## Source-name-derivation check (`--check source-name-derivation`)
 
@@ -238,7 +238,7 @@ code becomes 1.
 
 ### Example output
 
-```
+```text
 WARN: [S001] /path/repo-specs/tool-marketplace.xml: entry name 'Foo-Bar' normalises to 'foo_bar' via derive_source_name. Consider renaming the entry to match the derived form to avoid surprises in shell variable names and .kanon files. -- Rename <name>Foo-Bar</name> to <name>foo_bar</name> in the <catalog-metadata> block.
 WARN: [S002] /path/repo-specs/tool-marketplace.xml: entry name 'foo.bar' contains characters outside the recommended set [a-zA-Z0-9_-]. Characters outside this set may not survive shell quoting cleanly and can cause unexpected behaviour in shell variable names. -- Rename <name>foo.bar</name> to use only [a-zA-Z0-9_-] characters in the <catalog-metadata> block.
 ```
@@ -282,7 +282,7 @@ collision exists; exits **0** when all names are unique (or no XML files exist).
 
 ### Example output
 
-```
+```text
 ERROR: [U001] Entry name 'my-tool' is declared in 2 files: /path/repo-specs/tool-a-marketplace.xml, /path/repo-specs/tool-b-marketplace.xml. Entry names must be unique across every repo-specs/**/*-marketplace.xml file. -- Rename <name>my-tool</name> to a unique value in all but one of the listed files, or remove the duplicate catalog entries.
 ```
 
@@ -353,7 +353,7 @@ finding is produced; exits **0** when no findings are produced.
 
 ### Example output
 
-```
+```text
 ERROR: [R001] /path/repo-specs/tool-marketplace.xml: <project name='my-project'> references remote='missing' but no <remote name='missing'> is defined anywhere in the reachable include chain. -- Add a <remote name="missing" fetch="<url>"/> element to the manifest or a file reachable via its <include> chain, or run 'kanon validate marketplace' to identify structural issues.
 ERROR: [R002] /path/repo-specs/tool-marketplace.xml: <remote name='local'> has fetch URL 'file:///tmp/test-repos' which uses a non-HTTPS remote URL. Only HTTPS and SSH remote URLs are trusted by default (spec Section 3.6 HTTPS-by-default policy). -- Change the fetch URL to use https:// or ssh:// (or git@ shorthand), or set KANON_ALLOW_INSECURE_REMOTES=1 to allow insecure remotes (intended for tests and local fixtures only).
 ERROR: [R003] /path/repo-specs/tool-marketplace.xml: <remote name='cdn'> has fetch URL 'https://example.com/mirrors?token=abc' which contains a query string or fragment. URL canonicalization is undefined for such URLs. -- Remove the query string or fragment from the fetch URL in <remote name='cdn' fetch="..."/>.
@@ -436,14 +436,13 @@ operators encounter resolver failures:
 # Inventory non-PEP-440 tags in a local manifest repo
 kanon catalog audit --check tag-format /path/to/manifest-repo
 
-# Inventory a remote manifest repo
-export KANON_CACHE_DIR=~/.kanon-cache
+# Inventory a remote manifest repo (uses the shared KANON_HOME store; ~/.kanon by default)
 kanon catalog audit --check tag-format https://github.com/org/manifest-repo.git@main
 ```
 
 ### Example output
 
-```
+```text
 WARN: [T001] Tag 'v1.0.0' is unaddressable: the last path component 'v1.0.0' is not a valid PEP 440 version. kanon's resolver ignores tags whose last component does not parse as a PEP 440 version. -- Rename the tag so its last path component is a valid PEP 440 version (e.g. '1.0.0', '1.0.0a1'). See https://peps.python.org/pep-0440/ for PEP 440 version syntax.
 WARN: [T001] Tag 'release-2024' is unaddressable: the last path component 'release-2024' is not a valid PEP 440 version. kanon's resolver ignores tags whose last component does not parse as a PEP 440 version. -- Rename the tag so its last path component is a valid PEP 440 version (e.g. '1.0.0', '1.0.0a1'). See https://peps.python.org/pep-0440/ for PEP 440 version syntax.
 ```
@@ -482,7 +481,7 @@ A missing or whitespace-only value produces one **ERROR** finding per field:
 | Field | Description |
 |-------|-------------|
 | `name` | Machine-readable package identifier. |
-| `display-name` | Human-readable label shown in `kanon list` output. |
+| `display-name` | Human-readable label shown in `kanon search` output. |
 | `description` | Short prose description of the package. |
 | `version` | Author-claimed version string (informational; not validated against semver/PEP-440). |
 
@@ -515,7 +514,7 @@ Under `--strict`, WARN findings are treated as errors and the exit code becomes 
 
 ### Example output
 
-```
+```text
 ERROR: [M001] /path/repo-specs/tool-marketplace.xml: required <catalog-metadata> field <name> is missing or contains only whitespace. Add a non-empty <name> element to the <catalog-metadata> block.
 WARN: [M002] /path/repo-specs/tool-marketplace.xml: recommended <catalog-metadata> field <owner-email> is absent. Consider adding <owner-email> to improve catalog discoverability.
 ERROR: [M006] /path/repo-specs/tool-marketplace.xml: duplicate <name> element inside <catalog-metadata>; each child tag must appear at most once. Remove the extra <name> element.
@@ -549,7 +548,7 @@ JSON equivalent:
 
 Error messages follow the standard kanon shape:
 
-```
+```text
 ERROR: <one-line summary>
 [optional context lines, wrapped at 80 cols]
 [remediation line when applicable]
@@ -577,10 +576,6 @@ ERROR: <one-line summary>
   Cause: the supplied directory is not a manifest repo.
   Fix: point `kanon catalog audit` at the root of a manifest repo.
 
-- `ERROR: KANON_CACHE_DIR must be set to use a remote audit target. Set the environment variable to a writable directory path.`
-  Cause: a remote source was supplied but `KANON_CACHE_DIR` is not set.
-  Fix: `export KANON_CACHE_DIR=/path/to/cache` and re-run.
-
 - `ERROR: Failed to clone audit target <url>@<ref>:`
   Cause: git clone returned a non-zero exit code when attempting to clone the remote audit target.
   Fix: verify the URL is accessible, the ref exists in the remote repository, network connectivity is available, and git authentication is configured (SSH keys or credential helper).
@@ -606,8 +601,7 @@ kanon catalog audit
 # Audit an explicit local path
 kanon catalog audit /path/to/manifest-repo
 
-# Audit a remote repo (requires KANON_CACHE_DIR)
-export KANON_CACHE_DIR=~/.kanon-cache
+# Audit a remote repo (cached under the shared KANON_HOME store; ~/.kanon by default)
 kanon catalog audit https://github.com/org/manifest-repo.git@main
 
 # Run only metadata and tag-format checks
@@ -630,11 +624,11 @@ kanon catalog audit https://github.com/org/repo.git@v1.0.0 \
 |----------|---------|-------------|
 | `KANON_CATALOG_AUDIT_FORMAT` | `text` | Default output format. CLI `--format` takes precedence. |
 | `KANON_CATALOG_AUDIT_CACHE_TTL_SECONDS` | `3600` | Cache TTL in seconds for remote clones. Must be a positive integer. |
-| `KANON_CACHE_DIR` | (unset) | Root cache directory. Required for remote audit targets. |
+| `KANON_HOME` | `~/.kanon` | Shared kanon home (store + caches); the audit cache lives under `${KANON_HOME}/cache`. Overridden by the `--home` / `--store-dir` flag. |
 | `KANON_ALLOW_INSECURE_REMOTES` | (unset) | When set to `1`, suppresses R002 findings for non-HTTPS/SSH remote URLs. Any value other than `1` is treated as unset. Intended for local test fixtures only; do not set in production CI pipelines. R001 and R003 findings are never suppressed by this variable. |
 
 ## Related commands
 
 - `kanon doctor` -- workspace health checks
-- `kanon list` -- browse catalog entries
+- `kanon search` -- browse catalog entries
 - `kanon add` -- add catalog entries to a `.kanon` file

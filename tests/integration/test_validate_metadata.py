@@ -21,7 +21,7 @@ import textwrap
 
 import pytest
 
-# Path to the test fixtures
+
 _FIXTURES_DIR = pathlib.Path(__file__).parent.parent / "fixtures" / "catalog"
 _SOFT_SPOT_1 = _FIXTURES_DIR / "broken-soft-spot-1"
 _SOFT_SPOT_2 = _FIXTURES_DIR / "broken-soft-spot-2"
@@ -120,7 +120,7 @@ class TestValidateMetadataCleanRepo:
         valid_repo = _make_valid_repo(tmp_path)
         result = _run_kanon(["validate", "metadata", "--repo-root", str(valid_repo)])
         assert result.returncode == 0
-        # Clean repo should produce no findings output
+
         assert "ERROR" not in result.stdout and "ERROR" not in result.stderr
 
 
@@ -201,7 +201,7 @@ class TestValidateMetadataBrokenSoftSpot3:
         """U001 finding must name at least one colliding XML file."""
         result = _run_kanon(["validate", "metadata", "--repo-root", str(_SOFT_SPOT_3)])
         combined = result.stdout + result.stderr
-        # At least one file from the fixture should appear in the output
+
         has_fixture_path = any(
             name in combined
             for name in [
@@ -267,20 +267,17 @@ class TestValidateMetadataNoGitLsRemote:
         valid_repo = _make_valid_repo(tmp_path / "repo")
         bin_dir = _make_fake_git_binary(tmp_path)
 
-        # Put the fake git first in PATH
         env_path = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
         result = _run_kanon(
             ["validate", "metadata", "--repo-root", str(valid_repo)],
             extra_env={"PATH": env_path},
         )
-        # The command must succeed (exit 0 for clean repo)
-        # If ls-remote were called, the fake git exits 127 and that would
-        # propagate as an error causing exit != 0
+
         assert result.returncode == 0, (
             f"validate metadata must not call git ls-remote (fake git blocks it).\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
-        # Confirm the fake git's ls-remote error message is NOT in output
+
         assert "FAKE GIT: ls-remote is forbidden" not in result.stdout
         assert "FAKE GIT: ls-remote is forbidden" not in result.stderr
 
@@ -298,7 +295,7 @@ class TestValidateMetadataSubcommandRegistration:
     def test_validate_help_lists_metadata(self) -> None:
         """kanon validate --help should mention all three sub-subcommands."""
         result = _run_kanon(["validate", "--help"])
-        # The validate command shows its sub-subcommands
+
         combined = result.stdout + result.stderr
         assert "metadata" in combined or result.returncode in (0, 2), (
             f"Expected 'metadata' in validate --help output. combined={combined!r}"

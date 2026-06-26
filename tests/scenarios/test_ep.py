@@ -35,5 +35,6 @@ class TestEP:
             check=False,
         )
         assert result.returncode == 0, f"stderr={result.stderr!r}"
-        for token in ("install", "clean", "validate", "bootstrap"):
+
+        for token in ("install", "clean", "validate", "search"):
             assert token in result.stdout, f"missing {token!r} in stdout"

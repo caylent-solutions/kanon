@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F6-S3-T2: Bugs 16-20 low severity fixes.
 
 Bug reference: E0-F6-S3-T2 -- Five low-severity bugs fixed:
@@ -53,10 +39,6 @@ from kanon_cli.repo.subcmds import envsubst as envsubst_module
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 _MANIFEST_WITH_NESTED_VAR = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
@@ -84,11 +66,6 @@ def _make_envsubst_cmd():
 def _make_link_file(worktree, src_rel, topdir, dest_rel):
     """Return a _LinkFile instance for the given paths."""
     return project_module._LinkFile(str(worktree), src_rel, str(topdir), dest_rel)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-TEST-002 -- Bug 16: nested variable warning
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -192,11 +169,6 @@ def test_regression_bug16_nested_var_pattern_in_source():
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 / AC-TEST-003 -- Bug 18: single-pass envsubst (no double-parse)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_bug18_parsestring_not_in_envsubst_namespace():
     """AC-TEST-002 / Bug 18 regression: parseString must not be in envsubst namespace.
@@ -281,11 +253,6 @@ def test_regression_bug18_save_uses_string_filtering_not_double_parse():
         "approach added in E0-F6-S3-T2 may have been removed or replaced by a "
         "double-parse. Source of save():\n" + source
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Bug 19: non-existent glob source directory raises error
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -387,11 +354,6 @@ def test_regression_bug19_glob_check_before_glob_call_in_source():
         "present in _LinkFile._Link(). The source directory check added in "
         "E0-F6-S3-T2 has been removed from src/kanon_cli/repo/project.py _Link()."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Bug 20: file-as-glob-destination raises exception
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

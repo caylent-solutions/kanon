@@ -48,10 +48,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers -- same pattern as other test_xml_*_crossref.py files
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -116,11 +112,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     repodir = _make_repo_dir(tmp_path)
     manifest_file = _write_manifest(repodir, xml_content)
     return _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Cross-element reference validation for <manifest-server>
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -368,11 +359,6 @@ class TestManifestServerCrossElementReferences:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Duplicate-element rules for <manifest-server> surface clear errors
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestManifestServerDuplicateElementRules:
     """AC-TEST-002: Duplicate-element rules for <manifest-server> surface clear errors.
@@ -570,11 +556,6 @@ class TestManifestServerDuplicateElementRules:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <manifest-server> in an unexpected parent raises or is ignored
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestManifestServerUnexpectedParent:
     """AC-TEST-003: <manifest-server> in an unexpected parent raises or is ignored per spec.
@@ -760,11 +741,6 @@ class TestManifestServerUnexpectedParent:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Parser enforces cross-element and uniqueness rules at parse time
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestManifestServerCrossRefParseTimeEnforcement:
     """AC-FUNC-001: All cross-element and uniqueness rules are enforced at parse time.
@@ -878,11 +854,6 @@ class TestManifestServerCrossRefParseTimeEnforcement:
             f"AC-FUNC-001: expected manifest_server=None when element is absent after Load() "
             f"but got: {manifest.manifest_server!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

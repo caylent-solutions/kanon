@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for subcmds/branches.py coverage."""
 
 from unittest import mock
@@ -116,7 +102,6 @@ class TestBranchInfo:
         """Test BranchInfo.IsSplitCurrent property."""
         info = BranchInfo("feature-branch")
 
-        # Add two branches, one current, one not
         branch1 = mock.MagicMock()
         branch1.current = True
         branch1.published = False
@@ -151,7 +136,6 @@ class TestBranchInfo:
         """Test BranchInfo.IsPublishedEqual property."""
         info = BranchInfo("feature-branch")
 
-        # Add two branches, both published equal
         branch1 = mock.MagicMock()
         branch1.current = False
         branch1.published = "abc123"
@@ -242,9 +226,7 @@ class TestBranchesCommand:
         mock_par_context.return_value.__exit__ = mock.MagicMock()
         mock_get_context.return_value = {}
 
-        # Simulate callback that adds branches
         def mock_callback(pool, output, results):
-            # Simulate processing results
             pass
 
         mock_exec.return_value = None

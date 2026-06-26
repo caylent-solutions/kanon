@@ -31,9 +31,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Rebase Happy Test User"
 _GIT_USER_EMAIL = "repo-rebase-happy@example.com"
@@ -41,28 +38,22 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "rebase-test-project"
 
-# Branch names used in rebase tests -- each test uses a unique name to avoid
-# cross-test interference when the same started repo is reused in parametrize.
+
 _BRANCH_DEFAULT = "feature/default-rebase"
 _BRANCH_WITH_PROJECT_NAME = "feature/rebase-by-name"
 _BRANCH_WITH_PROJECT_PATH = "feature/rebase-by-path"
 
-# Flag name constant
+
 _FLAG_ALL = "--all"
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT_CODE = 0
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
+
 _ERROR_PREFIX = "Error:"
-
-
-# ---------------------------------------------------------------------------
-# Local setup helper -- delegates to conftest._setup_synced_repo
-# ---------------------------------------------------------------------------
 
 
 def _setup_started_repo(
@@ -114,11 +105,6 @@ def _setup_started_repo(
     )
 
     return checkout_dir, repo_dir
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo rebase with default args exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -187,11 +173,6 @@ class TestRepoRebaseHappyPathDefaultArgs:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo rebase has a happy-path test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoRebasePositionalArgHappyPath:
     """AC-TEST-002: happy-path tests for the positional argument of 'repo rebase'.
@@ -238,11 +219,6 @@ class TestRepoRebasePositionalArgHappyPath:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

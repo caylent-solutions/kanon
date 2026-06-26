@@ -18,11 +18,6 @@ import sys
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     env: dict[str, str] | None = None,
@@ -45,30 +40,25 @@ def _run_kanon(
     )
 
 
-# ---------------------------------------------------------------------------
-# Fixture content
-# ---------------------------------------------------------------------------
-
 _HEADER = "GITBASE=https://git.example.com\n"
 
-_KNOWN_A_TRIPLE = (
+_KNOWN_A_BLOCK = (
     "KANON_SOURCE_known_a_URL=https://example.com/known_a.git\n"
-    "KANON_SOURCE_known_a_REVISION=refs/tags/1.0.0\n"
+    "KANON_SOURCE_known_a_REF=refs/tags/1.0.0\n"
     "KANON_SOURCE_known_a_PATH=repo-specs/known_a.xml\n"
+    "KANON_SOURCE_known_a_NAME=known_a\n"
+    "KANON_SOURCE_known_a_GITBASE=https://example.com\n"
 )
 
-_KNOWN_B_TRIPLE = (
+_KNOWN_B_BLOCK = (
     "KANON_SOURCE_known_b_URL=https://example.com/known_b.git\n"
-    "KANON_SOURCE_known_b_REVISION=refs/tags/2.0.0\n"
+    "KANON_SOURCE_known_b_REF=refs/tags/2.0.0\n"
     "KANON_SOURCE_known_b_PATH=repo-specs/known_b.xml\n"
+    "KANON_SOURCE_known_b_NAME=known_b\n"
+    "KANON_SOURCE_known_b_GITBASE=https://example.com\n"
 )
 
-_TWO_KNOWN_CONTENT = _HEADER + _KNOWN_A_TRIPLE + _KNOWN_B_TRIPLE
-
-
-# ---------------------------------------------------------------------------
-# Integration tests
-# ---------------------------------------------------------------------------
+_TWO_KNOWN_CONTENT = _HEADER + _KNOWN_A_BLOCK + _KNOWN_B_BLOCK
 
 
 @pytest.mark.integration

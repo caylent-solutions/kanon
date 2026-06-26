@@ -1,4 +1,13 @@
-"""Full install lifecycle with mocked repo Python API."""
+"""Full install lifecycle with mocked repo Python API.
+
+3.0.0 store model (spec Section 7.1 / FR-15): the install artifacts
+(``.kanon-data/sources/<name>/``, the aggregated ``.packages/`` symlinks, and
+the artifact ``.gitignore``) live under the shared ``KANON_HOME`` store at
+``<KANON_HOME>/store``, not under the project directory. Each test sets
+``KANON_HOME`` to an isolated temp dir and resolves the store base via
+``resolve_workspace_base_dir`` so the assertions point at the real artifact
+location.
+"""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -6,8 +15,8 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.commands.install import _run as _install_run
-from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE, write_manifest_for_sync
+from kanon_cli.core.install import install, resolve_workspace_base_dir
+from tests.conftest import write_manifest_for_sync
 
 
 def _write_kanonenv(path: Path, content: str) -> Path:
@@ -15,15 +24,31 @@ def _write_kanonenv(path: Path, content: str) -> Path:
     return path
 
 
+def _isolated_store(monkeypatch: pytest.MonkeyPatch, kanon_home: Path) -> Path:
+    """Point KANON_HOME at ``kanon_home`` and return the resolved store base.
+
+    The store base is ``<KANON_HOME>/store`` (the single location shared by
+    install and clean), where the ``.kanon-data/`` source workspaces, the
+    aggregated ``.packages/`` symlinks, and the artifact ``.gitignore`` are
+    written.
+    """
+    kanon_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("KANON_HOME", str(kanon_home))
+    return resolve_workspace_base_dir()
+
+
 @pytest.mark.functional
 class TestInstallLifecycle:
-    def test_single_source_creates_dirs_and_symlinks(self, tmp_path: Path) -> None:
+    def test_single_source_creates_dirs_and_symlinks(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        store = _isolated_store(monkeypatch, tmp_path / "home")
         kanonenv = _write_kanonenv(
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_REF=main\n"
                 "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
 
@@ -40,24 +65,29 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
-        assert (tmp_path / ".packages" / "pkg-a").is_symlink()
-        gitignore = (tmp_path / ".gitignore").read_text()
+        assert (store / ".kanon-data" / "sources" / "build").is_dir()
+        assert (store / ".packages" / "pkg-a").is_symlink()
+        gitignore = (store / ".gitignore").read_text()
         assert ".packages/" in gitignore
         assert ".kanon-data/" in gitignore
 
-    def test_two_sources_aggregate_without_collision(self, tmp_path: Path) -> None:
+    def test_two_sources_aggregate_without_collision(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        store = _isolated_store(monkeypatch, tmp_path / "home")
         kanonenv = _write_kanonenv(
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_alpha_URL=https://example.com/alpha.git\n"
-                "KANON_SOURCE_alpha_REVISION=main\n"
+                "KANON_SOURCE_alpha_REF=main\n"
                 "KANON_SOURCE_alpha_PATH=meta.xml\n"
+                "KANON_SOURCE_alpha_NAME=alpha\n"
+                "KANON_SOURCE_alpha_GITBASE=https://example.com\n"
                 "KANON_SOURCE_bravo_URL=https://example.com/bravo.git\n"
-                "KANON_SOURCE_bravo_REVISION=main\n"
+                "KANON_SOURCE_bravo_REF=main\n"
                 "KANON_SOURCE_bravo_PATH=meta.xml\n"
+                "KANON_SOURCE_bravo_NAME=bravo\n"
+                "KANON_SOURCE_bravo_GITBASE=https://example.com\n"
             ),
         )
 
@@ -79,23 +109,27 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(init_calls) == 2
         assert len(sync_calls) == 2
-        assert (tmp_path / ".packages" / "pkg-alpha").is_symlink()
-        assert (tmp_path / ".packages" / "pkg-bravo").is_symlink()
+        assert (store / ".packages" / "pkg-alpha").is_symlink()
+        assert (store / ".packages" / "pkg-bravo").is_symlink()
 
     def test_collision_detection_exits(self, tmp_path: Path, make_install_args) -> None:
         kanonenv = _write_kanonenv(
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_alpha_URL=https://example.com/alpha.git\n"
-                "KANON_SOURCE_alpha_REVISION=main\n"
+                "KANON_SOURCE_alpha_REF=main\n"
                 "KANON_SOURCE_alpha_PATH=meta.xml\n"
+                "KANON_SOURCE_alpha_NAME=alpha\n"
+                "KANON_SOURCE_alpha_GITBASE=https://example.com\n"
                 "KANON_SOURCE_bravo_URL=https://example.com/bravo.git\n"
-                "KANON_SOURCE_bravo_REVISION=main\n"
+                "KANON_SOURCE_bravo_REF=main\n"
                 "KANON_SOURCE_bravo_PATH=meta.xml\n"
+                "KANON_SOURCE_bravo_NAME=bravo\n"
+                "KANON_SOURCE_bravo_GITBASE=https://example.com\n"
             ),
         )
 
@@ -113,14 +147,18 @@ class TestInstallLifecycle:
                 _install_run(args)
         assert exc_info.value.code == 1
 
-    def test_gitignore_appended_not_duplicated(self, tmp_path: Path) -> None:
-        (tmp_path / ".gitignore").write_text(".packages/\n")
+    def test_gitignore_appended_not_duplicated(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        store = _isolated_store(monkeypatch, tmp_path / "home")
+
+        (store / ".gitignore").write_text(".packages/\n")
         kanonenv = _write_kanonenv(
             tmp_path / ".kanon",
             (
                 "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
-                "KANON_SOURCE_build_REVISION=main\n"
+                "KANON_SOURCE_build_REF=main\n"
                 "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
 
@@ -129,8 +167,8 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        content = (tmp_path / ".gitignore").read_text()
+        content = (store / ".gitignore").read_text()
         assert content.count(".packages/") == 1
         assert ".kanon-data/" in content

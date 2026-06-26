@@ -20,11 +20,6 @@ from kanon_cli.repo import pager as repo_pager
 from kanon_cli.repo.subcmds import forall as forall_mod
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-TEST-001: EMBEDDED flag exists and defaults to False
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_embedded_flag_exists_in_repo_package() -> None:
     """AC-FUNC-001: EMBEDDED flag must be accessible as kanon_cli.repo.EMBEDDED."""
@@ -35,11 +30,6 @@ def test_embedded_flag_exists_in_repo_package() -> None:
 def test_embedded_flag_defaults_to_false() -> None:
     """AC-FUNC-001: EMBEDDED must default to False so normal CLI usage is unaffected."""
     assert repo_pkg.EMBEDDED is False, f"EMBEDDED should default to False, got {repo_pkg.EMBEDDED!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002 / AC-TEST-001 / AC-TEST-002: pager.py skips os.execvp when EMBEDDED
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -55,7 +45,6 @@ def test_pager_skips_execvp_when_embedded(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr(os, "execvp", _record_execvp)
 
-    # select.select would block waiting for input; patch it to return immediately.
     monkeypatch.setattr("select.select", lambda *_: ([0], [], []))
 
     repo_pager._BecomePager("less")
@@ -74,15 +63,13 @@ def test_pager_calls_execvp_when_not_embedded(monkeypatch: pytest.MonkeyPatch) -
 
     def _capture_execvp(path: str, args: list[str]) -> NoReturn:
         execvp_calls.append((path, list(args)))
-        # Raise to prevent actual process replacement in the test.
+
         raise OSError("execvp intercepted for test")
 
     monkeypatch.setattr(os, "execvp", _capture_execvp)
 
-    # Patch the fallback execv that _BecomePager uses on OSError.
     monkeypatch.setattr(os, "execv", lambda *_: None)
 
-    # select.select would block waiting for input; patch it to return immediately.
     monkeypatch.setattr("select.select", lambda *_: ([0], [], []))
 
     repo_pager._BecomePager("less")
@@ -95,16 +82,10 @@ def test_pager_calls_execvp_when_not_embedded(monkeypatch: pytest.MonkeyPatch) -
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003 / AC-FUNC-004 / AC-FUNC-005 / AC-TEST-003 / AC-TEST-004:
-# forall.py saves and restores signal handlers
-# ---------------------------------------------------------------------------
-
-
 def _make_mock_forall() -> "forall_mod.Forall":
     """Construct a minimal Forall instance with required attributes mocked."""
     instance = forall_mod.Forall.__new__(forall_mod.Forall)
-    # Mock the manifest and related attributes that Execute() accesses.
+
     mock_manifest = MagicMock()
     mock_manifest.IsMirror = False
     mock_manifest.manifestProject.worktree = "/tmp/nonexistent-worktree"
@@ -155,7 +136,6 @@ def test_forall_saves_and_restores_signal_handlers(monkeypatch: pytest.MonkeyPat
         handler_before = signal.getsignal(signal.SIGINT)
 
         def _clobber_sigint_and_return(jobs, fn, rng, **kwargs):
-            # Simulate internal code that alters the SIGINT handler.
             signal.signal(signal.SIGINT, signal.SIG_IGN)
             return 0
 
@@ -211,7 +191,6 @@ def test_forall_restores_signal_handlers_on_exception(monkeypatch: pytest.Monkey
         forall_instance.get_parallel_context = MagicMock(return_value={})
         forall_instance.ExecuteInParallel = MagicMock(side_effect=_clobber_sigint_and_raise)
 
-        # Execute catches exceptions internally and calls sys.exit on non-zero rc.
         try:
             forall_instance.Execute(opt, [])
         except SystemExit:
@@ -225,11 +204,6 @@ def test_forall_restores_signal_handlers_on_exception(monkeypatch: pytest.Monkey
         )
     finally:
         signal.signal(signal.SIGINT, original)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: run_from_args sets EMBEDDED=True before invoking repo commands
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

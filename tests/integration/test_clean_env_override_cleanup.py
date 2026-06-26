@@ -23,11 +23,6 @@ from kanon_cli.core.install import install
 from kanon_cli.core.lockfile import read_lockfile
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_kanonenv(
     directory: pathlib.Path,
     marketplace_install: bool,
@@ -37,7 +32,10 @@ def _write_kanonenv(
 
     Args:
         directory: Directory in which to create the .kanon file.
-        marketplace_install: Value for KANON_MARKETPLACE_INSTALL.
+        marketplace_install: When True, the primary dependency opts into the
+            marketplace via the per-dependency KANON_SOURCE_primary_MARKETPLACE
+            flag (the 3.0.0 replacement for the removed global
+            KANON_MARKETPLACE_INSTALL header).
         marketplace_dir: Path for CLAUDE_MARKETPLACES_DIR, or None to omit.
 
     Returns:
@@ -45,10 +43,13 @@ def _write_kanonenv(
     """
     lines = [
         "KANON_SOURCE_primary_URL=https://example.com/primary.git",
-        "KANON_SOURCE_primary_REVISION=main",
+        "KANON_SOURCE_primary_REF=main",
         "KANON_SOURCE_primary_PATH=meta.xml",
-        f"KANON_MARKETPLACE_INSTALL={'true' if marketplace_install else 'false'}",
+        "KANON_SOURCE_primary_NAME=primary",
+        "KANON_SOURCE_primary_GITBASE=https://example.com",
     ]
+    if marketplace_install:
+        lines.append("KANON_SOURCE_primary_MARKETPLACE=true")
     if marketplace_dir is not None:
         lines.append(f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}")
     kanonenv = directory / ".kanon"
@@ -56,14 +57,8 @@ def _write_kanonenv(
     return kanonenv.resolve()
 
 
-_FAKE_CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
 _FAKE_SHA40 = "a" * 40
 _FAKE_RESOLVED_REF = "refs/heads/main"
-
-
-# ---------------------------------------------------------------------------
-# AC-6 / AC-13: env-override install followed by clean removes the plugin
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -88,12 +83,10 @@ class TestCleanEnvOverrideRemovesPlugin:
         mp_dir = tmp_path / ".claude-mp"
         mp_dir.mkdir()
 
-        # Step 1: Write .kanon with KANON_MARKETPLACE_INSTALL=true for the install phase.
         kanonenv_install = _write_kanonenv(tmp_path, marketplace_install=True, marketplace_dir=mp_dir)
 
         fake_resolution = _RefResolution(sha=_FAKE_SHA40, resolved_ref=_FAKE_RESOLVED_REF)
 
-        # Step 2: Run install with marketplace=true; it should record marketplace_registered=true.
         with (
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
@@ -106,18 +99,14 @@ class TestCleanEnvOverrideRemovesPlugin:
             install(
                 kanonenv_install,
                 lock_file_path=tmp_path / ".kanon.lock",
-                catalog_source=_FAKE_CATALOG_SOURCE,
             )
 
-        # Verify the lockfile records marketplace_registered=true.
         lf = read_lockfile(tmp_path / ".kanon.lock")
         assert lf.marketplace_registered is True, (
             "install with KANON_MARKETPLACE_INSTALL=true must write marketplace_registered=true to lockfile"
         )
         assert lf.marketplace_dir == str(mp_dir), "install must write the marketplace_dir path to the lockfile"
 
-        # Step 3: Rewrite .kanon with KANON_MARKETPLACE_INSTALL=false (simulates the
-        # operator's .kanon file which stores false, while the env override was used at install).
         kanonenv_clean = _write_kanonenv(tmp_path, marketplace_install=False, marketplace_dir=mp_dir)
 
         uninstall_calls: list = []
@@ -125,8 +114,6 @@ class TestCleanEnvOverrideRemovesPlugin:
         def fake_uninstall(d: pathlib.Path) -> None:
             uninstall_calls.append(d)
 
-        # Step 4: Run clean -- it must consult lockfile (marketplace_registered=true)
-        # NOT the .kanon flag (false), and therefore call uninstall.
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins", side_effect=fake_uninstall):
             clean(kanonenv_clean)
 
@@ -157,18 +144,12 @@ class TestCleanEnvOverrideRemovesPlugin:
             install(
                 kanonenv,
                 lock_file_path=tmp_path / ".kanon.lock",
-                catalog_source=_FAKE_CATALOG_SOURCE,
             )
 
         lf = read_lockfile(tmp_path / ".kanon.lock")
         assert lf.marketplace_registered is False, (
             "install with KANON_MARKETPLACE_INSTALL=false must write marketplace_registered=false to lockfile"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-8: back-compat -- lockfile lacking marketplace_registered falls back to .kanon flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -194,27 +175,28 @@ class TestCleanBackCompatOldLockfile:
             "clean with no lockfile and KANON_MARKETPLACE_INSTALL=true must still call uninstall"
         )
 
-    def test_clean_with_old_lockfile_missing_marketplace_field_falls_back_to_kanon_flag(
+    def test_clean_with_lockfile_missing_marketplace_field_falls_back_to_kanon_flag(
         self, tmp_path: pathlib.Path
     ) -> None:
-        """AC-8: a lockfile that predates marketplace_registered falls back to .kanon flag (no crash)."""
+        """AC-8: a v4 lockfile that omits marketplace_registered falls back to .kanon flag (no crash)."""
         mp_dir = tmp_path / ".claude-mp"
         mp_dir.mkdir()
 
-        # Write an old-style lockfile (schema v1, no marketplace_registered field).
         old_lockfile = tmp_path / ".kanon.lock"
         old_lockfile.write_text(
-            "schema_version = 1\n"
+            "schema_version = 5\n"
             'generated_at = "2025-01-01T00:00:00Z"\n'
-            'generator = "kanon-cli/1.0.0"\n'
+            'generator = "kanon-cli/2.0.0"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "https://example.com/catalog.git@main"\n'
-            'url = "https://example.com/catalog.git"\n'
-            'revision_spec = "main"\n'
+            "[[sources]]\n"
+            'alias = "primary"\n'
+            'name = "primary"\n'
+            'url = "https://example.com/primary.git"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{"a" * 40}"\n'
+            'path = "meta.xml"\n'
         )
 
         kanonenv = _write_kanonenv(tmp_path, marketplace_install=True, marketplace_dir=mp_dir)
@@ -224,31 +206,32 @@ class TestCleanBackCompatOldLockfile:
         def fake_uninstall(d: pathlib.Path) -> None:
             uninstall_calls.append(d)
 
-        # Must not crash and must fall back to .kanon flag (marketplace_install=true).
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins", side_effect=fake_uninstall):
             clean(kanonenv)
 
         assert len(uninstall_calls) == 1, (
-            "clean with old lockfile (no marketplace_registered) and KANON_MARKETPLACE_INSTALL=true "
+            "clean with a lockfile that omits marketplace_registered and KANON_MARKETPLACE_INSTALL=true "
             "must fall back to .kanon flag and call uninstall"
         )
 
-    def test_clean_with_old_lockfile_and_kanon_flag_false_skips_uninstall(self, tmp_path: pathlib.Path) -> None:
-        """AC-8: old lockfile + .kanon KANON_MARKETPLACE_INSTALL=false => no uninstall."""
-        # Write an old-style lockfile (schema v1, no marketplace_registered field).
+    def test_clean_with_lockfile_and_kanon_flag_false_skips_uninstall(self, tmp_path: pathlib.Path) -> None:
+        """AC-8: lockfile omitting marketplace_registered + .kanon KANON_MARKETPLACE_INSTALL=false => no uninstall."""
+
         old_lockfile = tmp_path / ".kanon.lock"
         old_lockfile.write_text(
-            "schema_version = 1\n"
+            "schema_version = 5\n"
             'generated_at = "2025-01-01T00:00:00Z"\n'
-            'generator = "kanon-cli/1.0.0"\n'
+            'generator = "kanon-cli/2.0.0"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "https://example.com/catalog.git@main"\n'
-            'url = "https://example.com/catalog.git"\n'
-            'revision_spec = "main"\n'
+            "[[sources]]\n"
+            'alias = "primary"\n'
+            'name = "primary"\n'
+            'url = "https://example.com/primary.git"\n'
+            'ref_spec = "main"\n'
             'resolved_ref = "refs/heads/main"\n'
             f'resolved_sha = "{"a" * 40}"\n'
+            'path = "meta.xml"\n'
         )
 
         kanonenv = _write_kanonenv(tmp_path, marketplace_install=False)
@@ -262,14 +245,9 @@ class TestCleanBackCompatOldLockfile:
             clean(kanonenv)
 
         assert len(uninstall_calls) == 0, (
-            "clean with old lockfile (no marketplace_registered) and KANON_MARKETPLACE_INSTALL=false "
+            "clean with a lockfile that omits marketplace_registered and KANON_MARKETPLACE_INSTALL=false "
             "must skip uninstall"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-14: kanon clean --help snapshot unchanged
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -287,13 +265,11 @@ class TestCleanHelpUnchanged:
             text=True,
             check=False,
         )
-        # Must exit 0 (help always exits 0).
+
         assert result.returncode == 0, f"kanon clean --help exited {result.returncode}: {result.stderr}"
 
-        # The help output must not contain any marketplace-related flags or new options
-        # beyond the original positional argument.
         help_text = result.stdout + result.stderr
         assert "--marketplace" not in help_text, "kanon clean --help must not advertise new --marketplace flags"
         assert "--lockfile" not in help_text, "kanon clean --help must not advertise new --lockfile flags"
-        # The original positional argument 'kanonenv_path' should still appear.
+
         assert "clean" in help_text.lower(), "kanon clean --help must include 'clean' in output"

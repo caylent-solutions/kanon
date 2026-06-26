@@ -22,10 +22,6 @@ import pytest
 from kanon_cli.repo import manifest_xml
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern in test_xml_manifest_roundtrip.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -106,11 +102,6 @@ def _build_hooks_manifest(
         f'  <repo-hooks in-project="{hooks_project}" enabled-list="{enabled_list}" />\n'
         "</manifest>\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 + AC-FINAL-010: Parse + round-trip
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

@@ -265,9 +265,6 @@ class TestMissingRecommendedFields:
     def test_whitespace_only_optional_field_yields_none(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        # A recommended field that is present but whitespace-only is treated as
-        # absent: the returned slot holds None and a warning is NOT emitted for
-        # the empty value (only truly missing fields trigger the warning).
         xml_content = (
             '<?xml version="1.0" encoding="UTF-8"?>'
             "<manifest><catalog-metadata>"
@@ -575,10 +572,6 @@ class TestDeriveSourceName:
         result_warn_false = derive_source_name(input_name, warn=False)
         assert result_warn_true == result_warn_false
 
-
-# ---------------------------------------------------------------------------
-# find_catalog_entry_files -- content-based catalog-entry discovery
-# ---------------------------------------------------------------------------
 
 _ENTRY_XML = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>

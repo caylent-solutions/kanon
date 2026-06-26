@@ -19,35 +19,30 @@ import pytest
 
 from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
-    CatalogSourceMismatchError,
     InstallClassification,
     InstallError,
     InstallState,
     KanonHashMismatchError,
     LockfileUnreachableShaError,
-    MissingCatalogSourceError,
     _RefResolution,
     _check_sha_reachable,
     _classify_install_state,
     _emit_install_state,
-    _resolve_catalog_source,
     _resolve_ref_to_sha,
     install,
     read_lockfile_if_present,
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers to build minimal .kanon content and a matching lockfile TOML
-# ---------------------------------------------------------------------------
-
 _KANON_SINGLE_SOURCE = """\
 GITBASE=https://git.example.com
 CLAUDE_MARKETPLACES_DIR=/tmp/mktplc
 KANON_MARKETPLACE_INSTALL=false
 KANON_SOURCE_alpha_URL=https://git.example.com/alpha.git
-KANON_SOURCE_alpha_REVISION=main
+KANON_SOURCE_alpha_REF=main
 KANON_SOURCE_alpha_PATH=manifest.xml
+KANON_SOURCE_alpha_NAME=alpha
+KANON_SOURCE_alpha_GITBASE=https://example.com
 """
 
 _KANON_SINGLE_SOURCE_MODIFIED = """\
@@ -55,19 +50,21 @@ GITBASE=https://git.example.com
 CLAUDE_MARKETPLACES_DIR=/tmp/mktplc
 KANON_MARKETPLACE_INSTALL=false
 KANON_SOURCE_alpha_URL=https://git.example.com/alpha.git
-KANON_SOURCE_alpha_REVISION=2.0.0
+KANON_SOURCE_alpha_REF=2.0.0
 KANON_SOURCE_alpha_PATH=manifest.xml
+KANON_SOURCE_alpha_NAME=alpha
+KANON_SOURCE_alpha_GITBASE=https://example.com
 """
 
 _VALID_SHA40 = "a" * 40
 _VALID_SHA64 = "b" * 64
-_KANON_HASH_PLACEHOLDER = "sha256:" + "c" * 64  # 'c' is a valid hex digit (a-f0-9)
+_KANON_HASH_PLACEHOLDER = "sha256:" + "c" * 64
 
 
 def _write_kanon(directory: pathlib.Path, content: str = _KANON_SINGLE_SOURCE) -> pathlib.Path:
     kanon_path = directory / ".kanon"
     kanon_path.write_text(content)
-    # Set safe permissions so parse_kanonenv accepts it
+
     kanon_path.chmod(0o600)
     return kanon_path
 
@@ -75,38 +72,31 @@ def _write_kanon(directory: pathlib.Path, content: str = _KANON_SINGLE_SOURCE) -
 def _write_lockfile(
     directory: pathlib.Path,
     kanon_hash: str,
-    catalog_source: str = "https://git.example.com/catalog.git@main",
 ) -> pathlib.Path:
-    """Write a minimal valid .kanon.lock TOML file and return its path."""
+    """Write a minimal valid schema-v4 .kanon.lock TOML file and return its path.
+
+    The v5 lock is alias-keyed and carries no [catalog] block (spec Section 5.2).
+    """
     lock_path = directory / ".kanon.lock"
     content = f"""\
-schema_version = 1
+schema_version = 5
 generated_at = "2026-01-15T00:00:00Z"
 generator = "kanon-cli/test"
 kanon_hash = "{kanon_hash}"
-
-[catalog]
-source = "{catalog_source}"
-url = "https://git.example.com/catalog.git"
-revision_spec = "main"
-resolved_ref = "refs/heads/main"
-resolved_sha = "{_VALID_SHA40}"
+marketplace_registered = false
+marketplace_dir = ""
 
 [[sources]]
+alias = "alpha"
 name = "alpha"
 url = "https://git.example.com/alpha.git"
-revision_spec = "main"
+ref_spec = "main"
 resolved_ref = "refs/heads/main"
 resolved_sha = "{_VALID_SHA40}"
 path = "manifest.xml"
 """
     lock_path.write_text(content)
     return lock_path
-
-
-# ===========================================================================
-# AC-FUNC-008 / AC-TEST-001: _classify_install_state
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -126,7 +116,7 @@ class TestClassifyInstallState:
     def test_lockfile_consistent(self, tmp_path: pathlib.Path) -> None:
         """State = lockfile-consistent when kanon_hash matches."""
         kanon_path = _write_kanon(tmp_path)
-        # Compute the real kanon_hash for the kanon file we wrote.
+
         from kanon_cli.core.kanon_hash import kanon_hash as compute_kanon_hash
 
         real_hash = compute_kanon_hash(kanon_path)
@@ -163,14 +153,9 @@ class TestClassifyInstallState:
     ) -> None:
         """Lock absent -> LOCKFILE_ABSENT regardless of .kanon content."""
         kanon_path = _write_kanon(tmp_path, content)
-        lock_path = tmp_path / ".kanon.lock"  # does not exist
+        lock_path = tmp_path / ".kanon.lock"
         classification = _classify_install_state(kanon_path, lock_path)
         assert classification.state is InstallState.LOCKFILE_ABSENT, description
-
-
-# ===========================================================================
-# AC-TEST-001: read_lockfile_if_present
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -193,11 +178,6 @@ class TestReadLockfileIfPresent:
         lock_path.write_text("not valid toml {[")
         with pytest.raises(Exception):
             read_lockfile_if_present(lock_path)
-
-
-# ===========================================================================
-# AC-TEST-001: Exception classes
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -230,111 +210,6 @@ class TestExceptionHierarchy:
         assert "https://git.example.com/alpha.git" in msg
         assert "--refresh-lock-source" in msg
 
-    def test_catalog_source_mismatch_is_install_error(self) -> None:
-        err = CatalogSourceMismatchError(
-            lockfile_source="https://git.example.com/old.git@main",
-            cli_env_source="https://git.example.com/new.git@main",
-        )
-        assert isinstance(err, InstallError)
-        msg = str(err)
-        assert "https://git.example.com/old.git@main" in msg
-        assert "https://git.example.com/new.git@main" in msg
-        assert "--refresh-lock" in msg
-
-    def test_missing_catalog_source_error_is_install_error(self) -> None:
-        err = MissingCatalogSourceError(command="install")
-        assert isinstance(err, InstallError)
-        msg = str(err)
-        assert "catalog source" in msg.lower()
-        assert "docs/catalogs-explained.md" in msg
-
-
-# ===========================================================================
-# AC-TEST-001: _resolve_catalog_source
-# ===========================================================================
-
-
-@pytest.mark.unit
-class TestResolveCatalogSource:
-    """Verify the three-tier precedence rule (AC-FUNC-006)."""
-
-    def test_cli_wins_over_env(self) -> None:
-        """When both CLI and env are set, CLI arg wins over env var.
-
-        The lockfile source matches the CLI arg (no mismatch error).
-        """
-        cli_source = "https://cli.example.com/repo.git@main"
-        result = _resolve_catalog_source(
-            cli_arg=cli_source,
-            env_value="https://env.example.com/repo.git@main",
-            lockfile_catalog_source=cli_source,  # matches CLI -- no error
-            install_state=InstallState.LOCKFILE_CONSISTENT,
-        )
-        assert result == cli_source
-
-    def test_env_used_when_no_cli_arg(self) -> None:
-        """When only env var is set and lockfile agrees, env var is returned.
-
-        The lockfile source matches the env value (no mismatch error).
-        """
-        env_source = "https://env.example.com/repo.git@main"
-        result = _resolve_catalog_source(
-            cli_arg=None,
-            env_value=env_source,
-            lockfile_catalog_source=env_source,  # matches env -- no error
-            install_state=InstallState.LOCKFILE_CONSISTENT,
-        )
-        assert result == env_source
-
-    def test_lockfile_fallback_only_in_consistent_state(self) -> None:
-        """Lockfile fallback applies ONLY in the consistent state (AC-FUNC-006)."""
-        result = _resolve_catalog_source(
-            cli_arg=None,
-            env_value=None,
-            lockfile_catalog_source="https://lock.example.com/repo.git@main",
-            install_state=InstallState.LOCKFILE_CONSISTENT,
-        )
-        assert result == "https://lock.example.com/repo.git@main"
-
-    def test_lockfile_fallback_not_in_absent_state(self) -> None:
-        """Lockfile fallback must NOT be used in lockfile-absent state (AC-FUNC-006)."""
-        with pytest.raises(MissingCatalogSourceError):
-            _resolve_catalog_source(
-                cli_arg=None,
-                env_value=None,
-                lockfile_catalog_source=None,
-                install_state=InstallState.LOCKFILE_ABSENT,
-            )
-
-    def test_missing_all_sources_raises(self) -> None:
-        """AC-FUNC-007: all three unset -> MissingCatalogSourceError."""
-        with pytest.raises(MissingCatalogSourceError) as exc_info:
-            _resolve_catalog_source(
-                cli_arg=None,
-                env_value=None,
-                lockfile_catalog_source=None,
-                install_state=InstallState.LOCKFILE_ABSENT,
-            )
-        assert "catalog source" in str(exc_info.value).lower()
-
-    def test_catalog_source_mismatch_raises(self) -> None:
-        """AC-FUNC-005: cli/env source differs from lockfile -> CatalogSourceMismatchError."""
-        with pytest.raises(CatalogSourceMismatchError) as exc_info:
-            _resolve_catalog_source(
-                cli_arg="https://new.example.com/repo.git@main",
-                env_value=None,
-                lockfile_catalog_source="https://old.example.com/repo.git@main",
-                install_state=InstallState.LOCKFILE_CONSISTENT,
-            )
-        err = exc_info.value
-        assert "https://new.example.com/repo.git@main" in str(err)
-        assert "https://old.example.com/repo.git@main" in str(err)
-
-
-# ===========================================================================
-# AC-TEST-001: _emit_install_state
-# ===========================================================================
-
 
 @pytest.mark.unit
 class TestEmitInstallState:
@@ -365,11 +240,6 @@ class TestEmitInstallState:
         assert f"({sources} sources, {projects} projects)" in captured.out
 
 
-# ===========================================================================
-# AC-FUNC-003: KanonHashMismatchError raised on hash mismatch
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestHashMismatchBranch:
     """Verify the hash-mismatch state raises KanonHashMismatchError (AC-FUNC-003)."""
@@ -395,11 +265,6 @@ class TestHashMismatchBranch:
         assert "--refresh-lock-source" in msg
 
 
-# ===========================================================================
-# AC-FUNC-004: LockfileUnreachableShaError
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestLockfileUnreachableSha:
     def test_error_names_source_sha_and_url(self) -> None:
@@ -420,51 +285,6 @@ class TestLockfileUnreachableSha:
             remote_url="https://git.example.com/foo.git",
         )
         assert "--refresh-lock-source" in str(err)
-
-
-# ===========================================================================
-# AC-FUNC-005: CatalogSourceMismatchError
-# ===========================================================================
-
-
-@pytest.mark.unit
-class TestCatalogSourceMismatch:
-    def test_error_names_both_sources(self) -> None:
-        err = CatalogSourceMismatchError(
-            lockfile_source="https://lock.example.com/repo.git@v1",
-            cli_env_source="https://new.example.com/repo.git@v2",
-        )
-        msg = str(err)
-        assert "https://lock.example.com/repo.git@v1" in msg
-        assert "https://new.example.com/repo.git@v2" in msg
-
-    def test_remediation_names_refresh_lock(self) -> None:
-        err = CatalogSourceMismatchError(
-            lockfile_source="https://lock.example.com/repo.git@main",
-            cli_env_source="https://new.example.com/repo.git@main",
-        )
-        assert "--refresh-lock" in str(err)
-
-
-# ===========================================================================
-# AC-FUNC-007: MissingCatalogSourceError links to docs
-# ===========================================================================
-
-
-@pytest.mark.unit
-class TestMissingCatalogSourceError:
-    def test_error_links_to_docs(self) -> None:
-        err = MissingCatalogSourceError(command="install")
-        assert "docs/catalogs-explained.md" in str(err)
-
-    def test_error_names_command(self) -> None:
-        err = MissingCatalogSourceError(command="install")
-        assert "install" in str(err)
-
-
-# ===========================================================================
-# AC-FUNC-004: LockfileUnreachableShaError class instantiation and representation
-# ===========================================================================
 
 
 @pytest.mark.unit
@@ -500,46 +320,26 @@ class TestInstallRaisesLockfileUnreachableShaError:
         assert "--refresh-lock-source" in msg
 
 
-# ===========================================================================
-# AC-FUNC-007: _resolve_catalog_source raises MissingCatalogSourceError
-# ===========================================================================
-
-
 @pytest.mark.unit
-class TestResolveCatalogSourceRaisesMissingCatalogSourceError:
-    """AC-FUNC-007: _resolve_catalog_source raises MissingCatalogSourceError
-    when all three catalog-source tiers (CLI arg, env var, lockfile fallback)
-    are unset.
+class TestInstallIgnoresCatalogSourceEnv:
+    """install() is hermetic: a populated KANON_CATALOG_SOURCES env var has no
+    effect on install -- it is ignored (never read), not rejected.  install()
+    resolves solely from the committed .kanon (+ .kanon.lock) and writes the
+    lockfile from those declarations regardless of the env var.
 
-    install() always calls _resolve_catalog_source regardless of which tiers
-    are set.  When all three are simultaneously unset, _resolve_catalog_source
-    raises MissingCatalogSourceError (AC-FUNC-007).  install() propagates the
-    error unconditionally (fail-fast; no silent degradation).
+    install() no longer accepts a catalog_source parameter at all; the
+    --catalog-source flag is not registered on the install parser, so the only
+    way an operator can leak a catalog source toward install is via the env var,
+    which this class proves is ignored.
     """
 
-    def test_resolve_catalog_source_raises_when_all_unset(self) -> None:
-        """_resolve_catalog_source raises MissingCatalogSourceError when all
-        three sources are unset."""
-        with pytest.raises(MissingCatalogSourceError) as exc_info:
-            _resolve_catalog_source(
-                cli_arg=None,
-                env_value=None,
-                lockfile_catalog_source=None,
-                install_state=InstallState.LOCKFILE_ABSENT,
-            )
-        err = exc_info.value
-        assert isinstance(err, InstallError)
-        assert "catalog source" in str(err).lower()
-
-    def test_install_absent_no_catalog_raises_missing_catalog_source_error(
+    def test_install_absent_ignores_env_catalog_source_and_writes_lockfile(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """install() in LOCKFILE_ABSENT state with no catalog source raises
-        MissingCatalogSourceError (AC-FUNC-007): all three catalog-source tiers
-        (CLI arg, KANON_CATALOG_SOURCE env var, lockfile fallback) are unset."""
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        """A populated KANON_CATALOG_SOURCES env is ignored; install resolves from .kanon and writes the lock."""
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://env.example.com/catalog.git@main")
 
         kanon_path = _write_kanon(tmp_path)
         lock_path = tmp_path / ".kanon.lock"
@@ -551,24 +351,53 @@ class TestResolveCatalogSourceRaisesMissingCatalogSourceError:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("manifest.xml"))),
         ):
-            with pytest.raises(MissingCatalogSourceError) as exc_info:
-                install(
-                    kanonenv_path=kanon_path,
-                    lock_file_path=kanon_path.parent / ".kanon.lock",
-                    catalog_source=None,
-                )
+            install(
+                kanonenv_path=kanon_path,
+                lock_file_path=lock_path,
+            )
 
-        err = exc_info.value
-        assert isinstance(err, InstallError)
-        assert "catalog source" in str(err).lower()
-        # Lockfile must NOT be written when the error fires.
-        assert not lock_path.exists(), "install() must not write a lockfile when MissingCatalogSourceError is raised"
+        assert lock_path.exists(), "install() must ignore KANON_CATALOG_SOURCES and write the lockfile from .kanon"
 
+        lock_text = lock_path.read_text(encoding="utf-8")
+        assert "https://git.example.com/alpha.git" in lock_text
+        assert "https://env.example.com/catalog.git" not in lock_text
 
-# ===========================================================================
-# AC-FUNC-004: _check_sha_reachable helper
-# ===========================================================================
+    def test_install_consistent_ignores_env_catalog_source(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """In the consistent state a populated KANON_CATALOG_SOURCES env does not change replay."""
+        from kanon_cli.core.kanon_hash import kanon_hash as compute_kanon_hash
+
+        monkeypatch.setenv("KANON_CATALOG_SOURCES", "https://env.example.com/catalog.git@main")
+
+        kanon_path = _write_kanon(tmp_path)
+        real_hash = compute_kanon_hash(kanon_path)
+        lock_path = _write_lockfile(tmp_path, real_hash)
+        original_lock_text = lock_path.read_text(encoding="utf-8")
+
+        reachable_sha_output = f"{_VALID_SHA40}\trefs/heads/main\n{'e' * 40}\trefs/tags/1.0.0\n"
+        mock_result = MagicMock(spec=subprocess.CompletedProcess)
+        mock_result.returncode = 0
+        mock_result.stdout = reachable_sha_output
+        mock_result.stderr = ""
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("subprocess.run", return_value=mock_result),
+            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("manifest.xml"))),
+        ):
+            install(
+                kanonenv_path=kanon_path,
+                lock_file_path=lock_path,
+            )
+
+        assert lock_path.read_text(encoding="utf-8") == original_lock_text
 
 
 @pytest.mark.unit
@@ -582,7 +411,6 @@ class TestCheckShaReachable:
         mock_result.returncode = 0
         mock_result.stdout = f"{pinned_sha}\trefs/heads/main\n{'e' * 40}\trefs/tags/1.0.0\n"
         with patch("subprocess.run", return_value=mock_result):
-            # Must not raise
             _check_sha_reachable(
                 url="https://git.example.com/repo.git",
                 sha=pinned_sha,
@@ -594,7 +422,7 @@ class TestCheckShaReachable:
         pinned_sha = _VALID_SHA40
         mock_result = MagicMock()
         mock_result.returncode = 0
-        # Output contains a DIFFERENT SHA -- pinned SHA is absent
+
         mock_result.stdout = f"{'e' * 40}\trefs/heads/main\n{'f' * 40}\trefs/tags/1.0.0\n"
         with patch("subprocess.run", return_value=mock_result):
             with pytest.raises(LockfileUnreachableShaError) as exc_info:
@@ -624,11 +452,6 @@ class TestCheckShaReachable:
         assert err.source_name == "beta"
 
 
-# ===========================================================================
-# AC-FUNC-004: install() raises LockfileUnreachableShaError (end-to-end)
-# ===========================================================================
-
-
 @pytest.mark.unit
 class TestInstallRaisesLockfileUnreachableShaErrorEndToEnd:
     """AC-FUNC-004: install() raises LockfileUnreachableShaError in LOCKFILE_CONSISTENT state
@@ -643,49 +466,40 @@ class TestInstallRaisesLockfileUnreachableShaErrorEndToEnd:
         when the pinned SHA is not present in git ls-remote output (simulating
         the SHA having been force-pushed away or garbage-collected on remote).
         """
-        # Clear conftest default so the lockfile fallback source is used.
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
         from kanon_cli.core.kanon_hash import kanon_hash as compute_kanon_hash
 
-        # The lockfile fixture uses "https://git.example.com/catalog.git@main" as source.
-        _lockfile_catalog_source = "https://git.example.com/catalog.git@main"
         kanon_path = _write_kanon(tmp_path)
         real_hash = compute_kanon_hash(kanon_path)
-        # Write a lockfile with a tag-shaped revision_spec (==1.0.0) so that
-        # _detect_branch_drift skips this source (tags are immutable; drift is
-        # not a concept for them) and _check_sha_reachable fires as intended.
+
         lock_path = tmp_path / ".kanon.lock"
         lock_path.write_text(
             f"""\
-schema_version = 1
+schema_version = 5
 generated_at = "2026-01-15T00:00:00Z"
 generator = "kanon-cli/test"
 kanon_hash = "{real_hash}"
-
-[catalog]
-source = "{_lockfile_catalog_source}"
-url = "https://git.example.com/catalog.git"
-revision_spec = "main"
-resolved_ref = "refs/heads/main"
-resolved_sha = "{_VALID_SHA40}"
+marketplace_registered = false
+marketplace_dir = ""
 
 [[sources]]
+alias = "alpha"
 name = "alpha"
 url = "https://git.example.com/alpha.git"
-revision_spec = "==1.0.0"
+ref_spec = "==1.0.0"
 resolved_ref = "refs/tags/v1.0.0"
 resolved_sha = "{_VALID_SHA40}"
 path = "manifest.xml"
 """
         )
 
-        # The lockfile contains _VALID_SHA40 ("a" * 40) as resolved_sha for "alpha".
-        # Return ls-remote output that does NOT contain this SHA.
         absent_sha_output = f"{'e' * 40}\trefs/heads/main\n{'f' * 40}\trefs/tags/1.0.0\n"
         mock_result = MagicMock(spec=subprocess.CompletedProcess)
         mock_result.returncode = 0
         mock_result.stdout = absent_sha_output
+        mock_result.stderr = ""
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -697,8 +511,6 @@ path = "manifest.xml"
                 install(
                     kanonenv_path=kanon_path,
                     lock_file_path=lock_path,
-                    # Pass None so the lockfile fallback source is used (consistent state).
-                    catalog_source=None,
                 )
 
         err = exc_info.value
@@ -716,22 +528,20 @@ path = "manifest.xml"
         """install() in LOCKFILE_CONSISTENT state does NOT raise LockfileUnreachableShaError
         when the pinned SHA IS present in git ls-remote output (SHA is reachable).
         """
-        # Clear conftest default so the lockfile fallback source is used.
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
         from kanon_cli.core.kanon_hash import kanon_hash as compute_kanon_hash
 
-        _lockfile_catalog_source = "https://git.example.com/catalog.git@main"
         kanon_path = _write_kanon(tmp_path)
         real_hash = compute_kanon_hash(kanon_path)
-        lock_path = _write_lockfile(tmp_path, real_hash, catalog_source=_lockfile_catalog_source)
+        lock_path = _write_lockfile(tmp_path, real_hash)
 
-        # The lockfile contains _VALID_SHA40 ("a" * 40) as resolved_sha for "alpha".
-        # Return ls-remote output that DOES contain this SHA.
         reachable_sha_output = f"{_VALID_SHA40}\trefs/heads/main\n{'e' * 40}\trefs/tags/1.0.0\n"
         mock_result = MagicMock(spec=subprocess.CompletedProcess)
         mock_result.returncode = 0
         mock_result.stdout = reachable_sha_output
+        mock_result.stderr = ""
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -740,17 +550,10 @@ path = "manifest.xml"
             patch("subprocess.run", return_value=mock_result),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("manifest.xml"))),
         ):
-            # Must not raise LockfileUnreachableShaError
             install(
                 kanonenv_path=kanon_path,
                 lock_file_path=lock_path,
-                catalog_source=None,
             )
-
-
-# ---------------------------------------------------------------------------
-# Environment variable override for _GIT_LS_REMOTE_TIMEOUT
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -758,19 +561,20 @@ class TestGitLsRemoteTimeoutEnvVar:
     """KANON_GIT_LS_REMOTE_TIMEOUT env var overrides the default timeout."""
 
     def test_default_timeout_is_30(self) -> None:
-        from kanon_cli.core import install as _mod
+        import importlib
 
-        # When KANON_GIT_LS_REMOTE_TIMEOUT is unset, the default is 30.
-        assert _mod._GIT_LS_REMOTE_TIMEOUT == int(
-            __import__("os").environ.get("KANON_GIT_LS_REMOTE_TIMEOUT", "30"),
-        )
+        import kanon_cli.constants as constants
+
+        importlib.reload(constants)
+        assert constants.KANON_GIT_LS_REMOTE_TIMEOUT == 30
 
     def test_check_sha_reachable_passes_timeout_to_subprocess(self) -> None:
-        """Verify _check_sha_reachable passes _GIT_LS_REMOTE_TIMEOUT to
+        """Verify _check_sha_reachable passes KANON_GIT_LS_REMOTE_TIMEOUT to
         subprocess.run as the timeout kwarg."""
         mock_result = MagicMock(spec=subprocess.CompletedProcess)
         mock_result.returncode = 0
         mock_result.stdout = f"{'a' * 40}\trefs/heads/main\n"
+        mock_result.stderr = ""
 
         with patch("subprocess.run", return_value=mock_result) as mock_run:
             _check_sha_reachable(
@@ -778,17 +582,12 @@ class TestGitLsRemoteTimeoutEnvVar:
                 sha="a" * 40,
                 source_name="test",
             )
-            # Verify timeout kwarg was passed
+
             call_kwargs = mock_run.call_args.kwargs
             assert "timeout" in call_kwargs
-            from kanon_cli.core.install import _GIT_LS_REMOTE_TIMEOUT
+            from kanon_cli.constants import KANON_GIT_LS_REMOTE_TIMEOUT
 
-            assert call_kwargs["timeout"] == _GIT_LS_REMOTE_TIMEOUT
-
-
-# ---------------------------------------------------------------------------
-# _resolve_ref_to_sha error paths (lines 462, 475 in install.py)
-# ---------------------------------------------------------------------------
+            assert call_kwargs["timeout"] == KANON_GIT_LS_REMOTE_TIMEOUT
 
 
 @pytest.mark.unit
@@ -809,7 +608,7 @@ class TestResolveRefToSha:
         """_resolve_ref_to_sha raises ValueError when the ref is not in ls-remote output."""
         mock_result = MagicMock(spec=subprocess.CompletedProcess)
         mock_result.returncode = 0
-        # Output contains only unrelated refs -- the requested ref is absent.
+
         mock_result.stdout = f"{'e' * 40}\trefs/heads/develop\n{'f' * 40}\trefs/tags/0.9.0\n"
         mock_result.stderr = ""
         with patch("subprocess.run", return_value=mock_result):
@@ -830,39 +629,49 @@ class TestResolveRefToSha:
         assert result.resolved_ref == "refs/heads/main"
 
 
-# ---------------------------------------------------------------------------
-# Malformed catalog source format (line 905 in install.py)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
-class TestMalformedCatalogSource:
-    """install() raises ValueError when catalog source lacks the @<ref> separator."""
+class TestInstallParserRejectsCatalogSourceFlag:
+    """The install subparser does not accept --catalog-source.
 
-    def test_catalog_source_without_at_raises_value_error(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """install() raises ValueError when catalog_source has no '@' separator.
+    install is hermetic (spec Section 4.3 / FR-14): the catalog source belongs to
+    the catalog-querying commands, not install.  Because the flag is not registered
+    on the install subparser, argparse rejects it as an unrecognized argument and
+    exits non-zero -- there is no install-side catalog_source parameter at all.
+    """
 
-        The catalog source format check happens after source resolution, so we
-        mock out the source-level git calls to avoid real network access.
-        """
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
-        kanon_path = _write_kanon(tmp_path)
+    @pytest.mark.parametrize(
+        "catalog_value",
+        [
+            "https://git.example.com/catalog.git@main",
+            "https://example.com/catalog.git",
+            "latest",
+        ],
+    )
+    def test_install_subparser_rejects_catalog_source(self, catalog_value: str) -> None:
+        """Passing --catalog-source to install raises SystemExit with a non-zero code."""
+        import argparse
 
-        mock_ref = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
-        with (
-            patch("kanon_cli.repo.repo_init"),
-            patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
-            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
-            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("manifest.xml"))),
-        ):
-            with pytest.raises(ValueError, match="<url>@<ref>"):
-                install(
-                    kanonenv_path=kanon_path,
-                    lock_file_path=kanon_path.parent / ".kanon.lock",
-                    catalog_source="https://example.com/catalog.git",  # missing @ref
-                )
+        from kanon_cli.commands.install import register
+
+        parser = argparse.ArgumentParser(prog="kanon")
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["install", "--catalog-source", catalog_value])
+
+        assert exc_info.value.code != 0
+
+    def test_install_subparser_has_no_catalog_source_action(self) -> None:
+        """The install subparser exposes no --catalog-source option string."""
+        import argparse
+
+        from kanon_cli.commands.install import register
+
+        parser = argparse.ArgumentParser(prog="kanon")
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        install_parser = subparsers.choices["install"]
+        option_strings = {opt for action in install_parser._actions for opt in action.option_strings}
+        assert "--catalog-source" not in option_strings

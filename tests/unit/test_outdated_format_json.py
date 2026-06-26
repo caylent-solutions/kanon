@@ -18,11 +18,6 @@ import pytest
 from kanon_cli.commands.outdated import OutdatedRow, _build_outdated_payload, _format_json, _row_to_dict
 
 
-# ---------------------------------------------------------------------------
-# _row_to_dict helper unit tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRowToDict:
     """Tests for the _row_to_dict helper that converts OutdatedRow to a JSON-ready dict."""
@@ -82,11 +77,6 @@ class TestRowToDict:
         )
         result = _row_to_dict(row)
         assert len(result) == 5
-
-
-# ---------------------------------------------------------------------------
-# _format_json unit tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -195,7 +185,7 @@ class TestFormatJson:
             )
         ]
         output = _format_json(rows)
-        # Must not raise
+
         result = json.loads(output)
         assert isinstance(result, list)
 
@@ -257,11 +247,6 @@ class TestFormatJson:
         assert [obj["name"] for obj in parsed] == names
 
 
-# ---------------------------------------------------------------------------
-# CLI dispatch tests: env var and flag routing
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestFormatDispatch:
     """Tests for the --format / KANON_OUTDATED_FORMAT dispatch logic in run()."""
@@ -273,7 +258,6 @@ class TestFormatDispatch:
 
         import kanon_cli.commands.outdated as outdated_mod
 
-        # Write a minimal .kanon file
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "GITBASE=file:///unused\n"
@@ -284,7 +268,6 @@ class TestFormatDispatch:
             "KANON_SOURCE_FOO_PATH=./foo\n"
         )
 
-        # Simulate the env var being set so that the argparse default picks it up
         monkeypatch.setenv("KANON_OUTDATED_FORMAT", "json")
         importlib.reload(outdated_mod)
 
@@ -302,7 +285,6 @@ class TestFormatDispatch:
         )
         assert parsed.format == "json"
 
-        # Restore module state
         monkeypatch.delenv("KANON_OUTDATED_FORMAT", raising=False)
         importlib.reload(outdated_mod)
 
@@ -340,7 +322,7 @@ class TestFormatDispatch:
                 "json",
             ]
         )
-        # CLI flag should win over env var
+
         assert parsed.format == "json"
 
         monkeypatch.delenv("KANON_OUTDATED_FORMAT", raising=False)
@@ -389,7 +371,6 @@ class TestFormatDispatch:
         subs = top_parser.add_subparsers()
         outdated_mod.register(subs)
 
-        # Find the format action by name
         outdated_parser = subs.choices["outdated"]
         format_action = None
         for action in outdated_parser._actions:
@@ -404,11 +385,6 @@ class TestFormatDispatch:
 
         monkeypatch.delenv("KANON_OUTDATED_FORMAT", raising=False)
         importlib.reload(outdated_mod)
-
-
-# ---------------------------------------------------------------------------
-# run() JSON dispatch coverage
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -432,8 +408,10 @@ class TestRunJsonDispatch:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=>=1.0.0,<1.1\n"
+            "KANON_SOURCE_FOO_REF=>=1.0.0,<1.1\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=foo-manifest\n"
+            "KANON_SOURCE_FOO_GITBASE=file:///some\n"
         )
         kanon_file.chmod(0o644)
 
@@ -453,9 +431,13 @@ class TestRunJsonDispatch:
         assert result == 0
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
-        assert isinstance(parsed, list)
-        assert len(parsed) == 1
-        obj = parsed[0]
+
+        assert isinstance(parsed, dict)
+        assert parsed["aliases"] == ["FOO -> foo-manifest from file:///some/repo@>=1.0.0,<1.1"]
+        sources = parsed["sources"]
+        assert isinstance(sources, list)
+        assert len(sources) == 1
+        obj = sources[0]
         assert obj["name"] == "FOO"
         assert set(obj.keys()) == {
             "name",
@@ -464,11 +446,6 @@ class TestRunJsonDispatch:
             "latest-available",
             "upgrade-type",
         }
-
-
-# ---------------------------------------------------------------------------
-# Tests for _build_outdated_payload helper
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

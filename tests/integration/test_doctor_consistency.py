@@ -28,17 +28,8 @@ from tests.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -79,11 +70,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Fixture git repo builders
-# ---------------------------------------------------------------------------
-
-
 def _create_bare_repo_with_two_commits(
     base: pathlib.Path,
     name: str,
@@ -118,11 +104,6 @@ def _create_bare_repo_with_two_commits(
     return bare_dir.resolve(), sha_a, sha_b
 
 
-# ---------------------------------------------------------------------------
-# CLI runner
-# ---------------------------------------------------------------------------
-
-
 def _run_kanon(
     args: list[str],
     cwd: pathlib.Path | None = None,
@@ -130,7 +111,7 @@ def _run_kanon(
 ) -> subprocess.CompletedProcess[str]:
     """Run the kanon CLI via the same Python interpreter."""
     env = dict(os.environ)
-    env.pop("KANON_CATALOG_SOURCE", None)
+    env.pop("KANON_CATALOG_SOURCES", None)
     if extra_env:
         env.update(extra_env)
     return subprocess.run(
@@ -140,11 +121,6 @@ def _run_kanon(
         env=env,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Tests: absent .kanon
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -170,11 +146,6 @@ class TestDoctorAbsentKanonFile:
         assert "not found" in result.stderr or "no kanon workspace" in result.stderr
 
 
-# ---------------------------------------------------------------------------
-# Tests: absent .kanon.lock
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestDoctorAbsentLockfile:
     """kanon doctor exits 0 with info notice when .kanon exists but .kanon.lock is absent (AC-FUNC-002)."""
@@ -196,11 +167,6 @@ class TestDoctorAbsentLockfile:
         assert "No lockfile present" in result.stderr
 
 
-# ---------------------------------------------------------------------------
-# Tests: hash mismatch (AC-FUNC-003)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestDoctorHashMismatch:
     """kanon doctor exits non-zero with ERROR: kanon_hash mismatch when hash is wrong (AC-FUNC-003)."""
@@ -209,7 +175,7 @@ class TestDoctorHashMismatch:
         """doctor exits non-zero when kanon_hash in lockfile is wrong."""
         url = "https://example.com/org/repo.git"
         kanon_file = _write_kanon(tmp_path, "src", url)
-        # Write lockfile with a deliberately wrong hash
+
         _write_lockfile(
             tmp_path,
             kanon_hash_val="sha256:" + "b" * 64,
@@ -267,11 +233,6 @@ class TestDoctorHashMismatch:
         assert "--refresh-lock" in result.stderr
 
 
-# ---------------------------------------------------------------------------
-# Tests: orphan lock entry (AC-FUNC-004)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestDoctorOrphanLock:
     """kanon doctor exits non-zero with ERROR: orphan lock entry when source is orphaned (AC-FUNC-004)."""
@@ -283,7 +244,7 @@ class TestDoctorOrphanLock:
         from kanon_cli.core.kanon_hash import kanon_hash
 
         real_hash = kanon_hash(kanon_file)
-        # Write lockfile with an extra "ghost" source not in .kanon
+
         _write_lockfile_two_sources(
             tmp_path,
             kanon_hash_val=real_hash,
@@ -335,11 +296,6 @@ class TestDoctorOrphanLock:
         assert "ghost" in result.stderr
 
 
-# ---------------------------------------------------------------------------
-# Tests: branch drift (AC-FUNC-005)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestDoctorBranchDrift:
     """kanon doctor handles branch drift correctly (AC-FUNC-005)."""
@@ -353,7 +309,7 @@ class TestDoctorBranchDrift:
         from kanon_cli.core.kanon_hash import kanon_hash
 
         real_hash = kanon_hash(kanon_file)
-        # Lock the old commit SHA (sha_a) -- but branch is now at sha_b
+
         _write_lockfile(
             tmp_path,
             kanon_hash_val=real_hash,
@@ -393,7 +349,6 @@ class TestDoctorBranchDrift:
             cwd=tmp_path,
         )
 
-        # Drift notice should appear in stderr (info-level)
         assert "drift" in result.stderr.lower() or "BRANCH_DRIFT" in result.stderr
 
     def test_drift_with_strict_exits_nonzero(self, tmp_path: pathlib.Path) -> None:
@@ -429,11 +384,6 @@ class TestDoctorBranchDrift:
         assert result.returncode != 0
 
 
-# ---------------------------------------------------------------------------
-# Tests: dangling SHA (AC-FUNC-006)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestDoctorDanglingSha:
     """kanon doctor exits non-zero with ERROR: dangling SHA when SHA is unreachable (AC-FUNC-006)."""
@@ -448,7 +398,6 @@ class TestDoctorDanglingSha:
         bare_path, sha_a, sha_b = _create_bare_repo_with_two_commits(tmp_path, "proj")
         url = f"file://{bare_path}"
 
-        # Use sha_b as both revision and resolved SHA (SHA-pinned source).
         kanon_file = _write_kanon(tmp_path, "src", url, revision=sha_b)
         from kanon_cli.core.kanon_hash import kanon_hash
 
@@ -478,8 +427,7 @@ class TestDoctorDanglingSha:
         """
         bare_path, sha_a, sha_b = _create_bare_repo_with_two_commits(tmp_path, "proj")
         url = f"file://{bare_path}"
-        # Use a fake SHA that does not exist in the repo as both the revision
-        # spec and the resolved SHA (SHA-pinned source).
+
         fake_sha = "d" * 40
 
         kanon_file = _write_kanon(tmp_path, "src", url, revision=fake_sha)
@@ -530,9 +478,150 @@ class TestDoctorDanglingSha:
         assert fake_sha in result.stderr
 
 
-# ---------------------------------------------------------------------------
-# Tests: AC-CYCLE-001 end-to-end cycle
-# ---------------------------------------------------------------------------
+def _write_kanon_two_branch_sources(
+    directory: pathlib.Path,
+    sources: list[tuple[str, str]],
+) -> pathlib.Path:
+    """Write a multi-source .kanon with each source branch-pinned to 'main'.
+
+    Args:
+        directory: Directory in which to write the .kanon file.
+        sources: List of (alias, url) tuples; each gets a branch-pinned block
+            whose KANON_SOURCE_<alias>_REF is 'main' so the doctor branch-drift
+            subcheck applies to it.
+
+    Returns:
+        Path to the written .kanon file.
+    """
+    lines: list[str] = []
+    for alias, url in sources:
+        lines.append(f"KANON_SOURCE_{alias}_URL={url}")
+        lines.append(f"KANON_SOURCE_{alias}_REF=main")
+        lines.append(f"KANON_SOURCE_{alias}_PATH=repo-specs/meta.xml")
+        lines.append(f"KANON_SOURCE_{alias}_NAME={alias}")
+        lines.append(f"KANON_SOURCE_{alias}_GITBASE=https://example.com/org")
+    lines.append("KANON_MARKETPLACE_INSTALL=false")
+    kanon_file = directory / ".kanon"
+    kanon_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    kanon_file.chmod(0o644)
+    return kanon_file
+
+
+@pytest.mark.integration
+class TestDoctorStrictDriftListsEveryDriftedSource:
+    """--strict-drift error lists EVERY drifted branch-pinned source (not just one).
+
+    Builds two distinct branch-pinned sources whose locked SHA is the older
+    commit (sha_a) while each branch tip is at the newer commit (sha_b), so
+    BOTH sources have drifted. Under --strict-drift the doctor must surface one
+    error finding per drifted source -- the existing strict-drift integration
+    test only drifts a single source.
+    """
+
+    def _build_two_drifted_sources(
+        self,
+        tmp_path: pathlib.Path,
+    ) -> tuple[pathlib.Path, pathlib.Path, dict[str, tuple[str, str]]]:
+        """Create two branch-pinned sources, both drifted, and write the workspace.
+
+        Each source repo has two commits on main; the lockfile pins the OLDER
+        commit (sha_a) while the branch tip is the NEWER commit (sha_b), so each
+        source is in a drifted state.
+
+        Args:
+            tmp_path: Per-test temp directory.
+
+        Returns:
+            A tuple (kanon_file, lock_file, details) where details maps each
+            alias to its (locked_sha, tip_sha) pair.
+        """
+        bare_alpha, alpha_a, alpha_b = _create_bare_repo_with_two_commits(tmp_path, "alpha")
+        bare_beta, beta_a, beta_b = _create_bare_repo_with_two_commits(tmp_path, "beta")
+
+        url_alpha = f"file://{bare_alpha}"
+        url_beta = f"file://{bare_beta}"
+
+        kanon_file = _write_kanon_two_branch_sources(
+            tmp_path,
+            [("alpha", url_alpha), ("beta", url_beta)],
+        )
+
+        from kanon_cli.core.kanon_hash import kanon_hash
+
+        real_hash = kanon_hash(kanon_file)
+
+        _write_lockfile_two_sources(
+            tmp_path,
+            kanon_hash_val=real_hash,
+            sources=[
+                {"name": "alpha", "url": url_alpha, "revision_spec": "main", "resolved_sha": alpha_a},
+                {"name": "beta", "url": url_beta, "revision_spec": "main", "resolved_sha": beta_a},
+            ],
+        )
+
+        details = {
+            "alpha": (alpha_a, alpha_b),
+            "beta": (beta_a, beta_b),
+        }
+        return kanon_file, tmp_path / ".kanon.lock", details
+
+    def test_strict_drift_exits_nonzero_with_two_drifted_sources(self, tmp_path: pathlib.Path) -> None:
+        """doctor --strict-drift exits non-zero when two branch sources have drifted."""
+        kanon_file, lock_file, _details = self._build_two_drifted_sources(tmp_path)
+
+        result = _run_kanon(
+            [
+                "doctor",
+                "--kanon-file",
+                str(kanon_file),
+                "--lock-file",
+                str(lock_file),
+                "--strict-drift",
+            ],
+            cwd=tmp_path,
+        )
+
+        assert result.returncode != 0, f"Expected non-zero exit. stderr: {result.stderr!r}"
+
+    def test_strict_drift_error_names_every_drifted_source(self, tmp_path: pathlib.Path) -> None:
+        """doctor --strict-drift surfaces an ERROR branch-drift finding for EACH drifted source.
+
+        Both source aliases ('alpha' and 'beta') and both current tip SHAs
+        (truncated to 12 chars, the doctor's render width) must appear as
+        ERROR-level branch-drift findings on stderr -- the error lists every
+        drifted source, not just the first one encountered.
+        """
+        kanon_file, lock_file, details = self._build_two_drifted_sources(tmp_path)
+
+        result = _run_kanon(
+            [
+                "doctor",
+                "--kanon-file",
+                str(kanon_file),
+                "--lock-file",
+                str(lock_file),
+                "--strict-drift",
+            ],
+            cwd=tmp_path,
+        )
+
+        error_drift_lines = [
+            line for line in result.stderr.splitlines() if line.startswith("ERROR:") and "branch drift" in line
+        ]
+        assert len(error_drift_lines) == 2, (
+            f"Expected exactly 2 ERROR branch-drift findings (one per drifted source); "
+            f"got {len(error_drift_lines)}.\nstderr: {result.stderr!r}"
+        )
+
+        joined = "\n".join(error_drift_lines)
+        for alias, (_locked_sha, tip_sha) in details.items():
+            assert f"source '{alias}'" in joined, (
+                f"Expected drifted source {alias!r} named in a strict-drift ERROR finding.\nstderr: {result.stderr!r}"
+            )
+            assert tip_sha[:12] in joined, (
+                f"Expected current tip SHA {tip_sha[:12]!r} for {alias!r} in the ERROR findings.\n"
+                f"stderr: {result.stderr!r}"
+            )
 
 
 @pytest.mark.integration
@@ -557,14 +646,12 @@ class TestDoctorCycle:
         bare_path, sha_a, sha_b = _create_bare_repo_with_two_commits(tmp_path, "cycle")
         url = f"file://{bare_path}"
 
-        # SHA-pinned source: both revision and resolved_sha point to sha_b (HEAD).
         kanon_file = _write_kanon(tmp_path, "src", url, revision=sha_b)
         from kanon_cli.core.kanon_hash import kanon_hash
 
         real_hash = kanon_hash(kanon_file)
         lock_path = tmp_path / ".kanon.lock"
 
-        # Step 3: write valid lockfile
         _write_lockfile(
             tmp_path,
             kanon_hash_val=real_hash,
@@ -574,12 +661,10 @@ class TestDoctorCycle:
             resolved_sha=sha_b,
         )
 
-        # Step 4: tamper the lockfile -- replace the correct hash with a bad one
         content = lock_path.read_text(encoding="utf-8")
         tampered = content.replace(f'kanon_hash = "{real_hash}"', 'kanon_hash = "sha256:' + "c" * 64 + '"')
         lock_path.write_text(tampered, encoding="utf-8")
 
-        # Step 5: doctor detects the mismatch
         result1 = _run_kanon(
             ["doctor", "--kanon-file", str(kanon_file), "--lock-file", str(lock_path)],
             cwd=tmp_path,
@@ -587,7 +672,6 @@ class TestDoctorCycle:
         assert result1.returncode != 0, f"Expected non-zero exit. stderr: {result1.stderr!r}"
         assert "kanon_hash mismatch" in result1.stderr
 
-        # Step 6: restore the lockfile with the correct hash and real SHA
         _write_lockfile(
             tmp_path,
             kanon_hash_val=real_hash,
@@ -597,7 +681,6 @@ class TestDoctorCycle:
             resolved_sha=sha_b,
         )
 
-        # Step 7: all subchecks now pass -- sha_b is reachable in the bare repo
         result2 = _run_kanon(
             ["doctor", "--kanon-file", str(kanon_file), "--lock-file", str(lock_path)],
             cwd=tmp_path,

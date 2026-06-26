@@ -24,11 +24,6 @@ from kanon_cli.commands.outdated import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers for building fake argparse namespaces
-# ---------------------------------------------------------------------------
-
-
 def _make_args(
     catalog_source: str | None = "file:///fake/catalog@HEAD",
     kanon_file: str = "/fake/.kanon",
@@ -46,26 +41,15 @@ def _make_args(
     )
 
 
-# ---------------------------------------------------------------------------
-# _compute_upgrade_type unit tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "current, latest_matching, expected",
     [
-        # No upgrade: current equals latest-matching-spec
         ("1.0.0", "1.0.0", "none"),
-        # Patch upgrade: 1.0.0 -> 1.0.1
         ("1.0.0", "1.0.1", "patch"),
-        # Minor upgrade: 1.0.1 -> 1.1.0
         ("1.0.1", "1.1.0", "minor"),
-        # Major upgrade: 1.1.0 -> 2.0.0
         ("1.1.0", "2.0.0", "major"),
-        # Prerelease upgrade: 1.0.0 -> 1.0.1a1
         ("1.0.0", "1.0.1a1", "prerelease"),
-        # Prerelease to stable: 1.0.0rc1 -> 1.0.0 (stable is a patch from prerelease)
         ("1.0.0rc1", "1.0.0", "patch"),
     ],
 )
@@ -75,11 +59,6 @@ class TestComputeUpgradeType:
         assert result == expected, (
             f"_compute_upgrade_type({current!r}, {latest_matching!r}) returned {result!r}, expected {expected!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# OutdatedRow dataclass tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -109,11 +88,6 @@ class TestOutdatedRowDataclass:
         assert row.upgrade_type == "none"
 
 
-# ---------------------------------------------------------------------------
-# Missing catalog source error (AC-FUNC-009)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMissingCatalogSource:
     def test_missing_catalog_source_exits_nonzero(
@@ -123,7 +97,7 @@ class TestMissingCatalogSource:
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REVISION=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REF=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\nKANON_SOURCE_FOO_NAME=FOO\nKANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
         args = _make_args(catalog_source=None, kanon_file=str(kanon_file))
@@ -141,7 +115,7 @@ class TestMissingCatalogSource:
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REVISION=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REF=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\nKANON_SOURCE_FOO_NAME=FOO\nKANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
         args = _make_args(catalog_source=None, kanon_file=str(kanon_file))
@@ -152,21 +126,16 @@ class TestMissingCatalogSource:
         assert "catalog" in captured.err.lower()
 
 
-# ---------------------------------------------------------------------------
-# Malformed catalog source format error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestMalformedCatalogSourceFormat:
     def test_malformed_catalog_source_exits_nonzero(self, tmp_path: pathlib.Path) -> None:
         """A catalog source with no '@ref' delimiter must exit non-zero."""
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REVISION=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REF=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\nKANON_SOURCE_FOO_NAME=FOO\nKANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
-        # A URL with no '@<ref>' suffix is malformed per _parse_catalog_source
+
         args = _make_args(catalog_source="no-ref-delimiter-here", kanon_file=str(kanon_file))
         with pytest.raises(SystemExit) as exc_info:
             run(args)
@@ -180,7 +149,7 @@ class TestMalformedCatalogSourceFormat:
         """Error message for malformed format must go to stderr with ERROR: prefix."""
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
-            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REVISION=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_URL=file:///some/repo\nKANON_SOURCE_FOO_REF=>=1.0.0\nKANON_SOURCE_FOO_PATH=./foo\nKANON_SOURCE_FOO_NAME=FOO\nKANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
         args = _make_args(catalog_source="no-ref-delimiter-here", kanon_file=str(kanon_file))
@@ -188,11 +157,6 @@ class TestMalformedCatalogSourceFormat:
             run(args)
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err
-
-
-# ---------------------------------------------------------------------------
-# Missing .kanon file error (AC-FUNC-010)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -218,11 +182,6 @@ class TestMissingKanonFile:
         assert "no_such" in captured.err
 
 
-# ---------------------------------------------------------------------------
-# _build_row -- locked SHA from lockfile path (AC-FUNC-003)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBuildRowFromLockfile:
     """_build_row returns current from lockfile when lockfile entry is present."""
@@ -231,7 +190,7 @@ class TestBuildRowFromLockfile:
         """When a lock_sha is provided, current column must use it."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0,<1.1",
+            "ref": "refs/tags/>=1.0.0,<1.1",
             "path": "./foo",
         }
         available_tags = [
@@ -239,7 +198,7 @@ class TestBuildRowFromLockfile:
             "refs/tags/1.0.1",
             "refs/tags/1.1.0",
         ]
-        # lock_ref is pinned to 1.0.0; latest matching >=1.0.0,<1.1 is 1.0.1; latest-available is 1.1.0
+
         row = _build_row(
             name="foo",
             source=source,
@@ -255,7 +214,7 @@ class TestBuildRowFromLockfile:
         """When locked ref equals latest matching spec, upgrade_type is none."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0,<1.1",
+            "ref": "refs/tags/>=1.0.0,<1.1",
             "path": "./foo",
         }
         available_tags = [
@@ -277,7 +236,7 @@ class TestBuildRowFromLockfile:
         """When latest_matching_spec has a higher minor than current, upgrade_type is minor."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0",
+            "ref": "refs/tags/>=1.0.0",
             "path": "./foo",
         }
         available_tags = [
@@ -299,7 +258,7 @@ class TestBuildRowFromLockfile:
         """When latest_matching_spec has a higher major than current, upgrade_type is major."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0",
+            "ref": "refs/tags/>=1.0.0",
             "path": "./foo",
         }
         available_tags = [
@@ -321,7 +280,7 @@ class TestBuildRowFromLockfile:
         """When latest_matching_spec is a prerelease, upgrade_type is prerelease."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0",
+            "ref": "refs/tags/>=1.0.0",
             "path": "./foo",
         }
         available_tags = [
@@ -339,11 +298,6 @@ class TestBuildRowFromLockfile:
         assert row.upgrade_type == "prerelease"
 
 
-# ---------------------------------------------------------------------------
-# _build_row -- live resolve when no lockfile (AC-FUNC-003)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBuildRowLiveResolve:
     """When lock_ref is None, current is resolved live against the constraint."""
@@ -352,7 +306,7 @@ class TestBuildRowLiveResolve:
         """Without a lockfile, current is resolved from the constraint + available tags."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0,<1.1",
+            "ref": "refs/tags/>=1.0.0,<1.1",
             "path": "./foo",
         }
         available_tags = [
@@ -366,17 +320,12 @@ class TestBuildRowLiveResolve:
             available_tags=available_tags,
             lock_ref=None,
         )
-        # Live resolve should pick the highest tag matching >=1.0.0,<1.1 -- that is 1.0.1
+
         assert row.current == "1.0.1"
-        # latest_matching_spec is the same (highest under the spec)
+
         assert row.latest_matching_spec == "1.0.1"
         assert row.latest_available == "1.1.0"
         assert row.upgrade_type == "none"
-
-
-# ---------------------------------------------------------------------------
-# Zero PEP 440-parseable tags loud error propagation (AC-FUNC-011)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -385,10 +334,10 @@ class TestZeroPep440TagsError:
         """_build_row must propagate the loud error from _resolve_constraint_from_tags."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0",
+            "ref": "refs/tags/>=1.0.0",
             "path": "./foo",
         }
-        # All tags are non-PEP 440 -- matches the loud-error path from E1-F1-S1-T2
+
         non_pep440_tags = [
             "refs/tags/release-1.0.0",
             "refs/tags/hotfix-abc",
@@ -405,7 +354,7 @@ class TestZeroPep440TagsError:
         """The loud error message must include the catalog audit remediation pointer."""
         source = {
             "url": "file:///some/repo",
-            "revision": "refs/tags/>=1.0.0",
+            "ref": "refs/tags/>=1.0.0",
             "path": "./foo",
         }
         non_pep440_tags = ["refs/tags/release-1.0.0"]
@@ -419,11 +368,6 @@ class TestZeroPep440TagsError:
             pytest.fail("Expected ValueError to be raised")
         except ValueError as exc:
             assert "kanon catalog audit" in str(exc)
-
-
-# ---------------------------------------------------------------------------
-# _format_table tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -471,15 +415,10 @@ class TestFormatTable:
         ]
         output = _format_table(rows)
         lines = output.rstrip("\n").split("\n")
-        # Header line, separator line, then data rows
+
         assert len(lines) >= 3
-        # Separator contains dashes
+
         assert "-" in lines[1]
-
-
-# ---------------------------------------------------------------------------
-# _resolve_lock_ref tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -508,34 +447,23 @@ class TestResolveLockRef:
         sha = "a" * 40
         lock_file = tmp_path / ".kanon.lock"
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 5\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "file:///fake@HEAD"\n'
-            'url = "file:///fake"\n'
-            'revision_spec = "HEAD"\n'
-            'resolved_ref = "HEAD"\n'
-            f'resolved_sha = "{sha}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "BAR"\n'
             'name = "BAR"\n'
             'url = "file:///some/repo"\n'
-            'revision_spec = ">=1.0.0"\n'
+            'ref_spec = ">=1.0.0"\n'
             'resolved_ref = "refs/tags/1.0.0"\n'
             f'resolved_sha = "{sha}"\n'
             'path = "./bar"\n'
         )
-        # Look for "FOO" which is not in the lockfile (only "BAR" is)
+
         result = _resolve_lock_ref("FOO", lock_file)
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# register() tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -603,11 +531,6 @@ class TestRegister:
         assert outdated_parser.add_help is True, "outdated subparser must have add_help=True so '-h' is accepted"
 
 
-# ---------------------------------------------------------------------------
-# run() happy path via patched _list_tags
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunHappyPath:
     """Test run() with patched network calls to achieve coverage on the main dispatch path."""
@@ -616,15 +539,16 @@ class TestRunHappyPath:
         """run() emits a table row for each source when _list_tags is patched."""
         from unittest.mock import patch
 
-        # Write a real .kanon file
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "GITBASE=file:///unused\n"
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=>=1.0.0,<1.1\n"
+            "KANON_SOURCE_FOO_REF=>=1.0.0,<1.1\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
@@ -642,9 +566,9 @@ class TestRunHappyPath:
         assert result == 0
         captured = capsys.readouterr()
         assert "FOO" in captured.out
-        assert "1.0.1" in captured.out  # latest-matching-spec under >=1.0.0,<1.1
-        assert "1.1.0" in captured.out  # latest-available
-        assert "none" in captured.out  # live-resolve matches latest-matching-spec
+        assert "1.0.1" in captured.out
+        assert "1.1.0" in captured.out
+        assert "none" in captured.out
 
     def test_run_uses_lockfile_when_explicit_path_given(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
@@ -658,31 +582,26 @@ class TestRunHappyPath:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=>=1.0.0,<1.1\n"
+            "KANON_SOURCE_FOO_REF=>=1.0.0,<1.1\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 
-        # Write a minimal lockfile with FOO locked to 1.0.0
         lock_file = tmp_path / ".kanon.lock"
         sha = "a" * 40
         lock_file.write_text(
-            "schema_version = 1\n"
+            "schema_version = 5\n"
             'generated_at = "2026-01-01T00:00:00Z"\n'
             'generator = "kanon-cli/test"\n'
             f'kanon_hash = "sha256:{"a" * 64}"\n'
             "\n"
-            "[catalog]\n"
-            'source = "file:///fake@HEAD"\n'
-            'url = "file:///fake"\n'
-            'revision_spec = "HEAD"\n'
-            'resolved_ref = "HEAD"\n'
-            f'resolved_sha = "{sha}"\n'
-            "\n"
             "[[sources]]\n"
+            'alias = "FOO"\n'
             'name = "FOO"\n'
             'url = "file:///some/repo"\n'
-            'revision_spec = ">=1.0.0,<1.1"\n'
+            'ref_spec = ">=1.0.0,<1.1"\n'
             'resolved_ref = "refs/tags/1.0.0"\n'
             f'resolved_sha = "{sha}"\n'
             'path = "./foo"\n'
@@ -701,9 +620,9 @@ class TestRunHappyPath:
 
         assert result == 0
         captured = capsys.readouterr()
-        assert "1.0.0" in captured.out  # current from lockfile
-        assert "1.0.1" in captured.out  # latest-matching-spec
-        assert "patch" in captured.out  # upgrade-type
+        assert "1.0.0" in captured.out
+        assert "1.0.1" in captured.out
+        assert "patch" in captured.out
 
     def test_run_propagates_zero_pep440_tags_error(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
         """run() exits non-zero and writes ERROR to stderr on zero-PEP440-tags condition."""
@@ -715,8 +634,10 @@ class TestRunHappyPath:
             "CLAUDE_MARKETPLACES_DIR=/tmp/.claude\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "KANON_SOURCE_FOO_URL=file:///some/repo\n"
-            "KANON_SOURCE_FOO_REVISION=>=1.0.0\n"
+            "KANON_SOURCE_FOO_REF=>=1.0.0\n"
             "KANON_SOURCE_FOO_PATH=./foo\n"
+            "KANON_SOURCE_FOO_NAME=FOO\n"
+            "KANON_SOURCE_FOO_GITBASE=https://example.com\n"
         )
         kanon_file.chmod(0o644)
 

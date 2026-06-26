@@ -23,11 +23,6 @@ from kanon_cli.repo.error import ManifestParseError
 from kanon_cli.repo.manifest_xml import XmlInt
 
 
-# ---------------------------------------------------------------------------
-# Helpers for direct XmlInt tests (AC-TEST-001)
-# ---------------------------------------------------------------------------
-
-
 def _node(attr_value: str):
     """Return a real DOM element with ``attr`` set to *attr_value*.
 
@@ -50,10 +45,6 @@ def _node_no_attr():
     doc = xml.dom.minidom.parseString(b"<item/>")
     return doc.documentElement
 
-
-# ---------------------------------------------------------------------------
-# Helpers for full manifest parsing tests (AC-TEST-002, AC-TEST-003)
-# ---------------------------------------------------------------------------
 
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
@@ -138,11 +129,6 @@ def _build_manifest_with_project(extra_project_attrs: str = "") -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: non-integer string raises ManifestParseError with "invalid"
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "bad_value",
@@ -211,11 +197,6 @@ def test_xmlint_empty_attr_returns_default(default):
     assert result == default, f"AC-TEST-001: expected default {default!r} for empty attr but got {result!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: sync-j=0 and sync-j=-1 raise must-be-greater-than-0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "sync_j_value",
@@ -265,11 +246,6 @@ def test_sync_j_positive_integer_parses_successfully(tmp_path):
     xml_content = _build_manifest_with_default(default_attrs='sync-j="4"')
     manifest = _write_and_load(tmp_path, xml_content)
     assert manifest.default.sync_j == 4, f"AC-TEST-002: expected default.sync_j=4 but got {manifest.default.sync_j!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: clone-depth=0 and clone-depth=-5 raise must-be-greater-than-0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -323,11 +299,6 @@ def test_clone_depth_positive_integer_parses_successfully(tmp_path):
     projects_by_name = {p.name: p for p in manifest.projects}
     project = projects_by_name["platform/core"]
     assert project.clone_depth == 10, f"AC-TEST-003: expected project.clone_depth=10 but got {project.clone_depth!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Integer attributes enforce documented positivity at parse time
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -421,11 +392,6 @@ class TestXmlIntConstraintsEnforcedAtParseTime:
         projects_by_name = {p.name: p for p in m.projects}
         project = projects_by_name["platform/core"]
         assert project.clone_depth == 5, f"AC-FUNC-001: expected project.clone_depth=5 but got {project.clone_depth!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

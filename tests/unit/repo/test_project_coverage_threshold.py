@@ -37,9 +37,7 @@ from kanon_cli.repo.project import (
     ReviewableBranch,
 )
 
-# Track every temp directory created by module-level helpers so they can be
-# removed on interpreter exit, preventing inode exhaustion in long-running
-# devcontainers.
+
 _TRACKED_TEMPDIRS: list[str] = []
 
 

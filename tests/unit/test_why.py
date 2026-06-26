@@ -46,11 +46,6 @@ if TYPE_CHECKING:
     from kanon_cli.core.lockfile import Lockfile
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_args(
     target: str,
     kanon_file: str = "/fake/.kanon",
@@ -66,11 +61,6 @@ def _make_args(
         catalog_source=catalog_source,
         format=format,
     )
-
-
-# ---------------------------------------------------------------------------
-# ChainNode and ResolvedTree construction helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_source_node(
@@ -120,11 +110,6 @@ def _make_project_node(
     )
 
 
-# ---------------------------------------------------------------------------
-# Shared lockfile / .kanon fixture factory
-# ---------------------------------------------------------------------------
-
-
 def _make_minimal_kanon_file(tmp_path: pathlib.Path, source_name: str = "FOO") -> pathlib.Path:
     """Write a minimal .kanon file and return its path."""
     kanon_file = tmp_path / ".kanon"
@@ -133,8 +118,10 @@ def _make_minimal_kanon_file(tmp_path: pathlib.Path, source_name: str = "FOO") -
         f"CLAUDE_MARKETPLACES_DIR=/tmp/mkts\n"
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL=https://github.com/org/catalog\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=./foo\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://github.com/org\n"
     )
     kanon_file.chmod(0o644)
     return kanon_file
@@ -160,7 +147,7 @@ def _make_minimal_lockfile(
         A Lockfile dataclass instance.
     """
     from kanon_cli.core.lockfile import (
-        CatalogBlock,
+        CURRENT_SCHEMA_VERSION,
         Lockfile,
         ProjectEntry,
         SourceEntry,
@@ -168,22 +155,16 @@ def _make_minimal_lockfile(
     from kanon_cli.core.url import canonicalize_repo_url
 
     return Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash="sha256:" + "a" * 64,
-        catalog=CatalogBlock(
-            source="catalog@HEAD",
-            url="https://github.com/org/catalog",
-            revision_spec="HEAD",
-            resolved_ref="HEAD",
-            resolved_sha="f" * 40,
-        ),
         sources=[
             SourceEntry(
+                alias=source_name,
                 name=source_name,
                 url="https://github.com/org/catalog",
-                revision_spec="main",
+                ref_spec="main",
                 resolved_ref="main",
                 resolved_sha="a" * 40,
                 path="./foo",
@@ -193,7 +174,7 @@ def _make_minimal_lockfile(
                         name=project_name,
                         url=project_url,
                         canonical_url=canonicalize_repo_url(project_url),
-                        revision_spec="main",
+                        ref_spec="main",
                         resolved_ref="main",
                         resolved_sha=project_sha,
                     )
@@ -210,11 +191,6 @@ def _write_lockfile_to_tmp(tmp_path: pathlib.Path, lockfile: "Lockfile") -> path
     lock_path = tmp_path / ".kanon.lock"
     write_lockfile(lockfile, lock_path)
     return lock_path
-
-
-# ---------------------------------------------------------------------------
-# _walk_chains unit tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -325,11 +301,6 @@ class TestWalkChains:
         assert chains == []
 
 
-# ---------------------------------------------------------------------------
-# _render_text unit tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRenderText:
     """Tests for chain-to-text formatting."""
@@ -342,11 +313,11 @@ class TestRenderText:
         lines = _render_text([[source, include, project]])
         assert len(lines) == 1
         line = lines[0]
-        # top source name at start
+
         assert line.startswith("foo")
-        # include reference with sha
+
         assert "repo-specs/bar.xml@" in line
-        # project name with sha at end
+
         assert "baz@" + "b" * 40 in line
 
     def test_arrow_separated(self) -> None:
@@ -363,11 +334,6 @@ class TestRenderText:
         proj = _make_project_node(name="shared", url="https://github.com/org/shared", sha="e" * 40)
         lines = _render_text([[source1, proj], [source2, proj]])
         assert len(lines) == 2
-
-
-# ---------------------------------------------------------------------------
-# _build_tree_from_lockfile unit tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -436,16 +402,13 @@ class TestBuildTreeFromLockfile:
         assert len(tree.sources) == 1
         source_node = tree.sources[0]
 
-        # Source's direct children should be include nodes only
         include_nodes = [c for c in source_node.children if c.kind == "include"]
         assert len(include_nodes) == 1
         assert include_nodes[0].sha == include_sha
 
-        # No direct project children on the source (project is under the include)
         direct_project_nodes = [c for c in source_node.children if c.kind == "project"]
         assert len(direct_project_nodes) == 0
 
-        # Project should be under the include node (leaf include placement)
         include_node = include_nodes[0]
         child_projects = [c for c in include_node.children if c.kind == "project"]
         assert len(child_projects) == 1
@@ -485,7 +448,7 @@ class TestBuildTreeFromLockfile:
         assert len(chains) == 1
 
         chain = chains[0]
-        # Chain: source -> include -> project
+
         assert len(chain) == 3
         assert chain[0].kind == "source"
         assert chain[1].kind == "include"
@@ -494,24 +457,14 @@ class TestBuildTreeFromLockfile:
         assert chain[2].sha == project_sha
 
 
-# ---------------------------------------------------------------------------
-# URL canonicalization equivalence tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "arg_url, project_url",
     [
-        # SCP shorthand vs https
         ("git@github.com:org/repo.git", "https://github.com/org/repo"),
-        # Trailing slash normalization
         ("https://github.com/org/repo/", "https://github.com/org/repo"),
-        # .git suffix normalization
         ("https://github.com/org/repo.git", "https://github.com/org/repo"),
-        # ssh:// scheme
         ("ssh://github.com/org/repo.git", "https://github.com/org/repo"),
-        # Both with .git
         ("git@github.com:org/repo.git", "https://github.com/org/repo.git"),
     ],
 )
@@ -533,11 +486,6 @@ class TestUrlCanonicalizationEquivalence:
         )
 
 
-# ---------------------------------------------------------------------------
-# run() integration-style unit tests (filesystem + lockfile interaction)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunLockfilePresent:
     """Tests for run() with a lockfile present (skips live-resolve)."""
@@ -555,14 +503,12 @@ class TestRunLockfilePresent:
             target=project_url,
             kanon_file=str(kanon_file),
             lock_file=str(lock_file),
-            # catalog_source is set but must NOT be called when lockfile present
             catalog_source="file:///fake/catalog@HEAD",
         )
 
         with patch("kanon_cli.commands.why._live_resolve_tree") as mock_live:
             exit_code = run(args)
 
-        # Live-resolve must never be called when lockfile is present
         mock_live.assert_not_called()
         assert exit_code == 0
 
@@ -604,7 +550,7 @@ class TestRunLockfilePresent:
         assert exit_code == 0
 
         captured = capsys.readouterr()
-        # Chain includes source name, include ref (with sha), and project sha
+
         assert "FOO" in captured.out
         assert " -> " in captured.out
         assert f"repo-specs/bar.xml@{include_sha}" in captured.out
@@ -676,7 +622,6 @@ class TestRunErrors:
         """No lockfile + no catalog source -> hard error with non-zero exit."""
         kanon_file = _make_minimal_kanon_file(tmp_path)
 
-        # No lock file, no catalog source
         args = _make_args(
             target="https://github.com/org/baz",
             kanon_file=str(kanon_file),
@@ -698,7 +643,6 @@ class TestRunErrors:
         lockfile = _make_minimal_lockfile(project_url=project_url, project_sha="b" * 40, project_name="present")
         lock_file = _write_lockfile_to_tmp(tmp_path, lockfile)
 
-        # An invalid URL that will cause canonicalize_repo_url to raise ValueError
         invalid_url = "https://github.com/org/repo?query=param"
         args = _make_args(
             target=invalid_url,
@@ -714,7 +658,6 @@ class TestRunErrors:
         """With catalog source and no lockfile, run() calls _live_resolve_tree."""
         kanon_file = _make_minimal_kanon_file(tmp_path)
 
-        # No lockfile -- live-resolve path
         args = _make_args(
             target="https://github.com/org/baz",
             kanon_file=str(kanon_file),
@@ -773,10 +716,10 @@ class TestRunErrors:
 
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
-        # Must be the LiveResolveError structured message
+
         assert "ERROR: cannot resolve" in captured.err
         assert "FOO" in captured.err
-        # Must NOT expose a Python traceback
+
         assert "Traceback" not in captured.err
         assert "NotImplementedError" not in captured.err
 
@@ -843,7 +786,6 @@ class TestCollectLeafIncludeNodes:
 
         leaves = _collect_leaf_include_nodes([parent])
 
-        # parent has a child include -- it is NOT a leaf; only child is returned
         assert len(leaves) == 1
         assert leaves[0].name == "child"
 
@@ -900,10 +842,14 @@ class TestLiveResolveTree:
             "sources": {
                 source_name: {
                     "url": url,
-                    "revision": revision,
+                    "ref": revision,
                     "path": "./foo",
+                    "name": source_name,
+                    "marketplace": False,
+                    "env": {"GITBASE": "https://github.com/org"},
                 }
             },
+            "globals": {},
         }
 
     def test_raises_live_resolve_error_when_ref_resolution_fails(self, tmp_path: pathlib.Path) -> None:
@@ -1009,11 +955,6 @@ class TestLiveResolveTree:
         assert "cannot resolve" in str(err)
 
 
-# ---------------------------------------------------------------------------
-# Tests for add_help=True on the 'why' subparser
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestWhySubparserHelp:
     """The 'why' subparser has add_help=True and accepts '-h'."""
@@ -1035,11 +976,6 @@ class TestWhySubparserHelp:
         register(subparsers)
         why_parser = subparsers.choices["why"]
         assert why_parser.add_help is True, "why subparser must have add_help=True so '-h' is accepted"
-
-
-# ---------------------------------------------------------------------------
-# Tests for _substitute_fetch_url
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1122,7 +1058,6 @@ class TestSubstituteFetchUrl:
             kanon_file=pathlib.Path(".kanon"),
         )
 
-        # After the call, the key must be gone from the environment.
         assert key not in os.environ, f"_substitute_fetch_url leaked {key!r} into os.environ after returning"
 
     def test_env_not_mutated_when_error_raised(self) -> None:
@@ -1148,11 +1083,6 @@ class TestSubstituteFetchUrl:
             )
         finally:
             os.environ.pop(env_var_name, None)
-
-
-# ---------------------------------------------------------------------------
-# Tests for _build_project_nodes_from_xml with ${VAR} placeholder fetch URLs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1232,7 +1162,6 @@ class TestBuildProjectNodesFromXmlPlaceholder:
         manifest_repo = tmp_path / "repo"
         manifest_repo.mkdir()
 
-        # Fetch URL that is not a valid git URL after substitution.
         xml_path = self._write_manifest_xml(manifest_repo, remote_fetch="not-a-valid-url::??")
 
         nodes = _build_project_nodes_from_xml(
@@ -1276,11 +1205,6 @@ class TestBuildProjectNodesFromXmlPlaceholder:
         err_msg = str(exc_info.value)
         assert "UNDECLARED_VAR" in err_msg, f"Error must name the missing variable; got: {err_msg!r}"
         assert str(kanon_file) in err_msg, f"Error must name the .kanon path; got: {err_msg!r}"
-
-
-# ---------------------------------------------------------------------------
-# Tests for _match_by_url source-node matching (AC-3)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1350,11 +1274,6 @@ class TestMatchByUrlSourceNode:
 
         assert len(result) == 1
         assert result[0] is project
-
-
-# ---------------------------------------------------------------------------
-# Tests for _match_by_xml_path source root-manifest matching (AC-2)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

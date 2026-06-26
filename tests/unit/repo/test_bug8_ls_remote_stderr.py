@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 8: ls-remote errors missing stderr.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 8 -- when git ls-remote fails
@@ -29,11 +15,6 @@ import pytest
 
 from kanon_cli.repo.error import ManifestInvalidRevisionError
 from kanon_cli.repo.project import Project
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_project(remote_url="https://example.com/org/repo.git", constraint="refs/tags/dev/mylib/~=1.0.0"):
@@ -74,11 +55,6 @@ def _make_failure_result(stderr="fatal: repository not found"):
     return result
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- ManifestInvalidRevisionError includes stderr content
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_error_message_includes_stderr(monkeypatch):
     """AC-TEST-001: ManifestInvalidRevisionError raised by _ResolveVersionConstraint
@@ -112,11 +88,6 @@ def test_error_message_includes_stderr(monkeypatch):
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- ManifestInvalidRevisionError includes remote URL
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_error_message_includes_url(monkeypatch):
     """AC-TEST-002: ManifestInvalidRevisionError raised by _ResolveVersionConstraint
@@ -148,11 +119,6 @@ def test_error_message_includes_url(monkeypatch):
         f"Expected ManifestInvalidRevisionError message to contain remote URL "
         f"'{remote_url}', but got: {error_message!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- ManifestInvalidRevisionError includes constraint expression
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

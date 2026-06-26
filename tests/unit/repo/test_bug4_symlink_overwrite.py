@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for Bug 4: symlink overwrite without warning.
 
 Bug reference: specs/BACKLOG-repo-bugs.md Bug 4 -- project.py _LinkFile.__linkIt
@@ -38,11 +24,6 @@ import pytest
 from kanon_cli.repo import project
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_link_file(worktree, src_rel, topdir, dest_rel):
     """Return a _LinkFile instance for the given paths."""
     return project._LinkFile(str(worktree), src_rel, str(topdir), dest_rel)
@@ -55,11 +36,6 @@ def _create_symlink_at(dest_path, target):
     """
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     os.symlink(target, str(dest_path))
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- Repo-managed symlink replacement produces no warning
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -85,8 +61,7 @@ def test_repo_managed_symlink_replaced_silently(tmp_path):
     src_file.write_text("content", encoding="utf-8")
 
     dest_path = topdir / "linked-config.txt"
-    # _Link() computes: relpath = os.path.relpath(src_abs, os.path.dirname(dest_abs))
-    # Pre-create the symlink with that exact target so it looks repo-managed.
+
     expected_rel = os.path.relpath(str(src_file), str(topdir))
     _create_symlink_at(dest_path, expected_rel)
 
@@ -95,11 +70,6 @@ def test_repo_managed_symlink_replaced_silently(tmp_path):
     with mock.patch("kanon_cli.repo.project.logger") as mock_logger:
         lf._Link()
         mock_logger.warning.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- Foreign symlink replacement logs a warning
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -133,11 +103,6 @@ def test_foreign_symlink_overwrite_logs_warning(tmp_path):
         mock_logger.warning.assert_called()
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- Warning message includes the old target path
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_foreign_symlink_warning_includes_old_target(tmp_path):
     """AC-TEST-003: The warning message must include the old (foreign) target.
@@ -167,17 +132,11 @@ def test_foreign_symlink_warning_includes_old_target(tmp_path):
         lf._Link()
         assert mock_logger.warning.called, "Expected logger.warning to be called for foreign symlink"
 
-    # Collect all warning call args to check the foreign target appears.
     call_args_list = mock_logger.warning.call_args_list
     all_warning_text = " ".join(str(arg) for call in call_args_list for arg in call.args)
     assert foreign_target in all_warning_text, (
         f"Expected old target {foreign_target!r} in warning message, got warning args: {all_warning_text!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Additional -- Symlink is overwritten in all cases (sync not blocked)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -207,8 +166,6 @@ def test_foreign_symlink_is_still_replaced(tmp_path):
     lf = _make_link_file(worktree, "app.conf", topdir, "app.conf")
     lf._Link()
 
-    # The symlink must now point to the repo-managed relative source.
-    # _Link() computes relpath = os.path.relpath(src, os.path.dirname(dest)).
     expected_rel = os.path.relpath(str(worktree / "app.conf"), str(topdir))
     assert os.path.islink(str(dest_path)), "Expected dest to be a symlink after _Link()"
     new_target = os.readlink(str(dest_path))
@@ -241,16 +198,10 @@ def test_repo_managed_symlink_is_unchanged(tmp_path):
     lf = _make_link_file(worktree, rel_src, topdir, "schema.json")
     lf._Link()
 
-    # _Link() computes relpath = os.path.relpath(src, os.path.dirname(dest)).
     expected_rel = os.path.relpath(str(worktree / rel_src), str(topdir))
     assert os.path.islink(str(dest_path)), "Expected dest to remain a symlink"
     actual_target = os.readlink(str(dest_path))
     assert actual_target == expected_rel, f"Expected symlink target to be {expected_rel!r}, got {actual_target!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001 -- Real sync lifecycle: foreign symlink at dest gets warning
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -285,10 +236,8 @@ def test_foreign_symlink_lifecycle_warning_and_replacement(tmp_path):
     with mock.patch("kanon_cli.repo.project.logger") as mock_logger:
         lf._Link()
 
-    # Warning must have been logged.
     assert mock_logger.warning.called, "Expected logger.warning to be called when foreign symlink is replaced"
 
-    # Warning args must include old and new targets.
     all_warning_text = " ".join(str(arg) for call in mock_logger.warning.call_args_list for arg in call.args)
     assert foreign_target in all_warning_text, (
         f"Expected old target {foreign_target!r} in warning, got: {all_warning_text!r}"
@@ -297,7 +246,5 @@ def test_foreign_symlink_lifecycle_warning_and_replacement(tmp_path):
         f"Expected new target in warning, got: {all_warning_text!r}"
     )
 
-    # Symlink must now point to the repo-managed target.
-    # _Link() computes relpath = os.path.relpath(src, os.path.dirname(dest)).
     expected_rel = os.path.relpath(str(worktree / repo_managed_target), str(topdir))
     assert os.readlink(str(dest_path)) == expected_rel, f"Expected symlink to be replaced with {expected_rel!r}"

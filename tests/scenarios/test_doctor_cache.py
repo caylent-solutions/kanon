@@ -21,10 +21,6 @@ import pytest
 from tests.scenarios.conftest import run_kanon
 
 
-# ---------------------------------------------------------------------------
-# Parametrize constants
-# ---------------------------------------------------------------------------
-
 _CACHE_FLAG_PARAMS = [
     pytest.param(
         "--refresh-completion-cache",
@@ -39,11 +35,6 @@ _CACHE_FLAG_PARAMS = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-
 def _run_doctor_cache_flag(
     tmp_path: pathlib.Path,
     flag: str,
@@ -52,9 +43,9 @@ def _run_doctor_cache_flag(
     """Run 'kanon doctor <flag>' from an empty cwd and assert pass contract.
 
     Invokes the real 'kanon' CLI as a subprocess from tmp_path (no .kanon
-    present). Sets KANON_CACHE_DIR to a subdirectory of tmp_path. Asserts
-    exit 0, a cache-op info-line in combined output, and no "no kanon
-    workspace" error in stderr.
+    present). Sets KANON_HOME to tmp_path so the cache resolves under
+    <KANON_HOME>/cache. Asserts exit 0, a cache-op info-line in combined
+    output, and no "no kanon workspace" error in stderr.
 
     Args:
         tmp_path: Empty temporary directory with no .kanon file.
@@ -66,7 +57,7 @@ def _run_doctor_cache_flag(
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir(mode=0o700)
 
-    extra_env: dict[str, str] = {"KANON_CACHE_DIR": str(cache_dir)}
+    extra_env: dict[str, str] = {"KANON_HOME": str(cache_dir.parent)}
 
     result = run_kanon(
         "doctor",
@@ -90,11 +81,6 @@ def _run_doctor_cache_flag(
     assert "no kanon workspace" not in result.stderr, (
         f"Expected no workspace-not-found error in stderr; got:\nstderr: {result.stderr!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.scenario

@@ -26,11 +26,6 @@ from kanon_cli.commands.remove import (
 import argparse
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _make_args(
     names: list[str],
     kanon_file: str,
@@ -48,11 +43,6 @@ def _make_args(
     )
 
 
-# ---------------------------------------------------------------------------
-# _detect_dominant_line_ending
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestDetectDominantLineEnding:
     """_detect_dominant_line_ending() returns the dominant ending or 'mixed'."""
@@ -60,13 +50,9 @@ class TestDetectDominantLineEnding:
     @pytest.mark.parametrize(
         "raw_text,expected",
         [
-            # LF-only
             ("line1\nline2\nline3\n", "\n"),
-            # CRLF-only
             ("line1\r\nline2\r\nline3\r\n", "\r\n"),
-            # Mixed: more LF than CRLF
             ("a\nb\nc\nd\r\n", "\n"),
-            # Mixed: more CRLF than LF
             ("a\r\nb\r\nc\r\nd\n", "\r\n"),
         ],
         ids=["lf-only", "crlf-only", "mixed-lf-wins", "mixed-crlf-wins"],
@@ -78,10 +64,10 @@ class TestDetectDominantLineEnding:
 
     def test_exactly_balanced_returns_crlf(self) -> None:
         """When counts are equal (tie), CRLF is treated as 'mixed' -> normalise to LF."""
-        # Balanced: 2 LF, 2 CRLF -- tie case should return None (mixed)
+
         raw_text = "a\nb\nc\r\nd\r\n"
         result = _detect_dominant_line_ending(raw_text)
-        # With exactly equal counts, neither dominates -- returns None for "mixed"
+
         assert result is None
 
     def test_no_newlines_returns_lf(self) -> None:
@@ -100,16 +86,9 @@ class TestDetectDominantLineEnding:
         assert result == "\r\n"
 
 
-# ---------------------------------------------------------------------------
-# _apply_file_writing_rules
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestApplyFileWritingRules:
     """_apply_file_writing_rules() applies blank-run collapse and trailing-newline rules."""
-
-    # -- Blank-run collapse --
 
     @pytest.mark.parametrize(
         "run_length,expected_blank_count",
@@ -127,7 +106,7 @@ class TestApplyFileWritingRules:
         blank_lines = "\n" * run_length
         text = "LINE_A=1\n" + blank_lines + "LINE_B=2\n"
         result = _apply_file_writing_rules(text, "\n")
-        # Count blank lines between LINE_A and LINE_B
+
         segments = result.split("LINE_A=1\n", 1)
         assert len(segments) == 2
         tail = segments[1]
@@ -145,13 +124,11 @@ class TestApplyFileWritingRules:
         """A run of exactly two blank lines is preserved as-is."""
         text = "A=1\n\n\nB=2\n"
         result = _apply_file_writing_rules(text, "\n")
-        # Input has 2 blank lines between A and B; they must be preserved unchanged
+
         idx_a = result.index("A=1\n")
         idx_b = result.index("B=2\n")
         between = result[idx_a + len("A=1\n") : idx_b]
         assert between == "\n\n"
-
-    # -- Trailing-newline normalisation --
 
     @pytest.mark.parametrize(
         "trailing_blank_count",
@@ -161,11 +138,11 @@ class TestApplyFileWritingRules:
     def test_trailing_newline_normalisation_lf(self, trailing_blank_count: int) -> None:
         """File always ends with exactly one LF regardless of trailing blank count."""
         base = "A=1\nB=2\n"
-        # Add extra blank lines beyond the one already in base
+
         text = base + "\n" * trailing_blank_count
         result = _apply_file_writing_rules(text, "\n")
         assert result.endswith("B=2\n")
-        # Ensure exactly one newline at the end (no trailing blanks)
+
         assert not result.endswith("B=2\n\n")
 
     def test_trailing_newline_added_when_missing_lf(self) -> None:
@@ -195,15 +172,13 @@ class TestApplyFileWritingRules:
         assert result.endswith("\r\n")
         assert not result.endswith("\r\n\r\n")
 
-    # -- Line-ending rewrite --
-
     def test_crlf_output_when_dominant_is_crlf(self) -> None:
         """Lines in output use CRLF when dominant is CRLF."""
         text = "A=1\r\nB=2\r\n"
         result = _apply_file_writing_rules(text, "\r\n")
         assert "\r\n" in result
         lines = result.split("\r\n")
-        # All non-empty lines should be split correctly by CRLF
+
         assert "A=1" in lines
         assert "B=2" in lines
 
@@ -211,15 +186,10 @@ class TestApplyFileWritingRules:
         """Lines in output use LF when dominant is LF."""
         text = "A=1\nB=2\n"
         result = _apply_file_writing_rules(text, "\n")
-        # No CRLF in output
+
         assert "\r\n" not in result
         assert "A=1\n" in result
         assert "B=2\n" in result
-
-
-# ---------------------------------------------------------------------------
-# Mixed line-endings warning (AC-FUNC-005)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -228,12 +198,14 @@ class TestMixedLineEndingsWarning:
 
     def test_mixed_line_endings_emits_warning(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """A .kanon file with mixed LF and CRLF triggers a stderr warning."""
-        # Balanced mixed: 2 CRLF and 2 LF (tie -> normalise to LF)
+
         content = (
             "GITBASE=x\r\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\r\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\r\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))
@@ -249,12 +221,14 @@ class TestMixedLineEndingsWarning:
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """After mixed-file removal, the output file uses LF only."""
-        # Balanced mixed (tie -> LF)
+
         content = (
             "GITBASE=x\r\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\r\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\r\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))
@@ -270,8 +244,10 @@ class TestMixedLineEndingsWarning:
         content = (
             "GITBASE=x\r\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\r\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\r\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))
@@ -280,7 +256,7 @@ class TestMixedLineEndingsWarning:
         run_remove(args)
 
         stderr = capsys.readouterr().err
-        # spec-canonical: ".kanon file <path> has mixed line endings; normalising to LF"
+
         assert "normalising to LF" in stderr
 
     def test_lf_only_file_emits_no_warning(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -288,8 +264,10 @@ class TestMixedLineEndingsWarning:
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(content)
@@ -305,8 +283,10 @@ class TestMixedLineEndingsWarning:
         content = (
             "GITBASE=x\r\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\r\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\r\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\r\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\r\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\r\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\r\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))
@@ -316,11 +296,6 @@ class TestMixedLineEndingsWarning:
 
         stderr = capsys.readouterr().err
         assert "mixed line endings" not in stderr
-
-
-# ---------------------------------------------------------------------------
-# Comment preservation (AC-FUNC-008)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -333,8 +308,10 @@ class TestCommentPreservation:
             "GITBASE=x\n"
             "# This is a comment about foo_bar\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(content)
@@ -350,8 +327,10 @@ class TestCommentPreservation:
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
             "# This trailing comment should survive\n"
         )
         kanon_file = tmp_path / ".kanon"
@@ -369,8 +348,10 @@ class TestCommentPreservation:
             "GITBASE=x\n"
             "# Comment before foo_bar block\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
             "# Comment after foo_bar block\n"
         )
         kanon_file = tmp_path / ".kanon"
@@ -384,14 +365,16 @@ class TestCommentPreservation:
         assert "# Comment after foo_bar block" in result
 
     def test_only_kanon_source_lines_removed_not_comments(self, tmp_path: pathlib.Path) -> None:
-        """Only the three KANON_SOURCE_* lines are removed; all other lines survive."""
+        """Only the five KANON_SOURCE_* lines are removed; all other lines survive."""
         content = (
             "GITBASE=x\n"
             "# Comment 1\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "# Comment 2 (between URL and REVISION)\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "# Comment 2 (between URL and REF)\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
             "# Comment 3\n"
             "OTHER_VAR=value\n"
         )
@@ -402,21 +385,18 @@ class TestCommentPreservation:
         run_remove(args)
 
         result = kanon_file.read_text()
-        # All comments preserved
+
         assert "# Comment 1" in result
-        assert "# Comment 2 (between URL and REVISION)" in result
+        assert "# Comment 2 (between URL and REF)" in result
         assert "# Comment 3" in result
-        # Other var preserved
+
         assert "OTHER_VAR=value" in result
-        # KANON_SOURCE lines removed
+
         assert "KANON_SOURCE_foo_bar_URL" not in result
-        assert "KANON_SOURCE_foo_bar_REVISION" not in result
+        assert "KANON_SOURCE_foo_bar_REF" not in result
         assert "KANON_SOURCE_foo_bar_PATH" not in result
-
-
-# ---------------------------------------------------------------------------
-# Line-ending preservation during write (AC-FUNC-004)
-# ---------------------------------------------------------------------------
+        assert "KANON_SOURCE_foo_bar_NAME" not in result
+        assert "KANON_SOURCE_foo_bar_GITBASE" not in result
 
 
 @pytest.mark.unit
@@ -428,8 +408,10 @@ class TestLineEndingPreservation:
         content = (
             "GITBASE=x\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))
@@ -438,7 +420,7 @@ class TestLineEndingPreservation:
         run_remove(args)
 
         result_bytes = kanon_file.read_bytes()
-        # LF present, CRLF absent
+
         assert b"\r\n" not in result_bytes
         assert b"\n" in result_bytes
 
@@ -447,8 +429,10 @@ class TestLineEndingPreservation:
         content = (
             "GITBASE=x\r\n"
             "KANON_SOURCE_foo_bar_URL=https://example.com/repo.git\r\n"
-            "KANON_SOURCE_foo_bar_REVISION=refs/tags/1.0.0\r\n"
+            "KANON_SOURCE_foo_bar_REF=refs/tags/1.0.0\r\n"
             "KANON_SOURCE_foo_bar_PATH=repo-specs/foo-marketplace.xml\r\n"
+            "KANON_SOURCE_foo_bar_NAME=foo_bar\r\n"
+            "KANON_SOURCE_foo_bar_GITBASE=https://example.com\r\n"
         )
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_bytes(content.encode("utf-8"))
@@ -457,8 +441,8 @@ class TestLineEndingPreservation:
         run_remove(args)
 
         result_bytes = kanon_file.read_bytes()
-        # CRLF present
+
         assert b"\r\n" in result_bytes
-        # No bare LF (every LF should be preceded by CR)
+
         bare_lf_count = result_bytes.count(b"\n") - result_bytes.count(b"\r\n")
         assert bare_lf_count == 0

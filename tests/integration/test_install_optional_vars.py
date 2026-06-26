@@ -21,12 +21,6 @@ import pytest
 from kanon_cli.commands.install import _run as _install_run
 from kanon_cli.core.install import install
 from kanon_cli.core.kanonenv import parse_kanonenv
-from tests.conftest import DEFAULT_CATALOG_SOURCE
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _write_kanonenv(directory: pathlib.Path, content: str) -> pathlib.Path:
@@ -44,34 +38,44 @@ def _write_kanonenv(directory: pathlib.Path, content: str) -> pathlib.Path:
     return kanonenv.resolve()
 
 
-def _minimal_source_block(name: str = "primary") -> str:
+def _minimal_source_block(name: str = "primary", *, marketplace: bool = False) -> str:
     """Return a minimal valid source block for a .kanon file.
 
     Args:
         name: Source name to use in variable keys.
+        marketplace: When True, append the per-dependency
+            ``KANON_SOURCE_<name>_MARKETPLACE=true`` opt-in line (the 3.0.0
+            replacement for the removed global ``KANON_MARKETPLACE_INSTALL``).
 
     Returns:
-        A string with three required KANON_SOURCE_* variable lines.
+        A string with the required KANON_SOURCE_* variable lines.
     """
-    return (
+    block = (
         f"KANON_SOURCE_{name}_URL=https://example.com/repo.git\n"
-        f"KANON_SOURCE_{name}_REVISION=main\n"
+        f"KANON_SOURCE_{name}_REF=main\n"
         f"KANON_SOURCE_{name}_PATH=repo-specs/manifest.xml\n"
+        f"KANON_SOURCE_{name}_NAME={name}\n"
+        f"KANON_SOURCE_{name}_GITBASE=https://example.com\n"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 + AC-FUNC-001: GITBASE env var takes precedence over .kanon value
-# ---------------------------------------------------------------------------
+    if marketplace:
+        block += f"KANON_SOURCE_{name}_MARKETPLACE=true\n"
+    return block
 
 
 @pytest.mark.integration
 class TestGitbaseEnvOverride:
     """AC-TEST-001 / AC-FUNC-001: GITBASE resolves correctly from file and env.
 
-    Verifies that when GITBASE is set in both the .kanon file and the
-    environment, the environment value wins. Also verifies that when only
-    the file value is present, it is used correctly.
+    Verifies that when a global GITBASE is set in both the .kanon file and the
+    environment, the environment value wins in the parsed globals, and that the
+    file value is used when only the file value is present.
+
+    The org base that actually drives ``repo envsubst`` is the per-dependency
+    ``KANON_SOURCE_<alias>_GITBASE`` (spec Section 5.1 / FR-5): ``kanon add``
+    records it per source and writes no global ``GITBASE`` header line, so
+    ``install`` promotes each source's per-alias gitbase into the ``GITBASE``
+    key for that source's substitution. The per-alias value is source-targeted
+    and therefore takes precedence over any hand-written global ``GITBASE``.
     """
 
     def test_gitbase_from_file_is_used_when_env_absent(
@@ -125,21 +129,26 @@ class TestGitbaseEnvOverride:
             _minimal_source_block(),
         )
         result = parse_kanonenv(kanonenv)
-        # GITBASE is not in the file, so it must not appear in globals
+
         assert "GITBASE" not in result["globals"], (
             "GITBASE set only in env (not in .kanon file) must not appear in parsed globals"
         )
 
-    def test_gitbase_passed_to_envsubst_when_present_in_file(
+    def test_per_alias_gitbase_passed_to_envsubst(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """install() must pass GITBASE from globals_dict to repo_envsubst when present."""
+        """install() must pass each source's per-alias _GITBASE to repo_envsubst.
+
+        ``kanon add`` records the org base per dependency in
+        ``KANON_SOURCE_<alias>_GITBASE`` and writes no global ``GITBASE`` line, so
+        install must promote the per-alias value into ``GITBASE`` for that source.
+        """
         monkeypatch.delenv("GITBASE", raising=False)
         kanonenv = _write_kanonenv(
             tmp_path,
-            "GITBASE=https://file.example.com/org/\n" + _minimal_source_block(),
+            _minimal_source_block(),
         )
 
         captured_env_vars: list[dict] = []
@@ -152,28 +161,31 @@ class TestGitbaseEnvOverride:
             patch("kanon_cli.repo.repo_envsubst", side_effect=capture_envsubst),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(captured_env_vars) == 1, f"Expected repo_envsubst called once, called {len(captured_env_vars)} times"
         assert "GITBASE" in captured_env_vars[0], (
             f"GITBASE must be passed to repo_envsubst; got env_vars={captured_env_vars[0]!r}"
         )
-        assert captured_env_vars[0]["GITBASE"] == "https://file.example.com/org/", (
-            f"GITBASE value mismatch: {captured_env_vars[0]['GITBASE']!r}"
+        assert captured_env_vars[0]["GITBASE"] == "https://example.com", (
+            f"per-alias GITBASE value mismatch: {captured_env_vars[0]['GITBASE']!r}"
         )
 
-    def test_gitbase_env_override_flows_through_to_envsubst(
+    def test_per_alias_gitbase_takes_precedence_over_global(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """When env var GITBASE overrides the file value, install() must pass
-        the env-overridden value to repo_envsubst.
+        """A source's per-alias _GITBASE wins over a hand-written global GITBASE.
+
+        The per-alias value is the source-targeted org base, so install must use
+        it for that source's substitution even when a global ``GITBASE`` header
+        line is also present.
         """
-        monkeypatch.setenv("GITBASE", "https://env-override.example.com/org/")
+        monkeypatch.delenv("GITBASE", raising=False)
         kanonenv = _write_kanonenv(
             tmp_path,
-            "GITBASE=https://file-value.example.com/org/\n" + _minimal_source_block(),
+            "GITBASE=https://global.example.com/org/\n" + _minimal_source_block(),
         )
 
         captured_env_vars: list[dict] = []
@@ -186,17 +198,48 @@ class TestGitbaseEnvOverride:
             patch("kanon_cli.repo.repo_envsubst", side_effect=capture_envsubst),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+
+        assert len(captured_env_vars) == 1
+        assert captured_env_vars[0]["GITBASE"] == "https://example.com", (
+            f"per-alias GITBASE must override the global header value; got {captured_env_vars[0].get('GITBASE')!r}"
+        )
+
+    def test_per_alias_gitbase_env_override_flows_through_to_envsubst(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When an env var overrides the per-alias _GITBASE file value, install()
+        must pass the env-overridden value to repo_envsubst.
+
+        The kanonenv env-override applies to keys present in the file, so setting
+        ``KANON_SOURCE_<alias>_GITBASE`` in the environment overrides the file's
+        per-alias value, and that override is what install promotes into
+        ``GITBASE`` for the source's substitution.
+        """
+        monkeypatch.setenv("KANON_SOURCE_primary_GITBASE", "https://env-override.example.com/org/")
+        kanonenv = _write_kanonenv(
+            tmp_path,
+            _minimal_source_block(),
+        )
+
+        captured_env_vars: list[dict] = []
+
+        def capture_envsubst(source_dir: str, env_vars: dict) -> None:
+            captured_env_vars.append(dict(env_vars))
+
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst", side_effect=capture_envsubst),
+            patch("kanon_cli.repo.repo_sync"),
+        ):
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(captured_env_vars) == 1
         assert captured_env_vars[0]["GITBASE"] == "https://env-override.example.com/org/", (
-            f"install() must use env-overridden GITBASE; got {captured_env_vars[0].get('GITBASE')!r}"
+            f"install() must use env-overridden per-alias GITBASE; got {captured_env_vars[0].get('GITBASE')!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: KANON_MARKETPLACE_INSTALL=true triggers marketplace install
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -208,16 +251,18 @@ class TestMarketplaceInstallTrueFromFile:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """When KANON_MARKETPLACE_INSTALL=true is in the .kanon file,
+        """When a dependency opts into the marketplace via the per-dependency flag,
         install() must invoke install_marketplace_plugins.
+
+        3.0.0: the per-dependency KANON_SOURCE_<alias>_MARKETPLACE flag replaced
+        the removed global KANON_MARKETPLACE_INSTALL header.
         """
-        monkeypatch.delenv("KANON_MARKETPLACE_INSTALL", raising=False)
         marketplace_dir = tmp_path / "my-marketplaces"
         marketplace_dir.mkdir()
 
         kanonenv = _write_kanonenv(
             tmp_path,
-            (f"KANON_MARKETPLACE_INSTALL=true\nCLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(),
+            (f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(marketplace=True),
         )
 
         with (
@@ -226,29 +271,27 @@ class TestMarketplaceInstallTrueFromFile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        (
-            mock_mp.assert_called_once_with(marketplace_dir),
-            ("install_marketplace_plugins must be called when KANON_MARKETPLACE_INSTALL=true"),
-        )
+        mock_mp.assert_called_once_with(marketplace_dir)
 
-    def test_marketplace_install_triggered_when_flag_true_via_env_override(
+    def test_marketplace_install_triggered_for_any_opted_in_dependency(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """When KANON_MARKETPLACE_INSTALL is set to 'true' in the environment
-        and 'false' in .kanon, the env override must trigger the marketplace path.
+        """A single per-dependency opt-in is sufficient to trigger the marketplace path.
+
+        3.0.0 replaced the global KANON_MARKETPLACE_INSTALL header (and its env
+        override) with per-dependency KANON_SOURCE_<alias>_MARKETPLACE flags; the
+        install path runs when ANY declared dependency opts in.
         """
-        monkeypatch.setenv("KANON_MARKETPLACE_INSTALL", "true")
         marketplace_dir = tmp_path / "env-marketplaces"
         marketplace_dir.mkdir()
-        monkeypatch.setenv("CLAUDE_MARKETPLACES_DIR", str(marketplace_dir))
 
         kanonenv = _write_kanonenv(
             tmp_path,
-            (f"KANON_MARKETPLACE_INSTALL=false\nCLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(),
+            (f"CLAUDE_MARKETPLACES_DIR={marketplace_dir}\n") + _minimal_source_block(marketplace=True),
         )
 
         with (
@@ -257,20 +300,9 @@ class TestMarketplaceInstallTrueFromFile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        (
-            mock_mp.assert_called_once(),
-            (
-                "install_marketplace_plugins must be called when env var KANON_MARKETPLACE_INSTALL=true "
-                "overrides the file's false value"
-            ),
-        )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: KANON_MARKETPLACE_INSTALL=false skips marketplace path
-# ---------------------------------------------------------------------------
+        mock_mp.assert_called_once()
 
 
 @pytest.mark.integration
@@ -306,7 +338,7 @@ class TestMarketplaceInstallFalseFromFile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         (
             mock_mp.assert_not_called(),
@@ -336,7 +368,7 @@ class TestMarketplaceInstallFalseFromFile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         (
             mock_mp.assert_not_called(),
@@ -345,11 +377,6 @@ class TestMarketplaceInstallFalseFromFile:
                 "overrides file value of true"
             ),
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: CLAUDE_MARKETPLACES_DIR defaults correctly when unset
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -381,14 +408,17 @@ class TestClaudeMarketplacesDirDefault:
         capsys: pytest.CaptureFixture,
         make_install_args,
     ) -> None:
-        """When KANON_MARKETPLACE_INSTALL=true but CLAUDE_MARKETPLACES_DIR is not
-        defined in .kanon or env, the CLI handler must fail fast with exit code 1
-        and an actionable error message on stderr.
+        """When a dependency opts into the marketplace but CLAUDE_MARKETPLACES_DIR
+        is not defined in .kanon or env, the CLI handler must fail fast with exit
+        code 1 and an actionable error message on stderr.
+
+        3.0.0: the per-dependency KANON_SOURCE_<alias>_MARKETPLACE flag replaced
+        the removed global KANON_MARKETPLACE_INSTALL header.
         """
         monkeypatch.delenv("CLAUDE_MARKETPLACES_DIR", raising=False)
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_MARKETPLACE_INSTALL=true\n" + _minimal_source_block(),
+            _minimal_source_block(marketplace=True),
         )
         args = make_install_args(kanonenv.resolve())
 
@@ -396,29 +426,26 @@ class TestClaudeMarketplacesDirDefault:
             _install_run(args)
 
         assert exc_info.value.code != 0, (
-            "CLI handler must exit non-zero when KANON_MARKETPLACE_INSTALL=true and CLAUDE_MARKETPLACES_DIR is absent"
+            "CLI handler must exit non-zero when a dependency opts into the marketplace "
+            "and CLAUDE_MARKETPLACES_DIR is absent"
         )
         captured = capsys.readouterr()
         assert "CLAUDE_MARKETPLACES_DIR" in captured.err, (
             f"Error message about missing CLAUDE_MARKETPLACES_DIR must appear on stderr; got stderr={captured.err!r}"
         )
 
-    def test_marketplace_dir_from_env_used_when_not_in_file(
+    def test_marketplace_dir_resolved_from_os_env_when_absent_from_file(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
-        make_install_args,
     ) -> None:
-        """When CLAUDE_MARKETPLACES_DIR is not in .kanon but is provided via env var
-        override alongside KANON_MARKETPLACE_INSTALL=true, the install should pick it
-        up because env overrides are applied for file-present keys only -- so this
-        verifies the correct boundary: CLAUDE_MARKETPLACES_DIR must be in the file
-        (not just env) for the marketplace path to activate.
+        """CLAUDE_MARKETPLACES_DIR is adopted from the OS env when absent from .kanon.
 
-        This test verifies that CLAUDE_MARKETPLACES_DIR not in file means the CLI
-        handler fails even when CLAUDE_MARKETPLACES_DIR is set in the environment,
-        because the env-override mechanism only applies to keys already declared in
-        the file.
+        CLAUDE_MARKETPLACES_DIR is a single, environment-specific path (12-factor),
+        so a fresh marketplace add+install must succeed using the OS-env value
+        WITHOUT a hand-edited .kanon line: the parser surfaces the env value in
+        ``globals`` and ``install`` activates the marketplace path with it (the
+        previous missing-dir fail-fast no longer fires).
         """
         marketplace_dir = tmp_path / "env-only-dir"
         marketplace_dir.mkdir()
@@ -426,22 +453,61 @@ class TestClaudeMarketplacesDirDefault:
 
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_MARKETPLACE_INSTALL=true\n" + _minimal_source_block(),
-        )
-        args = make_install_args(kanonenv.resolve())
-
-        with pytest.raises(SystemExit) as exc_info:
-            _install_run(args)
-
-        assert exc_info.value.code != 0, (
-            "CLI handler must fail when CLAUDE_MARKETPLACES_DIR is only in env (not in .kanon file) "
-            "because env-override only applies to keys present in the file"
+            _minimal_source_block(marketplace=True),
         )
 
+        parsed = parse_kanonenv(kanonenv)
+        assert parsed["globals"].get("CLAUDE_MARKETPLACES_DIR") == str(marketplace_dir), (
+            "parser must surface the OS-env CLAUDE_MARKETPLACES_DIR in globals when the .kanon omits it"
+        )
 
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst") as mock_envsubst,
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
+            patch("kanon_cli.core.install.prepare_marketplace_dir"),
+        ):
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+
+        assert mock_mp.called, (
+            "the marketplace install path must activate using the OS-env CLAUDE_MARKETPLACES_DIR "
+            "even though the .kanon file declares no such line"
+        )
+        assert mock_mp.call_args[0][0] == marketplace_dir, (
+            f"install_marketplace_plugins must receive the OS-env dir; got {mock_mp.call_args!r}"
+        )
+
+        envsubst_calls = [c for c in mock_envsubst.call_args_list if len(c[0]) >= 2]
+        assert envsubst_calls, "repo envsubst must be invoked so linkfile dests are substituted"
+        for call in envsubst_calls:
+            env_map = call[0][1]
+            assert env_map.get("CLAUDE_MARKETPLACES_DIR") == str(marketplace_dir), (
+                "the OS-env CLAUDE_MARKETPLACES_DIR must be exported into the envsubst map so "
+                f"${{CLAUDE_MARKETPLACES_DIR}} linkfile dests resolve; got {env_map!r}"
+            )
+
+    def test_dot_kanon_value_overrides_os_env_marketplace_dir(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A .kanon CLAUDE_MARKETPLACES_DIR value takes precedence over the OS env value."""
+        file_dir = tmp_path / "from-file"
+        env_dir = tmp_path / "from-env"
+        file_dir.mkdir()
+        env_dir.mkdir()
+        monkeypatch.setenv("CLAUDE_MARKETPLACES_DIR", str(env_dir))
+
+        kanonenv = _write_kanonenv(
+            tmp_path,
+            f"CLAUDE_MARKETPLACES_DIR={file_dir}\n" + _minimal_source_block(marketplace=True),
+        )
+
+        parsed = parse_kanonenv(kanonenv)
+        assert parsed["globals"].get("CLAUDE_MARKETPLACES_DIR") == str(file_dir), (
+            "an explicit .kanon CLAUDE_MARKETPLACES_DIR value must win over the OS env value"
+        )
 
 
 @pytest.mark.integration
@@ -463,7 +529,7 @@ class TestChannelDiscipline:
         monkeypatch.delenv("CLAUDE_MARKETPLACES_DIR", raising=False)
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_MARKETPLACE_INSTALL=true\n" + _minimal_source_block(),
+            _minimal_source_block(marketplace=True),
         )
         args = make_install_args(kanonenv.resolve())
 
@@ -497,7 +563,7 @@ class TestChannelDiscipline:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         captured = capsys.readouterr()
         assert captured.err == "", f"stderr must be empty for a successful install; got stderr={captured.err!r}"

@@ -1,16 +1,18 @@
 usage: kanon remove [-h] [--kanon-file <path>] [--force] [--dry-run]
                     <name> [<name> ...]
 
-Remove the three KANON_SOURCE_<name>_{URL,REVISION,PATH} lines for one
-or more entries from the .kanon file.
+Remove the KANON_SOURCE_<alias>_{URL,REF,PATH,NAME} block (plus any
+optional per-dependency env-var and _MARKETPLACE lines) for one or
+more entries from the .kanon file.
 
-Each <name> may be EITHER the canonical source name (e.g. foo_bar) OR
+Each <name> may be EITHER the canonical alias (e.g. foo_bar) OR
 the original entry name (e.g. Foo-Bar); both are normalised via
 derive_source_name() before lookup.
 
-Atomicity rule: if ANY requested name is not fully present (fewer than
-three matching keys), the command exits non-zero and the file is NOT
-modified. Either every requested removal succeeds or nothing changes.
+Atomicity rule: if ANY requested alias is not fully present (fewer than
+the expected number of block keys), the command exits non-zero and the
+file is NOT modified. Either every requested removal succeeds or
+nothing changes.
 
 The --kanon-file path defaults to './.kanon' and may be overridden by
 the KANON_KANON_FILE environment variable (CLI flag takes
@@ -25,10 +27,10 @@ File-writing rules (applied on non-dry-run writes):
   - Trailing newline: the output always ends with exactly one newline.
 
 positional arguments:
-  <name>               One or more source names to remove. Each may be the
-                       canonical source name (e.g. foo_bar) or the original
-                       entry name (e.g. Foo-Bar); both forms normalise to the
-                       same KANON_SOURCE_<name>_* keys.
+  <name>               One or more source aliases to remove. Each may be the
+                       canonical alias (e.g. foo_bar) or the original entry
+                       name (e.g. Foo-Bar); both forms normalise to the same
+                       KANON_SOURCE_<alias>_* keys.
 
 options:
   -h, --help           show this help message and exit

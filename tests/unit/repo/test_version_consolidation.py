@@ -20,29 +20,20 @@ from kanon_cli.repo import version_constraints as repo_vc
 from kanon_cli import version as kanon_version
 
 
-# ---------------------------------------------------------------------------
-# Shared test data -- all constants live here, not inline in test bodies.
-# ---------------------------------------------------------------------------
-
 _TAG_PREFIX = "refs/tags/dev/python/my-lib"
 
-# Input strings that both implementations must classify as version constraints.
+
 _IS_CONSTRAINT_TRUE_CASES = [
-    # AC-TEST-001: Exact version match operators
     pytest.param("==1.0.0", id="exact-==1.0.0"),
     pytest.param("==1.2.3", id="exact-==1.2.3"),
     pytest.param("==0.0.1", id="exact-==0.0.1"),
-    # AC-TEST-002: Range constraints
     pytest.param(">=1.0.0,<2.0.0", id="range->=1.0.0,<2.0.0"),
     pytest.param(">=1.2.0,<1.3.0", id="range->=1.2.0,<1.3.0"),
     pytest.param(">=0.1.0,<=1.0.0", id="range->=0.1.0,<=1.0.0"),
-    # AC-TEST-003: Wildcard patterns
     pytest.param("*", id="wildcard-bare"),
-    # AC-TEST-004: Pre-release version operators
     pytest.param(">=1.0.0a1", id="prerelease->=1.0.0a1"),
     pytest.param("~=2.0.0b1", id="prerelease-~=2.0.0b1"),
     pytest.param("==1.0.0rc1", id="prerelease-==1.0.0rc1"),
-    # AC-TEST-007: Complex compound constraints
     pytest.param("~=1.0.0", id="compound-compatible-release"),
     pytest.param(">=1.0.0", id="compound-gte"),
     pytest.param("<=2.0.0", id="compound-lte"),
@@ -52,17 +43,14 @@ _IS_CONSTRAINT_TRUE_CASES = [
     pytest.param(">=1.0.0,<=2.0.0,!=1.5.0", id="compound-triple"),
 ]
 
-# Input strings that both implementations must classify as NOT version constraints.
+
 _IS_CONSTRAINT_FALSE_CASES = [
-    # AC-TEST-001: Plain exact pins (no operators -- not constraints)
     pytest.param("1.0.0", id="pin-1.0.0"),
     pytest.param("1.2.3", id="pin-1.2.3"),
     pytest.param("v1.0.0", id="pin-v1.0.0"),
-    # AC-TEST-005: Invalid version strings (also not constraints)
     pytest.param("not-a-version", id="invalid-not-a-version"),
     pytest.param("", id="edge-empty-string"),
     pytest.param("abc123", id="invalid-hex-hash"),
-    # AC-TEST-006: Edge cases -- plain refs and branches
     pytest.param("main", id="edge-branch-main"),
     pytest.param("develop", id="edge-branch-develop"),
     pytest.param("refs/heads/main", id="edge-full-branch-ref"),
@@ -71,8 +59,7 @@ _IS_CONSTRAINT_FALSE_CASES = [
     pytest.param("caylent-2.0.0", id="edge-prefixed-version"),
 ]
 
-# Input strings passed through the last path component (prefixed forms) that
-# both implementations must classify as version constraints.
+
 _IS_CONSTRAINT_TRUE_PREFIXED_CASES = [
     pytest.param(f"{_TAG_PREFIX}/==1.0.0", id="prefixed-exact-==1.0.0"),
     pytest.param(f"{_TAG_PREFIX}/>=1.0.0,<2.0.0", id="prefixed-range"),
@@ -81,9 +68,7 @@ _IS_CONSTRAINT_TRUE_PREFIXED_CASES = [
     pytest.param(f"{_TAG_PREFIX}/>=1.0.0a1", id="prefixed-prerelease"),
 ]
 
-# Resolve equivalence cases: (revision, available_tags, expected_tag)
-# Both implementations must return the same expected_tag when given the same
-# prefixed revision and tag list.
+
 _AVAILABLE_TAGS = (
     f"{_TAG_PREFIX}/1.0.0",
     f"{_TAG_PREFIX}/1.1.0",
@@ -98,28 +83,24 @@ _AVAILABLE_TAGS = (
 )
 
 _RESOLVE_EQUIVALENCE_CASES = [
-    # AC-TEST-001: Exact version match
     pytest.param(
         f"{_TAG_PREFIX}/==1.2.3",
         _AVAILABLE_TAGS,
         f"{_TAG_PREFIX}/1.2.3",
         id="exact-==1.2.3",
     ),
-    # AC-TEST-002: Range constraint
     pytest.param(
         f"{_TAG_PREFIX}/>=1.0.0,<2.0.0",
         _AVAILABLE_TAGS,
         f"{_TAG_PREFIX}/1.3.0",
         id="range->=1.0.0,<2.0.0",
     ),
-    # AC-TEST-003: Wildcard
     pytest.param(
         f"{_TAG_PREFIX}/*",
         _AVAILABLE_TAGS,
         f"{_TAG_PREFIX}/3.0.0",
         id="wildcard-returns-highest",
     ),
-    # AC-TEST-004: Pre-release excluded by default
     pytest.param(
         f"{_TAG_PREFIX}/>=1.0.0",
         (
@@ -129,7 +110,6 @@ _RESOLVE_EQUIVALENCE_CASES = [
         f"{_TAG_PREFIX}/1.0.0",
         id="prerelease-excluded",
     ),
-    # AC-TEST-004: Pre-release included when constraint references pre-release
     pytest.param(
         f"{_TAG_PREFIX}/>=1.0.0a1",
         (
@@ -139,14 +119,12 @@ _RESOLVE_EQUIVALENCE_CASES = [
         f"{_TAG_PREFIX}/1.0.0",
         id="prerelease-included-when-constraint-specifies",
     ),
-    # AC-TEST-007: Compatible release (~=)
     pytest.param(
         f"{_TAG_PREFIX}/~=1.2.0",
         _AVAILABLE_TAGS,
         f"{_TAG_PREFIX}/1.2.7",
         id="compatible-release-~=1.2.0",
     ),
-    # AC-TEST-007: Not-equal constraint excludes specific version
     pytest.param(
         f"{_TAG_PREFIX}/!=1.3.0",
         (
@@ -157,14 +135,12 @@ _RESOLVE_EQUIVALENCE_CASES = [
         f"{_TAG_PREFIX}/1.2.0",
         id="neq-!=1.3.0",
     ),
-    # AC-TEST-007: Complex compound constraint with three terms
     pytest.param(
         f"{_TAG_PREFIX}/>=1.0.0,<=2.0.0,!=1.3.0",
         _AVAILABLE_TAGS,
         f"{_TAG_PREFIX}/2.0.0",
         id="complex-three-term-compound",
     ),
-    # AC-TEST-007: Highest match from unsorted tag list
     pytest.param(
         f"{_TAG_PREFIX}/>=1.2.0",
         (
@@ -190,11 +166,6 @@ def _build_ls_remote_output(tags: tuple[str, ...]) -> MagicMock:
     """
     stdout = "\n".join(f"abc123def456\t{tag}" for tag in tags)
     return MagicMock(returncode=0, stdout=stdout, stderr="")
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-008: is_version_constraint equivalence -- bare inputs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -287,11 +258,6 @@ class TestIsVersionConstraintEquivalencePrefixedInputs:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-008: resolve equivalence -- both return the same tag for same inputs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestResolveEquivalence:
     """Both resolve implementations return the same tag for identical prefixed inputs.
@@ -319,12 +285,11 @@ class TestResolveEquivalence:
               repo version_constraints.resolve_version_constraint are called.
         Then: Both return the same expected tag and results are identical.
         """
-        # kanon version.resolve_version fetches tags via subprocess; mock it.
+
         mock_run = _build_ls_remote_output(available_tags)
         with patch("kanon_cli.version.subprocess.run", return_value=mock_run):
             kanon_result = kanon_version.resolve_version("https://example.com/repo.git", revision)
 
-        # repo version_constraints.resolve_version_constraint receives tags directly.
         repo_result = repo_vc.resolve_version_constraint(revision, list(available_tags))
 
         assert kanon_result == expected_tag, (
@@ -336,11 +301,6 @@ class TestResolveEquivalence:
         assert kanon_result == repo_result, (
             f"Implementations diverge for revision {revision!r}: kanon={kanon_result!r}, repo={repo_result!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005, AC-TEST-006: error path equivalence -- invalid / no-match inputs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -432,11 +392,6 @@ class TestResolveErrorPathEquivalence:
                 f"{_TAG_PREFIX}/>=1.0.0",
                 [],
             )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-006: None input edge case -- is_version_constraint
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

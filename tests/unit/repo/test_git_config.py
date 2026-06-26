@@ -1,17 +1,3 @@
-# Copyright (C) 2009 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the git_config.py module."""
 
 import os
@@ -118,22 +104,19 @@ class GitConfigReadWriteTests(unittest.TestCase):
 
     def test_SetString(self):
         """Test SetString behavior."""
-        # Set a value.
+
         self.assertIsNone(self.config.GetString("foo.bar"))
         self.config.SetString("foo.bar", "val")
         self.assertEqual("val", self.config.GetString("foo.bar"))
 
-        # Make sure the value was actually written out.
         config = self.get_config()
         self.assertEqual("val", config.GetString("foo.bar"))
 
-        # Update the value.
         self.config.SetString("foo.bar", "valll")
         self.assertEqual("valll", self.config.GetString("foo.bar"))
         config = self.get_config()
         self.assertEqual("valll", config.GetString("foo.bar"))
 
-        # Delete the value.
         self.config.SetString("foo.bar", None)
         self.assertIsNone(self.config.GetString("foo.bar"))
         config = self.get_config()
@@ -141,28 +124,24 @@ class GitConfigReadWriteTests(unittest.TestCase):
 
     def test_SetBoolean(self):
         """Test SetBoolean behavior."""
-        # Set a true value.
+
         self.assertIsNone(self.config.GetBoolean("foo.bar"))
         for val in (True, 1):
             self.config.SetBoolean("foo.bar", val)
             self.assertTrue(self.config.GetBoolean("foo.bar"))
 
-        # Make sure the value was actually written out.
         config = self.get_config()
         self.assertTrue(config.GetBoolean("foo.bar"))
         self.assertEqual("true", config.GetString("foo.bar"))
 
-        # Set a false value.
         for val in (False, 0):
             self.config.SetBoolean("foo.bar", val)
             self.assertFalse(self.config.GetBoolean("foo.bar"))
 
-        # Make sure the value was actually written out.
         config = self.get_config()
         self.assertFalse(config.GetBoolean("foo.bar"))
         self.assertEqual("false", config.GetString("foo.bar"))
 
-        # Delete the value.
         self.config.SetBoolean("foo.bar", None)
         self.assertIsNone(self.config.GetBoolean("foo.bar"))
         config = self.get_config()
@@ -186,9 +165,6 @@ class GitConfigReadWriteTests(unittest.TestCase):
         for key, value in TESTS:
             self.assertEqual(sync_data[f"{git_config.SYNC_STATE_PREFIX}{key}"], value)
         self.assertTrue(sync_data[f"{git_config.SYNC_STATE_PREFIX}main.synctime"])
-
-
-# Additional comprehensive tests below
 
 
 @pytest.mark.unit
@@ -290,7 +266,7 @@ class TestGitConfigExtended(unittest.TestCase):
         self.config.SetString("test.key", "value")
         self.assertEqual(self.config.GetString("test.key"), "value")
         self.config.ClearCache()
-        # After clearing cache, it should re-read from file
+
         self.assertEqual(self.config.GetString("test.key"), "value")
 
     def test_GetSubSections(self):
@@ -491,7 +467,6 @@ class TestRemote(unittest.TestCase):
         remote.review = "https://review.example.com"
         remote.Save()
 
-        # Re-read to verify
         config2 = git_config.GitConfig(self.tmpfile.name)
         remote2 = config2.GetRemote("origin")
         self.assertEqual(remote2.projectname, "testproject")

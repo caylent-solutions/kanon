@@ -58,13 +58,12 @@ class TestInstallSkipsNonMarketplaceEntries:
             patch("kanon_cli.core.marketplace.register_marketplace", return_value=True),
             patch("kanon_cli.core.marketplace.install_plugin", return_value=True),
         ):
-            # Must not raise FileNotFoundError on the linkfile-non-mkt entry.
             install_marketplace_plugins(marketplaces_root)
 
         captured = capsys.readouterr()
         assert "Skipping non-marketplace entry" in captured.err
         assert "linkfile-non-mkt" in captured.err
-        # Real plugin still gets registered + installed (summary reflects it).
+
         assert "1 registered, 1 plugins installed" in captured.out
 
     def test_install_does_not_register_skipped_entry(self, tmp_path: pathlib.Path) -> None:
@@ -79,8 +78,7 @@ class TestInstallSkipsNonMarketplaceEntries:
             patch("kanon_cli.core.marketplace.install_plugin", return_value=True),
         ):
             install_marketplace_plugins(marketplaces_root)
-        # register_marketplace should be called exactly once (for real-plugin),
-        # never for the non-marketplace entry.
+
         assert mock_reg.call_count == 1
 
 
@@ -99,7 +97,6 @@ class TestUninstallSkipsNonMarketplaceEntries:
             patch("kanon_cli.core.marketplace.uninstall_plugin", return_value=True),
             patch("kanon_cli.core.marketplace.remove_marketplace", return_value=True),
         ):
-            # Must not raise FileNotFoundError on the linkfile-non-mkt entry.
             uninstall_marketplace_plugins(marketplaces_root)
 
         captured = capsys.readouterr()
@@ -118,6 +115,5 @@ class TestUninstallSkipsNonMarketplaceEntries:
             patch("kanon_cli.core.marketplace.remove_marketplace", return_value=True) as mock_remove,
         ):
             uninstall_marketplace_plugins(marketplaces_root)
-        # remove_marketplace should be called exactly once (for real-plugin),
-        # never for the non-marketplace entry.
+
         assert mock_remove.call_count == 1

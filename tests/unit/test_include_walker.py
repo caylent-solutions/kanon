@@ -28,11 +28,6 @@ from kanon_cli.core.include_walker import (
 from kanon_cli.core.install import InstallError
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_manifest(path: pathlib.Path, includes: list[str] | None = None) -> None:
     """Write a minimal manifest XML with zero or more <include> elements."""
     root = ET.Element("manifest")
@@ -41,20 +36,10 @@ def _write_manifest(path: pathlib.Path, includes: list[str] | None = None) -> No
     ET.ElementTree(root).write(str(path), encoding="unicode", xml_declaration=False)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: IncludeCycleError is a subclass of InstallError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_include_cycle_error_is_install_error() -> None:
     """IncludeCycleError must be a subclass of InstallError."""
     assert issubclass(IncludeCycleError, InstallError)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: flat XML with zero <include> elements
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -69,11 +54,6 @@ def test_flat_xml_no_includes(tmp_path: pathlib.Path) -> None:
     assert tree.includes == []
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: N-deep chain builds a tree of depth N
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "chain",
@@ -86,7 +66,7 @@ def test_flat_xml_no_includes(tmp_path: pathlib.Path) -> None:
 )
 def test_linear_chain(tmp_path: pathlib.Path, chain: list[str]) -> None:
     """_walk_includes builds a depth-N tree for an N-deep linear include chain."""
-    # Write files: a.xml -> b.xml -> c.xml -> ... (each including the next)
+
     all_files = ["a.xml"] + chain
     for i, fname in enumerate(all_files):
         nxt = [all_files[i + 1]] if i + 1 < len(all_files) else []
@@ -94,18 +74,12 @@ def test_linear_chain(tmp_path: pathlib.Path, chain: list[str]) -> None:
 
     tree = _walk_includes(tmp_path / "a.xml", tmp_path)
 
-    # The tree depth should equal len(chain)
     node = tree
     for expected_name in chain:
         assert len(node.includes) == 1, f"expected one child at each level; got {len(node.includes)}"
         node = node.includes[0]
         assert node.path == _canonicalize_include_path(tmp_path / expected_name, tmp_path)
     assert node.includes == []
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: cycle detection -- various cycle shapes
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -119,7 +93,7 @@ def test_self_cycle(tmp_path: pathlib.Path) -> None:
 
     msg = str(exc_info.value)
     assert "include cycle:" in msg
-    # The cycle is rendered as a.xml -> a.xml
+
     assert "a.xml -> a.xml" in msg
 
 
@@ -134,10 +108,10 @@ def test_two_node_cycle(tmp_path: pathlib.Path) -> None:
 
     msg = str(exc_info.value)
     assert "include cycle:" in msg
-    # Must name both files and close the cycle
+
     assert "a.xml" in msg
     assert "b.xml" in msg
-    # The closing edge is rendered explicitly (cycle closes back to a.xml)
+
     assert msg.count("a.xml") >= 2
 
 
@@ -162,13 +136,11 @@ def test_triangle_cycle(tmp_path: pathlib.Path) -> None:
 @pytest.mark.parametrize(
     "start, files, expected_in_msg",
     [
-        # self-cycle: rendered as a.xml -> a.xml
         (
             "a.xml",
             {"a.xml": ["a.xml"]},
             ["a.xml", "a.xml"],
         ),
-        # 3-cycle: a -> b -> c -> a; message contains all three and closes on a
         (
             "a.xml",
             {"a.xml": ["b.xml"], "b.xml": ["c.xml"], "c.xml": ["a.xml"]},
@@ -194,13 +166,8 @@ def test_cycle_message_format(
     assert msg.startswith("include cycle:"), f"unexpected prefix: {msg!r}"
     for name in expected_in_msg:
         assert name in msg, f"expected {name!r} in error message"
-    # The message must contain ' -> ' separators
+
     assert " -> " in msg
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: diamond deduplication
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -217,18 +184,15 @@ def test_diamond_dedup(tmp_path: pathlib.Path) -> None:
 
     tree = _walk_includes(tmp_path / "a.xml", tmp_path)
 
-    # a has two children: b and c
     assert len(tree.includes) == 2
     b_node, c_node = tree.includes
     assert b_node.path == _canonicalize_include_path(tmp_path / "b.xml", tmp_path)
     assert c_node.path == _canonicalize_include_path(tmp_path / "c.xml", tmp_path)
 
-    # b has d as its only child (first-walked position)
     assert len(b_node.includes) == 1
     d_from_b = b_node.includes[0]
     assert d_from_b.path == _canonicalize_include_path(tmp_path / "d.xml", tmp_path)
 
-    # c's child d was deduped: c has no children
     assert c_node.includes == []
 
 
@@ -245,31 +209,24 @@ def test_diamond_total_nodes(tmp_path: pathlib.Path) -> None:
     def _count_nodes(node: IncludeTree) -> int:
         return 1 + sum(_count_nodes(child) for child in node.includes)
 
-    # a(root) + b + d + c = 4 unique nodes (d counted only once)
     assert _count_nodes(tree) == 4
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: path canonicalisation via os.path.normpath
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 def test_normpath_dot_slash_equivalence(tmp_path: pathlib.Path) -> None:
     """'./b.xml' and 'b.xml' in <include name=...> refer to the same canonical node."""
-    # a.xml includes ./b.xml (with ./ prefix)
+
     _write_manifest(tmp_path / "a.xml", includes=["./b.xml"])
-    # b.xml includes b.xml plain (no prefix) but we write via the same path
+
     _write_manifest(tmp_path / "b.xml")
 
     tree = _walk_includes(tmp_path / "a.xml", tmp_path)
 
-    # Should resolve to one child: b.xml (normalised)
     assert len(tree.includes) == 1
     child = tree.includes[0]
-    # The canonical path must NOT contain "./"
+
     assert "./" not in str(child.path)
-    # And must equal the normpath of b.xml
+
     expected = _canonicalize_include_path(tmp_path / "b.xml", tmp_path)
     assert child.path == expected
 
@@ -277,7 +234,7 @@ def test_normpath_dot_slash_equivalence(tmp_path: pathlib.Path) -> None:
 @pytest.mark.unit
 def test_normpath_used_for_cycle_detection(tmp_path: pathlib.Path) -> None:
     """Cycle detection uses the normalised path (./a.xml == a.xml -> same node)."""
-    # a.xml includes ./a.xml -- a self-cycle via the ./ form
+
     _write_manifest(tmp_path / "a.xml", includes=["./a.xml"])
 
     with pytest.raises(IncludeCycleError) as exc_info:
@@ -285,13 +242,8 @@ def test_normpath_used_for_cycle_detection(tmp_path: pathlib.Path) -> None:
 
     msg = str(exc_info.value)
     assert "include cycle:" in msg
-    # Message should not contain "./" in the path (normalised)
+
     assert " -> " in msg
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: DFS order is preserved for lockfile serialisation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -317,17 +269,12 @@ def test_dfs_order_matches_walk_order(tmp_path: pathlib.Path) -> None:
         return result
 
     order = _preorder(tree)
-    # a is root (not in tree.includes -- it IS the tree), then b, d, c, e
+
     assert order[0].endswith("a.xml")
     assert order[1].endswith("b.xml")
     assert order[2].endswith("d.xml")
     assert order[3].endswith("c.xml")
     assert order[4].endswith("e.xml")
-
-
-# ---------------------------------------------------------------------------
-# Malformed <include> element (missing 'name' attribute) -- fail-fast behaviour
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -337,9 +284,9 @@ def test_include_without_name_attribute_raises(tmp_path: pathlib.Path) -> None:
     The walker enforces fail-fast semantics: a missing 'name' attribute is a hard
     error, not a silent skip.  The error message identifies the containing file.
     """
-    # Write a.xml with an <include> that has no 'name' attribute.
+
     root = ET.Element("manifest")
-    ET.SubElement(root, "include")  # no 'name' attribute
+    ET.SubElement(root, "include")
     ET.ElementTree(root).write(str(tmp_path / "a.xml"), encoding="unicode", xml_declaration=False)
 
     with pytest.raises(MalformedIncludeError) as exc_info:
@@ -361,19 +308,13 @@ def test_malformed_include_error_names_file(tmp_path: pathlib.Path) -> None:
     """MalformedIncludeError message contains the path of the offending XML file."""
     xml_file = tmp_path / "bad.xml"
     root = ET.Element("manifest")
-    ET.SubElement(root, "include")  # no 'name' attribute
+    ET.SubElement(root, "include")
     ET.ElementTree(root).write(str(xml_file), encoding="unicode", xml_declaration=False)
 
     with pytest.raises(MalformedIncludeError) as exc_info:
         _walk_includes(xml_file, tmp_path)
 
-    # The error must mention the file that contains the malformed element.
     assert "bad.xml" in str(exc_info.value)
-
-
-# ---------------------------------------------------------------------------
-# _canonicalize_include_path helper tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

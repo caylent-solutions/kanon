@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for PEP 440 less-or-equal (<=), less-than (<), equality (==),
 inequality (!=), and wildcard (*) operators in version_constraints.
 
@@ -34,10 +20,10 @@ import pytest
 
 from kanon_cli.repo import error, version_constraints
 
-# Common tag prefix used across all tests.
+
 _TAG_PREFIX = "refs/tags/dev/python/quality-agent"
 
-# Available tags shared by most test cases.
+
 _AVAILABLE_TAGS = [
     f"{_TAG_PREFIX}/1.0.0",
     f"{_TAG_PREFIX}/1.1.0",

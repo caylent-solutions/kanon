@@ -39,9 +39,6 @@ import pytest
 
 from tests.functional.conftest import _run_kanon, _setup_synced_repo
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Stage Happy Test User"
 _GIT_USER_EMAIL = "repo-stage-happy@example.com"
@@ -49,25 +46,20 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "stage-test-project"
 
-# Flag name constants
+
 _FLAG_INTERACTIVE = "-i"
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT_CODE = 0
 
-# Phrase logged to stderr when no dirty projects exist
+
 _NO_DIRTY_PROJECTS_MSG = "no projects have uncommitted modifications"
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
+
 _ERROR_PREFIX = "Error:"
-
-
-# ---------------------------------------------------------------------------
-# Private setup helper
-# ---------------------------------------------------------------------------
 
 
 def _setup_clean_repo(
@@ -98,11 +90,6 @@ def _setup_clean_repo(
         project_path=_PROJECT_PATH,
         manifest_filename=_MANIFEST_FILENAME,
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo stage -i exits 0 in a valid repo
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -173,11 +160,6 @@ class TestRepoStageHappyPathDefaultArgs:
             f"  stderr: {result.stderr!r}\n"
             f"  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo stage has a happy-path test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -274,11 +256,6 @@ class TestRepoStagePositionalArgHappyPath:
             f"  stderr: {result.stderr!r}\n"
             f"  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

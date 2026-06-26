@@ -29,10 +29,6 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Overview Flags Test User"
 _GIT_USER_EMAIL = "repo-overview-flags@example.com"
@@ -44,21 +40,16 @@ _PROJECT_PATH = "overview-flags-test-project"
 _MANIFEST_BARE_DIR_NAME = "manifest-bare.git"
 _GIT_BRANCH_MAIN = "main"
 
-# Error exit code for invalid argument values or constraint violations.
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-overview-flags-repo-dir"
 
-# Inline-value tokens for negative tests (boolean flags reject inline values).
-# The optparse parser exits 2 with '--<flag> option does not take a value' when
-# a store_true flag is supplied with an inline value.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Known flags from Overview._Options() -- used to build parametrize lists.
-# All are boolean store_true or store_false flags; none accept a typed value.
-# Note: -b is a hidden deprecated flag (SUPPRESS_HELP) that maps to dest=current_branch;
-# it is registered in _Options() and must be covered by AC-TEST-001.
+
 _BOOL_STORE_TRUE_FLAGS: list[tuple[str, str]] = [
     ("-c", "short-current-branch"),
     ("--current-branch", "long-current-branch"),
@@ -69,24 +60,11 @@ _BOOL_STORE_FALSE_FLAGS: list[tuple[str, str]] = [
     ("--no-current-branch", "no-current-branch"),
 ]
 
-# Long-form flags that accept inline values in optparse (tested in AC-TEST-002).
-# Only long-form flags can be supplied with '--flag=value' syntax in optparse.
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--current-branch", "current-branch"),
     ("--no-current-branch", "no-current-branch"),
 ]
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
-# NOTE: _git is imported from tests.functional.conftest (canonical definition).
-#
-# The helpers below (_init_git_work_dir, _clone_as_bare,
-# _create_bare_content_repo, _create_manifest_repo) follow the same pattern
-# as in test_repo_info_flags.py and test_repo_overview_happy.py. Consolidating
-# them into a shared module requires touching files outside this task's Changes
-# Manifest. This duplication is tracked as a follow-up DRY cleanup.
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -212,11 +190,6 @@ def _setup_initialized_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathl
         f"  stderr: {result.stderr!r}"
     )
     return checkout_dir, repo_dir
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/overview.py
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -354,11 +327,6 @@ class TestRepoOverviewFlagsValidValues:
             f"'--current-branch --no-current-branch' triggered an argument-parsing "
             f"error (exit {result.returncode}).\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with inline values (boolean flags)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -507,11 +475,6 @@ class TestRepoOverviewFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoOverviewFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -554,10 +517,6 @@ class TestRepoOverviewFlagsAbsenceDefaults:
             f"  stderr: {result.stderr!r}"
         )
 
-    # Per-flag absence tests (--current-branch, --no-current-branch omitted) are
-    # covered by test_all_flags_omitted_exits_zero above, which confirms exit 0
-    # when every optional flag is absent.
-
     def test_omitting_all_flags_produces_empty_output_on_clean_repo(self, tmp_path: pathlib.Path) -> None:
         """'kanon repo overview' with no flags produces empty output on a clean init.
 
@@ -585,11 +544,6 @@ class TestRepoOverviewFlagsAbsenceDefaults:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -668,15 +622,6 @@ class TestRepoOverviewFlagsDocumentedBehavior:
             f"'--no-current-branch --current-branch' triggered an argument-parsing "
             f"error (exit {result.returncode}).\n  stderr: {result.stderr!r}"
         )
-
-    # AC-FUNC-001 verified by the remaining dedicated tests in this class;
-    # per-flag exit-code acceptance covered by parametrized test_boolean_flag_accepted
-    # in TestRepoOverviewFlagsValidValues for AC-TEST-001.
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -779,7 +724,3 @@ class TestRepoOverviewFlagsChannelDiscipline:
                 f"'Error:' line found in stdout of 'kanon repo overview --current-branch': {line!r}\n"
                 f"  stdout: {result.stdout!r}"
             )
-
-    # AC-CHANNEL-001 verified by the remaining dedicated tests in this class;
-    # per-flag exit-code acceptance covered by parametrized test_boolean_flag_accepted
-    # in TestRepoOverviewFlagsValidValues for AC-TEST-001.

@@ -43,10 +43,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Manifest Flags Test User"
 _GIT_USER_EMAIL = "repo-manifest-flags@example.com"
@@ -54,55 +50,49 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "manifest-flags-test-project"
 
-# CLI tokens used throughout this module.
+
 _CLI_TOKEN_MANIFEST = "manifest"
 
-# Exit code emitted by the option parser when an argument is invalid.
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Exit code emitted when ValidateOptions calls self.Usage() (RepoExitError default: 1).
+
 _USAGE_ERROR_EXIT_CODE = 1
 
-# Expected exit code for successful invocations.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Composed CLI command phrase used in diagnostic messages.
+
 _CLI_COMMAND_PHRASE = f"kanon {_CLI_TOKEN_REPO} {_CLI_TOKEN_MANIFEST}"
 
-# Directory name used for repo_dir in parser-only tests (does not need to exist
-# for argument-parsing checks when a synced repo is not required).
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-dir"
 
-# Valid format values matching OutputFormat enum members.
+
 _FORMAT_XML = "xml"
 _FORMAT_JSON = "json"
 
-# Invalid format values not in the OutputFormat enum.
+
 _FORMAT_INVALID = "toml"
 _FORMAT_INVALID_ALT = "yaml"
 
-# Fragment expected in the default (XML) manifest output.
+
 _XML_DECLARATION_FRAGMENT = "<?xml"
 
-# Key expected in JSON manifest output.
+
 _JSON_MANIFEST_KEY = "manifest"
 
-# Python traceback marker used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# Custom manifest name used in manifest-name flag tests.
+
 _CUSTOM_MANIFEST_NAME = "custom.xml"
 
-# Output file name used in output-file flag tests.
+
 _OUTPUT_FILE_NAME = "flagtest-exported-manifest.xml"
-
-
-# ---------------------------------------------------------------------------
-# Shared setup helper
-# ---------------------------------------------------------------------------
 
 
 def _setup_manifest_flags_repo(
@@ -131,11 +121,6 @@ def _setup_manifest_flags_repo(
         project_path=_PROJECT_PATH,
         manifest_filename=_MANIFEST_FILENAME,
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -508,11 +493,6 @@ class TestRepoManifestFlagsValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with enumerated values
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoManifestFlagsInvalidValues:
     """AC-TEST-002: ``--format`` is the only enumerated flag; negative tests verify rejection.
@@ -618,11 +598,6 @@ class TestRepoManifestFlagsInvalidValues:
             f"Python traceback must not appear in stdout when a positional arg is rejected.\n"
             f"  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -809,11 +784,6 @@ class TestRepoManifestFlagsAbsenceDefaults:
             f"{result.returncode}, expected {_EXPECTED_EXIT_CODE}.\n"
             f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Flag behavior per help text and channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

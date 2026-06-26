@@ -29,11 +29,19 @@ from collections.abc import Callable
 
 import pytest
 
-from kanon_cli.core.catalog import _parse_catalog_source, resolve_catalog_dir
+from unittest.mock import patch
 
-# ---------------------------------------------------------------------------
-# Parametrised unit tests -- AC-FUNC-001 through AC-FUNC-008, AC-TEST-001
-# ---------------------------------------------------------------------------
+from kanon_cli.constants import CATALOG_SOURCES_ENV_VAR
+from kanon_cli.core.catalog import (
+    MultipleCatalogSourcesError,
+    _parse_catalog_source,
+    _split_catalog_source_optional_ref,
+    normalize_catalog_source_ref,
+    parse_catalog_sources,
+    resolve_catalog_dir,
+    resolve_env_catalog_source,
+)
+
 
 _VALID_CASES = [
     (
@@ -62,12 +70,12 @@ _ERROR_CASES = [
     (
         "git@host:org/repo.git",
         "missing-ref",
-        "git@host:org/repo.git",  # fragment of the source that must appear in the error message
+        "git@host:org/repo.git",
     ),
     (
         "@main",
         "empty-url",
-        None,  # error asserted by type only
+        None,
     ),
     (
         "https://h/r.git@",
@@ -117,11 +125,6 @@ def test_parse_catalog_source_invalid(source: str, message_fragment: str | None)
         )
 
 
-# ---------------------------------------------------------------------------
-# End-to-end cycle test -- AC-CYCLE-001
-# ---------------------------------------------------------------------------
-
-
 def _init_fixture_repo(base: pathlib.Path, branch: str) -> pathlib.Path:
     """Create a bare git repo under ``base/`` with a ``catalog/`` directory.
 
@@ -141,8 +144,6 @@ def _init_fixture_repo(base: pathlib.Path, branch: str) -> pathlib.Path:
         text=True,
     )
 
-    # Minimal git identity so `git commit` succeeds in CI environments that
-    # have no global git config.
     subprocess.run(
         ["git", "-C", str(repo_dir), "config", "user.email", "test@example.com"],
         check=True,
@@ -156,7 +157,6 @@ def _init_fixture_repo(base: pathlib.Path, branch: str) -> pathlib.Path:
         text=True,
     )
 
-    # Create the catalog structure expected by `_clone_remote_catalog`.
     catalog_kanon = repo_dir / "catalog" / "kanon"
     catalog_kanon.mkdir(parents=True)
     (catalog_kanon / "README.md").write_text("fixture\n")
@@ -181,17 +181,14 @@ def _init_fixture_repo(base: pathlib.Path, branch: str) -> pathlib.Path:
 @pytest.mark.parametrize(
     "build_source,branch",
     [
-        # Case 1: Plain file:// URL with a branch name ref.
         (
             lambda repo_url: f"{repo_url}@main",
             "main",
         ),
-        # Case 2: Plain file:// URL with a different branch name ref.
         (
             lambda repo_url: f"{repo_url}@feature",
             "feature",
         ),
-        # Case 3: Plain file:// URL with a tag ref.
         (
             lambda repo_url: f"{repo_url}@v1.0.0",
             "v1.0.0",
@@ -224,7 +221,6 @@ def test_round_trip_through_catalog_resolver(
 
     repo_dir = _init_fixture_repo(fixture_base, "main")
 
-    # For the tag case, create the tag on the fixture repo.
     if branch != "main" and branch != "feature":
         subprocess.run(
             ["git", "-C", str(repo_dir), "tag", branch],
@@ -233,14 +229,13 @@ def test_round_trip_through_catalog_resolver(
             text=True,
         )
     elif branch == "feature":
-        # Create the feature branch in the fixture repo.
         subprocess.run(
             ["git", "-C", str(repo_dir), "checkout", "-b", branch],
             check=True,
             capture_output=True,
             text=True,
         )
-        # Return to main so the fixture repo HEAD is on main (the default clone branch).
+
         subprocess.run(
             ["git", "-C", str(repo_dir), "checkout", "main"],
             check=True,
@@ -251,15 +246,238 @@ def test_round_trip_through_catalog_resolver(
     file_url = f"file://{repo_dir}"
     source = build_source(file_url)
 
-    # Verify the splitter produces the right (url, ref) for this source string.
     url, ref = _parse_catalog_source(source)
     assert url == file_url, f"Splitter produced wrong URL for {source!r}: got {url!r}"
     assert ref == branch, f"Splitter produced wrong ref for {source!r}: got {ref!r}"
 
-    # Now run through the full public entry point -- resolve_catalog_dir.
     result = resolve_catalog_dir(source)
 
-    # The resolver returns the catalog/ directory inside the cloned repo.
     assert result.is_dir(), f"resolve_catalog_dir returned a non-directory path: {result}"
     assert result.name == "catalog", f"resolve_catalog_dir should return the catalog/ subdirectory; got: {result}"
     assert (result / "kanon").is_dir(), f"Expected catalog/kanon/ to exist in cloned repo; result path: {result}"
+
+
+_PLURAL_VALID_CASES = [
+    (
+        "https://github.com/org/repo.git@main",
+        [("https://github.com/org/repo.git", "main")],
+        "single-entry",
+    ),
+    (
+        "https://github.com/org/a.git@main\nhttps://github.com/org/b.git@dev",
+        [
+            ("https://github.com/org/a.git", "main"),
+            ("https://github.com/org/b.git", "dev"),
+        ],
+        "two-distinct-entries-order-preserved",
+    ),
+    (
+        "https://h/a.git@dev\nhttps://h/b.git@main\nhttps://h/c.git@v1.0.0",
+        [
+            ("https://h/a.git", "dev"),
+            ("https://h/b.git", "main"),
+            ("https://h/c.git", "v1.0.0"),
+        ],
+        "three-entries-order-preserved",
+    ),
+    (
+        "git@host:org/repo.git@main\nssh://git@host.com/org/repo.git@v2.0.0",
+        [
+            ("git@host:org/repo.git", "main"),
+            ("ssh://git@host.com/org/repo.git", "v2.0.0"),
+        ],
+        "ssh-user-info-entries",
+    ),
+]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "raw,expected",
+    [(raw, exp) for raw, exp, _ in _PLURAL_VALID_CASES],
+    ids=[label for _, _, label in _PLURAL_VALID_CASES],
+)
+def test_parse_catalog_sources_valid(raw: str, expected: list[tuple[str, str]]) -> None:
+    """``parse_catalog_sources`` splits the newline list into order-preserving ``(url, ref)`` tuples."""
+    assert parse_catalog_sources(raw) == expected, (
+        f"For {raw!r}: expected {expected!r}, got {parse_catalog_sources(raw)!r}"
+    )
+
+
+@pytest.mark.unit
+def test_parse_catalog_sources_none_returns_empty() -> None:
+    """An unset (``None``) value parses to an empty discovery set."""
+    assert parse_catalog_sources(None) == []
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "",
+        "\n",
+        "   ",
+        "\n  \n\t\n",
+    ],
+    ids=["empty-string", "single-newline", "spaces-only", "blank-lines-only"],
+)
+def test_parse_catalog_sources_blank_lines_skipped(raw: str) -> None:
+    """Blank / whitespace-only lines are skipped, yielding an empty set."""
+    assert parse_catalog_sources(raw) == []
+
+
+@pytest.mark.unit
+def test_parse_catalog_sources_trims_and_skips_interior_blanks() -> None:
+    """Surrounding whitespace per line is trimmed and interior blank lines are skipped."""
+    raw = "\n  https://h/a.git@main  \n\n\thttps://h/b.git@dev\t\n\n"
+    assert parse_catalog_sources(raw) == [
+        ("https://h/a.git", "main"),
+        ("https://h/b.git", "dev"),
+    ]
+
+
+@pytest.mark.unit
+def test_parse_catalog_sources_dedup_preserves_first_seen_order() -> None:
+    """Identical entries collapse to one, preserving first-seen order."""
+    raw = "https://h/a.git@main\nhttps://h/b.git@dev\nhttps://h/a.git@main\nhttps://h/c.git@v1\nhttps://h/b.git@dev"
+    assert parse_catalog_sources(raw) == [
+        ("https://h/a.git", "main"),
+        ("https://h/b.git", "dev"),
+        ("https://h/c.git", "v1"),
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "raw,offending",
+    [
+        ("https://github.com/org/repo.git", "https://github.com/org/repo.git"),
+        ("https://h/a.git@main\ngit@host:org/repo.git", "git@host:org/repo.git"),
+        ("https://h/a.git@main\n@dev", "@dev"),
+        ("https://h/a.git@main\nhttps://h/b.git@", "https://h/b.git@"),
+    ],
+    ids=["no-at-single", "missing-ref-second", "empty-url-second", "empty-ref-second"],
+)
+def test_parse_catalog_sources_malformed_entry_fails_fast(raw: str, offending: str) -> None:
+    """A malformed (non-blank) entry raises ValueError naming the offending line; blank lines alone never raise."""
+    with pytest.raises(ValueError) as exc_info:
+        parse_catalog_sources(raw)
+    message = str(exc_info.value)
+    assert CATALOG_SOURCES_ENV_VAR in message, f"Error must name the env var; got: {message!r}"
+    assert offending in message, f"Error must name the offending entry {offending!r}; got: {message!r}"
+
+
+@pytest.mark.unit
+def test_resolve_env_catalog_source_unset_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the plural env var is unset, the single-source resolver returns None."""
+    monkeypatch.delenv(CATALOG_SOURCES_ENV_VAR, raising=False)
+    assert resolve_env_catalog_source() is None
+
+
+@pytest.mark.unit
+def test_resolve_env_catalog_source_blank_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A blank-only env value configures no source, so the resolver returns None."""
+    monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "\n   \n\t\n")
+    assert resolve_env_catalog_source() is None
+
+
+@pytest.mark.unit
+def test_resolve_env_catalog_source_single_entry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exactly one configured source is returned as a normalized ``url@ref`` string."""
+    monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "  https://github.com/org/repo.git@main  ")
+    assert resolve_env_catalog_source() == "https://github.com/org/repo.git@main"
+
+
+@pytest.mark.unit
+def test_resolve_env_catalog_source_duplicate_collapses_to_single(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two identical entries deduplicate to one, so the single-source resolver succeeds."""
+    monkeypatch.setenv(
+        CATALOG_SOURCES_ENV_VAR,
+        "https://github.com/org/repo.git@main\nhttps://github.com/org/repo.git@main",
+    )
+    assert resolve_env_catalog_source() == "https://github.com/org/repo.git@main"
+
+
+@pytest.mark.unit
+def test_resolve_env_catalog_source_multiple_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    """More than one distinct source fails fast naming every source and the disambiguation flag."""
+    monkeypatch.setenv(
+        CATALOG_SOURCES_ENV_VAR,
+        "https://github.com/org/a.git@main\nhttps://github.com/org/b.git@dev",
+    )
+    with pytest.raises(MultipleCatalogSourcesError) as exc_info:
+        resolve_env_catalog_source()
+    message = str(exc_info.value)
+    assert "https://github.com/org/a.git@main" in message
+    assert "https://github.com/org/b.git@dev" in message
+    assert "--catalog-source" in message
+
+
+@pytest.mark.unit
+def test_resolve_env_catalog_source_malformed_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A malformed configured entry propagates a ValueError naming the env var."""
+    monkeypatch.setenv(CATALOG_SOURCES_ENV_VAR, "https://github.com/org/repo.git")
+    with pytest.raises(ValueError) as exc_info:
+        resolve_env_catalog_source()
+    assert CATALOG_SOURCES_ENV_VAR in str(exc_info.value)
+
+
+_OPTIONAL_SPLIT_CASES = [
+    ("https://github.com/org/repo.git@main", ("https://github.com/org/repo.git", "main"), "pinned-https"),
+    ("https://github.com/org/repo.git", ("https://github.com/org/repo.git", None), "refless-https"),
+    ("git@host:org/repo.git", ("git@host:org/repo.git", None), "refless-ssh-shorthand"),
+    ("git@host:org/repo.git@dev", ("git@host:org/repo.git", "dev"), "pinned-ssh-shorthand"),
+    ("ssh://git@host.com/org/repo.git@main", ("ssh://git@host.com/org/repo.git", "main"), "pinned-explicit-ssh"),
+    ("plain-token", ("plain-token", None), "refless-bare-token"),
+]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "source,expected",
+    [(s, e) for s, e, _ in _OPTIONAL_SPLIT_CASES],
+    ids=[label for _, _, label in _OPTIONAL_SPLIT_CASES],
+)
+def test_split_catalog_source_optional_ref(source: str, expected: tuple[str, str | None]) -> None:
+    """The optional splitter returns ``ref=None`` for a ref-less source, parsing a pinned ref otherwise."""
+    assert _split_catalog_source_optional_ref(source) == expected
+
+
+@pytest.mark.unit
+def test_split_catalog_source_optional_ref_empty_ref_fails_fast() -> None:
+    """A trailing '@' with an empty ref still fails fast (a pinned-but-empty ref is malformed)."""
+    with pytest.raises(ValueError) as exc_info:
+        _split_catalog_source_optional_ref("https://h/r.git@")
+    assert "Empty ref" in str(exc_info.value)
+
+
+@pytest.mark.unit
+def test_normalize_catalog_source_ref_pinned_is_verbatim_no_resolution() -> None:
+    """A pinned source is returned verbatim without invoking the default-branch resolver."""
+    with patch("kanon_cli.core.catalog.resolve_default_branch") as mock_resolve:
+        result = normalize_catalog_source_ref("https://h/r.git@main", flag_value=None)
+    assert result == "https://h/r.git@main"
+    mock_resolve.assert_not_called()
+
+
+@pytest.mark.unit
+def test_normalize_catalog_source_ref_refless_resolves_default_branch() -> None:
+    """A ref-less source has its ref supplied by the default-branch precedence."""
+    with patch("kanon_cli.core.catalog.resolve_default_branch", return_value="trunk") as mock_resolve:
+        result = normalize_catalog_source_ref("https://h/r.git", flag_value="trunk")
+    assert result == "https://h/r.git@trunk"
+    mock_resolve.assert_called_once_with(
+        "https://h/r.git",
+        inline_ref=None,
+        flag_value="trunk",
+        warned_urls=None,
+    )
+
+
+@pytest.mark.unit
+def test_normalize_catalog_source_ref_passes_warned_urls_through() -> None:
+    """The shared ``warned_urls`` dedup set is forwarded to the resolver for multi-source dedup."""
+    shared: set[str] = set()
+    with patch("kanon_cli.core.catalog.resolve_default_branch", return_value="main") as mock_resolve:
+        normalize_catalog_source_ref("https://h/r.git", flag_value=None, warned_urls=shared)
+    assert mock_resolve.call_args.kwargs["warned_urls"] is shared

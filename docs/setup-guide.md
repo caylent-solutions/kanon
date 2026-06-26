@@ -37,19 +37,20 @@ full CLI documentation.
 
 ### 1. Add Catalog Entries to Your Project
 
-> **Note:** `kanon bootstrap` was removed in a major release (a breaking
-> change). It performs no work and exits 3 on every invocation. Use the
-> commands below instead. See
-> [docs/migration-bootstrap-to-add.md](migration-bootstrap-to-add.md).
+> **Note:** `kanon bootstrap` was removed in kanon 3.0.0 (a breaking
+> change). There is no compatibility shim: `bootstrap` is no longer a
+> registered subcommand, so `kanon bootstrap` exits non-zero with an
+> argparse `invalid choice: 'bootstrap'` error. Use the commands below
+> instead. See [docs/migration-to-add.md](migration-to-add.md).
 
-Search the catalog and add an entry to your `.kanon` with `kanon list` and
+Search the catalog and add an entry to your `.kanon` with `kanon search` and
 `kanon add`. A catalog source is required, supplied via `--catalog-source
-'<git_url>@<ref>'` or the `KANON_CATALOG_SOURCE` environment variable (ref can
+'<git_url>@<ref>'` or the `KANON_CATALOG_SOURCES` environment variable (ref can
 be a branch, tag, `latest`, or a PEP 440 version constraint such as
 `>=2.0.0,<3.0.0`):
 
 ```bash
-kanon list --catalog-source '<git_url>@<ref>'        # search the catalog
+kanon search --catalog-source '<git_url>@<ref>'        # search the catalog
 kanon add kanon --catalog-source '<git_url>@<ref>'   # add an entry to .kanon
 ```
 
@@ -87,9 +88,13 @@ Install it with `pipx install kanon-cli` (production) or `pip install -e .`
 (local development on this repository). The `kanon repo` subsystem is part of
 the `kanon` CLI -- there is no separate tool to install.
 
-### `kanon repo envsubst` fails
+### `kanon install` fails with `manifest needs ${VAR} but no value was provided`
 
-Ensure `GITBASE` is set in `.kanon` and is a valid URL ending with `/`.
+A source's manifest references a `${VAR}` placeholder that has no value. Set the
+matching per-dependency key in `.kanon`: `KANON_SOURCE_<alias>_<VAR>=<value>`
+(for example `KANON_SOURCE_<alias>_GITBASE=https://github.com/your-org`). `kanon
+add` writes these lines automatically (auto-deriving `GITBASE` and leaving other
+vars empty); fill in any empty value before re-running `kanon install`.
 
 ### `kanon repo sync` fails with authentication errors
 

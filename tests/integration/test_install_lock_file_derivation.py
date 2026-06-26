@@ -24,8 +24,10 @@ import pytest
 
 _KANON_CONTENT = (
     "KANON_SOURCE_primary_URL=https://example.com/repo.git\n"
-    "KANON_SOURCE_primary_REVISION=main\n"
+    "KANON_SOURCE_primary_REF=main\n"
     "KANON_SOURCE_primary_PATH=meta.xml\n"
+    "KANON_SOURCE_primary_NAME=primary\n"
+    "KANON_SOURCE_primary_GITBASE=https://example.com\n"
 )
 
 
@@ -69,7 +71,6 @@ class TestLockFileDerivation:
 
         args = MagicMock()
         args.kanonenv_path = alt_kanon
-        args.catalog_source = None
         args.refresh_lock = False
         args.refresh_lock_source = None
         args.strict_lock = False
@@ -85,7 +86,7 @@ class TestLockFileDerivation:
 
         assert len(captured) == 1, f"install() must be called exactly once; got {len(captured)}"
         call_args, call_kwargs = captured[0]
-        # lock_file_path is the second positional arg or keyword arg
+
         lock_file_path = call_kwargs.get("lock_file_path") or (call_args[1] if len(call_args) > 1 else None)
         assert lock_file_path == expected_lock, f"Expected lock_file_path={expected_lock!r}, got {lock_file_path!r}"
         assert expected_lock.exists(), f"AC-FUNC-007: lock file must land on disk at {expected_lock!r}"
@@ -99,7 +100,6 @@ class TestLockFileDerivation:
 
         args = MagicMock()
         args.kanonenv_path = kanon
-        args.catalog_source = None
         args.refresh_lock = False
         args.refresh_lock_source = None
         args.strict_lock = False
@@ -133,7 +133,6 @@ class TestExplicitLockFileFlag:
 
         args = MagicMock()
         args.kanonenv_path = alt_kanon
-        args.catalog_source = None
         args.refresh_lock = False
         args.refresh_lock_source = None
         args.strict_lock = False
@@ -169,7 +168,6 @@ class TestEnvVarLockFilePrecedence:
 
         args = MagicMock()
         args.kanonenv_path = alt_kanon
-        args.catalog_source = None
         args.refresh_lock = False
         args.refresh_lock_source = None
         args.strict_lock = False
@@ -201,7 +199,6 @@ class TestEnvVarLockFilePrecedence:
 
         args = MagicMock()
         args.kanonenv_path = alt_kanon
-        args.catalog_source = None
         args.refresh_lock = False
         args.refresh_lock_source = None
         args.strict_lock = False

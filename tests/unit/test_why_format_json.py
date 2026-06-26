@@ -26,15 +26,11 @@ import pytest
 
 from kanon_cli.commands.why import (
     ChainNode,
+    ResolvedTree,
     _build_why_payload,
     _render_json,
     run,
 )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_args(
@@ -109,8 +105,10 @@ def _make_minimal_kanon_file(tmp_path: pathlib.Path, source_name: str = "FOO") -
         f"CLAUDE_MARKETPLACES_DIR=/tmp/mkts\n"
         f"KANON_MARKETPLACE_INSTALL=false\n"
         f"KANON_SOURCE_{source_name}_URL=https://github.com/org/catalog\n"
-        f"KANON_SOURCE_{source_name}_REVISION=main\n"
+        f"KANON_SOURCE_{source_name}_REF=main\n"
         f"KANON_SOURCE_{source_name}_PATH=./foo\n"
+        f"KANON_SOURCE_{source_name}_NAME={source_name}\n"
+        f"KANON_SOURCE_{source_name}_GITBASE=https://github.com/org\n"
     )
     kanon_file.chmod(0o644)
     return kanon_file
@@ -125,7 +123,7 @@ def _make_minimal_lockfile(
 ) -> "object":
     """Construct a minimal Lockfile dataclass with one source and one project."""
     from kanon_cli.core.lockfile import (
-        CatalogBlock,
+        CURRENT_SCHEMA_VERSION,
         Lockfile,
         ProjectEntry,
         SourceEntry,
@@ -133,22 +131,16 @@ def _make_minimal_lockfile(
     from kanon_cli.core.url import canonicalize_repo_url
 
     return Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-test",
         kanon_hash="sha256:" + "a" * 64,
-        catalog=CatalogBlock(
-            source="catalog@HEAD",
-            url="https://github.com/org/catalog",
-            revision_spec="HEAD",
-            resolved_ref="HEAD",
-            resolved_sha="f" * 40,
-        ),
         sources=[
             SourceEntry(
+                alias=source_name,
                 name=source_name,
                 url="https://github.com/org/catalog",
-                revision_spec="main",
+                ref_spec="main",
                 resolved_ref="main",
                 resolved_sha="a" * 40,
                 path="./foo",
@@ -158,7 +150,7 @@ def _make_minimal_lockfile(
                         name=project_name,
                         url=project_url,
                         canonical_url=canonicalize_repo_url(project_url),
-                        revision_spec="main",
+                        ref_spec="main",
                         resolved_ref="main",
                         resolved_sha=project_sha,
                     )
@@ -175,11 +167,6 @@ def _write_lockfile_to_tmp(tmp_path: pathlib.Path, lockfile: "object") -> pathli
     lock_path = tmp_path / ".kanon.lock"
     write_lockfile(lockfile, lock_path)
     return lock_path
-
-
-# ---------------------------------------------------------------------------
-# Tests for _render_json
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -279,18 +266,17 @@ class TestRenderJsonFieldValues:
         """The url field carries the canonicalized URL, not the raw form."""
         from kanon_cli.core.url import canonicalize_repo_url
 
-        # Use a non-canonical form as input
         raw_url = "git@github.com:org/baz.git"
         canonical = canonicalize_repo_url(raw_url)
 
         source = _make_source_node(name="src")
-        # Create project with raw url stored but canonical_url set correctly
+
         project = ChainNode(
             kind="project",
             name="baz",
             ref=None,
             sha="b" * 40,
-            url=canonical,  # url field should already be canonical per spec
+            url=canonical,
             canonical_url=canonical,
         )
 
@@ -402,7 +388,6 @@ class TestRenderJsonWellFormed:
 
         result = _render_json([[source, include, project]])
 
-        # Must not raise and must be a list
         parsed = json.loads(result)
         assert isinstance(parsed, list)
 
@@ -419,11 +404,6 @@ class TestRenderJsonWellFormed:
         result = _render_json([])
         parsed = json.loads(result)
         assert parsed == []
-
-
-# ---------------------------------------------------------------------------
-# Tests for env-var selection and CLI flag override
-# ---------------------------------------------------------------------------
 
 
 def _build_why_parser(monkeypatch: pytest.MonkeyPatch) -> argparse.ArgumentParser:
@@ -504,7 +484,7 @@ class TestFormatEnvVarAndCliOverride:
                 str(lock_file),
             ]
         )
-        # --format was not passed; env var should have made the default 'json'
+
         assert args.format == "json"
 
         exit_code = run(args)
@@ -586,13 +566,8 @@ class TestFormatEnvVarAndCliOverride:
         assert exit_code == 0
 
         captured = capsys.readouterr()
-        # Text format: output is NOT valid JSON
+
         assert " -> " in captured.out
-
-
-# ---------------------------------------------------------------------------
-# Tests for error paths staying plain-text on stderr regardless of format
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -625,9 +600,9 @@ class TestErrorPathsPlainText:
         assert exc_info.value.code != 0
 
         captured = capsys.readouterr()
-        # stderr must be plain text (not JSON)
+
         assert "not found" in captured.err.lower() or "ERROR" in captured.err
-        # stdout must NOT contain a JSON object (no output on not-found)
+
         assert captured.out == ""
 
     def test_ambiguity_error_is_plain_text_regardless_of_format(
@@ -639,7 +614,7 @@ class TestErrorPathsPlainText:
         categories, triggering the ambiguity error path.
         """
         from kanon_cli.core.lockfile import (
-            CatalogBlock,
+            CURRENT_SCHEMA_VERSION,
             IncludeEntry,
             Lockfile,
             ProjectEntry,
@@ -647,15 +622,10 @@ class TestErrorPathsPlainText:
         )
         from kanon_cli.core.url import canonicalize_repo_url
 
-        # Use "FOO" as the argument: it matches source-name "FOO" (via derive_source_name)
-        # AND matches XML-path "FOO" (exact-string equality).
-        # This creates a genuine two-category ambiguity.
         ambiguous_value = "FOO"
 
-        # Write a .kanon file with source name FOO
         kanon_file = _make_minimal_kanon_file(tmp_path, source_name="FOO")
 
-        # Include with path_in_repo="FOO" so XML-path category also matches
         include = IncludeEntry(
             name="foo-include",
             path_in_repo="FOO",
@@ -667,22 +637,16 @@ class TestErrorPathsPlainText:
         project_url = "https://github.com/org/baz"
 
         lockfile = Lockfile(
-            schema_version=1,
+            schema_version=CURRENT_SCHEMA_VERSION,
             generated_at="2024-01-01T00:00:00Z",
             generator="kanon-test",
             kanon_hash="sha256:" + "a" * 64,
-            catalog=CatalogBlock(
-                source="catalog@HEAD",
-                url="https://github.com/org/catalog",
-                revision_spec="HEAD",
-                resolved_ref="HEAD",
-                resolved_sha="f" * 40,
-            ),
             sources=[
                 SourceEntry(
+                    alias="FOO",
                     name="FOO",
                     url="https://github.com/org/catalog",
-                    revision_spec="main",
+                    ref_spec="main",
                     resolved_ref="main",
                     resolved_sha="a" * 40,
                     path="./foo",
@@ -692,7 +656,7 @@ class TestErrorPathsPlainText:
                             name="baz",
                             url=project_url,
                             canonical_url=canonicalize_repo_url(project_url),
-                            revision_spec="main",
+                            ref_spec="main",
                             resolved_ref="main",
                             resolved_sha="b" * 40,
                         )
@@ -714,9 +678,9 @@ class TestErrorPathsPlainText:
         assert exc_info.value.code != 0
 
         captured = capsys.readouterr()
-        # stderr should be plain text
+
         assert "ERROR" in captured.err
-        # stdout is empty on error
+
         assert captured.out == ""
 
     def test_missing_kanon_file_is_plain_text_regardless_of_format(
@@ -734,15 +698,10 @@ class TestErrorPathsPlainText:
         assert exc_info.value.code != 0
 
         captured = capsys.readouterr()
-        # Error must be plain text on stderr
+
         assert "ERROR" in captured.err or ".kanon" in captured.err
-        # No JSON output on stdout
+
         assert captured.out == ""
-
-
-# ---------------------------------------------------------------------------
-# Tests for run() JSON output -- integration-style unit tests
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -790,12 +749,10 @@ class TestRunJsonOutput:
         captured = capsys.readouterr()
         parsed = json.loads(captured.out)
 
-        # Top-level shape: dict with 'matched' and 'chains'
         assert isinstance(parsed, dict), f"Expected dict, got {type(parsed).__name__}: {parsed!r}"
         assert "matched" in parsed, f"Expected 'matched' key in output, got: {list(parsed.keys())}"
         assert "chains" in parsed, f"Expected 'chains' key in output, got: {list(parsed.keys())}"
 
-        # matched field
         assert parsed["matched"]["category"] == "url", (
             f"Expected category 'url', got: {parsed['matched']['category']!r}"
         )
@@ -803,29 +760,24 @@ class TestRunJsonOutput:
             f"Expected project URL in token, got: {parsed['matched']['token']!r}"
         )
 
-        # AC-CYCLE-001: chains array length 1, chain length 3
         assert len(parsed["chains"]) == 1
         chain = parsed["chains"][0]
         assert len(chain) == 3
 
-        # node[0] is source
         assert chain[0]["kind"] == "source"
         assert chain[0]["name"] == "FOO"
         assert chain[0]["ref"] is None
 
-        # node[1] is include
         assert chain[1]["kind"] == "include"
         assert chain[1]["ref"] == "repo-specs/bar.xml"
         assert chain[1]["sha"] == include_sha
         assert chain[1]["url"] is None
 
-        # node[2] is project
         assert chain[2]["kind"] == "project"
         assert chain[2]["name"] == "baz"
         assert chain[2]["sha"] == project_sha
         assert chain[2]["ref"] is None
 
-        # All five keys present on every node
         for node in chain:
             assert set(node.keys()) == {"kind", "name", "ref", "sha", "url"}
 
@@ -887,7 +839,6 @@ class TestRunJsonOutput:
         parsed = json.loads(captured.out)
         assert isinstance(parsed, dict), f"Expected dict from run() JSON mode, got {type(parsed).__name__}"
 
-        # Project node url field must equal the canonical form (accessed via chains)
         project_node = parsed["chains"][0][-1]
         assert project_node["url"] == expected_canonical
 
@@ -906,11 +857,6 @@ class TestRunJsonOutput:
         )
         assert result.returncode != 0
         assert "invalid choice" in result.stderr or "error" in result.stderr.lower()
-
-
-# ---------------------------------------------------------------------------
-# Tests for _build_why_payload helper
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -970,3 +916,40 @@ class TestBuildWhyPayload:
         node_b = self._make_chain_node(name="b")
         payload = _build_why_payload([[node_a], [node_b]])
         assert len(payload) == 2
+
+
+@pytest.mark.unit
+class TestRunJsonMultiplicity:
+    """JSON output for a multiply-present node: one matched object, every chain."""
+
+    def test_shared_include_emits_single_matched_object_and_all_chains(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        """A transitive include shared by 3 sources emits one matched object and 3 chains."""
+        from unittest.mock import patch
+
+        shared_path = "repo-specs/git-connection/remote.xml"
+        shared_sha = "d" * 40
+        sources = []
+        for index in range(3):
+            include = _make_include_node("remote", shared_path, sha=shared_sha)
+            source = _make_source_node(f"src{index}")
+            source.children = [include]
+            sources.append(source)
+        tree = ResolvedTree(sources=sources)
+
+        kanon_file = _make_minimal_kanon_file(tmp_path, "src0")
+        lockfile = _make_minimal_lockfile(project_url="https://github.com/org/baz", project_sha="b" * 40)
+        lock_file = _write_lockfile_to_tmp(tmp_path, lockfile)
+        args = _make_args(target=shared_path, kanon_file=str(kanon_file), lock_file=str(lock_file), fmt="json")
+
+        with patch("kanon_cli.commands.why._build_tree_from_lockfile", return_value=tree):
+            exit_code = run(args)
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        parsed = json.loads(captured.out)
+        assert isinstance(parsed["matched"], dict)
+        assert parsed["matched"]["category"] == "xml_path"
+        assert parsed["matched"]["token"] == shared_path
+        assert len(parsed["chains"]) == 3

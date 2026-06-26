@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Comprehensive unit tests for manifest_xml.py uncovered code paths."""
 
 import tempfile
@@ -35,7 +21,6 @@ def _load_manifest(tmp_path, xml_content):
     manifest_git = repodir / "manifests.git"
     manifest_git.mkdir()
 
-    # Create git config file
     with open(manifest_git / "config", "w") as fp:
         fp.write("""[remote "origin"]
     url = https://localhost:0/manifest
@@ -275,7 +260,6 @@ class TestParseProject(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             from pathlib import Path
 
-            # Note: validation may happen at sync time, not parse time
             manifest = _load_manifest(Path(tmp), xml_content)
             self.assertIsNotNone(manifest)
 
@@ -291,7 +275,6 @@ class TestParseProject(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             from pathlib import Path
 
-            # Note: validation may happen at sync time, not parse time
             manifest = _load_manifest(Path(tmp), xml_content)
             self.assertIsNotNone(manifest)
 
@@ -744,7 +727,7 @@ class TestManifestProject(unittest.TestCase):
 
             manifest = _load_manifest(Path(tmp), xml_content)
             mp = manifest.manifestProject
-            # Should have use_worktree property
+
             self.assertIsNotNone(mp)
 
 
@@ -810,7 +793,6 @@ class TestOverride(unittest.TestCase):
 
             manifest = _load_manifest(Path(tmp), xml_content)
 
-            # Create another manifest file
             other_manifest = Path(tmp) / ".repo" / "manifests" / "other.xml"
             other_manifest.write_text("""<?xml version="1.0" encoding="UTF-8"?>
 <manifest>
@@ -820,7 +802,6 @@ class TestOverride(unittest.TestCase):
 </manifest>
 """)
 
-            # Override should work
             with mock.patch("os.path.isfile", return_value=True):
                 with mock.patch("kanon_cli.repo.manifest_xml.XmlManifest._Load"):
                     manifest.Override("other.xml")
@@ -844,7 +825,6 @@ class TestLink(unittest.TestCase):
 
             manifest = _load_manifest(Path(tmp), xml_content)
 
-            # Create another manifest file
             other_manifest = Path(tmp) / ".repo" / "manifests" / "other.xml"
             other_manifest.write_text("""<?xml version="1.0" encoding="UTF-8"?>
 <manifest>
@@ -858,7 +838,6 @@ class TestLink(unittest.TestCase):
                 with mock.patch("kanon_cli.repo.manifest_xml.XmlManifest._Load"):
                     manifest.Link("other.xml")
 
-            # Check that manifest file was created
             manifest_file = Path(tmp) / ".repo" / "manifest.xml"
             if manifest_file.exists():
                 content = manifest_file.read_text()

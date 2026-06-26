@@ -25,10 +25,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern used in test_xml_manifest_happy.py
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -98,12 +94,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     repodir = _make_repo_dir(tmp_path)
     manifest_file = _write_manifest(repodir, xml_content)
     return _load_manifest(repodir, manifest_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <extend-project> with minimum required attributes parses
-#              correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -222,12 +212,6 @@ class TestExtendProjectMinimumAttributes:
         assert project_name in project_names, (
             f"Expected '{project_name}' in manifest.projects after extend-project but got: {project_names!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <extend-project> with all documented attributes parses
-#              correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -454,11 +438,6 @@ class TestExtendProjectAllDocumentedAttributes:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <extend-project> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestExtendProjectDefaultAttributeValues:
     """Verify that default attribute behavior on <extend-project> behaves as documented.
@@ -672,11 +651,6 @@ class TestExtendProjectDefaultAttributeValues:
         assert "second-group" in core.groups, (
             f"Expected 'second-group' in project.groups after second extend-project but got: {core.groups!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

@@ -70,6 +70,21 @@ class TestCleanRegister:
         parsed = parser.parse_args(["clean", "--orphans"])
         assert parsed.orphans is True
 
+    def test_description_documents_store_prune(self) -> None:
+        """The clean subparser description documents that it prunes the KANON_HOME store.
+
+        ``kanon clean`` now prunes the content-addressed entries from the shared
+        KANON_HOME store in addition to the per-project artifacts; the help text
+        must keep that behaviour documented (doc-in-sync, spec Section 3.5).
+        """
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        clean_parser = subparsers.choices["clean"]
+        description = clean_parser.description or ""
+        assert "store" in description.lower(), "the clean help text must document that it prunes the KANON_HOME store"
+
 
 @pytest.mark.unit
 class TestCleanAutoDiscovery:

@@ -16,6 +16,7 @@ Scenarios automated:
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import shutil
 
@@ -31,11 +32,6 @@ from tests.scenarios.conftest import (
     run_kanon,
     write_kanonenv,
 )
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _build_manifest_fixture(base: pathlib.Path) -> pathlib.Path:
@@ -78,17 +74,8 @@ def _build_manifest_fixture(base: pathlib.Path) -> pathlib.Path:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestTCClean:
-    # ------------------------------------------------------------------
-    # TC-clean-01: auto-discover clean
-    # ------------------------------------------------------------------
-
     def test_tc_clean_01_auto_discover_removes_dirs(self, tmp_path: pathlib.Path) -> None:
         """TC-clean-01: kanon clean removes .packages and .kanon-data."""
         manifest_bare = _build_manifest_fixture(tmp_path / "fixtures")
@@ -124,12 +111,9 @@ class TestTCClean:
             f"clean exited {clean_result.returncode}\nstdout={clean_result.stdout!r}\nstderr={clean_result.stderr!r}"
         )
 
-        assert not (work_dir / ".packages").exists(), ".packages still present after clean"
-        assert not (work_dir / ".kanon-data").exists(), ".kanon-data still present after clean"
-
-    # ------------------------------------------------------------------
-    # TC-clean-02: .gitignore lines retained after clean
-    # ------------------------------------------------------------------
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert not (store_base / ".packages").exists(), ".packages still present in store after clean"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data still present in store after clean"
 
     def test_tc_clean_02_gitignore_lines_retained(self, tmp_path: pathlib.Path) -> None:
         """TC-clean-02: .gitignore entries written by install remain after clean."""
@@ -161,8 +145,9 @@ class TestTCClean:
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
 
-        gitignore_path = work_dir / ".gitignore"
-        assert gitignore_path.exists(), ".gitignore not created by install"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        gitignore_path = store_base / ".gitignore"
+        assert gitignore_path.exists(), ".gitignore not created by install in store"
         install_gitignore = gitignore_path.read_text()
         assert ".packages/" in install_gitignore, (
             f".packages/ not found in .gitignore after install: {install_gitignore!r}"
@@ -178,10 +163,6 @@ class TestTCClean:
         assert ".kanon-data/" in post_clean_gitignore, (
             f".kanon-data/ line removed from .gitignore after clean: {post_clean_gitignore!r}"
         )
-
-    # ------------------------------------------------------------------
-    # TC-clean-03: clean --orphans prunes the marketplace of a removed source
-    # ------------------------------------------------------------------
 
     def _build_marketplace_plugin(self, plugins: pathlib.Path, name: str) -> None:
         """Seed a bare plugin repo named ``name`` carrying a claude-schema marketplace.json.
@@ -294,7 +275,7 @@ class TestTCClean:
                 ("orphan", manifest_bare.as_uri(), "main", "repo-specs/orphan-only.xml"),
                 ("keep", manifest_bare.as_uri(), "main", "repo-specs/keep-only.xml"),
             ],
-            marketplace_install="true",
+            marketplace_aliases=["orphan", "keep"],
             extra_lines=[f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}"],
         )
 
@@ -308,7 +289,6 @@ class TestTCClean:
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
 
-        # The install must have deposited both marketplaces.
         assert (marketplaces_dir / "orphan-mp").exists(), (
             f"TC-clean-03: expected marketplace entry orphan-mp; install stdout={install_result.stdout!r}"
         )
@@ -316,8 +296,6 @@ class TestTCClean:
             f"TC-clean-03: expected marketplace entry keep-mp; install stdout={install_result.stdout!r}"
         )
 
-        # kanon remove the orphan source: rewrites .kanon (drops the orphan triple)
-        # without touching the lock or the marketplace directory.
         remove_result = run_kanon("remove", "orphan", cwd=work_dir)
         assert remove_result.returncode == 0, (
             f"TC-clean-03 remove exited {remove_result.returncode}\n"
@@ -329,9 +307,7 @@ class TestTCClean:
             f"TC-clean-03 clean --orphans exited {clean_result.returncode}\n"
             f"stdout={clean_result.stdout!r}\nstderr={clean_result.stderr!r}"
         )
-        # The prune phase emits "  - unregistering marketplace: <name>" for each
-        # pruned marketplace.  Assert on those lines specifically (the package /
-        # uninstall summaries below also mention both marketplace names).
+
         prune_lines = [
             line.strip()
             for line in clean_result.stdout.splitlines()
@@ -343,5 +319,10 @@ class TestTCClean:
         assert "- unregistering marketplace: keep-mp" not in prune_lines, (
             f"TC-clean-03: keep-mp is still referenced and must NOT be pruned; prune lines={prune_lines!r}"
         )
-        assert not (work_dir / ".packages").exists(), "TC-clean-03: .packages still present after clean --orphans"
-        assert not (work_dir / ".kanon-data").exists(), "TC-clean-03: .kanon-data still present after clean --orphans"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert not (store_base / ".packages").exists(), (
+            "TC-clean-03: .packages still present in store after clean --orphans"
+        )
+        assert not (store_base / ".kanon-data").exists(), (
+            "TC-clean-03: .kanon-data still present in store after clean --orphans"
+        )

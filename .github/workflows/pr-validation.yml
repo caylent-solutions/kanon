@@ -110,8 +110,15 @@ jobs:
         shell: bash
         run: make publish
 
-  unit-tests:
-    name: Unit tests (with coverage gate)
+  # ---------------------------------------------------------------------------
+  # Test tiers run on a single LINUX set (ubuntu-24.04). Each tier runs exactly
+  # once with the bare tier marker (for example -m "unit", -m "integration");
+  # no per-OS marker filter is threaded. Every run step uses `shell: bash` and
+  # fails the job on a non-zero exit, so there is no fallback or silent skip.
+  # ---------------------------------------------------------------------------
+
+  unit-tests-linux:
+    name: Unit tests (Linux, with coverage gate)
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
@@ -126,7 +133,7 @@ jobs:
       - name: Run unit tests with 90% coverage gate
         shell: bash
         run: |
-          python -m pytest -m unit --cov=kanon_cli --cov-report=term-missing
+          python -m pytest -n auto --dist loadscope -m "unit" --cov=kanon_cli --cov-report=term-missing
           coverage json
           coverage_percent=$(python -c "import json; f=open('coverage.json'); print(json.load(f)['totals']['percent_covered'])")
           echo "Coverage: $coverage_percent%"
@@ -135,8 +142,8 @@ jobs:
             exit 1
           fi
 
-  integration-tests:
-    name: Integration tests
+  integration-tests-linux:
+    name: Integration tests (Linux)
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
@@ -150,10 +157,10 @@ jobs:
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run integration tests
         shell: bash
-        run: python -m pytest -m integration
+        run: python -m pytest -n auto --dist loadscope -m "integration"
 
-  functional-tests:
-    name: Functional tests
+  functional-tests-linux:
+    name: Functional tests (Linux)
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
@@ -167,10 +174,10 @@ jobs:
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run functional tests
         shell: bash
-        run: make test-functional
+        run: SMOKE_TEST_TIMEOUT=300 python -m pytest -n auto --dist loadscope -m "functional"
 
-  scenario-tests:
-    name: Scenario tests (docs/integration-testing.md)
+  scenario-tests-linux:
+    name: Scenario tests (Linux, docs/integration-testing.md)
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
@@ -184,6 +191,8 @@ jobs:
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run scenario tests
         shell: bash
+        # Invokes the make target (operator-path guard E50-F1-S1-T2 requires it).
+        # The recipe runs `pytest -m "scenario"` with no platform filter.
         run: make test-scenarios
 
   full-suite-regression:

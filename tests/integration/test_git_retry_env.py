@@ -22,16 +22,7 @@ from kanon_cli.repo.error import ManifestInvalidRevisionError
 from kanon_cli.repo.project import _run_ls_remote_with_retry
 
 
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
-
 _REMOTE_URL = "https://example.com/org/manifest.git"
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_transient_failure(stderr: str = "Connection reset by peer") -> MagicMock:
@@ -65,11 +56,6 @@ def _make_success(tags: tuple = ("refs/tags/1.0.0",)) -> MagicMock:
     result.stdout = lines
     result.stderr = ""
     return result
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: KANON_GIT_RETRY_COUNT=0 disables retries on transient failure
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -130,11 +116,6 @@ class TestRetryCountZeroDisablesRetries:
         assert _REMOTE_URL in str(exc_info.value), (
             f"Expected remote URL {_REMOTE_URL!r} in error message for KANON_GIT_RETRY_COUNT=0. Got: {exc_info.value!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: KANON_GIT_RETRY_COUNT=N retries up to N times
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -234,11 +215,6 @@ class TestRetryCountNRetriesUpToNTimes:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: KANON_GIT_RETRY_DELAY controls exponential backoff
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestRetryDelayControlsExponentialBackoff:
     """AC-TEST-003: KANON_GIT_RETRY_DELAY sets the base delay for exponential
@@ -331,11 +307,6 @@ class TestRetryDelayControlsExponentialBackoff:
         assert delays == [1, 2], (
             f"Expected canonical sleep sequence [1, 2] for base_delay=1 with 3 attempts, but got {delays!r}."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: DNS failure and connection reset are retried per retry count
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -459,11 +430,6 @@ class TestTransientNetworkErrorsAreRetried:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Retry env vars control the retry loop deterministically
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestRetryEnvVarsDeterministicControl:
     """AC-FUNC-001: The retry loop is controlled entirely by env vars. Changing
@@ -518,11 +484,6 @@ class TestRetryEnvVarsDeterministicControl:
         assert observed_delay == 7, (
             f"Expected sleep delay of 7 seconds (KANON_GIT_RETRY_DELAY=7), but got {observed_delay!r}."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline (no cross-channel leakage)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

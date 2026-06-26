@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Deep unit tests for subcmds/grep.py module."""
 
 from unittest import mock
@@ -415,7 +401,4 @@ class TestGrepExecute:
         with pytest.raises(SystemExit):
             grep.Execute(opt, [])
 
-        # ExecuteInParallel should be called with command containing --full-name
         grep.ExecuteInParallel.call_args
-        # The first argument should be jobs, second is the partial function
-        # We can't easily check the cmd_argv inside the partial

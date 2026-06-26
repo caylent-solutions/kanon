@@ -20,16 +20,9 @@ import pytest
 from kanon_cli.repo import manifest_xml
 
 
-# ---------------------------------------------------------------------------
-# Location of the on-disk fixture
-# ---------------------------------------------------------------------------
-
 _FIXTURE_DIR = pathlib.Path(__file__).parents[2] / "unit" / "repo" / "fixtures"
 _SAMPLE_MANIFEST = _FIXTURE_DIR / "sample-manifest.xml"
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers -- mirrors the pattern in test_manifest_parsing.py
-# ---------------------------------------------------------------------------
 
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
@@ -85,11 +78,6 @@ def _load_manifest(repodir: pathlib.Path, manifest_file: pathlib.Path) -> manife
     m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
     m.Load()
     return m
-
-
-# ---------------------------------------------------------------------------
-# AC-FINAL-010: Real on-disk fixture parse + round-trip
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration

@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Regression guard for E0-F6-S2-T4: ls-remote errors missing stderr.
 
 Bug reference: E0-F6-S2-T4 / Bug 8 -- when git ls-remote fails and raises
@@ -52,11 +38,6 @@ import pytest
 from kanon_cli.repo.error import ManifestInvalidRevisionError
 from kanon_cli.repo import project as project_module
 from kanon_cli.repo.project import Project
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_project(
@@ -107,11 +88,6 @@ def _make_failure(stderr: str = "fatal: repository not found") -> mock.MagicMock
     return result
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- error message includes stderr from failed subprocess
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_error_message_includes_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
     """AC-TEST-001: ManifestInvalidRevisionError includes stderr from the failed subprocess.
@@ -156,11 +132,6 @@ def test_regression_error_message_includes_stderr(monkeypatch: pytest.MonkeyPatc
         "include it in the ManifestInvalidRevisionError message so operators can "
         "diagnose the root cause of the failure."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- exact bug condition: ls-remote error missing URL and constraint
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -260,11 +231,6 @@ def test_regression_exact_bug_condition_missing_context(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- current fixed code includes all three fields for multiple errors
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "remote_url,constraint,stderr_text,description",
@@ -343,11 +309,6 @@ def test_regression_fixed_code_includes_all_context_in_error(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- structural guard: stderr capture is present in source
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 def test_regression_stderr_captured_in_ls_remote_helper() -> None:
     """AC-FUNC-001: _run_ls_remote_with_retry captures stderr in its error message.
@@ -392,11 +353,6 @@ def test_regression_stderr_captured_in_ls_remote_helper() -> None:
         "helper has been removed. Restore the call so ls-remote failures include "
         "stderr in the ManifestInvalidRevisionError."
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001 -- error is propagated via exception, not swallowed or printed
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

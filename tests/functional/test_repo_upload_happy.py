@@ -67,36 +67,28 @@ from tests.functional.conftest import (
     _setup_upload_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- no hard-coded domain literals in test logic
-# ---------------------------------------------------------------------------
 
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "upload-test-project"
 
-# Topic branch for upload tests
+
 _TOPIC_BRANCH = "feature/upload-happy-path"
 
-# CLI token constants
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_UPLOAD = "upload"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
 _CLI_FLAG_DRY_RUN = "--dry-run"
 _CLI_FLAG_YES = "--yes"
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT_CODE = 0
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
+
 _ERROR_PREFIX = "Error:"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo upload with default args exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -209,11 +201,6 @@ class TestRepoUploadHappyPathDefaultArgs:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo upload has a happy-path test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoUploadPositionalArgHappyPath:
     """AC-TEST-002: happy-path tests for the positional arguments of 'repo upload'.
@@ -311,11 +298,6 @@ class TestRepoUploadPositionalArgHappyPath:
             f"  stderr: {result.stderr!r}\n"
             f"  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

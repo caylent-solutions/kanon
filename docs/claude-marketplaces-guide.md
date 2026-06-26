@@ -97,13 +97,13 @@ This allows Claude Code to discover and load marketplace plugins at runtime.
 
 ### How Linkfiles Work
 
-1. **Source (`src`)** — A relative path within the cloned package repository
+1. **Source (`src`)** -- A relative path within the cloned package repository
    pointing to the marketplace plugin directory
-2. **Destination (`dest`)** — Must use the `${CLAUDE_MARKETPLACES_DIR}`
+2. **Destination (`dest`)** -- Must use the `${CLAUDE_MARKETPLACES_DIR}`
    environment variable, resolved at install time by `repo envsubst`
-3. **Execution** — When `repo sync` runs, it creates a symlink from the
+3. **Execution** -- When `repo sync` runs, it creates a symlink from the
    destination to the source package directory
-4. **Discovery** — Claude Code scans `${CLAUDE_MARKETPLACES_DIR}` to find
+4. **Discovery** -- Claude Code scans `${CLAUDE_MARKETPLACES_DIR}` to find
    all registered marketplace plugins
 
 ### Validation Rules
@@ -119,42 +119,55 @@ The following patterns are rejected:
 
 ## Install and Uninstall Lifecycle
 
-The marketplace install/uninstall lifecycle is controlled by the
-`KANON_MARKETPLACE_INSTALL` flag in `.kanon`. When enabled, Kanon manages
-Claude Code marketplace plugin registration and unregistration.
+The marketplace install/uninstall lifecycle is controlled per source by the
+`KANON_SOURCE_<alias>_MARKETPLACE` flag in `.kanon`. When any source sets it
+to `true`, Kanon manages Claude Code marketplace plugin registration and
+unregistration. Toggle it with `kanon marketplace enable <alias>` /
+`kanon marketplace disable <alias>`, or inspect the effective setting with
+`kanon marketplace status`.
+
+The global `CLAUDE_MARKETPLACES_DIR` header that `kanon install` needs is
+auto-managed: `kanon add` of a `claude-marketplace` entry and
+`kanon marketplace enable` insert
+`CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces` once when it is absent,
+and `kanon remove` / `kanon marketplace disable` prune it once the last
+marketplace dependency is gone. Hand-set the line only to override the
+directory; a custom value is preserved and never clobbered. So the canonical
+`kanon add <claude-marketplace> ; kanon install` flow works with no manual
+edit to `.kanon`.
 
 ### Install Lifecycle
 
 When a user runs `kanon install .kanon`:
 
-1. **Parse `.kanon`** — Read configuration and validate required variables
-2. **Prepare marketplace directory** — Create `${CLAUDE_MARKETPLACES_DIR}`
+1. **Parse `.kanon`** -- Read configuration and validate required variables
+2. **Prepare marketplace directory** -- Create `${CLAUDE_MARKETPLACES_DIR}`
    if it does not exist; clear existing contents for a clean slate
 3. **For each source in alphabetical order:**
    - Run `repo init` with the source URL, revision, and manifest path
    - Run `repo envsubst` to resolve `${CLAUDE_MARKETPLACES_DIR}` and
      `${GITBASE}` placeholders
    - Run `repo sync` to clone packages and create linkfile symlinks
-4. **Aggregate symlinks** — Create symlinks in `.packages/` for each
+4. **Aggregate symlinks** -- Create symlinks in `.packages/` for each
    source's packages
-5. **Collision detection** — Fail immediately if two sources produce the
+5. **Collision detection** -- Fail immediately if two sources produce the
    same package name
-6. **Install plugins** — The Kanon CLI locates the `claude` binary, discovers
+6. **Install plugins** -- The Kanon CLI locates the `claude` binary, discovers
    marketplace entries and plugins, registers marketplaces, and installs
    plugins via the Claude Code CLI
 
 ### Uninstall Lifecycle
 
 When a user runs `kanon clean .kanon`, the order is
-critical — uninstall plugins before removing files:
+critical -- uninstall plugins before removing files:
 
-1. **Uninstall plugins** — The Kanon CLI locates the `claude` binary, discovers
+1. **Uninstall plugins** -- The Kanon CLI locates the `claude` binary, discovers
    marketplace entries and plugins, uninstalls each plugin, and removes
    marketplace registrations via the Claude Code CLI
-2. **Remove marketplace directory** — Delete `${CLAUDE_MARKETPLACES_DIR}`
+2. **Remove marketplace directory** -- Delete `${CLAUDE_MARKETPLACES_DIR}`
    to prevent stale plugin references
-3. **Remove `.packages/`** — Delete all synced package directories
-4. **Remove `.kanon-data/`** — Delete Kanon state directory
+3. **Remove `.packages/`** -- Delete all synced package directories
+4. **Remove `.kanon-data/`** -- Delete Kanon state directory
 
 ### Failure Handling
 

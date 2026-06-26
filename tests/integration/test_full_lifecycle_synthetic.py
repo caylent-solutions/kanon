@@ -16,7 +16,7 @@ so the test can assert per-entry argv content rather than just call counts.
 Design: each entry runs in its own isolated workspace directory. The first entry
 passes ``--catalog-source`` to ``kanon add`` (the CLI flag). Entries 2-6 omit the
 ``--catalog-source`` flag and instead supply the catalog via the
-``KANON_CATALOG_SOURCE`` environment variable. Each workspace is isolated so that
+``KANON_CATALOG_SOURCES`` environment variable. Each workspace is isolated so that
 each ``kanon install`` processes exactly one catalog entry, keeping the total
 add and remove counts at exactly 6.
 
@@ -45,16 +45,11 @@ import pytest
 
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 from tests.integration.test_add_core import (
     _create_manifest_repo_with_tags,
     _run_kanon,
 )
 
-
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
 _ENTRY_NAMES: list[str] = [
     "entry-alpha",
@@ -82,11 +77,6 @@ _MARKETPLACE_JSON_TEMPLATE = '{{"name": "{name}", "plugins": []}}'
 _MOCK_CLAUDE_BIN = "/usr/bin/claude"
 
 _PLACEHOLDER_PATTERN = re.compile(r"<[^>]+>")
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
@@ -190,11 +180,6 @@ def _assert_no_placeholder_in_kanon(kanon_path: pathlib.Path, entry_name: str) -
         )
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestFullLifecycleSynthetic:
     """End-to-end 6-entry add + install + clean lifecycle over a synthetic catalog.
@@ -226,7 +211,7 @@ class TestFullLifecycleSynthetic:
               sub-directory and ``CLAUDE_MARKETPLACES_DIR`` override.
            b. Run ``kanon add <entry>`` -- first entry passes
               ``--catalog-source`` via the CLI flag; entries 2-6 omit the flag
-              and supply the catalog via ``KANON_CATALOG_SOURCE`` env var
+              and supply the catalog via ``KANON_CATALOG_SOURCES`` env var
               instead (AC-FUNC-004 -- no ``--catalog-source`` flag for entries
               2-6, exercising the E22 install-reads-catalog-block path).
            c. Assert no ``<...>`` placeholder survives in ``.kanon`` (E28).
@@ -247,9 +232,8 @@ class TestFullLifecycleSynthetic:
             monkeypatch: Pytest monkeypatch fixture.
         """
         monkeypatch.delenv("KANON_MARKETPLACE_INSTALL", raising=False)
-        monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
 
-        # Step 1: build the synthetic 6-entry catalog bare repo.
         bare_catalog = _create_manifest_repo_with_tags(
             tmp_path / "catalog",
             entry_names=_ENTRY_NAMES,
@@ -257,8 +241,6 @@ class TestFullLifecycleSynthetic:
         )
         catalog_source = f"file://{bare_catalog}@main"
 
-        # Shared subprocess.run mock state across all 6 per-entry cycles.
-        # Two separate recording lists keep install and clean calls independent.
         install_recorded_argvs: list[list[Any]] = []
         clean_recorded_argvs: list[list[Any]] = []
 
@@ -278,46 +260,22 @@ class TestFullLifecycleSynthetic:
             return mock_completed
 
         for idx, entry_name in enumerate(_ENTRY_NAMES):
-            # Each entry gets its own isolated workspace + marketplace dir so
-            # each kanon install processes exactly one catalog entry and the
-            # total add/remove counts match the entry count (6 each).
             workspace_dir = tmp_path / f"workspace-{idx}"
             workspace_dir.mkdir()
             entry_marketplace_dir = tmp_path / f"marketplace-{idx}"
             entry_marketplace_dir.mkdir()
             kanon_path = workspace_dir / ".kanon"
 
-            # Set CLAUDE_MARKETPLACES_DIR + KANON_MARKETPLACE_INSTALL in
-            # os.environ so the in-process install() and clean() calls see the
-            # entry-specific marketplace dir. parse_kanonenv applies env
-            # overrides BEFORE ${HOME} shell-variable expansion, so the
-            # template value in .kanon is replaced by our test path.
             monkeypatch.setenv("CLAUDE_MARKETPLACES_DIR", str(entry_marketplace_dir))
-            monkeypatch.setenv("KANON_MARKETPLACE_INSTALL", "true")
 
-            # ------------------------------------------------------------------
-            # Step 2b: kanon add
-            # ------------------------------------------------------------------
             add_args = ["add", entry_name]
             if idx == 0:
-                # First entry: pass --catalog-source via the CLI flag. This
-                # writes the [catalog] block into .kanon so that kanon install
-                # can read the catalog URL back without --catalog-source (E22).
                 add_args += ["--catalog-source", catalog_source]
 
-            # For entries 2-6: no --catalog-source flag (AC-FUNC-004).
-            # KANON_CATALOG_SOURCE env var is set in add_env instead.
-            # KANON_MARKETPLACE_INSTALL and CLAUDE_MARKETPLACES_DIR are in
-            # os.environ via monkeypatch and propagate via dict(os.environ).
             add_env = dict(os.environ)
-            add_env.pop("KANON_CATALOG_SOURCE", None)
+            add_env.pop("KANON_CATALOG_SOURCES", None)
             if idx > 0:
-                # Entries 2-6 omit the --catalog-source flag; the catalog
-                # source is supplied via env var so kanon add can find the
-                # manifest repo. The install step (called without the
-                # catalog_source env var) reads the [catalog] block that
-                # kanon add wrote into .kanon -- this is the E22 composition.
-                add_env["KANON_CATALOG_SOURCE"] = catalog_source
+                add_env["KANON_CATALOG_SOURCES"] = catalog_source
 
             add_result = _run_kanon(add_args, cwd=workspace_dir, extra_env=add_env)
             assert add_result.returncode == 0, (
@@ -326,15 +284,14 @@ class TestFullLifecycleSynthetic:
                 f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
             )
 
-            # ------------------------------------------------------------------
-            # Step 2c: assert no <...> placeholder survives in .kanon (E28)
-            # ------------------------------------------------------------------
+            entry_alias = entry_name.replace("-", "_")
+            with kanon_path.open("a", encoding="utf-8") as _fh:
+                _fh.write(f"CLAUDE_MARKETPLACES_DIR={entry_marketplace_dir}\n")
+                _fh.write(f"KANON_SOURCE_{entry_alias}_MARKETPLACE=true\n")
+
             assert kanon_path.exists(), f"E28: .kanon was not created at {kanon_path} after 'kanon add {entry_name}'."
             _assert_no_placeholder_in_kanon(kanon_path, entry_name)
 
-            # ------------------------------------------------------------------
-            # Step 2d: kanon install (with mocked repo + claude)
-            # ------------------------------------------------------------------
             entry_marketplace_path = str(entry_marketplace_dir / entry_name)
 
             with (
@@ -356,13 +313,8 @@ class TestFullLifecycleSynthetic:
                 install(
                     kanon_path,
                     lock_file_path=workspace_dir / ".kanon.lock",
-                    catalog_source=DEFAULT_CATALOG_SOURCE,
                 )
 
-            # ------------------------------------------------------------------
-            # Step 2e: assert install recorded claude plugin marketplace add
-            # with this entry's path (E35 -- registration path)
-            # ------------------------------------------------------------------
             add_argvs_so_far = _filter_argvs_by_subcommand(
                 install_recorded_argvs,
                 ("plugin", "marketplace", "add"),
@@ -373,8 +325,7 @@ class TestFullLifecycleSynthetic:
                 f"'kanon install' for entry '{entry_name}'.\n"
                 f"All install subprocess.run args so far: {install_recorded_argvs!r}"
             )
-            # The most-recently-recorded add argv must contain this entry's
-            # marketplace path -- not just some arbitrary path from a prior run.
+
             latest_add_argv = add_argvs_so_far[-1]
             assert entry_marketplace_path in latest_add_argv, (
                 f"E35: the most-recently-recorded 'claude plugin marketplace add' "
@@ -384,9 +335,6 @@ class TestFullLifecycleSynthetic:
                 f"  All recorded add argvs: {add_argvs_so_far!r}"
             )
 
-            # ------------------------------------------------------------------
-            # Step 2f: kanon clean (with mocked claude)
-            # ------------------------------------------------------------------
             with (
                 patch(
                     "kanon_cli.core.marketplace.shutil.which",
@@ -399,10 +347,6 @@ class TestFullLifecycleSynthetic:
             ):
                 clean(kanon_path)
 
-            # ------------------------------------------------------------------
-            # Step 2g: assert clean recorded claude plugin marketplace remove
-            # with this entry's name (E35 reverse path)
-            # ------------------------------------------------------------------
             remove_argvs_so_far = _filter_argvs_by_subcommand(
                 clean_recorded_argvs,
                 ("plugin", "marketplace", "remove"),
@@ -413,8 +357,7 @@ class TestFullLifecycleSynthetic:
                 f"'kanon clean' for entry '{entry_name}'.\n"
                 f"All clean subprocess.run args so far: {clean_recorded_argvs!r}"
             )
-            # The most-recently-recorded remove argv must contain this entry's
-            # name -- not just some name from a prior iteration.
+
             latest_remove_argv = remove_argvs_so_far[-1]
             assert entry_name in latest_remove_argv, (
                 f"E35: the most-recently-recorded 'claude plugin marketplace remove' "
@@ -423,7 +366,6 @@ class TestFullLifecycleSynthetic:
                 f"  All recorded remove argvs: {remove_argvs_so_far!r}"
             )
 
-        # Step 3: post-loop total count assertions (AC-FUNC-007).
         total_add_argvs = _filter_argvs_by_subcommand(
             install_recorded_argvs,
             ("plugin", "marketplace", "add"),

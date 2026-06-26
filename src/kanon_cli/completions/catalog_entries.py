@@ -9,7 +9,7 @@ Public API::
 
 Resolution chain:
 1. If KANON_COMPLETION_ENABLED=0, return [] immediately.
-2. Resolve KANON_CATALOG_SOURCE env var to get the manifest repo URL and ref.
+2. Resolve the single KANON_CATALOG_SOURCES entry to get the manifest repo URL and ref.
 3. Check the catalog entry cache (catalogs/<sha>/index.txt):
    - Cache hit (fetched_at within TTL): return cached entries filtered by prefix.
    - Cache stale (fetched_at past TTL) and KANON_COMPLETION_REFRESH_BG=1:
@@ -44,7 +44,7 @@ from kanon_cli.completions.cache import (
     write_epoch,
 )
 from kanon_cli.constants import (
-    CATALOG_ENV_VAR,
+    CATALOG_SOURCES_ENV_VAR,
     COMPLETION_MAX_ENTRY_LEN,
     COMPLETION_UNSAFE_CHARS,
     KANON_COMPLETION_CACHE_TTL,
@@ -52,7 +52,7 @@ from kanon_cli.constants import (
     KANON_COMPLETION_REFRESH_BG,
     KANON_COMPLETION_TIMEOUT,
 )
-from kanon_cli.core.catalog import _parse_catalog_source
+from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
 from kanon_cli.core.metadata import CatalogMetadataParseError, _parse_catalog_metadata, find_catalog_entry_files
 
 _COMPLETER_NAME = "__complete_catalog_entries"
@@ -75,11 +75,6 @@ def _write_stderr_diagnostic(exc: BaseException) -> None:
     """
     if sys.stderr.isatty():
         sys.stderr.write(f"{_COMPLETER_NAME}: {type(exc).__name__}: {exc}\n")
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _is_safe_entry(name: str) -> bool:
@@ -229,17 +224,12 @@ def _inline_fetch(url: str, ref: str, entry_dir: Path, timeout: int) -> list[str
         return []
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def complete(current_token: str) -> list[str]:
     """Return catalog entry names that start with *current_token*.
 
     Resolution contract:
     1. KANON_COMPLETION_ENABLED=0 -> return [].
-    2. Read KANON_CATALOG_SOURCE from environment.
+    2. Read the single KANON_CATALOG_SOURCES entry from the environment.
     3. Cache-hit within TTL -> return cached names filtered by prefix.
     4. Cache-stale + KANON_COMPLETION_REFRESH_BG=1 -> return stale + fork bg.
     5. Cache-miss or stale + KANON_COMPLETION_REFRESH_BG=0 -> inline fetch.
@@ -251,27 +241,25 @@ def complete(current_token: str) -> list[str]:
     Returns:
         Sorted list of matching catalog entry names, or [] on any error.
     """
-    # Step 1: completion disabled guard
+
     enabled = int(os.environ.get("KANON_COMPLETION_ENABLED", KANON_COMPLETION_ENABLED))
     if enabled == 0:
         return []
 
-    # Step 2: resolve catalog source
-    source = os.environ.get(CATALOG_ENV_VAR)
-    if not source:
-        missing_exc = ValueError("KANON_CATALOG_SOURCE is not set")
-        log_completion_error(_COMPLETER_NAME, missing_exc)
-        _write_stderr_diagnostic(missing_exc)
-        return []
-
     try:
-        url, ref = _parse_catalog_source(source)
+        source = resolve_env_catalog_source()
     except ValueError as exc:
         log_completion_error(_COMPLETER_NAME, exc)
         _write_stderr_diagnostic(exc)
         return []
+    if not source:
+        missing_exc = ValueError(f"{CATALOG_SOURCES_ENV_VAR} is not set")
+        log_completion_error(_COMPLETER_NAME, missing_exc)
+        _write_stderr_diagnostic(missing_exc)
+        return []
 
-    # Step 3: check cache
+    url, ref = _parse_catalog_source(source)
+
     entry_dir = catalog_entry_dir(url, ref)
     index_path = entry_dir / "index.txt"
     fetched_path = entry_dir / "fetched_at.txt"
@@ -286,22 +274,16 @@ def complete(current_token: str) -> list[str]:
     if fetched_at is not None:
         age = now - fetched_at
         if age <= ttl:
-            # Cache hit
             names = read_entries(index_path)
         else:
-            # Cache stale
             names = read_entries(index_path)
             if refresh_bg == 1:
-                # Fork background refresh; return stale contents
                 _spawn_background_refresh(url, ref)
             else:
-                # Inline refresh
                 names = _inline_fetch(url, ref, entry_dir, timeout)
     else:
-        # Cache miss -- inline fetch
         names = _inline_fetch(url, ref, entry_dir, timeout)
 
-    # Filter by prefix (case-sensitive)
     return [n for n in names if n.startswith(current_token)]
 
 
@@ -324,16 +306,11 @@ def _spawn_background_refresh(url: str, ref: str) -> None:
             "__complete_catalog_entries",
             "--refresh-only",
         ],
-        env={**os.environ, CATALOG_ENV_VAR: source, "KANON_COMPLETION_REFRESH_BG": "0"},
+        env={**os.environ, CATALOG_SOURCES_ENV_VAR: source, "KANON_COMPLETION_REFRESH_BG": "0"},
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-
-
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
 
 
 def register(

@@ -10,11 +10,6 @@ import pytest
 from kanon_cli.completions.pep440_filter import filter_pep440_tags, is_pep440_tag
 
 
-# ---------------------------------------------------------------------------
-# is_pep440_tag
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestIsPep440Tag:
     """is_pep440_tag() accepts PEP 440 strings and rejects non-PEP-440 strings."""
@@ -22,24 +17,18 @@ class TestIsPep440Tag:
     @pytest.mark.parametrize(
         ("ref_component", "expected"),
         [
-            # Accept set -- all valid PEP 440 version shapes
             ("1.0.0", True),
             ("2.0.0", True),
             ("1.0.0a1", True),
             ("1.0.0.post1", True),
             ("1.0.0.dev1", True),
             ("1.0.0+local.1", True),
-            # Calendar version (PEP 440 compatible)
             ("20231201", True),
-            # Epoch
             ("1!1.0.0", True),
-            # Prerelease shapes
             ("1.0.0b2", True),
             ("1.0.0rc3", True),
-            # Reject set -- non-PEP-440 strings
             ("not-a-version", False),
             ("latest", False),
-            # v3 is the last component of release/v3 -- packaging normalizes to "3" (valid PEP 440)
             ("v3", True),
             ("main", False),
             ("develop", False),
@@ -70,11 +59,6 @@ class TestIsPep440Tag:
         assert is_pep440_tag(ref_component) is expected
 
 
-# ---------------------------------------------------------------------------
-# filter_pep440_tags
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestFilterPep440Tags:
     """filter_pep440_tags() keeps PEP 440-valid tags and discards the rest."""
@@ -101,7 +85,7 @@ class TestFilterPep440Tags:
     def test_ordering_of_survivors_preserved(self) -> None:
         """Relative ordering of survivors is preserved (not re-sorted)."""
         result = filter_pep440_tags(["2.0.0", "1.0.0", "3.0.0"])
-        # Ordering from input is preserved
+
         assert result == ["2.0.0", "1.0.0", "3.0.0"]
 
     def test_last_path_component_filtering(self) -> None:
@@ -112,7 +96,7 @@ class TestFilterPep440Tags:
         "v3" is the last component of refs/tags/release/v3 -- packaging normalizes
         it to "3" so it passes the filter (is_pep440_tag("v3") is True).
         """
-        # v3 normalizes to 3 (valid PEP 440) via packaging; both pass the filter
+
         result = filter_pep440_tags(["v3", "1.0.0"])
         assert sorted(result) == ["1.0.0", "v3"]
 

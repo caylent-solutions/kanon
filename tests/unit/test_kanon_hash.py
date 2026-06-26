@@ -11,9 +11,6 @@ import pytest
 
 from kanon_cli.core.kanon_hash import KanonHashError, kanon_hash
 
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
 
 _VALID_URL = "https://example.com/repo.git"
 _VALID_REVISION = "main"
@@ -49,8 +46,10 @@ def _write_kanon(
         lines.extend(prefix_lines)
     for name, url, revision, path in sources:
         lines.append(f"KANON_SOURCE_{name}_URL={url}")
-        lines.append(f"KANON_SOURCE_{name}_REVISION={revision}")
+        lines.append(f"KANON_SOURCE_{name}_REF={revision}")
         lines.append(f"KANON_SOURCE_{name}_PATH={path}")
+        lines.append(f"KANON_SOURCE_{name}_NAME={name}")
+        lines.append(f"KANON_SOURCE_{name}_GITBASE={url}")
     if suffix_lines:
         lines.extend(suffix_lines)
     kanon_file = tmp_path / filename
@@ -65,11 +64,6 @@ def _expected_hash(sources: list[tuple[str, str, str, str]]) -> str:
     for name, url, revision, path in sorted_sources:
         digest.update(f"{name}\t{url}\t{revision}\t{path}\n".encode("utf-8"))
     return f"sha256:{digest.hexdigest()}"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Shape of return value
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -100,11 +94,6 @@ class TestKanonHashReturnShape:
         hex_part = result[len("sha256:") :]
         assert len(hex_part) == 64
         assert all(c in "0123456789abcdef" for c in hex_part)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-002: Re-ordering source blocks does NOT change the hash
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -155,11 +144,6 @@ class TestKanonHashSourceOrdering:
         assert kanon_hash(file_a) == kanon_hash(file_b)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: Comments do NOT change the hash
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonHashComments:
     """Adding, removing, or modifying comments does NOT change the hash."""
@@ -190,11 +174,6 @@ class TestKanonHashComments:
         assert kanon_hash(file_a) == kanon_hash(file_b)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: Blank lines do NOT change the hash
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonHashBlankLines:
     """Adding or removing blank lines does NOT change the hash."""
@@ -213,11 +192,6 @@ class TestKanonHashBlankLines:
             suffix_lines=["", "", ""],
         )
         assert kanon_hash(file_a) == kanon_hash(file_b)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: Changing REVISION DOES change the hash
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -247,11 +221,6 @@ class TestKanonHashRevisionChange:
         assert kanon_hash(file_a) != kanon_hash(file_b)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: Changing URL DOES change the hash
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonHashUrlChange:
     """Changing any URL value DOES change the hash."""
@@ -276,11 +245,6 @@ class TestKanonHashUrlChange:
         file_a = _write_kanon(dir_a, [("alpha", url_a, _VALID_REVISION, _VALID_PATH)])
         file_b = _write_kanon(dir_b, [("alpha", url_b, _VALID_REVISION, _VALID_PATH)])
         assert kanon_hash(file_a) != kanon_hash(file_b)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: Changing PATH DOES change the hash
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -309,11 +273,6 @@ class TestKanonHashPathChange:
         assert kanon_hash(file_a) != kanon_hash(file_b)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-008: Changing source name DOES change the hash
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonHashSourceNameChange:
     """Changing a source name DOES change the hash."""
@@ -339,11 +298,6 @@ class TestKanonHashSourceNameChange:
         file_a = _write_kanon(dir_a, [(name_a, _VALID_URL, _VALID_REVISION, _VALID_PATH)])
         file_b = _write_kanon(dir_b, [(name_b, _VALID_URL, _VALID_REVISION, _VALID_PATH)])
         assert kanon_hash(file_a) != kanon_hash(file_b)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-009: Non-source keys do NOT change the hash
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -378,11 +332,6 @@ class TestKanonHashNonSourceKeys:
         assert kanon_hash(file_a) == kanon_hash(file_b)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-010: Tab in URL raises KanonHashError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestKanonHashTabInUrl:
     """A URL containing a literal tab raises KanonHashError."""
@@ -392,8 +341,10 @@ class TestKanonHashTabInUrl:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             f"KANON_SOURCE_alpha_URL={url_with_tab}\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
-            "KANON_SOURCE_alpha_PATH=repo-specs/alpha/meta.xml\n",
+            "KANON_SOURCE_alpha_REF=main\n"
+            "KANON_SOURCE_alpha_PATH=repo-specs/alpha/meta.xml\n"
+            "KANON_SOURCE_alpha_NAME=alpha\n"
+            "KANON_SOURCE_alpha_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
         with pytest.raises(KanonHashError) as exc_info:
@@ -407,17 +358,14 @@ class TestKanonHashTabInUrl:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_mysvc_URL=https://x.com/r\tepo.git\n"
-            "KANON_SOURCE_mysvc_REVISION=main\n"
-            "KANON_SOURCE_mysvc_PATH=specs/meta.xml\n",
+            "KANON_SOURCE_mysvc_REF=main\n"
+            "KANON_SOURCE_mysvc_PATH=specs/meta.xml\n"
+            "KANON_SOURCE_mysvc_NAME=mysvc\n"
+            "KANON_SOURCE_mysvc_GITBASE=https://example.com\n",
             encoding="utf-8",
         )
         with pytest.raises(KanonHashError, match="mysvc"):
             kanon_hash(kanon_file)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-010b: Forbidden character in NAME raises KanonHashError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -435,7 +383,7 @@ class TestKanonHashForbiddenCharInName:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_alpha_URL=https://example.com/r.git\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
+            "KANON_SOURCE_alpha_REF=main\n"
             "KANON_SOURCE_alpha_PATH=specs/meta.xml\n",
             encoding="utf-8",
         )
@@ -446,7 +394,7 @@ class TestKanonHashForbiddenCharInName:
                 "sources": {
                     "al\tpha": {
                         "url": "https://example.com/r.git",
-                        "revision": "main",
+                        "ref": "main",
                         "path": "specs/meta.xml",
                     }
                 },
@@ -458,7 +406,7 @@ class TestKanonHashForbiddenCharInName:
         with pytest.raises(KanonHashError) as exc_info:
             kanon_hash(kanon_file)
         msg = str(exc_info.value)
-        assert "NAME" in msg
+        assert "ALIAS" in msg
         assert "0x09" in msg
 
     def test_nul_in_name_via_monkeypatch(
@@ -472,7 +420,7 @@ class TestKanonHashForbiddenCharInName:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_alpha_URL=https://example.com/r.git\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
+            "KANON_SOURCE_alpha_REF=main\n"
             "KANON_SOURCE_alpha_PATH=specs/meta.xml\n",
             encoding="utf-8",
         )
@@ -483,7 +431,7 @@ class TestKanonHashForbiddenCharInName:
                 "sources": {
                     "al\x00pha": {
                         "url": "https://example.com/r.git",
-                        "revision": "main",
+                        "ref": "main",
                         "path": "specs/meta.xml",
                     }
                 },
@@ -495,7 +443,7 @@ class TestKanonHashForbiddenCharInName:
         with pytest.raises(KanonHashError) as exc_info:
             kanon_hash(kanon_file)
         msg = str(exc_info.value)
-        assert "NAME" in msg
+        assert "ALIAS" in msg
         assert "0x00" in msg
 
     def test_newline_in_name_via_monkeypatch(
@@ -509,7 +457,7 @@ class TestKanonHashForbiddenCharInName:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_alpha_URL=https://example.com/r.git\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
+            "KANON_SOURCE_alpha_REF=main\n"
             "KANON_SOURCE_alpha_PATH=specs/meta.xml\n",
             encoding="utf-8",
         )
@@ -520,7 +468,7 @@ class TestKanonHashForbiddenCharInName:
                 "sources": {
                     "al\npha": {
                         "url": "https://example.com/r.git",
-                        "revision": "main",
+                        "ref": "main",
                         "path": "specs/meta.xml",
                     }
                 },
@@ -532,13 +480,8 @@ class TestKanonHashForbiddenCharInName:
         with pytest.raises(KanonHashError) as exc_info:
             kanon_hash(kanon_file)
         msg = str(exc_info.value)
-        assert "NAME" in msg
+        assert "ALIAS" in msg
         assert "0x0A" in msg
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-011: Newline in PATH raises KanonHashError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -556,7 +499,7 @@ class TestKanonHashNewlineInPath:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_alpha_URL=https://example.com/r.git\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
+            "KANON_SOURCE_alpha_REF=main\n"
             "KANON_SOURCE_alpha_PATH=specs/meta.xml\n",
             encoding="utf-8",
         )
@@ -567,7 +510,7 @@ class TestKanonHashNewlineInPath:
                 "sources": {
                     "alpha": {
                         "url": "https://example.com/r.git",
-                        "revision": "main",
+                        "ref": "main",
                         "path": "specs/meta\nxml",
                     }
                 },
@@ -582,11 +525,6 @@ class TestKanonHashNewlineInPath:
         assert "alpha" in msg
         assert "PATH" in msg
         assert "0x0A" in msg
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-012: NUL byte in REVISION raises KanonHashError
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -604,7 +542,7 @@ class TestKanonHashNulInRevision:
         kanon_file = tmp_path / ".kanon"
         kanon_file.write_text(
             "KANON_SOURCE_alpha_URL=https://example.com/r.git\n"
-            "KANON_SOURCE_alpha_REVISION=main\n"
+            "KANON_SOURCE_alpha_REF=main\n"
             "KANON_SOURCE_alpha_PATH=specs/meta.xml\n",
             encoding="utf-8",
         )
@@ -615,7 +553,7 @@ class TestKanonHashNulInRevision:
                 "sources": {
                     "alpha": {
                         "url": "https://example.com/r.git",
-                        "revision": "ma\x00in",
+                        "ref": "ma\x00in",
                         "path": "specs/meta.xml",
                     }
                 },
@@ -628,13 +566,8 @@ class TestKanonHashNulInRevision:
             kanon_hash(kanon_file)
         msg = str(exc_info.value)
         assert "alpha" in msg
-        assert "REVISION" in msg
+        assert "REF" in msg
         assert "0x00" in msg
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-013: Stable signature
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -655,11 +588,6 @@ class TestKanonHashSignature:
         sig = inspect.signature(kanon_hash)
         params = list(sig.parameters.keys())
         assert params == ["kanon_path"]
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: End-to-end cycle
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -696,9 +624,8 @@ class TestKanonHashEndToEndCycle:
             f"fixture_b hash: {hash_b}"
         )
 
-        # Now modify one REVISION in fixture_b
         sources_cba_mutated = list(sources_cba)
-        # Change gamma's revision from v1.0.0 to v2.0.0
+
         sources_cba_mutated[0] = (
             sources_cba_mutated[0][0],
             sources_cba_mutated[0][1],

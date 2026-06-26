@@ -110,10 +110,6 @@ def create_upgrade_versioned_repo_fixture(tmp_path: pathlib.Path) -> pathlib.Pat
     _git(["add", "manifest.xml"], cwd=work_dir)
     _git(["commit", "-m", "Add upgrade-versioned manifest with remote and default"], cwd=work_dir)
 
-    # Create one annotated tag per version in _VERSIONED_TAGS.  The first tag
-    # is placed on the initial manifest commit; each subsequent tag gets its own
-    # CHANGELOG.md bump commit so the tag ordering in the git history is
-    # deterministic.
     first_tag, *remaining_tags = _VERSIONED_TAGS
     _git(["tag", "-a", first_tag, "-m", f"Release {first_tag}"], cwd=work_dir)
 

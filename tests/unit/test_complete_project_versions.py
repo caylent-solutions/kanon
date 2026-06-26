@@ -24,11 +24,6 @@ from kanon_cli.completions.project_versions import (
 )
 
 
-# ---------------------------------------------------------------------------
-# _parse_ls_remote_output
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestParseLsRemoteOutput:
     """_parse_ls_remote_output() splits git ls-remote output into (tags, branches)."""
@@ -86,11 +81,6 @@ class TestParseLsRemoteOutput:
         assert branches == []
 
 
-# ---------------------------------------------------------------------------
-# _run_ls_remote
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRunLsRemote:
     """_run_ls_remote() shells out to git ls-remote and returns stdout."""
@@ -126,17 +116,12 @@ class TestRunLsRemote:
                 _run_ls_remote("https://example.com/repo.git", timeout=2)
 
 
-# ---------------------------------------------------------------------------
-# complete() -- PEP 440 filter (AC-FUNC-001, AC-FUNC-003, AC-FUNC-008)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompletePEP440Filter:
     """complete() applies PEP 440 filter to tags, passes branches through."""
 
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -145,11 +130,8 @@ class TestCompletePEP440Filter:
     @pytest.mark.parametrize(
         ("tags", "expected_in", "expected_not_in"),
         [
-            # PEP 440-valid tags accepted
             (["1.0.0", "2.0.0", "1.0.0a1"], ["1.0.0", "2.0.0", "1.0.0a1"], []),
-            # Non-PEP-440 tags excluded
             (["not-a-version", "1.0.0"], ["1.0.0"], ["not-a-version"]),
-            # "v3" is PEP 440-valid (packaging normalizes to "3")
             (["v3"], ["v3"], []),
         ],
         ids=["valid-pep440", "reject-non-pep440", "v-prefix-valid"],
@@ -215,17 +197,12 @@ class TestCompletePEP440Filter:
         assert filter_pep440_tags is ref_fn
 
 
-# ---------------------------------------------------------------------------
-# complete() -- URL canonicalization (AC-FUNC-002)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteURLCanonicalization:
     """Two URL shapes that canonicalize to the same value share the same cache entry."""
 
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -248,18 +225,15 @@ class TestCompleteURLCanonicalization:
         with patch.object(pv, "_run_ls_remote", side_effect=counting_fetch):
             result_https = complete("https://example.com/proj.git", "")
 
-        # Seed a fresh TTL-valid cache entry manually
         from kanon_cli.completions import cache as cache_mod
         from kanon_cli.core.url import canonicalize_repo_url
 
         canonical_https = canonicalize_repo_url("https://example.com/proj.git")
         entry_dir = cache_mod.project_entry_dir(canonical_https)
-        # Verify the cache directory was created under the canonical hash
+
         assert entry_dir.exists(), f"cache dir not created: {entry_dir}"
 
-        # Now call with the SSH-shorthand URL -- it should hit the same cache dir
         with patch.object(pv, "_run_ls_remote", side_effect=counting_fetch):
-            # Force cache to be fresh so the second call does NOT fetch
             result_ssh = complete("https://example.com/proj.git", "")
 
         assert result_https == result_ssh, (
@@ -284,18 +258,13 @@ class TestCompleteURLCanonicalization:
         assert expected_dir.exists(), f"Expected cache dir at {expected_dir}"
 
 
-# ---------------------------------------------------------------------------
-# complete() -- malformed URL (AC-FUNC-005)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteMalformedURL:
     """Malformed repo_url produces empty stdout AND a structured log entry."""
 
     def test_empty_url_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Empty URL causes ValueError from canonicalize_repo_url, empty result."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(pv, "log_completion_error") as mock_log:
             result = complete("", "")
@@ -307,7 +276,7 @@ class TestCompleteMalformedURL:
 
     def test_whitespace_url_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Whitespace-only URL fails canonicalize_repo_url with ValueError."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(pv, "log_completion_error") as mock_log:
             result = complete("   ", "")
@@ -317,7 +286,7 @@ class TestCompleteMalformedURL:
 
     def test_url_with_query_string_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """URL with query string fails canonicalize_repo_url with ValueError."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(pv, "log_completion_error") as mock_log:
             result = complete("https://example.com/proj?foo=bar", "")
@@ -327,7 +296,7 @@ class TestCompleteMalformedURL:
 
     def test_url_with_fragment_returns_empty_logs(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """URL with fragment fails canonicalize_repo_url with ValueError."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         with patch.object(pv, "log_completion_error") as mock_log:
             result = complete("https://example.com/proj#section", "")
@@ -337,8 +306,7 @@ class TestCompleteMalformedURL:
 
     def test_log_entry_contains_completer_name(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Log entry contains the completer name '__complete_project_versions'."""
-        cache_dir = tmp_path / "cache"
-        monkeypatch.setenv("KANON_CACHE_DIR", str(cache_dir))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         log_path = tmp_path / "errors.log"
         monkeypatch.setenv("KANON_COMPLETION_LOG", str(log_path))
 
@@ -350,17 +318,12 @@ class TestCompleteMalformedURL:
         assert "ValueError" in content
 
 
-# ---------------------------------------------------------------------------
-# complete() -- cache states (AC-FUNC-006)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteCacheStates:
     """Cache hit, stale, and miss behavior for project_versions."""
 
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -430,17 +393,12 @@ class TestCompleteCacheStates:
         assert "1.0.0" in result
 
 
-# ---------------------------------------------------------------------------
-# complete() -- prefix filter (AC-FUNC-003)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompletePrefixFilter:
     """Prefix filter narrows the candidate list correctly."""
 
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -482,18 +440,13 @@ class TestCompletePrefixFilter:
         assert result == expected, f"prefix={prefix!r}: expected {expected}, got {result}"
 
 
-# ---------------------------------------------------------------------------
-# complete() -- KANON_COMPLETION_ENABLED=0 (AC-FUNC-007)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteDisabled:
     """KANON_COMPLETION_ENABLED=0 returns [] without touching cache or log."""
 
     def test_disabled_returns_empty_no_fetch(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """KANON_COMPLETION_ENABLED=0 exits early with []."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.setenv("KANON_COMPLETION_ENABLED", "0")
 
         with patch.object(pv, "_fetch_and_cache_versions") as mock_fetch:
@@ -505,17 +458,12 @@ class TestCompleteDisabled:
         mock_log.assert_not_called()
 
 
-# ---------------------------------------------------------------------------
-# complete() -- network error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteNetworkError:
     """Network error: empty result returned, error logged."""
 
     def _setup_env(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_TIMEOUT", raising=False)
@@ -544,18 +492,13 @@ class TestCompleteNetworkError:
         mock_log.assert_called()
 
 
-# ---------------------------------------------------------------------------
-# _fetch_and_cache_versions
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestFetchAndCacheVersions:
     """_fetch_and_cache_versions() runs git ls-remote, writes tags.txt."""
 
     def test_writes_cache_on_success(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """On success, tags.txt is written with filtered+sorted entries."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         entry_dir = tmp_path / "entry"
 
         ls_output = "sha1\trefs/tags/1.0.0\nsha2\trefs/heads/main\n"
@@ -576,11 +519,6 @@ class TestFetchAndCacheVersions:
                 _fetch_and_cache_versions("https://example.com/proj.git", entry_dir)
 
 
-# ---------------------------------------------------------------------------
-# _handle()
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestHandle:
     """_handle() is the argparse entry point for __complete_project_versions."""
@@ -592,7 +530,7 @@ class TestHandle:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """_handle() prints one version per line and returns 0."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         import argparse
 
@@ -612,7 +550,7 @@ class TestHandle:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """_handle() with empty complete() result exits 0 with empty stdout."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         import argparse
 
@@ -623,11 +561,6 @@ class TestHandle:
         captured = capsys.readouterr()
         assert captured.out == ""
         assert result == 0
-
-
-# ---------------------------------------------------------------------------
-# register() (AC-FUNC-004, AC-FUNC-007)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -688,18 +621,13 @@ class TestRegister:
         )
 
 
-# ---------------------------------------------------------------------------
-# Coverage: _write_stderr_diagnostic when stderr is a tty
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestWriteStderrDiagnostic:
     """_write_stderr_diagnostic() writes to stderr when stderr is a tty."""
 
     def test_writes_to_stderr_when_tty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When sys.stderr.isatty() is True, diagnostic line is written."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         err_lines: list[str] = []
 
@@ -724,7 +652,7 @@ class TestWriteStderrDiagnostic:
 
     def test_no_stderr_when_not_tty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """When sys.stderr.isatty() is False, NO line is written to stderr."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
 
         err_lines: list[str] = []
 
@@ -746,11 +674,6 @@ class TestWriteStderrDiagnostic:
         assert err_lines == [], f"Expected no stderr output, got: {err_lines!r}"
 
 
-# ---------------------------------------------------------------------------
-# Coverage: _inline_fetch env restoration when KANON_COMPLETION_TIMEOUT was pre-set
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestInlineFetchEnvRestore:
     """_inline_fetch() restores KANON_COMPLETION_TIMEOUT after fetch."""
@@ -759,7 +682,7 @@ class TestInlineFetchEnvRestore:
         """When KANON_COMPLETION_TIMEOUT was already set, _inline_fetch restores it."""
         from kanon_cli.completions.project_versions import _inline_fetch
 
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.setenv("KANON_COMPLETION_TIMEOUT", "99")
         entry_dir = tmp_path / "entry"
 
@@ -779,18 +702,15 @@ class TestInlineFetchEnvRestore:
         assert os.environ.get("KANON_COMPLETION_TIMEOUT") == "99"
 
 
-# ---------------------------------------------------------------------------
-# Coverage: background refresh closure calls _fetch_and_cache_versions
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestBackgroundRefreshClosure:
-    """The refresh closure passed to fork_background_refresh calls _fetch_and_cache_versions."""
+    """The refresh callable passed to fork_background_refresh calls _fetch_and_cache_versions."""
 
-    def test_refresh_fn_calls_fetch_and_cache_versions(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When fork_background_refresh is called, the closure invokes _fetch_and_cache_versions."""
-        monkeypatch.setenv("KANON_CACHE_DIR", str(tmp_path / "cache"))
+    _REPO_URL = "https://example.com/proj.git"
+
+    def _seed_stale_cache(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        """Seed a stale project cache entry and return its entry directory."""
+        monkeypatch.setenv("KANON_HOME", str(tmp_path))
         monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
         monkeypatch.delenv("KANON_COMPLETION_ENABLED", raising=False)
         monkeypatch.delenv("KANON_COMPLETION_CACHE_TTL", raising=False)
@@ -799,25 +719,94 @@ class TestBackgroundRefreshClosure:
         from kanon_cli.completions import cache as cache_mod
         from kanon_cli.core.url import canonicalize_repo_url
 
-        canonical = canonicalize_repo_url("https://example.com/proj.git")
+        canonical = canonicalize_repo_url(self._REPO_URL)
         entry_dir = cache_mod.project_entry_dir(canonical)
         entry_dir.mkdir(parents=True, exist_ok=True)
         (entry_dir / "tags.txt").write_text("1.0.0\n")
-        import time as time_mod
+        (entry_dir / "fetched_at.txt").write_text(str(int(time.time()) - 5000))
+        return entry_dir
 
-        (entry_dir / "fetched_at.txt").write_text(str(int(time_mod.time()) - 5000))
+    def test_refresh_fn_calls_fetch_and_cache_versions(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When fork_background_refresh is called, the callable invokes _fetch_and_cache_versions."""
+        self._seed_stale_cache(tmp_path, monkeypatch)
 
-        captured_closures: list = []
+        captured: list = []
 
         def _fake_fork(refresh_fn: object) -> None:
-            # Capture the closure and call it to verify it calls _fetch_and_cache_versions
-            captured_closures.append(refresh_fn)
+            captured.append(refresh_fn)
 
         with patch.object(pv, "fork_background_refresh", side_effect=_fake_fork):
             with patch.object(pv, "_fetch_and_cache_versions", return_value=["2.0.0"]) as mock_fetch:
-                complete("https://example.com/proj.git", "")
-                # Now invoke the captured closure to exercise the inner function
-                assert len(captured_closures) == 1
-                captured_closures[0]()
+                complete(self._REPO_URL, "")
+
+                assert len(captured) == 1
+                captured[0]()
 
         mock_fetch.assert_called_once()
+
+        call_args = mock_fetch.call_args[0]
+        assert call_args[0] == self._REPO_URL, "background refresh must use the original repo_url"
+
+    def test_refresh_callable_is_picklable(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The EXACT callable the real callsite passes to fork_background_refresh
+        must be picklable so the Windows detached-spawn path works end-to-end.
+
+        ``project_versions.complete`` builds the background-refresh callable from
+        a nested closure historically; a nested closure is NOT picklable and the
+        Windows ``spawn_detached`` path serialises the callable via pickle. This
+        test captures the precise object handed to fork_background_refresh and
+        asserts ``pickle.dumps`` succeeds on it; it FAILS if picklability
+        regresses (e.g. the callsite reverts to a nested closure).
+        """
+        import pickle
+
+        self._seed_stale_cache(tmp_path, monkeypatch)
+
+        captured: list = []
+
+        def _capture_fork(refresh_fn: object) -> None:
+            captured.append(refresh_fn)
+
+        with patch.object(pv, "fork_background_refresh", side_effect=_capture_fork):
+            complete(self._REPO_URL, "")
+
+        assert len(captured) == 1, "complete() must call fork_background_refresh exactly once on stale+bg"
+        passed_fn = captured[0]
+
+        try:
+            pickle.dumps(passed_fn)
+        except Exception as exc:
+            raise AssertionError(
+                f"The callable passed to fork_background_refresh is not picklable "
+                f"({type(exc).__name__}: {exc}). The Windows detach path requires a "
+                f"picklable callable -- the callsite must pass functools.partial of a "
+                f"module-level function, never a nested closure."
+            ) from exc
+
+    def test_refresh_callable_round_trips_through_pickle(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The picklable callable round-trips and, when invoked, reaches
+        _fetch_and_cache_versions with the original repo_url and entry dir.
+
+        This proves the Windows child would actually run the intended refresh
+        after deserialising, not merely that serialisation does not raise.
+        """
+        import functools
+        import pickle
+
+        entry_dir = self._seed_stale_cache(tmp_path, monkeypatch)
+
+        captured: list = []
+
+        def _capture_fork(refresh_fn: object) -> None:
+            captured.append(refresh_fn)
+
+        with patch.object(pv, "fork_background_refresh", side_effect=_capture_fork):
+            complete(self._REPO_URL, "")
+
+        assert len(captured) == 1
+        revived = pickle.loads(pickle.dumps(captured[0]))
+
+        assert isinstance(revived, functools.partial)
+        assert revived.func is pv._fetch_and_cache_versions
+        assert revived.args[0] == self._REPO_URL
+        assert revived.args[1] == entry_dir

@@ -21,18 +21,10 @@ from unittest.mock import patch
 
 import pytest
 
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 from tests.functional.conftest import _git, _run_kanon
 from kanon_cli.core.install import install
 from kanon_cli.core.xml_validator import validate_xml
 
-# NOTE: _git is imported from tests.functional.conftest to avoid duplication.
-# This follows the established pattern in test_validate_xml_repo_root.py.
-
-
-# ---------------------------------------------------------------------------
-# Module-level constants
-# ---------------------------------------------------------------------------
 
 _GIT_USER_EMAIL = "stdout-stderr-test@example.com"
 _GIT_USER_NAME = "Stdout Stderr Test"
@@ -46,14 +38,11 @@ _VALID_MANIFEST_CONTENT = textwrap.dedent("""\
 
 _MINIMAL_KANONENV_CONTENT = (
     "KANON_SOURCE_src_URL=https://example.com/src.git\n"
-    "KANON_SOURCE_src_REVISION=main\n"
+    "KANON_SOURCE_src_REF=main\n"
     "KANON_SOURCE_src_PATH=default.xml\n"
+    "KANON_SOURCE_src_NAME=src\n"
+    "KANON_SOURCE_src_GITBASE=https://example.com\n"
 )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _write_kanonenv(directory: pathlib.Path, content: str = _MINIMAL_KANONENV_CONTENT) -> pathlib.Path:
@@ -81,10 +70,7 @@ def _write_xml(path: pathlib.Path, content: str) -> pathlib.Path:
     Returns:
         The path that was written.
     """
-    # NOTE: _write_xml duplicates the same helper in test_validate_lifecycle.py
-    # and test_validate_xml_repo_root.py. Consolidation into conftest.py requires
-    # updating those files too, which is outside this task's Changes Manifest.
-    # Tracked as a follow-up DRY cleanup.
+
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('<?xml version="1.0" encoding="UTF-8"?>\n' + content, encoding="utf-8")
     return path
@@ -189,11 +175,6 @@ def _run_repo_init(
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: install success writes nothing to stderr
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestInstallSuccessNoStderr:
     """AC-TEST-001: a successful install writes nothing to stderr."""
@@ -216,7 +197,7 @@ class TestInstallSuccessNoStderr:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         captured = capsys.readouterr()
         assert captured.err == "", (
@@ -238,7 +219,7 @@ class TestInstallSuccessNoStderr:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         captured = capsys.readouterr()
         assert len(captured.out) > 0, (
@@ -247,11 +228,6 @@ class TestInstallSuccessNoStderr:
         assert captured.err == "", (
             f"AC-FUNC-001: install success must write nothing to stderr.\n  stderr: {captured.err!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: install failure writes nothing to stdout
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -318,11 +294,6 @@ class TestInstallFailureNoStdout:
         assert result.stdout == "", (
             f"AC-CHANNEL-001: install failure error must not appear on stdout.\n  stdout: {result.stdout!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: validate xml success writes results to stdout, errors to stderr
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -443,11 +414,6 @@ class TestValidateXmlChannelDiscipline:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: kanon repo sync stdout/stderr separation matches upstream conventions
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoSyncChannelDiscipline:
     """AC-TEST-004: kanon repo sync separates stdout and stderr per upstream conventions.
@@ -535,7 +501,7 @@ class TestRepoSyncChannelDiscipline:
             f"  stdout: {sync_result.stdout!r}\n"
             f"  stderr: {sync_result.stderr!r}"
         )
-        # Error-level indicators must not appear on stderr for a successful sync.
+
         error_indicators = ("error", "fatal", "traceback", "exception")
         for indicator in error_indicators:
             assert indicator not in sync_result.stderr.lower(), (
@@ -578,7 +544,7 @@ class TestRepoSyncChannelDiscipline:
             f"  stdout: {sync_result.stdout!r}\n"
             f"  stderr: {sync_result.stderr!r}"
         )
-        # The success message from repo sync must appear on stdout, not stderr.
+
         assert len(sync_result.stdout) > 0, (
             f"AC-CHANNEL-001: sync success output must appear on stdout, stdout was empty: {sync_result.stdout!r}"
         )

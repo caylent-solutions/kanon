@@ -37,11 +37,6 @@ def _parse(field: str) -> list:
     return XmlManifest._ParseList(None, field)
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: comma separator works
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "field, expected",
@@ -57,11 +52,6 @@ def test_parselist_comma_separator(field, expected):
     """AC-TEST-001: comma-separated tokens are split correctly."""
     result = _parse(field)
     assert result == expected, f"_ParseList({field!r}) returned {result!r}, expected {expected!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: space separator works
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -82,11 +72,6 @@ def test_parselist_space_separator(field, expected):
     assert result == expected, f"_ParseList({field!r}) returned {result!r}, expected {expected!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: mixed separators work
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "field, expected",
@@ -102,11 +87,6 @@ def test_parselist_mixed_separators(field, expected):
     """AC-TEST-003: mixed comma-and-whitespace separators all split correctly."""
     result = _parse(field)
     assert result == expected, f"_ParseList({field!r}) returned {result!r}, expected {expected!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: empty tokens are skipped
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -127,17 +107,6 @@ def test_parselist_empty_tokens_are_skipped(field, expected):
     """AC-TEST-004: empty tokens produced by consecutive separators are discarded."""
     result = _parse(field)
     assert result == expected, f"_ParseList({field!r}) returned {result!r}, expected {expected!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005: notdefault exclusion behaves per spec
-#
-# The _ParseList function tokenizes the raw attribute string.  The
-# "notdefault" token must appear verbatim in the result; the exclusion
-# behavior (preventing "default" from being added to expanded_project_groups)
-# is handled downstream in Project.MatchesGroups and is not part of
-# _ParseList itself.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -170,11 +139,6 @@ def test_parselist_notdefault_not_added_implicitly():
     """
     result = _parse("group1,group2")
     assert "notdefault" not in result, f"'notdefault' must not appear in result when not in input; got {result!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: tokenization is robust across separator styles
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -211,11 +175,6 @@ def test_parselist_preserves_token_content():
     assert result == ["name:MyProject", "path:src/MyProject"], (
         f"token content must be preserved verbatim, got {result!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: no stdout or stderr emitted
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

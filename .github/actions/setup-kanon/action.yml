@@ -73,6 +73,12 @@ runs:
         python-version: '3.14'
 
     - name: Cache ASDF installation
+      # asdf is a POSIX/bash tool and is not supported on Windows runners; it
+      # installs jq + pre-commit (.tool-versions), which only the Linux-only
+      # lint/pre-commit jobs consume. The Windows test legs get their Python
+      # from actions/setup-python and their deps from pip, so the asdf bootstrap
+      # is restricted to Linux.
+      if: runner.os == 'Linux'
       uses: actions/cache@v5
       with:
         path: ~/.asdf
@@ -81,6 +87,7 @@ runs:
           ${{ runner.os }}-asdf-v0.15.0-
 
     - name: Install ASDF
+      if: runner.os == 'Linux'
       shell: bash
       run: |
         if [ ! -d ~/.asdf ]; then
@@ -91,6 +98,7 @@ runs:
         source $HOME/.asdf/asdf.sh
 
     - name: Install ASDF plugins and tools
+      if: runner.os == 'Linux'
       shell: bash
       run: |
         cd $GITHUB_WORKSPACE
@@ -111,6 +119,7 @@ runs:
           ${{ runner.os }}-pip-
 
     - name: Install zsh (for shell-completion integration tests)
+      if: runner.os == 'Linux'
       shell: bash
       run: |
         # tests/integration/test_completion_zsh.py,
@@ -130,8 +139,17 @@ runs:
     - name: Install dependencies
       shell: bash
       run: |
+        set -euo pipefail
         pip install --upgrade pip
-        make install-dev
+        # `make install-dev` is `pip install -r requirements-dev.txt`. GNU make
+        # is not guaranteed on the windows-latest runner image, so the Windows
+        # leg invokes pip directly (same dependency set, no make dependency)
+        # while Linux keeps the make target for parity with local dev.
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          make install-dev
+        else
+          pip install -r requirements-dev.txt
+        fi
 
     - name: Install uv
       # `tests/unit/repo/test_wheel_contents.py`,

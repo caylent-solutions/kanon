@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for XML fault injection: structural scenarios.
 
 Covers:
@@ -36,10 +22,6 @@ import pytest
 from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
-
-# ---------------------------------------------------------------------------
-# Shared setup helpers (mirrors pattern in test_xml_fault_malformed.py)
-# ---------------------------------------------------------------------------
 
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
@@ -91,10 +73,6 @@ def _load_manifest(repodir: pathlib.Path, manifest_file: pathlib.Path) -> manife
     m.Load()
     return m
 
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 -- very large input (>10MB) is processed without OOM
-# ---------------------------------------------------------------------------
 
 _LARGE_FILE_MIN_BYTES = 10 * 1024 * 1024
 """Minimum number of bytes required to qualify as a very large manifest."""
@@ -159,7 +137,6 @@ class TestLargeInputHandling:
 
         manifest_file = _write_manifest(repodir, xml_content)
 
-        # Must not raise MemoryError, OverflowError, or any OOM-related exception.
         try:
             loaded = _load_manifest(repodir, manifest_file)
         except MemoryError as exc:
@@ -196,11 +173,6 @@ class TestLargeInputHandling:
             f"{_LARGE_FILE_MIN_BYTES} bytes ({_LARGE_FILE_MIN_BYTES // (1024 * 1024)} MB). "
             "Increase project_count so that AC-TEST-001 exercises a genuinely large file."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002 -- XML namespaces are handled without confusion
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -313,11 +285,6 @@ class TestXmlNamespaceHandling:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003 -- circular project dependencies (duplicate path) surface error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCircularProjectDependencies:
     """Verify that duplicate project paths raise ManifestParseError.
@@ -418,11 +385,6 @@ class TestCircularProjectDependencies:
         assert "duplicate" in error_message, f"Expected 'duplicate' in error message. Got: {error_message!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004 -- unsupported top-level element is rejected
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestUnsupportedTopLevelElement:
     """Verify that unsupported top-level elements do not corrupt the manifest.
@@ -459,13 +421,11 @@ class TestUnsupportedTopLevelElement:
 
         loaded = _load_manifest(repodir, manifest_file)
 
-        # The unknown element must not be in the parsed state.
         path_keys = list(loaded.paths.keys())
         assert "unknown-custom-element" not in path_keys, (
             f"Unknown element 'unknown-custom-element' must not appear in manifest.paths. Got: {path_keys!r}"
         )
 
-        # Known elements after the unknown element must still be parsed.
         assert "origin" in loaded.remotes, (
             f"Expected 'origin' in manifest.remotes. Got: {list(loaded.remotes.keys())!r}"
         )
@@ -502,7 +462,6 @@ class TestUnsupportedTopLevelElement:
 
         loaded = _load_manifest(repodir, manifest_file)
 
-        # The project after the unknown element must be parsed.
         assert "src/post-unknown" in loaded.paths, (
             f"Expected 'src/post-unknown' in manifest.paths after unknown element "
             f"{element_name!r}. Got: {list(loaded.paths.keys())!r}"
@@ -536,12 +495,6 @@ class TestUnsupportedTopLevelElement:
 
         assert result is not None, "Expected dict result from ToDict but got None."
         assert "remote" in result, f"Expected 'remote' key in ToDict result. Got keys: {list(result.keys())!r}"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 -- Parser rejects structurally invalid XML with actionable
-#               messages
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

@@ -36,7 +36,7 @@ kanon catalog audit [<path-or-url>] [--check <names>] [--strict]
   (e.g. `.` or `/home/user/my-manifest-repo`).
 - A **remote catalog source** in `<git_url>@<ref>` form
   (e.g. `https://example.com/org/manifest-repo.git@main`).
-  Requires `KANON_CACHE_DIR` to be set.
+  Requires `KANON_HOME` to be set.
 
 When `<path-or-url>` is omitted the command defaults to `.`.
 
@@ -96,11 +96,11 @@ kanon catalog audit --check all,metadata
 
 ### Remote audit
 
-To audit a remote manifest repo, set `KANON_CACHE_DIR` and supply the
+To audit a remote manifest repo, set `KANON_HOME` and supply the
 source in `<git_url>@<ref>` form:
 
 ```bash
-export KANON_CACHE_DIR=~/.kanon-cache
+export KANON_HOME=~/.kanon
 kanon catalog audit https://example.com/org/manifest-repo.git@main
 ```
 
@@ -136,7 +136,7 @@ Required fields (absence = ERROR):
 | Field | Description |
 | ----- | ----------- |
 | `name` | Machine-readable package identifier. |
-| `display-name` | Human-readable label shown in `kanon list` output. |
+| `display-name` | Human-readable label shown in `kanon search` output. |
 | `description` | Short prose description of the package. |
 | `version` | Author-claimed version string (informational). |
 
@@ -409,8 +409,8 @@ before publishing a release. The steps assume a scratch clone at
 6. **List catalog entries via scratch source:**
 
    ```bash
-   export KANON_CACHE_DIR=~/.kanon-cache
-   kanon list --catalog-source ./scratch@main
+   export KANON_HOME=~/.kanon
+   kanon search --catalog-source ./scratch@main
    ```
 
 7. **Add a catalog entry and install:**
@@ -431,7 +431,7 @@ before publishing a release. The steps assume a scratch clone at
   including repo structure, the `<catalog-metadata>` contract, and
   tag/versioning rules.
 - [docs/list-and-add.md](list-and-add.md) --
-  consumer-side reference for `kanon list`, `kanon add`, and
+  consumer-side reference for `kanon search`, `kanon add`, and
   `kanon remove`.
 - [docs/catalogs-explained.md](catalogs-explained.md) --
   conceptual overview of how kanon catalogs work, aimed at first-time

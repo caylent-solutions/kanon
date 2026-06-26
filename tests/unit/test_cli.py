@@ -11,10 +11,7 @@ import pytest
 
 from kanon_cli.cli import _TopLevelHelpAction, _make_signal_handler, build_parser, main
 
-# Placeholder path used for subcommands that require a positional kanon-env argument.
-# The parser performs no filesystem check, so any non-empty string is valid for
-# unit-test purposes. A fixed constant avoids hardcoded literal paths in every
-# test method and keeps all tests environment-agnostic (12-Factor rule 4).
+
 _FAKE_KANON_PATH = "test-kanon-file"
 
 
@@ -28,7 +25,7 @@ class TestBuildParser:
 
     def test_parser_has_subcommands(self) -> None:
         parser = build_parser()
-        # Verify subparsers exist by checking parse_args on known subcommands
+
         args = parser.parse_args(["install", "/tmp/.kanon"])
         assert args.command == "install"
 
@@ -53,6 +50,39 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["validate", "xml", "--repo-root", "/some/path"])
         assert str(args.repo_root) == "/some/path"
+
+    def test_parser_marketplace_enable_subcommand(self) -> None:
+        """build_parser() registers 'marketplace enable <alias>' (AC-26 / FR-18)."""
+        from kanon_cli.commands.marketplace import run_enable
+
+        parser = build_parser()
+        args = parser.parse_args(["marketplace", "enable", "foo"])
+        assert args.command == "marketplace"
+        assert args.marketplace_command == "enable"
+        assert args.alias == "foo"
+        assert args.func is run_enable
+
+    def test_parser_marketplace_disable_subcommand(self) -> None:
+        """build_parser() registers 'marketplace disable <alias>' (AC-26 / FR-18)."""
+        from kanon_cli.commands.marketplace import run_disable
+
+        parser = build_parser()
+        args = parser.parse_args(["marketplace", "disable", "foo"])
+        assert args.command == "marketplace"
+        assert args.marketplace_command == "disable"
+        assert args.alias == "foo"
+        assert args.func is run_disable
+
+    def test_parser_marketplace_status_subcommand(self) -> None:
+        """build_parser() registers 'marketplace status [--all]' (AC-26 / FR-18)."""
+        from kanon_cli.commands.marketplace import run_status
+
+        parser = build_parser()
+        args = parser.parse_args(["marketplace", "status", "--all"])
+        assert args.command == "marketplace"
+        assert args.marketplace_command == "status"
+        assert args.show_all is True
+        assert args.func is run_status
 
     def test_parser_doctor_subcommand(self) -> None:
         """build_parser() registers the 'doctor' subcommand (AC-FUNC-007)."""
@@ -143,6 +173,62 @@ class TestMainDispatch:
 
 
 @pytest.mark.unit
+class TestUpdateCheckHook:
+    """main() wires the update-available alert before subcommand dispatch (AC-28 / FR-29)."""
+
+    def test_parser_registers_no_update_check_flag(self) -> None:
+        """build_parser() accepts the --no-update-check global flag."""
+        parser = build_parser()
+        args = parser.parse_args(["--no-update-check", "install", _FAKE_KANON_PATH])
+        assert args.no_update_check is True
+
+    def test_top_level_help_mentions_no_update_check(self) -> None:
+        """The verbatim top-level help text names --no-update-check (AC-28 grep target)."""
+        from kanon_cli.cli import _TOP_LEVEL_HELP
+
+        assert "--no-update-check" in _TOP_LEVEL_HELP
+
+    def test_main_invokes_update_check_before_dispatch(self) -> None:
+        """main() calls maybe_alert_update with the parsed command before dispatching."""
+        calls: list[tuple[object, object]] = []
+
+        def _record(args: object, command: object, **kwargs: object) -> None:
+            calls.append((args, command))
+
+        with patch("kanon_cli.cli.maybe_alert_update", side_effect=_record):
+            with pytest.raises(SystemExit):
+                main([])
+
+        assert len(calls) == 1, "maybe_alert_update must be called exactly once per invocation"
+
+        assert calls[0][1] is None
+
+    def test_main_passes_resolved_command_to_hook(self) -> None:
+        """main() forwards the resolved subcommand name to the update-check hook."""
+        recorded: dict[str, object] = {}
+
+        class _StopDispatch(Exception):
+            """Sentinel raised from the hook to short-circuit before dispatch runs."""
+
+        def _record(args: object, command: object, **kwargs: object) -> None:
+            recorded["command"] = command
+            raise _StopDispatch
+
+        with patch("kanon_cli.cli.maybe_alert_update", side_effect=_record):
+            with pytest.raises(_StopDispatch):
+                main(["install", _FAKE_KANON_PATH])
+
+        assert recorded.get("command") == "install"
+
+    def test_update_check_hook_failure_does_not_crash_main(self) -> None:
+        """A skip in the hook (editable install) leaves dispatch unaffected: no-arg still exits 2."""
+
+        with pytest.raises(SystemExit) as exc_info:
+            main([])
+        assert exc_info.value.code == 2
+
+
+@pytest.mark.unit
 class TestTopLevelHelpAlias:
     """Verify -h is registered as an alias for --help on the top-level parser (AC-FUNC-003, AC-FUNC-004)."""
 
@@ -162,22 +248,13 @@ class TestTopLevelHelpAlias:
     def test_parser_add_help_false_preserved(self) -> None:
         """build_parser() still passes add_help=False on the parser (AC-FUNC-003)."""
         parser = build_parser()
-        # With add_help=False, argparse does not register its own -h/--help action.
-        # The parser._defaults does not include 'help'. Instead, our custom action
-        # is the only one registered. Verify by confirming the action for --help is
-        # _TopLevelHelpAction (not argparse._HelpAction).
+
         help_action = next(
             (a for a in parser._actions if "--help" in a.option_strings),
             None,
         )
         assert help_action is not None, "No --help action registered on top-level parser"
-        # Use a type-name check rather than isinstance because
-        # tests/integration/test_signal_handling.py calls importlib.reload(kanon_cli.cli)
-        # to verify SIGHUP handler isolation. That reload is intentional and load-bearing
-        # for that test. After a reload, build_parser() uses the reloaded class object
-        # while the module-level import at the top of this file still refers to the
-        # pre-reload object -- making isinstance fail due to class-identity mismatch.
-        # The name-equality check is immune to duplicate class loads (spec E12 remedy C).
+
         assert type(help_action).__name__ == "_TopLevelHelpAction", (
             f"--help action is {type(help_action)!r}, expected _TopLevelHelpAction"
         )
@@ -210,12 +287,7 @@ class TestTopLevelHelpAlias:
                 raise SystemExit(0)
 
         parser = build_parser()
-        # Replace the help action with our capturing subclass.
-        # Use a type-name check rather than isinstance: importlib.reload(kanon_cli.cli)
-        # in tests/integration/test_signal_handling.py (intentional, tests SIGHUP isolation)
-        # creates a new class object for _TopLevelHelpAction. build_parser() uses the
-        # reloaded class; the module-level import at the top of this file holds the
-        # pre-reload class. isinstance fails on identity mismatch; name-equality does not.
+
         for action in parser._actions:
             if type(action).__name__ == "_TopLevelHelpAction":
                 action.__class__ = _CapturingAction
@@ -242,10 +314,7 @@ class TestTopLevelHelpAlias:
                 raise SystemExit(0)
 
         parser = build_parser()
-        # Use a type-name check rather than isinstance for the same reason as
-        # test_top_level_help_action_receives_option_string_short_h: the intentional
-        # importlib.reload(kanon_cli.cli) in test_signal_handling.py creates a second
-        # class object, breaking isinstance identity (spec E12 remedy C).
+
         for action in parser._actions:
             if type(action).__name__ == "_TopLevelHelpAction":
                 action.__class__ = _CapturingAction
@@ -306,12 +375,6 @@ class TestMakeSignalHandler:
             handler(signal.SIGTERM, None)
 
         mock_exit.assert_called_once_with(128 + signal.SIGTERM)
-
-
-# ---------------------------------------------------------------------------
-# Tests for global flags integration in cli.py (AC-FUNC-009, AC-FUNC-010,
-# AC-FUNC-012, AC-TEST-002)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -377,11 +440,11 @@ class TestGlobalFlagsSubcommandPropagation:
             "catalog": ["audit"],
             "completion": ["bash"],
             "install": [_FAKE_KANON_PATH],
+            "marketplace": ["status"],
             "clean": [_FAKE_KANON_PATH],
             "doctor": [],
             "validate": ["xml"],
-            "bootstrap": ["list"],
-            "list": [],
+            "search": [],
             "outdated": ["--catalog-source", "file:///fake@HEAD"],
             "remove": ["foo_bar"],
             "repo": ["init", "-u", "https://example.com/repo", "-b", "main", "-m", "manifest.xml"],
@@ -488,10 +551,7 @@ class TestApplyGlobalFlagsCalledBeforeDispatch:
         with patch("kanon_cli.cli._apply_global_flags") as mock_apply:
             with pytest.raises(SystemExit):
                 main([])
-        # Called once even when no subcommand (exits with code 2 but apply is called before dispatch)
-        # OR called before the sys.exit(2) path; either way it must be called
-        # The spec requires it to be called BEFORE dispatch -- verified by checking
-        # it was invoked at all. The order test below ensures it precedes dispatch.
+
         mock_apply.assert_called_once()
 
     def test_apply_global_flags_called_before_subcommand_dispatch(self) -> None:
@@ -520,12 +580,6 @@ class TestApplyGlobalFlagsCalledBeforeDispatch:
         assert call_order == ["apply_global_flags", "subcommand"], (
             f"Expected apply_global_flags before subcommand dispatch, got: {call_order}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: subprocess-driven verification of global flags via the
-# installed kanon binary (three required scenarios per spec Section 12 item 25).
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -613,82 +667,100 @@ class TestSubprocessGlobalFlags:
         )
 
 
-# ---------------------------------------------------------------------------
-# Tests for the new 'list' subcommand registration in build_parser() (AC-FUNC-002)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
-class TestListSubcommandRegistration:
-    """build_parser() registers the 'list' subcommand per AC-FUNC-002."""
+class TestSearchSubcommandRegistration:
+    """build_parser() registers the 'search' subcommand (the renamed 'list')."""
 
-    def test_list_subcommand_exists_in_parser(self) -> None:
-        """build_parser() includes 'list' as a registered subcommand."""
+    def test_search_subcommand_exists_in_parser(self) -> None:
+        """build_parser() includes 'search' as a registered subcommand."""
         parser = build_parser()
-        args = parser.parse_args(["list"])
-        assert args.command == "list"
+        args = parser.parse_args(["search"])
+        assert args.command == "search"
 
-    def test_list_subcommand_has_catalog_source_flag(self) -> None:
-        """The 'list' subcommand accepts --catalog-source (from shared factory)."""
+    def test_list_subcommand_removed_exits_2(self) -> None:
+        """AC-16: the removed list subcommand -> argparse unknown-command exit 2."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["list"])
+        assert exc_info.value.code == 2
+
+    def test_search_subcommand_has_catalog_source_flag(self) -> None:
+        """The 'search' --catalog-source flag is repeatable (append) -> a list.
+
+        ``search`` accepts many sources (spec Section 4.1 / FR-9), so the shared
+        factory registers it with ``action="append"``; a single occurrence parses
+        into a one-element list.
+        """
         parser = build_parser()
-        args = parser.parse_args(["list", "--catalog-source", "https://example.com/repo.git@main"])
-        assert args.catalog_source == "https://example.com/repo.git@main"
+        args = parser.parse_args(["search", "--catalog-source", "https://example.com/repo.git@main"])
+        assert args.catalog_source == ["https://example.com/repo.git@main"]
 
-    def test_list_subcommand_catalog_source_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_search_subcommand_catalog_source_repeatable(self) -> None:
+        """Repeated --catalog-source flags on 'search' append into an ordered list."""
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "search",
+                "--catalog-source",
+                "https://example.com/a.git@main",
+                "--catalog-source",
+                "https://example.com/b.git@main",
+            ]
+        )
+        assert args.catalog_source == [
+            "https://example.com/a.git@main",
+            "https://example.com/b.git@main",
+        ]
+
+    def test_search_subcommand_catalog_source_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """--catalog-source defaults to None when unset and env var is absent."""
         monkeypatch.delenv("KANON_CATALOG_SOURCE", raising=False)
         parser = build_parser()
-        args = parser.parse_args(["list"])
+        args = parser.parse_args(["search"])
         assert args.catalog_source is None
 
-    def test_list_subcommand_has_no_color_flag(self) -> None:
-        """The 'list' subcommand propagates --no-color from the root parser.
+    def test_search_subcommand_has_no_color_flag(self) -> None:
+        """The 'search' subcommand propagates --no-color from the root parser.
 
         --no-color is a global flag defined on the root parser (before any
-        subcommand token). Verify that 'kanon --no-color list' sets
+        subcommand token). Verify that 'kanon --no-color search' sets
         no_color=True in the parsed namespace.
         """
         parser = build_parser()
-        args = parser.parse_args(["--no-color", "list"])
+        args = parser.parse_args(["--no-color", "search"])
         assert args.no_color is True
 
-    def test_list_subcommand_sets_func(self) -> None:
-        """The 'list' subcommand sets args.func to run_list."""
-        from kanon_cli.commands.list import run_list
+    def test_search_subcommand_sets_func(self) -> None:
+        """The 'search' subcommand sets args.func to run_search."""
+        from kanon_cli.commands.search import run_search
 
         parser = build_parser()
-        args = parser.parse_args(["list"])
-        assert args.func is run_list
+        args = parser.parse_args(["search"])
+        assert args.func is run_search
 
-    def test_list_help_exits_0(self) -> None:
-        """kanon list --help exits 0 without error."""
+    def test_search_help_exits_0(self) -> None:
+        """kanon search --help exits 0 without error."""
         with pytest.raises(SystemExit) as exc_info:
-            main(["list", "--help"])
+            main(["search", "--help"])
         assert exc_info.value.code == 0
 
-    def test_list_help_mentions_catalog_source(self) -> None:
-        """kanon list --help text mentions --catalog-source and KANON_CATALOG_SOURCE."""
+    def test_search_help_mentions_catalog_source(self) -> None:
+        """kanon search --help text mentions --catalog-source and KANON_CATALOG_SOURCE."""
         import io
 
         parser = build_parser()
         for action in parser._actions:
             if isinstance(action, argparse._SubParsersAction):
-                list_parser = action.choices.get("list")
+                search_parser = action.choices.get("search")
                 break
         else:
-            list_parser = None
+            search_parser = None
 
-        assert list_parser is not None, "list subparser must be registered"
+        assert search_parser is not None, "search subparser must be registered"
         buf = io.StringIO()
-        list_parser.print_help(file=buf)
+        search_parser.print_help(file=buf)
         help_text = buf.getvalue()
         assert "--catalog-source" in help_text
         assert "KANON_CATALOG_SOURCE" in help_text
-
-
-# ---------------------------------------------------------------------------
-# Tests for the new 'add' subcommand registration in build_parser() (AC-FUNC-002)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -758,11 +830,6 @@ class TestAddSubcommandRegistration:
         help_text = buf.getvalue()
         assert "--kanon-file" in help_text
         assert "KANON_KANON_FILE" in help_text
-
-
-# ---------------------------------------------------------------------------
-# Tests for the new 'remove' subcommand registration in build_parser()
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -867,7 +934,7 @@ class TestRemoveSubcommandRegistration:
         buf = io.StringIO()
         remove_parser.print_help(file=buf)
         help_text = buf.getvalue()
-        # Help text must describe the dual-input contract (AC-DOC-001)
+
         assert "foo_bar" in help_text or "source name" in help_text or "entry name" in help_text
 
     def test_remove_help_mentions_atomicity_rule(self) -> None:
@@ -886,7 +953,7 @@ class TestRemoveSubcommandRegistration:
         buf = io.StringIO()
         remove_parser.print_help(file=buf)
         help_text = buf.getvalue()
-        # Atomicity rule mentioned (AC-DOC-001)
+
         assert "atomic" in help_text.lower() or "Atomicity" in help_text or "nothing changes" in help_text
 
 
@@ -949,7 +1016,6 @@ class TestOutdatedSubcommandRegistration:
         """'outdated' subcommand default format is 'table' (AC-FUNC-007)."""
         import os
 
-        # Ensure env var is not set so we get the built-in default
         env_backup = os.environ.pop("KANON_OUTDATED_FORMAT", None)
         try:
             parser = build_parser()
@@ -1027,12 +1093,6 @@ class TestWhySubcommand:
         finally:
             if env_backup is not None:
                 os.environ["KANON_WHY_FORMAT"] = env_backup
-
-
-# ---------------------------------------------------------------------------
-# Tests for the new 'catalog' subcommand group registration in build_parser()
-# (E5-F2-S1-T1 production change in cli.py)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1127,14 +1187,6 @@ class TestCatalogSubcommandRegistration:
         assert exc_info.value.code == 0
 
 
-# ---------------------------------------------------------------------------
-# Tests for the 'completion' subcommand registration in build_parser()
-# and the args.parser injection in main() (E7-F1-S1-T1 production changes
-# in cli.py). Per docs/source-test-atomicity.md, every new production source
-# change has a matching test in the same work unit's Changes Manifest.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompletionSubcommandRegistration:
     """build_parser() registers the 'completion' subcommand (E7-F1-S1-T1)."""
@@ -1216,11 +1268,6 @@ class TestParserInjectionInMain:
         )
 
 
-# ---------------------------------------------------------------------------
-# Tests for the hidden __complete_catalog_entries subcommand (AC-FUNC-007)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteCatalogEntriesRegistration:
     """build_parser() registers hidden __complete_catalog_entries subcommand (AC-FUNC-007)."""
@@ -1253,19 +1300,16 @@ class TestCompleteCatalogEntriesRegistration:
         """
         from kanon_cli.cli import _TOP_LEVEL_HELP
 
-        # The custom top-level help constant must not name the hidden subcommand.
         assert "__complete_catalog_entries" not in _TOP_LEVEL_HELP, (
             "Hidden subcommand __complete_catalog_entries must not appear in _TOP_LEVEL_HELP"
         )
 
-        # The subparser must be registered with help=SUPPRESS so it is absent from
-        # any argparse-generated description block (even if it appears in usage).
         parser = build_parser()
         for action in parser._actions:
             if isinstance(action, argparse._SubParsersAction):
                 sub = action.choices.get("__complete_catalog_entries")
                 assert sub is not None, "__complete_catalog_entries must be registered"
-                # The corresponding _ChoicesPseudoAction's help value should be SUPPRESS.
+
                 for choice_action in action._choices_actions:
                     if choice_action.dest == "__complete_catalog_entries":
                         assert choice_action.help == argparse.SUPPRESS, (
@@ -1281,11 +1325,6 @@ class TestCompleteCatalogEntriesRegistration:
         parser = build_parser()
         args = parser.parse_args(["__complete_catalog_entries"])
         assert args.func is _handle
-
-
-# ---------------------------------------------------------------------------
-# Tests for the hidden __complete_source_names_in_kanon subcommand (AC-FUNC-007)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1340,11 +1379,6 @@ class TestCompleteSourceNamesRegistration:
         assert args.func is _handle
 
 
-# ---------------------------------------------------------------------------
-# Tests for the hidden __complete_names_in_lockfile subcommand (AC-FUNC-007)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteLockfileNamesRegistration:
     """build_parser() registers hidden __complete_names_in_lockfile subcommand."""
@@ -1395,11 +1429,6 @@ class TestCompleteLockfileNamesRegistration:
         parser = build_parser()
         args = parser.parse_args(["__complete_names_in_lockfile"])
         assert args.func is _handle
-
-
-# ---------------------------------------------------------------------------
-# Tests for the hidden __complete_catalog_versions subcommand (AC-FUNC-007, E7-F2-S1-T4)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1466,11 +1495,6 @@ class TestCompleteCatalogVersionsRegistration:
         assert args.refresh_only is False
 
 
-# ---------------------------------------------------------------------------
-# Tests for the hidden __complete_project_versions subcommand (E7-F2-S1-T5)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteProjectVersionsRegistration:
     """build_parser() registers hidden __complete_project_versions subcommand."""
@@ -1532,11 +1556,6 @@ class TestCompleteProjectVersionsRegistration:
         assert args.func is _handle
 
 
-# ---------------------------------------------------------------------------
-# Tests for the hidden __complete_cached_catalogs subcommand (AC-FUNC-006)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteCachedCatalogsRegistration:
     """build_parser() registers hidden __complete_cached_catalogs subcommand."""
@@ -1587,11 +1606,6 @@ class TestCompleteCachedCatalogsRegistration:
         parser = build_parser()
         args = parser.parse_args(["__complete_cached_catalogs"])
         assert args.func is _handle
-
-
-# ---------------------------------------------------------------------------
-# Tests for the hidden __resolve_entry_to_repo_url subcommand (E7-F2-S1-T7)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1647,13 +1661,6 @@ class TestResolveEntryToRepoUrlRegistration:
         parser = build_parser()
         args = parser.parse_args(["__resolve_entry_to_repo_url", "foo"])
         assert args.func is _handle
-
-
-# ---------------------------------------------------------------------------
-# Tests for the top-level user-error handler in main() (clean error contract):
-# kanon user-error exceptions that escape a per-command handler must be
-# converted to a clean stderr message + exit code 1, never a raw traceback.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1718,7 +1725,7 @@ class TestMainUserErrorHandler:
         assert sysexit.code == 1
         assert "Traceback" not in err, f"stderr leaked a traceback: {err!r}"
         assert "Traceback" not in out, f"stdout leaked a traceback: {out!r}"
-        # InstallError.__str__ already starts with 'ERROR:'; the handler prints it verbatim.
+
         assert "ERROR: something went wrong with install" in err, f"stderr={err!r}"
 
     def test_file_not_found_becomes_clean_exit_1(self, capsys: pytest.CaptureFixture[str]) -> None:

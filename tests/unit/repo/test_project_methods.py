@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Additional unit tests for project.py methods - simpler, focused tests."""
 
 from unittest import mock
@@ -51,9 +37,6 @@ def _simple_project(tmp_path):
     return proj
 
 
-# Simple Property Tests
-
-
 @pytest.mark.unit
 def test_project_name_property(tmp_path):
     """Test project name is accessible."""
@@ -89,9 +72,6 @@ def test_project_remote_property(tmp_path):
     assert proj.remote.name == "origin"
 
 
-# Simple Revision Tests
-
-
 @pytest.mark.unit
 def test_revision_expr_property(tmp_path):
     """Test revisionExpr is accessible."""
@@ -123,9 +103,6 @@ def test_set_revision_with_id_updates_both(tmp_path):
     assert proj.revisionId == "abc123"
 
 
-# Collection Tests
-
-
 @pytest.mark.unit
 def test_copyfiles_starts_empty(tmp_path):
     """Test copyfiles list starts empty."""
@@ -152,9 +129,6 @@ def test_subprojects_starts_empty(tmp_path):
     """Test subprojects list starts empty."""
     proj = _simple_project(tmp_path)
     assert proj.subprojects == []
-
-
-# AddCopyFile Tests
 
 
 @pytest.mark.unit
@@ -190,9 +164,6 @@ def test_add_copyfile_stores_paths(tmp_path):
     assert cf.dest == "destination.txt"
 
 
-# AddLinkFile Tests
-
-
 @pytest.mark.unit
 def test_add_linkfile_increases_list(tmp_path):
     """Test AddLinkFile adds to list."""
@@ -224,9 +195,6 @@ def test_add_linkfile_stores_paths(tmp_path):
     lf = proj.linkfiles[0]
     assert lf.src == "source.txt"
     assert lf.dest == "link.txt"
-
-
-# AddAnnotation Tests
 
 
 @pytest.mark.unit
@@ -263,9 +231,6 @@ def test_add_annotation_stores_values(tmp_path):
     assert ann.keep == "my-keep"
 
 
-# _CopyFile Tests
-
-
 @pytest.mark.unit
 def test_copyfile_initialization(tmp_path):
     """Test _CopyFile initializes correctly."""
@@ -280,9 +245,6 @@ def test_copyfile_initialization(tmp_path):
     assert cf.dest == "dest.txt"
 
 
-# _LinkFile Tests
-
-
 @pytest.mark.unit
 def test_linkfile_initialization(tmp_path):
     """Test _LinkFile initializes correctly."""
@@ -295,9 +257,6 @@ def test_linkfile_initialization(tmp_path):
     assert lf.src == "src.txt"
     assert lf.topdir == topdir
     assert lf.dest == "link.txt"
-
-
-# Helper Function Tests
 
 
 @pytest.mark.unit
@@ -320,9 +279,6 @@ def test_sq_function_with_quotes():
     """Test sq escapes quotes correctly."""
     result = project.sq("it's")
     assert "'''" in result
-
-
-# RemoteSpec Tests
 
 
 @pytest.mark.unit
@@ -357,9 +313,6 @@ def test_remote_spec_all_fields():
     assert spec.revision == "refs/heads/main"
     assert spec.orig_name == "upstream"
     assert spec.fetchUrl == "https://fetch.example.com/repo.git"
-
-
-# Annotation Tests
 
 
 @pytest.mark.unit
@@ -467,9 +420,6 @@ def test_annotation_lt_raises_for_non_annotation():
         ann < "string"
 
 
-# DownloadedChange Tests
-
-
 @pytest.mark.unit
 def test_downloaded_change_init(tmp_path):
     """Test DownloadedChange initialization."""
@@ -509,12 +459,8 @@ def test_downloaded_change_commits_cached(tmp_path):
     result1 = dc.commits
     result2 = dc.commits
 
-    # Should only call once due to caching
     assert proj.bare_git.rev_list.call_count == 1
     assert result1 == result2
-
-
-# ReviewableBranch Tests
 
 
 @pytest.mark.unit
@@ -558,9 +504,6 @@ def test_reviewable_branch_commits_calls_rev_list(tmp_path):
     proj.bare_git.rev_list.assert_called_once()
 
 
-# Error Class Tests
-
-
 @pytest.mark.unit
 def test_sync_network_half_error():
     """Test SyncNetworkHalfError is a RepoError."""
@@ -597,9 +540,6 @@ def test_delete_dirty_worktree_error():
 
     assert isinstance(err, project.DeleteWorktreeError)
     assert isinstance(err, error.RepoError)
-
-
-# SyncNetworkHalfResult Tests
 
 
 @pytest.mark.unit
@@ -642,9 +582,6 @@ def test_sync_network_half_result_error_stored():
     result = project.SyncNetworkHalfResult(remote_fetched=True, error=err)
 
     assert result.error == err
-
-
-# Constant Tests
 
 
 @pytest.mark.unit

@@ -22,10 +22,6 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Init Flags Test User"
 _GIT_USER_EMAIL = "repo-init-flags@example.com"
@@ -33,19 +29,19 @@ _MANIFEST_FILENAME = "default.xml"
 _CONTENT_FILE_NAME = "README.md"
 _CONTENT_FILE_TEXT = "hello from repo-init-flags test content"
 
-# Error exit code for invalid argument values or constraint violations.
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Nonexistent manifest URL used in argument-parser acceptance tests.
+
 _NONEXISTENT_MANIFEST_URL = "file:///nonexistent/path"
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-dir"
 
-# Canonical upstream URL used as a valid --repo-url value in acceptance tests.
+
 _REPO_URL_CANONICAL = "https://gerrit.googlesource.com/git-repo"
 
-# Flag-value fixtures used throughout parametrize lists and test bodies.
+
 _GROUP_DEFAULT = "default"
 _PLATFORM_AUTO = "auto"
 _GIT_BRANCH_MAIN = "main"
@@ -63,19 +59,6 @@ _FIRST_POSITIONAL_URL = "file:///first/path"
 _SECOND_POSITIONAL_URL = "file:///second/path"
 _REFERENCE_DIR_NAME = "mirror-dir"
 _MANIFEST_FILENAME_CUSTOM = "custom.xml"
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
-# NOTE: _git is imported from tests.functional.conftest (canonical definition).
-#
-# The helpers below (_init_git_work_dir, _clone_as_bare,
-# _create_bare_content_repo, _create_manifest_repo, _setup_repos) are
-# near-duplicates of same-named functions in test_repo_init_happy.py and
-# test_repo_exit_codes.py. Consolidating them into a shared module requires
-# touching files outside this task's Changes Manifest. This duplication is
-# tracked as a follow-up DRY cleanup.
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -177,11 +160,6 @@ def _setup_repos(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, st
     return checkout_dir, repo_dir, manifest_url
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoInitFlagsValidValues:
     """AC-TEST-001: Every ``_Options()`` flag in subcmds/init.py has a valid-value test.
@@ -208,10 +186,6 @@ class TestRepoInitFlagsValidValues:
     below.
     """
 
-    # Each entry is (flag_args_tuple, test_id).
-    # flag_args are inserted between "init" and "--no-repo-verify" in the
-    # _run_kanon call, and must include "-u _NONEXISTENT_MANIFEST_URL" where
-    # the manifest URL is required to satisfy init's argument requirements.
     _VALID_VALUE_CASES: list[tuple[tuple[str, ...], str]] = [
         (
             ("--verbose", "-u", _NONEXISTENT_MANIFEST_URL),
@@ -386,8 +360,7 @@ class TestRepoInitFlagsValidValues:
         error.
         """
         repo_dir = str(tmp_path / _NONEXISTENT_REPO_DIR_NAME)
-        # --no-repo-verify is appended unless already present in flag_args
-        # (the no-repo-verify case includes it in its own flag_args tuple).
+
         extra = () if "--no-repo-verify" in flag_args else ("--no-repo-verify",)
         result = _run_kanon(
             "repo",
@@ -452,11 +425,6 @@ class TestRepoInitFlagsValidValues:
             f"'--reference' triggered an argument-parsing error (exit {result.returncode}).\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with enumerated or typed values
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -874,11 +842,6 @@ class TestRepoInitFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoInitFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -1081,11 +1044,6 @@ class TestRepoInitFlagsAbsenceDefaults:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Channel discipline for flag-related errors
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoInitFlagsChannelDiscipline:
     """AC-CHANNEL-001: stdout vs stderr channel discipline for flag-validation errors.
@@ -1231,11 +1189,11 @@ class TestRepoInitFlagsChannelDiscipline:
             f"Expected exit {_ARGPARSE_ERROR_EXIT_CODE} for --standalone-manifest --manifest-branch.\n"
             f"  stderr: {result.stderr!r}"
         )
-        # The word 'error' must appear on stderr only (option parser format: "... error: ...")
+
         assert "error" in result.stderr.lower(), (
             f"'error' must appear in stderr for constraint violation.\n  stderr: {result.stderr!r}"
         )
-        # stdout must not contain the constraint error detail (only usage text is permitted)
+
         assert "--standalone-manifest" not in result.stdout, (
             f"'--standalone-manifest' error detail must not appear in stdout.\n  stdout: {result.stdout!r}"
         )

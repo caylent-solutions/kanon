@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Deep unit tests for the project.py module - focusing on uncovered methods."""
 
 import os
@@ -84,9 +70,6 @@ def _make_project(tmp_path):
     proj._userident_name = None
     proj._userident_email = None
     return proj
-
-
-# _GitGetByExec Tests
 
 
 @pytest.mark.unit
@@ -252,9 +235,6 @@ class TestGitGetByExec:
         assert result == expected
 
 
-# Project Initialization Tests
-
-
 @pytest.mark.unit
 class TestProjectInitialization:
     """Test Project initialization methods."""
@@ -314,9 +294,6 @@ class TestProjectInitialization:
         assert proj.RelPath(local=False) == "submanifest/myproj"
 
 
-# Property Tests
-
-
 @pytest.mark.unit
 class TestProjectProperties:
     """Test Project property methods."""
@@ -325,8 +302,7 @@ class TestProjectProperties:
         """Test UseAlternates with environment variable set."""
         _make_project(tmp_path)
         with mock.patch.dict(os.environ, {"REPO_USE_ALTERNATES": "1"}):
-            # Need to reload module to pick up env var
-            assert project._ALTERNATES or not project._ALTERNATES  # Just test access
+            assert project._ALTERNATES or not project._ALTERNATES
 
     def test_use_alternates_multimanifest(self, tmp_path):
         """Test UseAlternates with multimanifest."""
@@ -380,9 +356,6 @@ class TestProjectProperties:
         proj.work_git.GetHead.side_effect = error.NoManifestException(path="test", reason="test")
 
         assert proj.CurrentBranch is None
-
-
-# Branch Operation Tests
 
 
 @pytest.mark.unit
@@ -460,9 +433,6 @@ class TestBranchOperations:
             assert ("am", "--abort") in calls
 
 
-# Dirty State Tests
-
-
 @pytest.mark.unit
 class TestDirtyState:
     """Test methods checking for uncommitted changes."""
@@ -480,8 +450,8 @@ class TestDirtyState:
         proj = _make_project(tmp_path)
         proj.work_git.update_index = mock.MagicMock()
         proj.work_git.DiffZ.side_effect = [
-            {},  # No staged changes
-            {"file.txt": mock.MagicMock()},  # Unstaged changes
+            {},
+            {"file.txt": mock.MagicMock()},
         ]
 
         assert proj.IsDirty() is True
@@ -522,7 +492,6 @@ class TestDirtyState:
         result = proj.UncommitedFiles(get_all=False)
 
         assert len(result) == 1
-        # Should not check diff-files or untracked when get_all=False
 
     def test_uncommitted_files_get_all_true(self, tmp_path):
         """Test UncommitedFiles with get_all=True returns all changes."""
@@ -558,9 +527,6 @@ class TestDirtyState:
         assert proj.HasChanges() is True
 
 
-# User Identity Tests
-
-
 @pytest.mark.unit
 class TestUserIdentity:
     """Test user identity methods."""
@@ -588,9 +554,6 @@ class TestUserIdentity:
 
         assert email == "test@example.com"
         mock_load.assert_called_once()
-
-
-# File Copy and Link Tests
 
 
 @pytest.mark.unit
@@ -630,9 +593,6 @@ class TestCopyAndLinkFiles:
 
         mock_copyfile._Copy.assert_called_once()
         mock_linkfile._Link.assert_called_once()
-
-
-# Annotation Tests
 
 
 @pytest.mark.unit
@@ -685,9 +645,6 @@ class TestAnnotations:
         assert proj.annotations[0].keep == "true"
 
 
-# GetRevisionId Tests
-
-
 @pytest.mark.unit
 class TestGetRevisionId:
     """Test GetRevisionId and related methods."""
@@ -737,9 +694,6 @@ class TestGetRevisionId:
         assert proj.revisionId == "new_revision_id"
 
 
-# Sync NetworkHalf Tests
-
-
 @pytest.mark.unit
 class TestSyncNetworkHalf:
     """Test Sync_NetworkHalf method."""
@@ -758,9 +712,6 @@ class TestSyncNetworkHalf:
         assert result.remote_fetched is False
         assert result.error == err
         assert result.success is False
-
-
-# Published Branches Tests
 
 
 @pytest.mark.unit
@@ -801,7 +752,7 @@ class TestPublishedBranches:
         all_refs = {
             "refs/heads/main": "abc123",
             "refs/published/main": "pub_abc",
-            "refs/published/deleted": "pub_old",  # This branch no longer exists
+            "refs/published/deleted": "pub_old",
         }
         proj.bare_ref.all = all_refs
         proj.bare_git.DeleteRef = mock.MagicMock()
@@ -809,9 +760,6 @@ class TestPublishedBranches:
         proj.CleanPublishedCache()
 
         proj.bare_git.DeleteRef.assert_called_once_with("refs/published/deleted", "pub_old")
-
-
-# RemoteSpec Tests
 
 
 @pytest.mark.unit
@@ -842,9 +790,6 @@ class TestRemoteSpec:
         assert spec.url is None
         assert spec.pushUrl is None
         assert spec.review is None
-
-
-# Helper Function Tests
 
 
 @pytest.mark.unit
@@ -884,9 +829,6 @@ class TestHelperFunctions:
         assert content_bytes == b"line1\nline2\n"
 
 
-# DownloadedChange Tests
-
-
 @pytest.mark.unit
 class TestDownloadedChange:
     """Test DownloadedChange class."""
@@ -908,16 +850,12 @@ class TestDownloadedChange:
         proj.bare_git.rev_list.return_value = "abc123 commit message"
         dc = project.DownloadedChange(proj, "base", 123, 1, "commit")
 
-        # First access
         result1 = dc.commits
-        # Second access should use cache
+
         result2 = dc.commits
 
         assert result1 == result2
         proj.bare_git.rev_list.assert_called_once()
-
-
-# ReviewableBranch Tests
 
 
 @pytest.mark.unit
@@ -943,16 +881,12 @@ class TestReviewableBranch:
 
         rb = project.ReviewableBranch(proj, branch, "main")
 
-        # First access
         result1 = rb.commits
-        # Second access should use cache
+
         result2 = rb.commits
 
         assert result1 == result2
         proj.bare_git.rev_list.assert_called_once()
-
-
-# _SafeExpandPath Tests
 
 
 @pytest.mark.unit
@@ -991,11 +925,7 @@ class TestSafeExpandPath:
 
         result = project._SafeExpandPath(base, "subdir/file.txt", skipfinal=True)
 
-        # When skipfinal=True, it doesn't validate the final component but still returns full path
         assert result == os.path.join(str(subdir), "file.txt")
-
-
-# Additional Edge Case Tests
 
 
 @pytest.mark.unit
@@ -1011,7 +941,6 @@ class TestEdgeCases:
 
         assert "hooks" in dirs
         assert "rr-cache" in dirs
-        # When using alternates, "objects" is not shared
 
     def test_shareable_dirs_without_alternates(self, tmp_path):
         """Test shareable_dirs property without alternates."""
@@ -1066,9 +995,6 @@ class TestEdgeCases:
         assert result.ps_id == 2
 
 
-# Error Classes Tests
-
-
 @pytest.mark.unit
 class TestErrorClasses:
     """Test custom error classes."""
@@ -1098,9 +1024,6 @@ class TestErrorClasses:
         assert isinstance(err, error.RepoError)
 
 
-# Constants Tests
-
-
 @pytest.mark.unit
 class TestConstants:
     """Test module-level constants."""
@@ -1115,5 +1038,5 @@ class TestConstants:
 
     def test_alternates_env_var(self):
         """Test _ALTERNATES reads from environment."""
-        # Just verify it's defined and is a boolean
+
         assert isinstance(project._ALTERNATES, bool)

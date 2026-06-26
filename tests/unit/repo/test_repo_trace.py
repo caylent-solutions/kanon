@@ -1,17 +1,3 @@
-# Copyright 2022 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unittests for the repo_trace.py module."""
 
 import os
@@ -40,7 +26,7 @@ class TraceTests(unittest.TestCase):
         self._saved_trace = repo_trace._TRACE
         self._tmp = tempfile.TemporaryDirectory(prefix="repo_trace_test_")
         self._trace_path = os.path.join(self._tmp.name, "TRACE_FILE")
-        # Seed an empty trace file so the rotation logic has something to read.
+
         open(self._trace_path, "w").close()
         repo_trace._TRACE = True
         repo_trace._TRACE_FILE = self._trace_path
@@ -62,13 +48,11 @@ class TraceTests(unittest.TestCase):
             pass
         self.assertGreater(os.path.getsize(repo_trace._TRACE_FILE), first_trace_size)
 
-        # Check we clear everything is the last chunk is larger than _MAX_SIZE.
         with mock.patch("kanon_cli.repo.repo_trace._MAX_SIZE", 0):
             with repo_trace.Trace(content, first_trace=True):
                 pass
             self.assertEqual(first_trace_size, os.path.getsize(repo_trace._TRACE_FILE))
 
-            # Check we only clear the chunks we need to.
             repo_trace._MAX_SIZE = (first_trace_size + 1) / (1024 * 1024)
             with repo_trace.Trace(content, first_trace=True):
                 pass
@@ -94,7 +78,7 @@ class TraceFileLocationTests(unittest.TestCase):
         """_GetTraceFile uses repo directory when it is writable."""
         with mock.patch("os.access", return_value=True):
             result = repo_trace._GetTraceFile(quiet=True)
-            # Should NOT contain tempdir fallback
+
             self.assertIn(repo_trace._TRACE_FILE_NAME, result)
 
 
@@ -158,7 +142,7 @@ class TraceWritingTests(unittest.TestCase):
                 with mock.patch("builtins.open", mock_file):
                     with repo_trace.Trace("test message"):
                         pass
-                    # Check that file was written to
+
                     handle = mock_file()
                     calls = [call[0][0] for call in handle.write.call_args_list]
                     start_calls = [c for c in calls if "START:" in c]
@@ -247,7 +231,7 @@ class TraceToStderrTests(unittest.TestCase):
                         with mock.patch("builtins.print") as mock_print:
                             with repo_trace.Trace("test"):
                                 pass
-                            # Should print to stderr
+
                             calls = [call for call in mock_print.call_args_list]
                             self.assertGreater(len(calls), 0)
 
@@ -331,7 +315,6 @@ class ClearOldTracesTests(unittest.TestCase):
         try:
             with mock.patch("kanon_cli.repo.repo_trace._TRACE_FILE", temp_file):
                 with mock.patch("kanon_cli.repo.repo_trace._MAX_SIZE", 1):
-                    # Should not raise
                     repo_trace._ClearOldTraces()
         finally:
             os.remove(temp_file)
@@ -339,7 +322,6 @@ class ClearOldTracesTests(unittest.TestCase):
     def test_clear_old_traces_handles_missing_file(self):
         """_ClearOldTraces should handle missing trace file."""
         with mock.patch("kanon_cli.repo.repo_trace._TRACE_FILE", "/nonexistent/file"):
-            # Should not raise
             repo_trace._ClearOldTraces()
 
     def test_clear_old_traces_removes_old_commands(self):
@@ -348,12 +330,11 @@ class ClearOldTracesTests(unittest.TestCase):
 
         content = f"PID: 123 END: 456 :{repo_trace._NEW_COMMAND_SEP} old\nPID: 789 START: 012 :new\n"
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
-            # Write enough to exceed limit
             f.write(content * 1000)
             temp_file = f.name
         try:
             with mock.patch("kanon_cli.repo.repo_trace._TRACE_FILE", temp_file):
-                with mock.patch("kanon_cli.repo.repo_trace._MAX_SIZE", 0.001):  # Very small limit
+                with mock.patch("kanon_cli.repo.repo_trace._MAX_SIZE", 0.001):
                     with mock.patch("kanon_cli.repo.platform_utils.rename"):
                         repo_trace._ClearOldTraces()
         finally:

@@ -42,10 +42,6 @@ from typing import Optional
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 def _kanon_completion_script() -> str:
     """Return the live ``kanon completion bash`` output."""
@@ -83,7 +79,7 @@ def _assert_bash_version_gte_4() -> None:
     assert result.returncode == 0, (
         "Could not determine bash version: 'bash --version' failed. Ensure bash is installed and on PATH."
     )
-    # Extract "GNU bash, version X.Y..." from the first line.
+
     first_line = result.stdout.splitlines()[0] if result.stdout else ""
     match = re.search(r"version\s+(\d+)\.(\d+)", first_line)
     assert match is not None, (
@@ -277,20 +273,10 @@ def _bash_preamble_runner(
     return sorted(candidates)
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: assert bash >= 4.0 before running any parametrized cases
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 def test_bash_version_gte_4() -> None:
     """AC-FUNC-006: bash >= 4.0 is available; fail with actionable error if not."""
     _assert_bash_version_gte_4()
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: generated completion script parses under bash -n
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -300,27 +286,15 @@ def test_completion_script_syntax_valid() -> None:
     _bash_syntax_check(script)
 
 
-# ---------------------------------------------------------------------------
-# Section 11.2 matrix -- static rows
-#
-# Parametrized tuple layout:
-#   (test_id, comp_line, comp_words, comp_cword, expected_candidates, exact_match)
-#
-# When exact_match is True the COMPREPLY must be EXACTLY the expected set.
-# When False the expected set must be a subset of COMPREPLY.
-# ---------------------------------------------------------------------------
-
 _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
-    # -- global flags (all commands) --
     (
         "global_flags",
         "kanon --",
         ["kanon", "--"],
         1,
-        ["--help", "--version", "--quiet", "--verbose", "--no-color"],
+        ["--help", "--version", "--quiet", "--verbose", "--no-color", "--no-update-check", "--home", "--store-dir"],
         True,
     ),
-    # -- top-level subcommands --
     (
         "top_level_subcommands",
         "kanon ",
@@ -328,76 +302,69 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         1,
         [
             "add",
-            "bootstrap",
             "catalog",
             "clean",
             "completion",
             "doctor",
             "install",
-            "list",
+            "marketplace",
+            "search",
             "outdated",
             "remove",
             "validate",
             "repo",
             "why",
         ],
-        False,  # hidden __complete_* subcommands also present
+        False,
     ),
-    # -- kanon completion shell choices (static enum) --
     (
         "completion_shell_enum",
         "kanon completion ",
         ["kanon", "completion", ""],
         2,
-        ["bash", "zsh"],
+        ["bash", "zsh", "powershell"],
         True,
     ),
-    # -- kanon list --format (static enum) --
     (
-        "list_format_enum",
-        "kanon list --format ",
-        ["kanon", "list", "--format", ""],
+        "search_format_enum",
+        "kanon search --format ",
+        ["kanon", "search", "--format", ""],
         3,
         ["names", "json"],
         True,
     ),
-    # -- kanon list flags (no-value static flags) --
     (
-        "list_flags",
-        "kanon list --",
-        ["kanon", "list", "--"],
+        "search_flags",
+        "kanon search --",
+        ["kanon", "search", "--"],
         2,
-        ["--help", "--format", "--detail", "--tree", "--all-versions", "--no-limit", "--no-filter-required"],
+        ["--help", "--format", "--detail", "--tree", "--all", "--no-limit", "--no-filter-required"],
         False,
     ),
-    # -- kanon list --match-fields flag present in option strings --
     (
-        "list_match_fields_flag_present",
-        "kanon list --",
-        ["kanon", "list", "--"],
+        "search_match_fields_flag_present",
+        "kanon search --",
+        ["kanon", "search", "--"],
         2,
         ["--match-fields"],
         False,
     ),
-    # -- kanon list --since-version flag present in option strings --
     (
-        "list_since_version_flag_present",
-        "kanon list --",
-        ["kanon", "list", "--"],
+        "search_since_version_flag_present",
+        "kanon search --",
+        ["kanon", "search", "--"],
         2,
         ["--since-version"],
         False,
     ),
-    # -- kanon list --regex flag present --
     (
-        "list_regex_flag_present",
-        "kanon list --",
-        ["kanon", "list", "--"],
+        "search_regex_flag_present",
+        "kanon search --",
+        ["kanon", "search", "--"],
         2,
         ["--regex"],
         False,
     ),
-    # -- kanon outdated --format (static enum) --
     (
         "outdated_format_enum",
         "kanon outdated --format ",
@@ -406,7 +373,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["table", "json"],
         True,
     ),
-    # -- kanon outdated flags --
     (
         "outdated_flags",
         "kanon outdated --",
@@ -415,7 +381,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--help", "--format", "--fail-on-upgrade"],
         False,
     ),
-    # -- kanon outdated filesystem flags --
     (
         "outdated_filesystem_flags",
         "kanon outdated --",
@@ -424,7 +389,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--kanon-file", "--lock-file"],
         False,
     ),
-    # -- kanon why --format (static enum) --
     (
         "why_format_enum",
         "kanon why --format ",
@@ -433,7 +397,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["text", "json"],
         True,
     ),
-    # -- kanon why flags --
     (
         "why_flags",
         "kanon why --",
@@ -442,7 +405,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--help", "--format", "--kanon-file", "--lock-file"],
         False,
     ),
-    # -- kanon catalog subcommand enum --
     (
         "catalog_subcommand_enum",
         "kanon catalog ",
@@ -451,7 +413,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["audit"],
         True,
     ),
-    # -- kanon catalog audit --format (static enum) --
     (
         "catalog_audit_format_enum",
         "kanon catalog audit --format ",
@@ -460,7 +421,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["text", "json"],
         True,
     ),
-    # -- kanon catalog audit flags --
     (
         "catalog_audit_flags",
         "kanon catalog audit --",
@@ -469,16 +429,14 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--check", "--format", "--strict"],
         False,
     ),
-    # -- kanon validate subcommand enum --
     (
         "validate_subcommand_enum",
         "kanon validate ",
         ["kanon", "validate", ""],
         2,
-        ["xml", "marketplace", "metadata"],
+        ["xml", "marketplace", "metadata", "lockfile"],
         True,
     ),
-    # -- kanon validate metadata --format (static enum) --
     (
         "validate_metadata_format_enum",
         "kanon validate metadata --format ",
@@ -487,7 +445,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["text", "json"],
         True,
     ),
-    # -- kanon add flags (no-value static) --
     (
         "add_flags",
         "kanon add --",
@@ -496,7 +453,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--help", "--force", "--dry-run", "--kanon-file"],
         False,
     ),
-    # -- kanon add --catalog-source flag present --
     (
         "add_catalog_source_flag",
         "kanon add --",
@@ -505,7 +461,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--catalog-source"],
         False,
     ),
-    # -- kanon remove flags --
     (
         "remove_flags",
         "kanon remove --",
@@ -514,7 +469,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--help", "--force", "--dry-run", "--kanon-file"],
         False,
     ),
-    # -- kanon install flags (no-value static) --
     (
         "install_flags_no_value",
         "kanon install --",
@@ -523,7 +477,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--help", "--refresh-lock", "--strict-lock", "--strict-drift"],
         False,
     ),
-    # -- kanon install filesystem flags --
     (
         "install_lock_file_flag_present",
         "kanon install --",
@@ -532,7 +485,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--lock-file"],
         False,
     ),
-    # -- kanon install --refresh-lock-source flag present --
     (
         "install_refresh_lock_source_flag_present",
         "kanon install --",
@@ -541,7 +493,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--refresh-lock-source"],
         False,
     ),
-    # -- kanon doctor flags (static no-value) --
     (
         "doctor_flags",
         "kanon doctor --",
@@ -550,7 +501,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--help", "--refresh-completion-cache", "--strict-drift", "--prune-cache"],
         False,
     ),
-    # -- kanon doctor filesystem flags --
     (
         "doctor_filesystem_flags",
         "kanon doctor --",
@@ -559,7 +509,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--kanon-file", "--lock-file"],
         False,
     ),
-    # -- kanon validate xml --repo-root flag present --
     (
         "validate_xml_repo_root_flag",
         "kanon validate xml --",
@@ -568,7 +517,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--repo-root"],
         False,
     ),
-    # -- kanon validate marketplace --repo-root flag present --
     (
         "validate_marketplace_repo_root_flag",
         "kanon validate marketplace --",
@@ -577,7 +525,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--repo-root"],
         False,
     ),
-    # -- kanon validate metadata --repo-root flag present --
     (
         "validate_metadata_repo_root_flag",
         "kanon validate metadata --",
@@ -586,11 +533,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--repo-root"],
         False,
     ),
-    # NOTE: there is no `bootstrap_flags` static row. bootstrap was removed in a
-    # major release and is now a flagless deprecation shim, so it exposes no
-    # per-flag completion. That absence is asserted by
-    # test_bootstrap_offers_no_flag_completion below.
-    # -- kanon clean flags --
     (
         "clean_flags",
         "kanon clean --",
@@ -599,7 +541,6 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
         ["--help"],
         False,
     ),
-    # -- kanon repo --repo-dir flag present --
     (
         "repo_repo_dir_flag",
         "kanon repo --",
@@ -650,12 +591,13 @@ def test_static_completion_row(
 
 
 @pytest.mark.integration
-def test_bootstrap_offers_no_flag_completion(tmp_path: Path) -> None:
-    """`kanon bootstrap --<TAB>` offers no flag candidates.
+def test_bootstrap_offers_no_bootstrap_specific_flag_completion(tmp_path: Path) -> None:
+    """`kanon bootstrap --<TAB>` offers no bootstrap-specific flag candidates.
 
-    bootstrap was removed in a major release and is now a flagless deprecation
-    shim (the subparser declares only a REMAINDER catch-all and no options), so
-    the old `--output-dir`/`--catalog-source`/`--help` completions are gone.
+    bootstrap was removed in a major release and is no longer a registered
+    subcommand. Completion at `kanon bootstrap --` therefore falls through to
+    the top-level parser and offers only the global flags; the old
+    `--output-dir`/`--catalog-source` bootstrap completions are gone.
     """
     _assert_bash_version_gte_4()
     candidates = _bash_completion_runner(
@@ -665,24 +607,12 @@ def test_bootstrap_offers_no_flag_completion(tmp_path: Path) -> None:
         comp_cword=2,
     )
     flag_candidates = [c for c in candidates if c.startswith("-")]
-    assert flag_candidates == [], (
-        f"bootstrap must offer no flag completion (it is a flagless shim), got: {flag_candidates!r}"
+    assert "--output-dir" not in flag_candidates, (
+        f"bootstrap-specific '--output-dir' completion must be gone, got: {flag_candidates!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Section 11.2 matrix -- dynamic rows (preamble helper invocation with stub)
-#
-# AC-FUNC-003: For dynamic-completer rows, the test stubs ``kanon __complete_*``
-# on $PATH and asserts (a) the stub was invoked once with the expected
-# subcommand and (b) COMPREPLY matches the stub's output.
-#
-# Dynamic rows invoke preamble helpers directly (sourced from the live
-# completion script) rather than through _shtab_kanon, because the COMPGEN
-# wiring for positional args is provided by the preamble helpers which are
-# exercised independently. This mirrors the spec's intent: the preamble
-# helpers ARE the integration surface for dynamic completion.
-# ---------------------------------------------------------------------------
+    assert "--catalog-source" not in flag_candidates, (
+        f"bootstrap-specific '--catalog-source' completion must be gone, got: {flag_candidates!r}"
+    )
 
 
 def _assert_stub_called_with(call_log_path: str, expected_subcommand: str, expected_token: Optional[str]) -> None:
@@ -818,7 +748,7 @@ def test_dynamic_row_global_catalog_source(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 def test_dynamic_row_list_since_version(tmp_path: Path) -> None:
-    """AC-FUNC-003: 'kanon list --since-version <TAB>' routes to catalog_versions."""
+    """AC-FUNC-003: 'kanon search --since-version <TAB>' routes to catalog_versions."""
     _assert_bash_version_gte_4()
     fixture_entries = "1.0.0\n2.0.0\n3.0.0\n"
     stub_bin_dir, call_log_path = _write_stub_kanon(tmp_path, {"__complete_catalog_versions": fixture_entries})
@@ -830,15 +760,6 @@ def test_dynamic_row_list_since_version(tmp_path: Path) -> None:
     )
     assert sorted(candidates) == ["1.0.0", "2.0.0", "3.0.0"], f"Expected version list in COMPREPLY, got {candidates!r}"
     _assert_stub_called_with(call_log_path, "__complete_catalog_versions", None)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: the <name>[@<spec>] row of 'kanon add'
-#
-# Tests both the no-@ path (catalog entries) and the with-@ path
-# (project versions via resolved repo URL), exercised through the
-# _kanon_complete_add_arg preamble helper.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -923,10 +844,6 @@ def test_dynamic_row_add_with_at_routes_project_versions(tmp_path: Path) -> None
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: KANON_COMPLETION_ENABLED=0 returns empty COMPREPLY for dynamic rows
-# ---------------------------------------------------------------------------
-
 _DYNAMIC_DISABLED_CASES: list[tuple[str, str, str]] = [
     (
         "catalog_entries_disabled",
@@ -993,24 +910,14 @@ def test_kanon_completion_enabled_0_returns_empty(
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001: end-to-end cycle
-#
-# Source the live completion script; invoke _shtab_kanon (or preamble
-# helpers for dynamic rows) with the specified environment; assert
-# COMPREPLY matches expectations.  Covers representative rows from every
-# category in the Section 11.2 matrix.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
-def test_ac_cycle_001_list_format(tmp_path: Path) -> None:
-    """AC-CYCLE-001: end-to-end -- kanon list --format <TAB> => (names, json)."""
+def test_ac_cycle_001_search_format(tmp_path: Path) -> None:
+    """AC-CYCLE-001: end-to-end -- kanon search --format <TAB> => (names, json)."""
     _assert_bash_version_gte_4()
     candidates = _bash_completion_runner(
         tmp_path=tmp_path,
-        comp_line="kanon list --format ",
-        comp_words=["kanon", "list", "--format", ""],
+        comp_line="kanon search --format ",
+        comp_words=["kanon", "search", "--format", ""],
         comp_cword=3,
     )
     assert sorted(candidates) == ["json", "names"], f"AC-CYCLE-001: expected (names json), got {candidates!r}"
@@ -1018,7 +925,7 @@ def test_ac_cycle_001_list_format(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 def test_ac_cycle_001_completion_shell(tmp_path: Path) -> None:
-    """AC-CYCLE-001: end-to-end -- kanon completion <TAB> => (bash, zsh)."""
+    """AC-CYCLE-001: end-to-end -- kanon completion <TAB> => (bash, zsh, powershell)."""
     _assert_bash_version_gte_4()
     candidates = _bash_completion_runner(
         tmp_path=tmp_path,
@@ -1026,7 +933,9 @@ def test_ac_cycle_001_completion_shell(tmp_path: Path) -> None:
         comp_words=["kanon", "completion", ""],
         comp_cword=2,
     )
-    assert sorted(candidates) == ["bash", "zsh"], f"AC-CYCLE-001: expected (bash zsh), got {candidates!r}"
+    assert sorted(candidates) == ["bash", "powershell", "zsh"], (
+        f"AC-CYCLE-001: expected (bash powershell zsh), got {candidates!r}"
+    )
 
 
 @pytest.mark.integration
@@ -1044,7 +953,7 @@ def test_ac_cycle_001_outdated_format(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 def test_ac_cycle_001_validate_subcommands(tmp_path: Path) -> None:
-    """AC-CYCLE-001: end-to-end -- kanon validate <TAB> => (xml, marketplace, metadata)."""
+    """AC-CYCLE-001: end-to-end -- kanon validate <TAB> => (xml, marketplace, metadata, lockfile)."""
     _assert_bash_version_gte_4()
     candidates = _bash_completion_runner(
         tmp_path=tmp_path,
@@ -1052,8 +961,8 @@ def test_ac_cycle_001_validate_subcommands(tmp_path: Path) -> None:
         comp_words=["kanon", "validate", ""],
         comp_cword=2,
     )
-    assert sorted(candidates) == ["marketplace", "metadata", "xml"], (
-        f"AC-CYCLE-001: expected (xml marketplace metadata), got {candidates!r}"
+    assert sorted(candidates) == ["lockfile", "marketplace", "metadata", "xml"], (
+        f"AC-CYCLE-001: expected (xml marketplace metadata lockfile), got {candidates!r}"
     )
 
 

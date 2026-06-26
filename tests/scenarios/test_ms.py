@@ -6,6 +6,7 @@ Scenarios automated:
 
 from __future__ import annotations
 
+import os
 import pathlib
 
 import pytest
@@ -16,11 +17,6 @@ from tests.scenarios.conftest import (
     make_plain_repo,
     write_kanonenv,
 )
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _build_fixtures(base: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
@@ -89,11 +85,6 @@ def _build_fixtures(base: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pat
     return pkg_alpha_bare, pkg_bravo_bare, manifest_primary_bare
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestMS:
     def test_ms_01_two_sources_aggregate_both(self, tmp_path: pathlib.Path) -> None:
@@ -124,12 +115,16 @@ class TestMS:
         )
         assert "kanon install: done" in result.stdout, f"'kanon install: done' not in stdout: {result.stdout!r}"
 
-        # Both source directories must exist
-        assert (work_dir / ".kanon-data" / "sources" / "alpha").is_dir(), ".kanon-data/sources/alpha/ directory missing"
-        assert (work_dir / ".kanon-data" / "sources" / "bravo").is_dir(), ".kanon-data/sources/bravo/ directory missing"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
-        # .packages/ directory must exist and contain symlinks from both sources
-        packages_dir = work_dir / ".packages"
+        assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir(), (
+            ".kanon-data/sources/alpha/ directory missing"
+        )
+        assert (store_base / ".kanon-data" / "sources" / "bravo").is_dir(), (
+            ".kanon-data/sources/bravo/ directory missing"
+        )
+
+        packages_dir = store_base / ".packages"
         assert packages_dir.is_dir(), ".packages/ directory missing"
 
         pkg_alpha_link = packages_dir / "pkg-alpha"
@@ -138,7 +133,6 @@ class TestMS:
         pkg_bravo_link = packages_dir / "pkg-bravo"
         assert pkg_bravo_link.is_symlink(), ".packages/pkg-bravo is not a symlink"
 
-        # Both symlinks must resolve to valid targets
         assert pkg_alpha_link.resolve().exists(), ".packages/pkg-alpha symlink does not resolve"
         assert pkg_bravo_link.resolve().exists(), ".packages/pkg-bravo symlink does not resolve"
 

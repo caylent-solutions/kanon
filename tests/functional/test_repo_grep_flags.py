@@ -53,10 +53,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Grep Flags Test User"
 _GIT_USER_EMAIL = "repo-grep-flags@example.com"
@@ -64,70 +60,59 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "grep-flags-test-project"
 
-# Error exit code for argument-parsing errors (optparse uses 2).
+
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Expected exit code for valid invocations that find a match.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests that
-# do not require a real initialized repository. The command exits with code 1
-# (manifest not found) rather than code 2 (argument parsing error), confirming
-# the flag was accepted by optparse.
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-grep-flags-repo-dir"
 
-# Pattern that matches the default content file written by _setup_synced_repo.
-# The conftest helper writes "hello from shared conftest helper" to README.md.
+
 _MATCH_PATTERN = "hello"
 
-# Second pattern on the same line as _MATCH_PATTERN -- used in boolean operator tests.
-# The content "hello from shared conftest helper" contains both "hello" and "from".
+
 _MATCH_PATTERN_AND = "from"
 
-# Uppercase form of _MATCH_PATTERN -- used in -i / --ignore-case tests to confirm
-# that case-insensitive matching finds content regardless of letter case.
+
 _MATCH_PATTERN_UPPERCASE = "HELLO"
 
-# Content file name written into each project by _setup_synced_repo.
+
 _CONTENT_FILENAME = "README.md"
 
-# Inline-value suffix for negative tests on callback no-value flags.
-# optparse exits 2 with '--<flag> option does not take a value' when a
-# callback flag without type= is supplied with an inline value.
+
 _INLINE_VALUE_SUFFIX = "=badval"
 
-# Phrase emitted on stderr when a no-value flag receives an inline value.
+
 _DOES_NOT_TAKE_VALUE_PHRASE = "does not take a value"
 
-# Phrase emitted on stderr when a value-required flag has no argument.
+
 _REQUIRES_ARGUMENT_PHRASE = "requires 1 argument"
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# ---------------------------------------------------------------------------
-# CLI token constants -- every flag token referenced in test logic.
-# ---------------------------------------------------------------------------
 
 _CMD_REPO = "repo"
 _FLAG_REPO_DIR = "--repo-dir"
 _SUBCMD_GREP = "grep"
 
-# Sources group flags
+
 _CLI_FLAG_CACHED = "--cached"
 _CLI_FLAG_REVISION_SHORT = "-r"
 _CLI_FLAG_REVISION_LONG = "--revision"
 
-# Pattern group -- value-required callback flags
+
 _CLI_FLAG_E = "-e"
 _CLI_FLAG_C = "-C"
 _CLI_FLAG_B = "-B"
 _CLI_FLAG_A = "-A"
 
-# Pattern group -- no-value callback flags (short forms)
+
 _CLI_FLAG_I_SHORT = "-i"
 _CLI_FLAG_A_TEXT_SHORT = "-a"
 _CLI_FLAG_I_BINARY_SHORT = "-I"
@@ -140,7 +125,7 @@ _CLI_FLAG_N_SHORT = "-n"
 _CLI_FLAG_L_SHORT = "-l"
 _CLI_FLAG_BIG_L_SHORT = "-L"
 
-# Pattern group -- no-value callback flags (long forms)
+
 _CLI_FLAG_IGNORE_CASE = "--ignore-case"
 _CLI_FLAG_TEXT = "--text"
 _CLI_FLAG_WORD_REGEXP = "--word-regexp"
@@ -149,7 +134,7 @@ _CLI_FLAG_BASIC_REGEXP = "--basic-regexp"
 _CLI_FLAG_EXTENDED_REGEXP = "--extended-regexp"
 _CLI_FLAG_FIXED_STRINGS = "--fixed-strings"
 
-# Pattern grouping -- no-value callback flags
+
 _CLI_FLAG_ALL_MATCH = "--all-match"
 _CLI_FLAG_AND = "--and"
 _CLI_FLAG_OR = "--or"
@@ -157,28 +142,18 @@ _CLI_FLAG_NOT = "--not"
 _CLI_FLAG_PAREN_OPEN = "-("
 _CLI_FLAG_PAREN_CLOSE = "-)"
 
-# Output group -- no-value long-form aliases
+
 _CLI_FLAG_NAME_ONLY = "--name-only"
 _CLI_FLAG_FILES_WITH_MATCHES = "--files-with-matches"
 _CLI_FLAG_FILES_WITHOUT_MATCH = "--files-without-match"
 
-# A valid numeric context value for -C, -B, -A flags.
+
 _CONTEXT_VALUE = "2"
 
-# A valid revision for --revision flag.
+
 _REVISION_VALUE = "HEAD"
 
-# ---------------------------------------------------------------------------
-# Parametrize data tables -- all tuples use flag constants, not raw strings.
-#
-# AC-TEST-001: All _Options() flags with valid values (exit != 2).
-# Groups:
-#   1. No-value flags tested against a nonexistent repo (exit 1 = parsed OK)
-#   2. Value-required flags with valid values tested against nonexistent repo
-# ---------------------------------------------------------------------------
 
-# No-value callback flags (short forms) -- valid-value acceptance tests.
-# These do not require a repo to exist; exit 1 confirms parsing succeeded.
 _NO_VALUE_FLAGS_SHORT: list[tuple[str, str]] = [
     (_CLI_FLAG_CACHED, "cached"),
     (_CLI_FLAG_I_SHORT, "short-ignore-case"),
@@ -200,7 +175,7 @@ _NO_VALUE_FLAGS_SHORT: list[tuple[str, str]] = [
     (_CLI_FLAG_BIG_L_SHORT, "short-files-without-match"),
 ]
 
-# No-value callback flags (long forms) -- valid-value acceptance tests.
+
 _NO_VALUE_FLAGS_LONG: list[tuple[str, str]] = [
     (_CLI_FLAG_IGNORE_CASE, "long-ignore-case"),
     (_CLI_FLAG_TEXT, "long-text"),
@@ -214,11 +189,10 @@ _NO_VALUE_FLAGS_LONG: list[tuple[str, str]] = [
     (_CLI_FLAG_FILES_WITHOUT_MATCH, "long-files-without-match"),
 ]
 
-# All no-value flags combined -- used for AC-TEST-001 valid-value parametrize.
+
 _ALL_NO_VALUE_FLAGS: list[tuple[str, str]] = _NO_VALUE_FLAGS_SHORT + _NO_VALUE_FLAGS_LONG
 
-# Long-form no-value callback flags -- used for AC-TEST-002 negative tests.
-# Short-form flags cannot use '--flag=value' inline syntax in optparse.
+
 _LONG_NO_VALUE_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_CACHED, "cached"),
     (_CLI_FLAG_IGNORE_CASE, "ignore-case"),
@@ -237,8 +211,7 @@ _LONG_NO_VALUE_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_FILES_WITHOUT_MATCH, "files-without-match"),
 ]
 
-# Value-required flags and their missing-argument negative test data.
-# Each tuple: (flag, test_id). When supplied without a value, exit 2.
+
 _VALUE_REQUIRED_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_E, "short-e"),
     (_CLI_FLAG_REVISION_SHORT, "short-revision"),
@@ -248,9 +221,7 @@ _VALUE_REQUIRED_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     (_CLI_FLAG_A, "short-after"),
 ]
 
-# Parametrize data for AC-FUNC-001: flags that produce exit 0 on a real synced
-# repo when the match pattern is present. Each tuple: (flag_or_flags, test_id).
-# Flags that require extra arguments are expressed as a sequence.
+
 _FUNC_FLAGS_EXIT_ZERO: list[tuple[tuple[str, ...], str]] = [
     ((_CLI_FLAG_I_SHORT, _MATCH_PATTERN), "short-ignore-case"),
     ((_CLI_FLAG_IGNORE_CASE, _MATCH_PATTERN), "long-ignore-case"),
@@ -288,11 +259,6 @@ def _build_grep_argv(repo_dir: pathlib.Path, *extra: str) -> tuple[str, ...]:
         A tuple of string arguments suitable for passing to ``_run_kanon``.
     """
     return (_CMD_REPO, _FLAG_REPO_DIR, str(repo_dir), _SUBCMD_GREP) + extra
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/grep.py
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -485,11 +451,6 @@ class TestRepoGrepFlagsValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with invalid values
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoGrepFlagsInvalidValues:
     """AC-TEST-002: Every flag that accepts enumerated values has a negative test.
@@ -670,11 +631,6 @@ class TestRepoGrepFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoGrepFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -793,11 +749,6 @@ class TestRepoGrepFlagsAbsenceDefaults:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -952,11 +903,6 @@ class TestRepoGrepFlagsDocumentedBehavior:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

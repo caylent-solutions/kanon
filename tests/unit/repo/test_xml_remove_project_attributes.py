@@ -33,10 +33,6 @@ from kanon_cli.repo import manifest_xml
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -77,11 +73,6 @@ def _write_and_load(tmp_path: pathlib.Path, xml_content: str) -> manifest_xml.Xm
     m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
     m.Load()
     return m
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests -- one per documented attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -318,11 +309,6 @@ class TestRemoveProjectValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Invalid-value tests -- every attribute's bad-input path
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRemoveProjectInvalidValues:
     """AC-TEST-002: Every attribute of <remove-project> has invalid-value tests.
@@ -489,12 +475,6 @@ class TestRemoveProjectInvalidValues:
             )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Required attribute omission raises with message naming the
-#              attribute
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestRemoveProjectRequiredAttributeOmission:
     """AC-TEST-003: Required attribute omission raises ManifestParseError naming the attribute.
@@ -602,11 +582,6 @@ class TestRemoveProjectRequiredAttributeOmission:
                 "  <remove-project />\n"
                 "</manifest>\n",
             )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Every documented attribute is validated at parse time
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -727,11 +702,6 @@ class TestRemoveProjectAttributesParsedAtLoadTime:
             f"AC-FUNC-001: expected 'platform/core' to be absent after name+path removal "
             f"at load time but got: {project_names!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

@@ -43,21 +43,12 @@ import pytest
 from tests.scenarios.conftest import make_plain_repo, run_kanon
 
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _BRANCH = "main"
 _PROJECT_NAME = "pkg-alpha"
 _PROJECT_PATH = ".packages/pkg-alpha"
 _MANIFEST_FILENAME = "default.xml"
 _GIT_USER_NAME = "RP Sync Scenario Test"
 _GIT_USER_EMAIL = "rp-sync-scenario@kanon.example"
-
-
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
 
 
 def _make_content_repo(parent: pathlib.Path) -> pathlib.Path:
@@ -176,11 +167,6 @@ def _repo_sync(
     )
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestRPSync:
     def test_rp_sync_01_bare_sync(self, tmp_path: pathlib.Path) -> None:
@@ -227,7 +213,7 @@ class TestRPSync:
         checkout_dir, repo_dir = _setup_inited_repo(tmp_path)
         first = _repo_sync(checkout_dir, repo_dir)
         assert first.returncode == 0, f"Prerequisite sync failed: stdout={first.stdout!r} stderr={first.stderr!r}"
-        # Introduce a dirty change
+
         readme = checkout_dir / _PROJECT_PATH / "README.md"
         readme.write_text("dirty\n", encoding="utf-8")
         result = _repo_sync(checkout_dir, repo_dir, "--force-checkout")

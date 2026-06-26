@@ -42,73 +42,49 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all fixture literals extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
-# Nonexistent repo-dir path used in argument-parser tests.
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-repo-cherry-pick-errors-repo-dir"
 
-# Unknown flag names exercised in AC-TEST-002 tests.
+
 _UNKNOWN_FLAG_PRIMARY = "--unknown-flag-xyzzy"
 _UNKNOWN_FLAG_ALT_A = "--not-a-real-cherry-pick-flag"
 _UNKNOWN_FLAG_ALT_B = "--bogus-cherry-pick-option-99"
 
-# Boolean flag used in AC-TEST-003: all cherry-pick flags are boolean
-# (store_true / store_false). Supplying '--verbose=unexpected' causes optparse
-# to exit 2 with '--verbose option does not take a value' on stderr.
+
 _BOOL_FLAG_FOR_EXIT_2 = "--verbose"
 _BOOL_FLAG_INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Error message substring expected in stderr when a boolean flag is supplied
-# with an inline value (optparse-level 'does not take a value' error).
+
 _DOES_NOT_TAKE_VALUE_PHRASE = "does not take a value"
 
-# Phrase expected in stderr for unknown flag errors (AC-TEST-002).
+
 _UNKNOWN_OPTION_PHRASE = "no such option"
 
-# Phrase expected in the --help output (AC-TEST-001).
+
 _HELP_USAGE_PHRASE = "repo cherry-pick"
 
-# Keyword that must appear in the --help output to document the required SHA1
-# positional argument (AC-TEST-001).
+
 _HELP_SHA1_KEYWORD = "sha1"
 
-# Directory name used in AC-TEST-004 / AC-CHANNEL-001 tests that need a CWD
-# that is NOT a git working tree. Using a named constant avoids repeating the
-# literal string across five test methods in TestRepoCherryPickPreconditionFailure.
+
 _NON_GIT_DIR_NAME = "not-a-git-repo"
 
-# Variant directory name used in TestRepoCherryPickErrorChannelDiscipline to
-# avoid colliding with _NON_GIT_DIR_NAME inside the same tmp_path root.
+
 _NON_GIT_DIR_CHANNEL_NAME = "not-a-git-repo-channel"
 
-# Phrase expected in stderr when 'repo cherry-pick' is invoked without its
-# required SHA1 positional. The embedded repo tool raises UsageError (exit 1)
-# in ValidateOptions() -- NOT an argument-parser error (exit 2).
+
 _USAGE_ERROR_PHRASE = "UsageError"
 
-# Phrase expected in stderr when 'repo cherry-pick' is invoked from a directory
-# that is not a git working tree (AC-TEST-004). The git layer emits
-# 'not a git repository' before any manifest parsing occurs.
+
 _NOT_GIT_REPO_PHRASE = "not a git repository"
 
-# Placeholder SHA1 used in argument-parser tests that exercise flag errors
-# before git is invoked. Any 40-hex string will do; the command will fail at
-# git rev-parse (exit 1) rather than at option parsing (exit 2), proving the
-# flag was accepted by optparse.
+
 _FAKE_SHA1 = "0000000000000000000000000000000000000001"
 
-# Expected exit codes.
+
 _EXIT_SUCCESS = 0
 _EXIT_ARGPARSE_ERROR = 2
 _EXIT_PRECONDITION_ERROR = 1
-
-
-# ---------------------------------------------------------------------------
-# Shared determinism helper -- DRY extraction for _is_deterministic tests.
-# ---------------------------------------------------------------------------
 
 
 def _assert_deterministic(
@@ -159,11 +135,6 @@ def _assert_deterministic(
         f"  first:  {output_a!r}\n"
         f"  second: {output_b!r}"
     )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: 'kanon repo cherry-pick --help' exits 0 with usage text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -239,11 +210,6 @@ class TestRepoCherryPickHelp:
         state, confirming the determinism requirement of AC-FUNC-001.
         """
         _assert_deterministic(tmp_path, ["--help"], _EXIT_SUCCESS, compare_stdout=True)
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Unknown flag exits 2 with error naming the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -331,11 +297,6 @@ class TestRepoCherryPickUnknownFlag:
             _EXIT_ARGPARSE_ERROR,
             compare_stdout=False,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Boolean flag with inline value produces exit 2
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -481,11 +442,6 @@ class TestRepoCherryPickMissingOptionValue:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Subcommand-specific precondition failure exits 1 with clear message
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoCherryPickPreconditionFailure:
     """AC-TEST-004: Subcommand-specific precondition failures exit 1 with clear message.
@@ -608,11 +564,6 @@ class TestRepoCherryPickPreconditionFailure:
             compare_stdout=False,
             cwd=non_git_dir,
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001 / AC-CHANNEL-001: Combined channel and determinism validation
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

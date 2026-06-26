@@ -33,10 +33,6 @@ from kanon_cli.repo.error import ManifestInvalidPathError
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -141,11 +137,6 @@ def _get_project(manifest: manifest_xml.XmlManifest, project_name: str):
     """
     projects_by_name = {p.name: p for p in manifest.projects}
     return projects_by_name[project_name]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <linkfile> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -320,11 +311,6 @@ class TestLinkfileMinimumAttributes:
         assert str(exc_info.value), (
             "Expected a non-empty error message from ManifestParseError for missing dest but got empty string"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <linkfile> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -541,11 +527,6 @@ class TestLinkfileAllDocumentedAttributes:
         assert linkfile.topdir is not None, "Expected linkfile.topdir to be set but got None"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <linkfile> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestLinkfileDefaultAttributeValues:
     """Verify that default attribute values on <linkfile> behave as documented.
@@ -711,11 +692,6 @@ class TestLinkfileDefaultAttributeValues:
         assert len(project.linkfiles) >= 1, (
             f"Expected at least 1 linkfile after <linkfile src={src!r} dest={dest!r}> but got 0"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

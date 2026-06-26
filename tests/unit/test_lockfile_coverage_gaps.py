@@ -1,9 +1,16 @@
-"""Unit tests closing coverage gaps in src/kanon_cli/core/lockfile.py.
+"""Unit tests closing coverage gaps in src/kanon_cli/core/lockfile.py (schema v4).
 
 Gaps targeted (from the E15-F4-S1-T1 coverage-gap analysis):
-- Line 320: _validate_kanon_hash raises LockfileValidationError on invalid hash
-- Lines 822-824: write_lockfile inner exception handler (fdopen/flush/fsync failure)
-- Lines 826-828: write_lockfile outer exception handler (os.replace failure)
+- _validate_kanon_hash raises LockfileValidationError on invalid hash
+- write_lockfile inner exception handler (fdopen/flush/fsync failure)
+- write_lockfile outer exception handler (os.replace failure)
+
+Schema v4 (spec Section 5.2 / FLAG-C) removed the global [catalog] block and the
+CatalogBlock dataclass, re-keyed each [[sources]] entry by alias, and renamed the
+per-entry version-constraint field to ``ref_spec``. The fixtures below build a v4
+alias-keyed lock (no [catalog] table); the round-trip / no-catalog / v3-hard-fail
+behaviours unique to v4 are asserted directly so the catalog-block removal is
+covered by a real, falsifiable test rather than only by the (now-deleted) import.
 
 All gaps are category "test-needed".
 """
@@ -15,33 +22,40 @@ import pathlib
 import pytest
 
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     Lockfile,
+    LockfileSchemaError,
     LockfileValidationError,
+    SourceEntry,
     read_lockfile,
     write_lockfile,
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 _VALID_SHA40 = "a" * 40
 _VALID_KANON_HASH = "sha256:" + "a" * 64
 
-_VALID_CATALOG = CatalogBlock(
-    source="https://example.com/catalog.git@main",
-    url="https://example.com/catalog.git",
-    revision_spec="main",
-    resolved_ref="refs/heads/main",
-    resolved_sha=_VALID_SHA40,
-)
+
+def _make_source(**kwargs) -> SourceEntry:
+    """Return a valid alias-keyed v4 SourceEntry with optional overrides."""
+    defaults = dict(
+        alias="src",
+        name="src",
+        url="https://example.com/source.git",
+        ref_spec="main",
+        resolved_ref="refs/heads/main",
+        resolved_sha=_VALID_SHA40,
+        path="repo-specs/source.xml",
+    )
+    defaults.update(kwargs)
+    return SourceEntry(**defaults)
 
 
 def _make_lockfile(**kwargs) -> Lockfile:
-    """Return a minimal valid Lockfile dataclass with optional field overrides.
+    """Return a minimal valid schema-v4 Lockfile dataclass with optional overrides.
+
+    Schema v4 has no ``catalog`` field; the lock carries an alias-keyed
+    ``[[sources]]`` list and no ``[catalog]`` block.
 
     Args:
         **kwargs: Field overrides for the Lockfile constructor.
@@ -50,56 +64,143 @@ def _make_lockfile(**kwargs) -> Lockfile:
         A Lockfile instance.
     """
     defaults = {
-        "schema_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
         "generated_at": "2026-01-01T00:00:00Z",
-        "generator": "kanon-cli/1.0.0",
+        "generator": "kanon-cli/2.0.0",
         "kanon_hash": _VALID_KANON_HASH,
-        "catalog": _VALID_CATALOG,
-        "sources": [],
+        "sources": [_make_source()],
     }
     defaults.update(kwargs)
     return Lockfile(**defaults)
 
 
 def _write_lockfile_toml(path: pathlib.Path, kanon_hash: str) -> None:
-    """Write a minimal valid lockfile TOML with the given kanon_hash value.
+    """Write a minimal valid schema-v4 lockfile TOML with the given kanon_hash value.
 
     Used by _validate_kanon_hash tests: the validator runs inside read_lockfile,
-    not during Lockfile dataclass construction.
+    not during Lockfile dataclass construction. The fixture is alias-keyed and
+    carries no [catalog] block (schema v4).
 
     Args:
         path: Destination file path.
         kanon_hash: The kanon_hash value to embed in the TOML.
     """
     toml = (
-        "schema_version = 1\n"
+        "schema_version = 5\n"
         'generated_at = "2026-01-01T00:00:00Z"\n'
-        'generator = "kanon-cli/1.0.0"\n'
+        'generator = "kanon-cli/2.0.0"\n'
         f'kanon_hash = "{kanon_hash}"\n'
+        "marketplace_registered = false\n"
+        'marketplace_dir = ""\n'
         "\n"
-        "[catalog]\n"
-        'source = "https://example.com/catalog.git@main"\n'
-        'url = "https://example.com/catalog.git"\n'
-        'revision_spec = "main"\n'
+        "[[sources]]\n"
+        'alias = "src"\n'
+        'name = "src"\n'
+        'url = "https://example.com/source.git"\n'
+        'ref_spec = "main"\n'
         'resolved_ref = "refs/heads/main"\n'
         f'resolved_sha = "{_VALID_SHA40}"\n'
+        'path = "repo-specs/source.xml"\n'
     )
     path.write_text(toml, encoding="utf-8")
 
 
-# ---------------------------------------------------------------------------
-# Line 320: _validate_kanon_hash raises LockfileValidationError
-# ---------------------------------------------------------------------------
+@pytest.mark.unit
+class TestSchemaV4CatalogRemoval:
+    """The schema-v4 lock has no [catalog] block; CatalogBlock and Lockfile.catalog are gone.
+
+    These tests replace the old CatalogBlock-import-based fixtures with real,
+    falsifiable assertions of the v4 behaviour that superseded the global
+    [catalog] block (spec Section 5.2 / FLAG-C).
+    """
+
+    def test_lockfile_has_no_catalog_field(self) -> None:
+        """The v4 Lockfile dataclass exposes no ``catalog`` attribute."""
+        lf = _make_lockfile()
+        assert not hasattr(lf, "catalog"), "schema v4 removed the global [catalog] block"
+
+    def test_write_emits_no_catalog_block(self, tmp_path: pathlib.Path) -> None:
+        """write_lockfile never serialises a [catalog] table on a v4 lock."""
+        import tomllib
+
+        lf = _make_lockfile()
+        dest = tmp_path / "output.lock"
+        write_lockfile(lf, dest)
+
+        text = dest.read_text(encoding="utf-8")
+        assert "[catalog]" not in text
+        with open(dest, "rb") as f:
+            data = tomllib.load(f)
+        assert "catalog" not in data
+
+    def test_alias_and_ref_spec_roundtrip(self, tmp_path: pathlib.Path) -> None:
+        """A v4 source's alias and ref_spec survive a write/read roundtrip."""
+        lf = _make_lockfile(sources=[_make_source(alias="custom-alias", name="src", ref_spec="==1.2.3")])
+        dest = tmp_path / "output.lock"
+        write_lockfile(lf, dest)
+
+        loaded = read_lockfile(dest)
+        assert loaded.sources[0].alias == "custom-alias"
+        assert loaded.sources[0].name == "src"
+        assert loaded.sources[0].ref_spec == "==1.2.3"
+
+    def test_source_serialised_with_ref_spec_not_revision_spec(self, tmp_path: pathlib.Path) -> None:
+        """The on-disk source key is ``ref_spec``; the old ``revision_spec`` key is absent."""
+        import tomllib
+
+        lf = _make_lockfile(sources=[_make_source(alias="a", name="src", ref_spec="~=2.0.0")])
+        dest = tmp_path / "output.lock"
+        write_lockfile(lf, dest)
+
+        with open(dest, "rb") as f:
+            data = tomllib.load(f)
+        entry = data["sources"][0]
+        assert entry["ref_spec"] == "~=2.0.0"
+        assert "revision_spec" not in entry
+
+    def test_v3_lock_hard_fails_regenerate(self, tmp_path: pathlib.Path) -> None:
+        """A v3 lock (revision_spec-keyed, [catalog] block) fails fast; no silent upgrade."""
+        v3_toml = (
+            "schema_version = 3\n"
+            'generated_at = "2026-01-01T00:00:00Z"\n'
+            'generator = "kanon-cli/1.4.0"\n'
+            f'kanon_hash = "{_VALID_KANON_HASH}"\n'
+            "marketplace_registered = false\n"
+            'marketplace_dir = ""\n'
+            "\n"
+            "[catalog]\n"
+            'source = "https://example.com/catalog.git@main"\n'
+            'url = "https://example.com/catalog.git"\n'
+            'revision_spec = "main"\n'
+            'resolved_ref = "refs/heads/main"\n'
+            f'resolved_sha = "{_VALID_SHA40}"\n'
+            "\n"
+            "[[sources]]\n"
+            'name = "src"\n'
+            'url = "https://example.com/source.git"\n'
+            'revision_spec = "main"\n'
+            'resolved_ref = "refs/heads/main"\n'
+            f'resolved_sha = "{_VALID_SHA40}"\n'
+            'path = "repo-specs/source.xml"\n'
+        )
+        dest = tmp_path / "v3.lock"
+        dest.write_text(v3_toml, encoding="utf-8")
+
+        with pytest.raises(LockfileSchemaError) as exc_info:
+            read_lockfile(dest)
+        err_msg = str(exc_info.value)
+        assert "v3" in err_msg
+        assert "kanon add" in err_msg and "kanon install" in err_msg
 
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "bad_hash",
     [
-        "a" * 64,  # 64 hex chars without sha256: prefix
-        "sha256:" + "a" * 32,  # only 32 hex chars after prefix
-        "sha256:" + "A" * 64,  # uppercase hex not allowed
-        "sha256:" + "g" * 64,  # 'g' is not a hex char
+        "a" * 64,
+        "sha256:" + "a" * 32,
+        "sha256:" + "A" * 64,
+        "sha256:" + "g" * 64,
     ],
     ids=[
         "missing_sha256_prefix",
@@ -145,11 +246,6 @@ class TestValidateKanonHash:
         with pytest.raises(LockfileValidationError) as exc_info:
             read_lockfile(lock_file)
         assert "sha256" in str(exc_info.value).lower()
-
-
-# ---------------------------------------------------------------------------
-# Lines 822-824: write_lockfile inner exception handler (fsync failure)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -203,7 +299,6 @@ class TestWriteLockfileInnerExceptionHandler:
         with pytest.raises(OSError):
             write_lockfile(lockfile, dest)
 
-        # Verify all temp files created during the call were cleaned up
         for tmp_path_item in created_tmp_files:
             assert not tmp_path_item.exists(), f"Temp file {tmp_path_item} should have been removed on fsync failure"
 
@@ -227,11 +322,6 @@ class TestWriteLockfileInnerExceptionHandler:
             write_lockfile(lockfile, dest)
 
         assert not dest.exists()
-
-
-# ---------------------------------------------------------------------------
-# Lines 826-828: write_lockfile outer exception handler (os.replace failure)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

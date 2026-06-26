@@ -23,14 +23,6 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# NOTE: _run_kanon is imported from tests.functional.conftest (canonical
-# definition). Tests here only invoke --help flags and error paths; no real
-# .repo directory or git repos are required. Where --repo-dir is supplied for
-# repo subcommand passthrough, a nonexistent path is used because the embedded
-# tool processes --help before consulting any .repo directory.
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture
 def nonexistent_repo_dir(tmp_path: pathlib.Path) -> str:
@@ -43,147 +35,72 @@ def nonexistent_repo_dir(tmp_path: pathlib.Path) -> str:
     return str(tmp_path / "nonexistent-help-contract-repo-dir")
 
 
-# ---------------------------------------------------------------------------
-# Documented flags per top-level subcommand.
-#
-# Each entry is (subcommand_argv, expected_strings) where expected_strings are
-# flags / positional arg names / option strings that the registered parser
-# exposes and that must appear in the --help output.
-# ---------------------------------------------------------------------------
-
 _SUBCOMMAND_DOCUMENTED_FLAGS: list[tuple[tuple[str, ...], list[str]]] = [
-    # install: positional kanonenv_path (optional) -- no extra flags beyond -h
     (
         ("install",),
         ["kanonenv_path"],
     ),
-    # clean: positional kanonenv_path (optional) -- no extra flags beyond -h
     (
         ("clean",),
         ["kanonenv_path"],
     ),
-    # bootstrap is intentionally absent: it was removed in a major release and
-    # is now a uniform deprecation shim that exits 3 for every invocation
-    # (including --help). Its deprecation behavior is covered by the dedicated
-    # bootstrap test classes below, not by the generic --help-exits-0 contract.
-    # validate: nested subcommands xml and marketplace
     (
         ("validate",),
         ["xml", "marketplace"],
     ),
-    # validate xml: --repo-root flag
     (
         ("validate", "xml"),
         ["--repo-root"],
     ),
-    # validate marketplace: --repo-root flag
     (
         ("validate", "marketplace"),
         ["--repo-root"],
     ),
-    # repo: --repo-dir flag and repo_args positional
     (
         ("repo",),
         ["--repo-dir", "repo_args"],
     ),
 ]
 
-# ---------------------------------------------------------------------------
-# Documented flags for repo subcommands.
-#
-# Each entry is (subcmd_name, expected_strings_in_help) where
-# expected_strings_in_help must appear somewhere in the combined output of
-# 'kanon repo <subcmd> --help'.  Only flags that are definitively listed in
-# the upstream repo tool's help text are included here.
-# ---------------------------------------------------------------------------
 
 _REPO_SUBCOMMAND_DOCUMENTED_FLAGS: list[tuple[str, list[str]]] = [
-    # init: -u/--manifest-url, -b/--manifest-branch, -m/--manifest-name
     ("init", ["-u", "--manifest-url", "-b", "--manifest-branch", "-m", "--manifest-name"]),
-    # sync: -j/--jobs
     ("sync", ["-j", "--jobs"]),
-    # status: (shares common logging flags -v/-q)
     ("status", ["-v", "--verbose", "-q", "--quiet"]),
-    # abandon: (takes <branchname> positional) -- check -h at minimum
     ("abandon", ["-h", "--help"]),
-    # branches: check -h at minimum
     ("branches", ["-h", "--help"]),
-    # checkout: (takes <branchname>) -- check -h at minimum
     ("checkout", ["-h", "--help"]),
-    # diff: check -h at minimum
     ("diff", ["-h", "--help"]),
-    # forall: -c (command), logging -v/-q
     ("forall", ["-c", "-v", "--verbose"]),
-    # grep: grep pattern positional -- check -h at minimum
     ("grep", ["-h", "--help"]),
-    # info: check -h at minimum
     ("info", ["-h", "--help"]),
-    # list: check -h at minimum
     ("list", ["-h", "--help"]),
-    # manifest: check -h at minimum
     ("manifest", ["-h", "--help"]),
-    # overview: check -h at minimum
     ("overview", ["-h", "--help"]),
-    # prune: check -h at minimum
     ("prune", ["-h", "--help"]),
-    # rebase: check -h at minimum
     ("rebase", ["-h", "--help"]),
-    # start: (takes <branchname>) -- check -h at minimum
     ("start", ["-h", "--help"]),
-    # upload: check -h at minimum
     ("upload", ["-h", "--help"]),
-    # smartsync: is itself the smart-sync command; flags include -j/--jobs
     ("smartsync", ["-j", "--jobs"]),
-    # download: check -h at minimum
     ("download", ["-h", "--help"]),
-    # envsubst: check -h at minimum
     ("envsubst", ["-h", "--help"]),
-    # gc: check -h at minimum
     ("gc", ["-h", "--help"]),
-    # selfupdate: check -h at minimum
     ("selfupdate", ["-h", "--help"]),
-    # stage: check -h at minimum
     ("stage", ["-h", "--help"]),
-    # cherry-pick: check -h at minimum
     ("cherry-pick", ["-h", "--help"]),
-    # diffmanifests: check -h at minimum
     ("diffmanifests", ["-h", "--help"]),
-    # help: check -h at minimum
     ("help", ["-h", "--help"]),
 ]
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: argument names in argparse error messages.
-#
-# Each entry is (argv, expected_fragment) where expected_fragment must appear
-# in the combined stdout+stderr output when kanon is invoked with that argv
-# and exits with a non-zero code.  The fragment must be the argument name that
-# caused the error so users can identify which flag or positional is wrong.
-# ---------------------------------------------------------------------------
 
 _ARGUMENT_ERROR_CASES: list[tuple[tuple[str, ...], str, str]] = [
-    # Unknown top-level flag: error message must name the flag
     (("--not-a-valid-kanon-flag",), "--not-a-valid-kanon-flag", "unknown top-level flag"),
-    # Unknown subcommand: error message must name the invalid subcommand
     (("nosuchsubcommand",), "nosuchsubcommand", "unknown subcommand"),
-    # NOTE: bootstrap is NOT an argparse-error case. Unknown flags such as
-    # `--no-such-bootstrap-option` are intercepted before argparse and produce
-    # the exit-3 deprecation message, not an argparse "unrecognized arguments"
-    # error. Covered by TestBootstrapDeprecationShim below.
-    # Unknown install flag: must name the flag
     (("install", "--no-such-install-option"), "--no-such-install-option", "unknown install flag"),
-    # Unknown clean flag: must name the flag
     (("clean", "--no-such-clean-option"), "--no-such-clean-option", "unknown clean flag"),
-    # Unknown validate flag: must name the flag
     (("validate", "--no-such-validate-option"), "--no-such-validate-option", "unknown validate flag"),
-    # Unknown validate xml flag: must name the flag
     (("validate", "xml", "--no-such-xml-option"), "--no-such-xml-option", "unknown validate xml flag"),
 ]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: every top-level subcommand --help output matches documented flags
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -267,7 +184,7 @@ class TestTopLevelSubcommandHelpContract:
         )
 
     def test_top_level_help_lists_all_subcommands(self) -> None:
-        """'kanon --help' must list all five registered top-level subcommands.
+        """'kanon --help' must list the registered top-level subcommands.
 
         The top-level help text is the entry point for discovering available
         commands. All registered subcommands must be visible there.
@@ -275,7 +192,7 @@ class TestTopLevelSubcommandHelpContract:
         result = _run_kanon("--help")
         assert result.returncode == 0
         combined = result.stdout + result.stderr
-        for subcmd in ("bootstrap", "install", "clean", "validate", "repo"):
+        for subcmd in ("install", "clean", "validate", "repo"):
             assert subcmd in combined, (
                 f"'kanon --help' does not mention top-level subcommand {subcmd!r}.\n"
                 f"  stdout: {result.stdout!r}\n"
@@ -290,11 +207,6 @@ class TestTopLevelSubcommandHelpContract:
         assert "--version" in combined, (
             f"'kanon --help' does not mention '--version'.\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every repo subcommand --help output matches documented flags
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -416,11 +328,6 @@ class TestRepoSubcommandHelpContract:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: argparse error messages point to the correct argument name
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestArgparseErrorArgumentName:
     """AC-TEST-003: argparse error messages point to the correct argument name.
@@ -511,23 +418,6 @@ class TestArgparseErrorArgumentName:
             f"  stderr: {result.stderr!r}"
         )
 
-    def test_bare_bootstrap_exits_3_with_deprecation_not_argparse_error(self) -> None:
-        """Bare 'kanon bootstrap' exits 3 with the deprecation message (NOT an argparse error).
-
-        Before the major release, bare `kanon bootstrap` raised an argparse
-        "missing required positional" error (exit 2). It now exits 3 with the
-        uniform deprecation message because the intercept runs before argparse.
-        """
-        result = _run_kanon("bootstrap")
-        assert result.returncode == 3, (
-            f"Bare 'kanon bootstrap' should exit 3 (deprecated), got {result.returncode}.\n"
-            f"  stdout: {result.stdout!r}\n"
-            f"  stderr: {result.stderr!r}"
-        )
-        assert "DEPRECATED" in result.stderr
-        assert "docs/migration-bootstrap-to-add.md" in result.stderr
-        assert "unrecognized arguments" not in result.stderr
-
     def test_validate_no_subcommand_names_required_choice(self) -> None:
         """'kanon validate' without xml or marketplace must produce a clear error.
 
@@ -542,16 +432,11 @@ class TestArgparseErrorArgumentName:
             f"  stderr: {result.stderr!r}"
         )
         combined = result.stdout + result.stderr
-        # The error message must hint at the valid choices or the subcommand.
+
         assert any(term in combined for term in ("xml", "marketplace", "validate")), (
             f"'kanon validate' error does not mention any of 'xml', 'marketplace', 'validate'.\n"
             f"  combined: {combined!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline for help and error output
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -567,21 +452,6 @@ class TestHelpContractChannelDiscipline:
         result = _run_kanon("install", "--help")
         assert result.returncode == 0
         assert len(result.stdout) > 0, f"'kanon install --help' produced no stdout output.\n  stderr: {result.stderr!r}"
-
-    def test_bootstrap_help_is_deprecation_on_stderr_not_stdout(self) -> None:
-        """'kanon bootstrap --help' is no longer help: it exits 3 with the message on stderr.
-
-        The deprecation message goes to stderr; stdout stays empty so that
-        pipelines parsing stdout never see the deprecation text.
-        """
-        result = _run_kanon("bootstrap", "--help")
-        assert result.returncode == 3, (
-            f"'kanon bootstrap --help' should exit 3 (deprecated), got {result.returncode}.\n"
-            f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
-        )
-        assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"
-        assert "DEPRECATED" in result.stderr
-        assert "docs/migration-bootstrap-to-add.md" in result.stderr
 
     def test_validate_xml_help_on_stdout(self) -> None:
         """'kanon validate xml --help' must write help text to stdout."""

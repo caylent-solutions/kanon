@@ -10,6 +10,7 @@ Covers end-to-end kanon lifecycle scenarios:
   - Filesystem state at each lifecycle stage
 """
 
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,12 +19,17 @@ import pytest
 from kanon_cli.core.clean import clean
 from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 
 
-# ---------------------------------------------------------------------------
-# Shared lifecycle helpers
-# ---------------------------------------------------------------------------
+def _store_base() -> Path:
+    """Return the shared artifact store base (``<KANON_HOME>/store``).
+
+    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
+    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
+    The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
+    per-test temporary directory.
+    """
+    return Path(os.environ["KANON_HOME"]) / "store"
 
 
 def _write_kanonenv(directory: Path, content: str) -> Path:
@@ -37,8 +43,10 @@ def _single_source_content(name: str = "primary") -> str:
     """Return minimal .kanon content for a single source."""
     return (
         f"KANON_SOURCE_{name}_URL=https://example.com/{name}.git\n"
-        f"KANON_SOURCE_{name}_REVISION=main\n"
+        f"KANON_SOURCE_{name}_REF=main\n"
         f"KANON_SOURCE_{name}_PATH=meta.xml\n"
+        f"KANON_SOURCE_{name}_NAME={name}\n"
+        f"KANON_SOURCE_{name}_GITBASE=https://example.com\n"
     )
 
 
@@ -46,11 +54,15 @@ def _two_source_content() -> str:
     """Return .kanon content for two independent sources."""
     return (
         "KANON_SOURCE_repo_URL=https://example.com/repo.git\n"
-        "KANON_SOURCE_repo_REVISION=main\n"
+        "KANON_SOURCE_repo_REF=main\n"
         "KANON_SOURCE_repo_PATH=meta.xml\n"
+        "KANON_SOURCE_repo_NAME=repo\n"
+        "KANON_SOURCE_repo_GITBASE=https://example.com\n"
         "KANON_SOURCE_marketplace_URL=https://example.com/marketplace.git\n"
-        "KANON_SOURCE_marketplace_REVISION=main\n"
+        "KANON_SOURCE_marketplace_REF=main\n"
         "KANON_SOURCE_marketplace_PATH=marketplace.xml\n"
+        "KANON_SOURCE_marketplace_NAME=marketplace\n"
+        "KANON_SOURCE_marketplace_GITBASE=https://example.com\n"
     )
 
 
@@ -65,7 +77,7 @@ def _install_with_synced_packages(kanonenv: Path, packages_by_source: dict[str, 
     def fake_repo_sync(repo_dir: str, **kwargs) -> None:
         repo_path = Path(repo_dir)
         pkg_dir = repo_path / ".packages"
-        # Determine source name from repo_dir path: .kanon-data/sources/<name>
+
         source_name = repo_path.name
         for pkg_name in packages_by_source.get(source_name, []):
             tool_dir = pkg_dir / pkg_name
@@ -77,12 +89,7 @@ def _install_with_synced_packages(kanonenv: Path, packages_by_source: dict[str, 
         patch("kanon_cli.repo.repo_envsubst"),
         patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync),
     ):
-        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-003: Install -> clean roundtrip (clean state after full cycle)
-# ---------------------------------------------------------------------------
+        install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
 
 @pytest.mark.integration
@@ -98,20 +105,19 @@ class TestInstallCleanRoundtripLifecycle:
           - .kanon-data/: absent
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content())
+        store_base = _store_base()
 
         _install_with_synced_packages(kanonenv, {"primary": ["tool-x"]})
 
-        # After install: managed artifacts exist
-        assert (tmp_path / ".packages").is_dir(), ".packages/ must exist after install"
-        assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir(), (
+        assert (store_base / ".packages").is_dir(), ".packages/ must exist after install"
+        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
             ".kanon-data/sources/primary/ must exist after install"
         )
 
         clean(kanonenv)
 
-        # After clean: all managed artifacts removed, config preserved
-        assert not (tmp_path / ".packages").exists(), ".packages/ must be absent after clean"
-        assert not (tmp_path / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
+        assert not (store_base / ".packages").exists(), ".packages/ must be absent after clean"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
         assert kanonenv.is_file(), ".kanon config file must survive the full roundtrip"
 
     def test_roundtrip_gitignore_survives_clean(self, tmp_path: Path) -> None:
@@ -120,27 +126,23 @@ class TestInstallCleanRoundtripLifecycle:
         install() creates .gitignore with managed entries; clean() must not remove it.
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content())
+        store_base = _store_base()
 
         with (
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (tmp_path / ".gitignore").is_file(), ".gitignore must exist after install"
+        assert (store_base / ".gitignore").is_file(), ".gitignore must exist after install"
 
         clean(kanonenv)
 
-        assert (tmp_path / ".gitignore").is_file(), ".gitignore must survive clean"
-        gitignore_content = (tmp_path / ".gitignore").read_text()
+        assert (store_base / ".gitignore").is_file(), ".gitignore must survive clean"
+        gitignore_content = (store_base / ".gitignore").read_text()
         assert ".packages/" in gitignore_content
         assert ".kanon-data/" in gitignore_content
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-004: Multi-source installation (repo + marketplace sources)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -159,12 +161,13 @@ class TestMultiSourceInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (tmp_path / ".kanon-data" / "sources" / "marketplace").is_dir(), (
+        store_base = _store_base()
+        assert (store_base / ".kanon-data" / "sources" / "marketplace").is_dir(), (
             ".kanon-data/sources/marketplace/ must be created for the marketplace source"
         )
-        assert (tmp_path / ".kanon-data" / "sources" / "repo").is_dir(), (
+        assert (store_base / ".kanon-data" / "sources" / "repo").is_dir(), (
             ".kanon-data/sources/repo/ must be created for the repo source"
         )
 
@@ -180,7 +183,7 @@ class TestMultiSourceInstallLifecycle:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert mock_init.call_count == 2, (
             f"repo_init must be called once per source (2 sources), but was called {mock_init.call_count} times"
@@ -198,17 +201,13 @@ class TestMultiSourceInstallLifecycle:
             {"marketplace": ["plugin-a"], "repo": ["tool-b"]},
         )
 
-        assert (tmp_path / ".packages" / "plugin-a").is_symlink(), (
+        store_base = _store_base()
+        assert (store_base / ".packages" / "plugin-a").is_symlink(), (
             "plugin-a from marketplace source must be symlinked in .packages/"
         )
-        assert (tmp_path / ".packages" / "tool-b").is_symlink(), (
+        assert (store_base / ".packages" / "tool-b").is_symlink(), (
             "tool-b from repo source must be symlinked in .packages/"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-005: Source collision detection
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -222,7 +221,6 @@ class TestSourceCollisionDetection:
         """
         kanonenv = _write_kanonenv(tmp_path, _two_source_content())
 
-        # Both sources produce a package named "shared-tool" -- this is a collision
         def fake_repo_sync_collision(repo_dir: str, **kwargs) -> None:
             pkg_dir = Path(repo_dir) / ".packages" / "shared-tool"
             pkg_dir.mkdir(parents=True, exist_ok=True)
@@ -234,12 +232,7 @@ class TestSourceCollisionDetection:
             patch("kanon_cli.repo.repo_sync", side_effect=fake_repo_sync_collision),
         ):
             with pytest.raises(ValueError, match="Package collision"):
-                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: Auto-discovery workflow
-# ---------------------------------------------------------------------------
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
 
 @pytest.mark.integration
@@ -255,9 +248,10 @@ class TestAutoDiscoveryWorkflow:
           1. Write .kanon in tmp_path
           2. Set cwd to a subdirectory
           3. find_kanonenv() resolves to the parent's .kanon
-          4. install() creates .kanon-data/ and .gitignore in the .kanon parent
+          4. install() creates .kanon-data/ and .gitignore under the shared store
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content())
+        store_base = _store_base()
         subdir = tmp_path / "workspace" / "project"
         subdir.mkdir(parents=True)
         monkeypatch.chdir(subdir)
@@ -273,17 +267,12 @@ class TestAutoDiscoveryWorkflow:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(discovered, lock_file_path=discovered.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(discovered, lock_file_path=discovered.parent / ".kanon.lock")
 
-        assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir(), (
-            "install() must create .kanon-data/sources/primary/ relative to .kanon parent"
+        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
+            "install() must create .kanon-data/sources/primary/ under the shared store"
         )
-        assert (tmp_path / ".gitignore").is_file(), "install() must create .gitignore relative to .kanon parent"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-007: Recovery from partial failure (failed sync mid-install)
-# ---------------------------------------------------------------------------
+        assert (store_base / ".gitignore").is_file(), "install() must create .gitignore under the shared store"
 
 
 @pytest.mark.integration
@@ -305,7 +294,7 @@ class TestPartialFailureRecovery:
             patch("kanon_cli.repo.repo_sync", side_effect=RepoCommandError("sync failed: network error")),
         ):
             with pytest.raises(RepoCommandError, match="sync failed: network error"):
-                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
     def test_clean_succeeds_after_partial_install(self, tmp_path: Path) -> None:
         """clean() can remove partial install artifacts left by a failed install.
@@ -323,23 +312,20 @@ class TestPartialFailureRecovery:
             patch("kanon_cli.repo.repo_sync", side_effect=RepoCommandError("sync failed: timeout")),
         ):
             with pytest.raises(RepoCommandError):
-                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        # Source dir was created by create_source_dirs before sync failed
-        assert (tmp_path / ".kanon-data" / "sources" / "primary").is_dir(), (
+        store_base = _store_base()
+
+        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
             "Source dir must exist after partial install (created before failed sync)"
         )
 
-        # clean() must succeed even on partial artifacts
         clean(kanonenv)
 
-        assert not (tmp_path / ".kanon-data").exists(), "clean() must remove .kanon-data/ even after a partial install"
-        assert not (tmp_path / ".packages").exists(), "clean() must remove .packages/ even after a partial install"
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-008: Re-install over existing installation (idempotency)
-# ---------------------------------------------------------------------------
+        assert not (store_base / ".kanon-data").exists(), (
+            "clean() must remove .kanon-data/ even after a partial install"
+        )
+        assert not (store_base / ".packages").exists(), "clean() must remove .packages/ even after a partial install"
 
 
 @pytest.mark.integration
@@ -353,12 +339,13 @@ class TestReinstallIdempotency:
         as after the first install -- no duplicates.
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content())
+        store_base = _store_base()
 
         _install_with_synced_packages(kanonenv, {"primary": ["tool-alpha", "tool-beta"]})
-        first_pkg_names = sorted(p.name for p in (tmp_path / ".packages").iterdir())
+        first_pkg_names = sorted(p.name for p in (store_base / ".packages").iterdir())
 
         _install_with_synced_packages(kanonenv, {"primary": ["tool-alpha", "tool-beta"]})
-        second_pkg_names = sorted(p.name for p in (tmp_path / ".packages").iterdir())
+        second_pkg_names = sorted(p.name for p in (store_base / ".packages").iterdir())
 
         assert first_pkg_names == second_pkg_names, (
             f"Re-installing must not change .packages/ contents: first={first_pkg_names}, second={second_pkg_names}"
@@ -377,21 +364,16 @@ class TestReinstallIdempotency:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        gitignore_content = (tmp_path / ".gitignore").read_text()
+        gitignore_content = (_store_base() / ".gitignore").read_text()
         assert gitignore_content.count(".packages/") == 1, (
             ".packages/ must appear exactly once in .gitignore after two installs"
         )
         assert gitignore_content.count(".kanon-data/") == 1, (
             ".kanon-data/ must appear exactly once in .gitignore after two installs"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-009: Filesystem state at each lifecycle stage
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -408,15 +390,16 @@ class TestFilesystemStateAtLifecycleStages:
           - .gitignore: contains .packages/ and .kanon-data/ entries
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content())
+        store_base = _store_base()
 
         _install_with_synced_packages(kanonenv, {"primary": ["some-tool"]})
 
         assert kanonenv.is_file(), ".kanon config must still exist after install"
-        source_dir = tmp_path / ".kanon-data" / "sources" / "primary"
+        source_dir = store_base / ".kanon-data" / "sources" / "primary"
         assert source_dir.is_dir(), ".kanon-data/sources/primary/ must exist after install"
-        assert (tmp_path / ".packages").is_dir(), ".packages/ must exist after install"
-        assert (tmp_path / ".gitignore").is_file(), ".gitignore must exist after install"
-        assert (tmp_path / ".packages" / "some-tool").is_symlink(), (
+        assert (store_base / ".packages").is_dir(), ".packages/ must exist after install"
+        assert (store_base / ".gitignore").is_file(), ".gitignore must exist after install"
+        assert (store_base / ".packages" / "some-tool").is_symlink(), (
             ".packages/some-tool must be a symlink after install"
         )
 
@@ -436,10 +419,11 @@ class TestFilesystemStateAtLifecycleStages:
             {"marketplace": ["plugin-mp"], "repo": ["tool-repo"]},
         )
 
-        assert (tmp_path / ".kanon-data" / "sources" / "marketplace").is_dir()
-        assert (tmp_path / ".kanon-data" / "sources" / "repo").is_dir()
-        assert (tmp_path / ".packages" / "plugin-mp").is_symlink()
-        assert (tmp_path / ".packages" / "tool-repo").is_symlink()
+        store_base = _store_base()
+        assert (store_base / ".kanon-data" / "sources" / "marketplace").is_dir()
+        assert (store_base / ".kanon-data" / "sources" / "repo").is_dir()
+        assert (store_base / ".packages" / "plugin-mp").is_symlink()
+        assert (store_base / ".packages" / "tool-repo").is_symlink()
 
     def test_filesystem_state_after_clean_stage(self, tmp_path: Path) -> None:
         """After clean completes, repo-managed artifacts are absent; config is preserved.
@@ -452,6 +436,7 @@ class TestFilesystemStateAtLifecycleStages:
           - user-created files: present and unmodified
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content())
+        store_base = _store_base()
         user_script = tmp_path / "build.sh"
         user_script.write_text("#!/bin/sh\necho build\n")
 
@@ -459,8 +444,8 @@ class TestFilesystemStateAtLifecycleStages:
         clean(kanonenv)
 
         assert kanonenv.is_file(), ".kanon must survive clean"
-        assert not (tmp_path / ".packages").exists(), ".packages/ must be absent after clean"
-        assert not (tmp_path / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
-        assert (tmp_path / ".gitignore").is_file(), ".gitignore must survive clean"
+        assert not (store_base / ".packages").exists(), ".packages/ must be absent after clean"
+        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
+        assert (store_base / ".gitignore").is_file(), ".gitignore must survive clean"
         assert user_script.is_file(), "user files must survive clean unmodified"
         assert user_script.read_text() == "#!/bin/sh\necho build\n"

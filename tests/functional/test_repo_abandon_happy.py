@@ -28,9 +28,6 @@ import pytest
 
 from tests.functional.conftest import _git_branch_list, _run_kanon, _setup_synced_repo
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Abandon Happy Test User"
 _GIT_USER_EMAIL = "repo-abandon-happy@example.com"
@@ -38,33 +35,27 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "abandon-test-project"
 
-# Branch names used in abandon tests -- unique per test class to avoid
-# cross-test interference.
+
 _BRANCH_DEFAULT = "feature/abandon-default"
 _BRANCH_WITH_PROJECT_NAME = "feature/abandon-by-name"
 _BRANCH_WITH_PROJECT_PATH = "feature/abandon-by-path"
 _BRANCH_ALL = "feature/abandon-all"
 _BRANCH_CHANNEL = "feature/abandon-channel"
 
-# Flag name constants
+
 _FLAG_ALL = "--all"
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT_CODE = 0
 
-# Text expected in stdout on a successful abandon of one or more branches
+
 _ABANDONED_BRANCHES_HEADER = "Abandoned branches:"
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
+
 _ERROR_PREFIX = "Error:"
-
-
-# ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
 
 
 def _setup_repo_with_branch(
@@ -111,11 +102,6 @@ def _setup_repo_with_branch(
         f"  stderr: {start_result.stderr!r}"
     )
     return checkout_dir, repo_dir
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo abandon with default args exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -210,11 +196,6 @@ class TestRepoAbandonHappyPathDefaultArgs:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo abandon has a happy-path test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -371,11 +352,6 @@ class TestRepoAbandonPositionalArgHappyPath:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoAbandonChannelDiscipline:
     """AC-CHANNEL-001: stdout vs stderr channel discipline for 'kanon repo abandon'.
@@ -454,11 +430,6 @@ class TestRepoAbandonChannelDiscipline:
         assert _TRACEBACK_MARKER not in channel_result.stderr, (
             f"Python traceback found in stderr of successful 'kanon repo abandon'.\n  stderr: {channel_result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Helper-function error path coverage
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

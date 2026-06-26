@@ -23,30 +23,18 @@ import sys
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Spec-verbatim error string
-# ---------------------------------------------------------------------------
-
 _SPEC_ERROR_MSG = (
     "manifest repo has no PEP 440-valid tags; pin to a branch or SHA"
     " explicitly (e.g., 'kanon add foo@main') or ask the catalog author"
     " to publish a release tag."
 )
 
-# ---------------------------------------------------------------------------
-# Git helper constants
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Path to the static fixture files shipped with the test suite.
+
 _FIXTURE_DIR = pathlib.Path(__file__).resolve().parent.parent / "fixtures" / "catalogs" / "zero-pep440-tags"
-
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -74,11 +62,6 @@ def _clone_as_bare(work_dir: pathlib.Path, bare_dir: pathlib.Path) -> pathlib.Pa
     return bare_dir.resolve()
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _create_manifest_repo(
     base: pathlib.Path,
     tags: list[str],
@@ -100,7 +83,6 @@ def _create_manifest_repo(
     work_dir.mkdir(parents=True, exist_ok=True)
     _init_git_work_dir(work_dir)
 
-    # Copy fixture content into the working tree.
     dest_specs = work_dir / "repo-specs"
     shutil.copytree(str(_FIXTURE_DIR / "repo-specs"), str(dest_specs))
 
@@ -112,11 +94,6 @@ def _create_manifest_repo(
 
     bare_dir = _clone_as_bare(work_dir, base / "manifest-bare.git")
     return bare_dir.resolve()
-
-
-# ---------------------------------------------------------------------------
-# Subprocess runner
-# ---------------------------------------------------------------------------
 
 
 def _run_kanon(
@@ -144,11 +121,6 @@ def _run_kanon(
         env=env,
         cwd=str(cwd) if cwd else None,
     )
-
-
-# ---------------------------------------------------------------------------
-# Integration tests -- parameterised across both subcases
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -251,11 +223,6 @@ class TestAddZeroTagsErrorPath:
         )
 
 
-# ---------------------------------------------------------------------------
-# Integration test -- zero-PEP-440 subcase lists skipped tag names
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestAddZeroPEP440TagsListsSkipped:
     """When tags exist but none are PEP 440-valid, stderr lists their names."""
@@ -286,11 +253,6 @@ class TestAddZeroPEP440TagsListsSkipped:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-CYCLE-001 evidence: explicit @main bypasses the default-spec error path
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestAddExplicitSpecBypassesZeroTagsError:
     """Explicit @<spec> bypasses the default-spec error path (AC-FUNC-005, AC-CYCLE-001)."""
@@ -303,7 +265,7 @@ class TestAddExplicitSpecBypassesZeroTagsError:
 
         AC-CYCLE-001 evidence: explicit @<spec> variant.
         """
-        # Build a repo with non-PEP-440 tags only.
+
         bare = _create_manifest_repo(
             tmp_path / "explicit-main",
             tags=["release-2024", "ops-marker"],

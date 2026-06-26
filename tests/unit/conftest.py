@@ -39,7 +39,7 @@ def _make_ls_remote_stub(tags: list[str]) -> Callable[[pathlib.Path], str]:
     """
 
     def _stub(target_path: pathlib.Path) -> str:
-        sha = "a" * 40  # deterministic placeholder SHA
+        sha = "a" * 40
         lines = [f"{sha}\trefs/tags/{tag}" for tag in tags]
         return "\n".join(lines) + ("\n" if lines else "")
 

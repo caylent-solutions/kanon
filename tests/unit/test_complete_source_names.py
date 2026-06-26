@@ -21,20 +21,10 @@ from kanon_cli.completions.source_names import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
 def _write_kanon(path: Path, content: str) -> None:
     """Write content to path with mode 0600 (owner-read/write only)."""
     path.write_text(content)
     os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
-
-
-# ---------------------------------------------------------------------------
-# _extract_source_names
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -88,18 +78,13 @@ class TestExtractSourceNames:
         [
             ("KANON_SOURCE_a_URL=val", ["a"]),
             ("KANON_SOURCE_a_b_c_URL=val", ["a_b_c"]),
-            ("KANON_SOURCE__URL=val", []),  # empty name -- skip
+            ("KANON_SOURCE__URL=val", []),
         ],
         ids=["single-char", "multi-underscore", "empty-name"],
     )
     def test_parametrized_edge_cases(self, line: str, expected: list[str]) -> None:
         """Parametrized edge cases for _extract_source_names."""
         assert _extract_source_names(line) == expected
-
-
-# ---------------------------------------------------------------------------
-# _resolve_kanon_file
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -120,11 +105,6 @@ class TestResolveKanonFile:
         assert result == Path("./.kanon")
 
 
-# ---------------------------------------------------------------------------
-# complete() -- KANON_COMPLETION_ENABLED=0 short-circuit
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteDisabled:
     """KANON_COMPLETION_ENABLED=0 causes complete() to return [] immediately."""
@@ -132,7 +112,7 @@ class TestCompleteDisabled:
     def test_disabled_returns_empty(self, tmp_path: Path) -> None:
         """KANON_COMPLETION_ENABLED=0 -> empty list, no file read attempted."""
         kanon_path = tmp_path / ".kanon"
-        # Do NOT create the file -- if the code reads it, FileNotFoundError would surface.
+
         with patch.dict(
             os.environ,
             {
@@ -153,16 +133,11 @@ class TestCompleteDisabled:
                 "KANON_COMPLETION_ENABLED": "0",
                 "KANON_KANON_FILE": str(kanon_path),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             complete("")
         assert not log_path.exists()
-
-
-# ---------------------------------------------------------------------------
-# complete() -- happy path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -183,7 +158,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -203,7 +178,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("f")
@@ -221,7 +196,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -253,16 +228,11 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete(prefix)
         assert result == expected
-
-
-# ---------------------------------------------------------------------------
-# complete() -- missing file
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -277,7 +247,7 @@ class TestCompleteMissingFile:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -293,7 +263,7 @@ class TestCompleteMissingFile:
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             complete("")
@@ -302,11 +272,6 @@ class TestCompleteMissingFile:
         assert "__complete_source_names_in_kanon" in content
         assert "FileNotFoundError" in content
         assert str(kanon) in content
-
-
-# ---------------------------------------------------------------------------
-# complete() -- malformed .kanon (no KANON_SOURCE_*_URL keys)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -322,7 +287,7 @@ class TestCompleteMalformedFile:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -339,7 +304,7 @@ class TestCompleteMalformedFile:
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             complete("")
@@ -347,11 +312,6 @@ class TestCompleteMalformedFile:
         content = log_path.read_text()
         assert "__complete_source_names_in_kanon" in content
         assert "ValueError" in content
-
-
-# ---------------------------------------------------------------------------
-# _handle() -- argparse entry point
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -373,7 +333,7 @@ class TestHandle:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = _handle(args)
@@ -392,7 +352,7 @@ class TestHandle:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_KANON_FILE": str(kanon),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = _handle(args)

@@ -13,8 +13,9 @@ Scenarios automated:
 - HV-06: Validate xml sub-subcommand help -- `kanon validate xml --help`
 - HV-07: Validate marketplace sub-subcommand help -- `kanon validate marketplace --help`
 - HV-08: Bootstrap subcommand help -- `kanon bootstrap --help`
-  (bootstrap was removed; `--help` is no longer help -- it exits 3 with the
-  deprecation message on stderr)
+  (bootstrap was removed entirely in 3.0.0; it is no longer a registered
+  command, so argparse rejects it as an unknown command -- exit 2 with an
+  `invalid choice: 'bootstrap'` usage error on stderr and no stdout)
 """
 
 from __future__ import annotations
@@ -31,7 +32,8 @@ class TestHV:
     def test_hv_01_top_level_help(self) -> None:
         result = run_kanon("--help")
         assert result.returncode == 0, f"stderr={result.stderr!r}"
-        for token in ("install", "clean", "validate", "bootstrap"):
+
+        for token in ("install", "clean", "validate", "search"):
             assert token in result.stdout, f"missing {token!r} in stdout"
 
     def test_hv_02_version_flag(self) -> None:
@@ -68,11 +70,9 @@ class TestHV:
         assert "--repo-root" in result.stdout
 
     def test_hv_08_bootstrap_help(self) -> None:
-        # bootstrap was removed in a major release. `kanon bootstrap --help` is
-        # no longer help output: it exits 3 with the deprecation message on
-        # stderr (stdout stays empty).
         result = run_kanon("bootstrap", "--help")
-        assert result.returncode == 3, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
+        assert result.returncode == 2, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         assert result.stdout == "", f"Expected empty stdout, got: {result.stdout!r}"
-        assert "DEPRECATED" in result.stderr
-        assert "docs/migration-bootstrap-to-add.md" in result.stderr
+        assert "invalid choice: 'bootstrap'" in result.stderr, (
+            f"stderr must name 'bootstrap' as an invalid choice: {result.stderr!r}"
+        )

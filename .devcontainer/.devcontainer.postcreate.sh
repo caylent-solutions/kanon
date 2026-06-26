@@ -96,7 +96,7 @@ echo "alias pip=pip3" >> /home/${CONTAINER_USER}/.zshenv
 log_info "Installing asdf..."
 mkdir -p /home/${CONTAINER_USER}/.asdf
 if ! git clone https://github.com/asdf-vm/asdf.git /home/${CONTAINER_USER}/.asdf --branch v0.15.0; then
-  exit_with_error "Failed to clone asdf repository — check network connectivity and proxy settings"
+  exit_with_error "Failed to clone asdf repository -- check network connectivity and proxy settings"
 fi
 
 # Source asdf for the current script
@@ -178,7 +178,7 @@ if [ ! -d "/home/${CONTAINER_USER}/.oh-my-zsh" ]; then
   log_info "Installing Oh My Zsh..."
   OMZ_INSTALL_SCRIPT="/tmp/ohmyzsh-install-${RANDOM}.sh"
   if ! curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh -o "${OMZ_INSTALL_SCRIPT}"; then
-    exit_with_error "Failed to download Oh My Zsh install script — check network connectivity and proxy settings"
+    exit_with_error "Failed to download Oh My Zsh install script -- check network connectivity and proxy settings"
   fi
   if [ ! -s "${OMZ_INSTALL_SCRIPT}" ]; then
     exit_with_error "Oh My Zsh install script is empty or missing at ${OMZ_INSTALL_SCRIPT}"
@@ -189,7 +189,7 @@ if [ ! -d "/home/${CONTAINER_USER}/.oh-my-zsh" ]; then
   fi
   rm -f "${OMZ_INSTALL_SCRIPT}"
 else
-  log_info "Oh My Zsh already installed — skipping"
+  log_info "Oh My Zsh already installed -- skipping"
 fi
 
 cat <<'EOF' >> ${ZSH_RC}
@@ -259,7 +259,7 @@ if [ -f "${WORK_DIR}/.tool-versions" ] && grep -qE '^[a-zA-Z]' "${WORK_DIR}/.too
 
   log_info "Installing tools from .tool-versions..."
   if ! asdf install; then
-    log_warn "❌ asdf install failed — tool versions may not be fully installed"
+    log_warn "❌ asdf install failed -- tool versions may not be fully installed"
   fi
 
   log_info "Running asdf reshim..."
@@ -267,7 +267,7 @@ if [ -f "${WORK_DIR}/.tool-versions" ] && grep -qE '^[a-zA-Z]' "${WORK_DIR}/.too
     exit_with_error "❌ asdf reshim failed"
   fi
 else
-  log_info "No .tool-versions file found (or file is empty) — skipping asdf install"
+  log_info "No .tool-versions file found (or file is empty) -- skipping asdf install"
 fi
 
 # Create symlinks in /usr/local/bin for direct access by AI agents
@@ -313,7 +313,7 @@ if [ -f "${WORK_DIR}/.tool-versions" ] && grep -qE '^[a-zA-Z]' "${WORK_DIR}/.too
     exit_with_error "❌ asdf current failed - installation may be incomplete"
   fi
 else
-  log_info "No asdf tools configured — skipping verification"
+  log_info "No asdf tools configured -- skipping verification"
 fi
 
 ##############
@@ -405,6 +405,11 @@ if [ "$CICD_VALUE" != "true" ]; then
 
   # Shared git config (both methods)
   configure_git_shared "${CONTAINER_USER}" "${GIT_USER}" "${GIT_USER_EMAIL}"
+
+  # Match CI (.github/actions/setup-kanon): integration fixtures git-init fresh
+  # repos and reference them as @main, so the default initial branch must be main.
+  # See docs/integration-testing.md "Test prerequisites".
+  sudo -u "${CONTAINER_USER}" git config --global init.defaultBranch main
 
   case "${GIT_AUTH_METHOD}" in
     token)

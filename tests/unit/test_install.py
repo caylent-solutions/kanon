@@ -1,4 +1,14 @@
-"""Tests for install core business logic."""
+"""Tests for install core business logic.
+
+Covers:
+- Source directory creation
+- Repo init/sync/envsubst lifecycle
+- .gitignore management
+- Manifest working-tree reset
+- aggregate_symlinks
+- create_dirsymlink
+- utf-8 encoding sweep (AC-12): read_text/write_text callsites specify encoding="utf-8"
+"""
 
 import argparse
 import pathlib
@@ -8,6 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kanon_cli.commands.install import _run
+from tests.conftest import bare_text_io_calls
 from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import (
     _RefResolution,
@@ -22,6 +33,7 @@ from kanon_cli.core.install import (
     run_repo_sync,
     update_gitignore,
 )
+from kanon_cli.core.marketplace import create_dirsymlink
 from kanon_cli.repo import RepoCommandError
 
 
@@ -210,11 +222,9 @@ class TestMarketplace:
 
 @pytest.mark.unit
 class TestInstallLifecycle:
-    # Catalog source used across all TestInstallLifecycle tests.
     _CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
     _FAKE_SHA = "a" * 40
-    # _resolve_ref_to_sha now returns a _RefResolution named tuple; patch
-    # with a consistent fake result so tests do not require network access.
+
     _FAKE_REF_RESOLUTION = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
 
     def test_create_source_dirs_oserror_causes_system_exit(
@@ -224,18 +234,21 @@ class TestInstallLifecycle:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
-        monkeypatch.setenv("KANON_CATALOG_SOURCE", self._CATALOG_SOURCE)
+
+        monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         args = argparse.Namespace(
             kanonenv_path=kanonenv,
             lock_file=None,
-            catalog_source=None,
             refresh_lock=False,
             refresh_lock_source=None,
             strict_lock=False,
             strict_drift=False,
+            reconcile=False,
         )
         with (
             patch(
@@ -251,28 +264,35 @@ class TestInstallLifecycle:
     def test_marketplace_true_missing_dir_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
-            "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_build_URL=https://example.com\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
+            "KANON_SOURCE_build_MARKETPLACE=true\n"
         )
         with (
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             pytest.raises(ValueError),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-    def test_full_lifecycle(self, tmp_path: pathlib.Path) -> None:
+    def test_full_lifecycle(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         mp_dir = tmp_path / ".claude-mp"
+        kanon_home = tmp_path / "home"
+        store = kanon_home / "store"
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "REPO_REV=v2.0.0\n"
             "GITBASE=https://example.com/\n"
             f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
-            "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
+            "KANON_SOURCE_build_MARKETPLACE=true\n"
         )
 
         with (
@@ -283,10 +303,10 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert mp_dir.is_dir()
-        assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
+        assert (store / ".kanon-data" / "sources" / "build").is_dir()
         mock_init.assert_called_once()
         mock_envsubst.assert_called_once()
         mock_sync.assert_called_once()
@@ -296,8 +316,8 @@ class TestInstallLifecycle:
         self, tmp_path: pathlib.Path
     ) -> None:
         """BUG-3 fix: install() calls register_direct_checkout_marketplaces for each
-        source when KANON_MARKETPLACE_INSTALL=true, so that direct-checkout entries
-        carrying .claude-plugin/marketplace.json are registered even when no
+        source whose KANON_SOURCE_<alias>_MARKETPLACE=true, so that direct-checkout
+        entries carrying .claude-plugin/marketplace.json are registered even when no
         <linkfile> element is present in the manifest XML.
         """
         mp_dir = tmp_path / ".claude-mp"
@@ -306,10 +326,12 @@ class TestInstallLifecycle:
             "REPO_REV=v2.0.0\n"
             "GITBASE=https://example.com/\n"
             f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
-            "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
+            "KANON_SOURCE_build_MARKETPLACE=true\n"
         )
 
         with (
@@ -321,14 +343,14 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert mock_reg.called, (
-            "register_direct_checkout_marketplaces must be called when KANON_MARKETPLACE_INSTALL=true"
+            "register_direct_checkout_marketplaces must be called when KANON_SOURCE_<alias>_MARKETPLACE=true"
         )
         call_args = mock_reg.call_args
         assert call_args is not None
-        # Third positional arg must be the marketplace_dir path.
+
         passed_marketplace_dir = call_args[0][2]
         assert str(passed_marketplace_dir) == str(mp_dir), (
             f"register_direct_checkout_marketplaces must be called with marketplace_dir={mp_dir!r}, "
@@ -336,14 +358,17 @@ class TestInstallLifecycle:
         )
 
     def test_register_direct_checkout_marketplaces_not_called_without_flag(self, tmp_path: pathlib.Path) -> None:
-        """Without KANON_MARKETPLACE_INSTALL=true, register_direct_checkout_marketplaces
-        must NOT be called (AC-FUNC-003: default false registers nothing).
+        """Without any KANON_SOURCE_<alias>_MARKETPLACE=true flag,
+        register_direct_checkout_marketplaces must NOT be called (AC-FUNC-003:
+        default false registers nothing).
         """
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
         with (
@@ -354,10 +379,11 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert not mock_reg.called, (
-            "register_direct_checkout_marketplaces must NOT be called when KANON_MARKETPLACE_INSTALL is false/absent"
+            "register_direct_checkout_marketplaces must NOT be called when no "
+            "KANON_SOURCE_<alias>_MARKETPLACE flag is true/present"
         )
 
     def test_api_calls_in_correct_sequence(self, tmp_path: pathlib.Path) -> None:
@@ -365,8 +391,10 @@ class TestInstallLifecycle:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
         manager = MagicMock()
@@ -380,7 +408,7 @@ class TestInstallLifecycle:
             manager.attach_mock(mock_init, "repo_init")
             manager.attach_mock(mock_envsubst, "repo_envsubst")
             manager.attach_mock(mock_sync, "repo_sync")
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         call_names = [c[0] for c in manager.mock_calls]
         assert call_names == ["repo_init", "repo_envsubst", "repo_sync"], (
@@ -392,8 +420,10 @@ class TestInstallLifecycle:
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=*\n"
+            "KANON_SOURCE_build_REF=*\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
         with (
@@ -404,7 +434,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         mock_resolve.assert_called_once_with("https://example.com/build.git", "*")
         args, kwargs = mock_init.call_args
@@ -412,11 +442,6 @@ class TestInstallLifecycle:
         assert "3.0.0" in all_args, (
             f"repo_init must be called with the resolved revision '3.0.0', but call args were: {mock_init.call_args!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# Tests for workspace lock integration in install()
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -429,27 +454,35 @@ class TestInstallWorkspaceLock:
         sha="abc123",
     )
 
-    def test_install_creates_kanon_data_dir(self, tmp_path: pathlib.Path) -> None:
-        """install() creates .kanon-data/ via kanon_workspace_lock eager-create.
+    def test_install_creates_kanon_data_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """install() creates .kanon-data/ under the KANON_HOME store via eager-create.
 
-        A fresh workspace with no prior .kanon-data/ must end up with the
-        directory after install() runs (even if the install fails later).
+        A fresh store with no prior .kanon-data/ must end up with the directory
+        under <KANON_HOME>/store after install() runs (even if the install fails
+        later).
 
         Args:
             tmp_path: Pytest-provided temporary directory.
+            monkeypatch: Pytest monkeypatch fixture.
         """
         from kanon_cli.core.install import _RefResolution
 
         fake_resolution = _RefResolution(sha="abc123", resolved_ref="refs/tags/1.0.0")
 
+        kanon_home = tmp_path / "home"
+        store = kanon_home / "store"
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
-        assert not (tmp_path / ".kanon-data").exists()
+        assert not (store / ".kanon-data").exists()
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -458,32 +491,42 @@ class TestInstallWorkspaceLock:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=fake_resolution),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (tmp_path / ".kanon-data").is_dir(), (
-            "install() must create .kanon-data/ as a side effect of kanon_workspace_lock eager-create"
+        assert (store / ".kanon-data").is_dir(), (
+            "install() must create .kanon-data/ under <KANON_HOME>/store as a side effect "
+            "of kanon_workspace_lock eager-create"
         )
 
-    def test_install_lock_file_created_in_kanon_data(self, tmp_path: pathlib.Path) -> None:
-        """install() creates the workspace lock file inside .kanon-data/.
+    def test_install_lock_file_created_in_kanon_data(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """install() creates the workspace lock file inside the store .kanon-data/.
 
         After install() completes, the lock file must persist at
-        .kanon-data/INSTALL_LOCK_FILENAME so subsequent invocations can
-        lock on the same file.
+        <KANON_HOME>/store/.kanon-data/INSTALL_LOCK_FILENAME so subsequent
+        invocations can lock on the same file.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
+            monkeypatch: Pytest monkeypatch fixture.
         """
         from kanon_cli.constants import INSTALL_LOCK_FILENAME
         from kanon_cli.core.install import _RefResolution
 
         fake_resolution = _RefResolution(sha="abc123", resolved_ref="refs/tags/1.0.0")
 
+        kanon_home = tmp_path / "home"
+        store = kanon_home / "store"
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
 
         with (
@@ -493,15 +536,10 @@ class TestInstallWorkspaceLock:
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=fake_resolution),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        lock_path = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
+        lock_path = store / ".kanon-data" / INSTALL_LOCK_FILENAME
         assert lock_path.exists(), f"Workspace lock file must exist at {lock_path} after install() completes"
-
-
-# ---------------------------------------------------------------------------
-# Tests for add_help=True on the 'install' subparser
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -553,7 +591,7 @@ class TestResetManifestsWorkingTree:
         """
         source_dir = tmp_path / ".kanon-data" / "sources" / "SRC"
         source_dir.mkdir(parents=True)
-        # Should not raise even though .repo/manifests is absent.
+
         _reset_manifests_working_tree(source_dir)
 
     def test_restores_modified_tracked_file(self, tmp_path: pathlib.Path) -> None:
@@ -565,7 +603,6 @@ class TestResetManifestsWorkingTree:
         manifests_dir = tmp_path / ".repo" / "manifests"
         self._init_git_repo(manifests_dir)
 
-        # Simulate envsubst rewriting manifest.xml.
         (manifests_dir / "manifest.xml").write_text("<manifest><!-- envsubst was here --></manifest>\n")
         status_before = subprocess.run(
             ["git", "status", "--short"], cwd=manifests_dir, capture_output=True, text=True
@@ -575,7 +612,6 @@ class TestResetManifestsWorkingTree:
         source_dir = tmp_path
         _reset_manifests_working_tree(source_dir)
 
-        # manifest.xml should be restored to its committed content.
         restored = (manifests_dir / "manifest.xml").read_text()
         assert restored == "<manifest/>\n", (
             f"Expected manifest.xml to be restored to '<manifest/>\\n', got {restored!r}"
@@ -618,10 +654,9 @@ class TestResetManifestsWorkingTree:
         manifests_dir.mkdir(parents=True)
         sentinel = manifests_dir / "manifest.xml"
         sentinel.write_text("<manifest/>\n")
-        # No .git entry -- not a git working tree.
 
         source_dir = tmp_path
-        # Must not raise; directory contents must be unchanged.
+
         _reset_manifests_working_tree(source_dir)
 
         assert sentinel.exists(), "manifest.xml should be untouched when directory is not a git repo"
@@ -638,7 +673,6 @@ class TestResetManifestsWorkingTree:
         manifests_dir = tmp_path / ".repo" / "manifests"
         self._init_git_repo(manifests_dir)
 
-        # Simulate a failed git checkout on a valid git repo by patching subprocess.run.
         failed_result = MagicMock()
         failed_result.returncode = 1
         failed_result.stderr = "simulated git checkout failure"
@@ -695,11 +729,6 @@ class TestRefreshRepoInitError:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-7: install writes marketplace_registered to lockfile
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestInstallMarketplaceLockfileState:
     """AC-7: install records marketplace_registered in the lockfile."""
@@ -713,17 +742,21 @@ class TestInstallMarketplaceLockfileState:
         self._FAKE_REF_RESOLUTION = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
 
     def test_install_with_marketplace_writes_registered_true_to_lockfile(self, tmp_path: pathlib.Path) -> None:
-        """AC-7: install with KANON_MARKETPLACE_INSTALL=true writes marketplace_registered=true."""
+        """AC-7: install with a KANON_SOURCE_<alias>_MARKETPLACE=true dependency writes
+        marketplace_registered=true.
+        """
         from kanon_cli.core.lockfile import read_lockfile
 
         mp_dir = tmp_path / ".claude-mp"
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             f"CLAUDE_MARKETPLACES_DIR={mp_dir}\n"
-            "KANON_MARKETPLACE_INSTALL=true\n"
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
+            "KANON_SOURCE_build_MARKETPLACE=true\n"
         )
         lock_path = tmp_path / ".kanon.lock"
 
@@ -739,25 +772,29 @@ class TestInstallMarketplaceLockfileState:
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
         ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=lock_path)
 
         lf = read_lockfile(lock_path)
         assert lf.marketplace_registered is True, (
-            "install with KANON_MARKETPLACE_INSTALL=true must write marketplace_registered=true"
+            "install with a KANON_SOURCE_<alias>_MARKETPLACE=true dependency must write marketplace_registered=true"
         )
         assert lf.marketplace_dir == str(mp_dir), (
             "install must record marketplace_dir in the lockfile when marketplace is registered"
         )
 
     def test_install_without_marketplace_writes_registered_false_to_lockfile(self, tmp_path: pathlib.Path) -> None:
-        """AC-7: install with KANON_MARKETPLACE_INSTALL=false writes marketplace_registered=false."""
+        """AC-7: install with no KANON_SOURCE_<alias>_MARKETPLACE=true dependency writes
+        marketplace_registered=false.
+        """
         from kanon_cli.core.lockfile import read_lockfile
 
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
+            "KANON_SOURCE_build_REF=main\n"
             "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
         )
         lock_path = tmp_path / ".kanon.lock"
 
@@ -771,23 +808,24 @@ class TestInstallMarketplaceLockfileState:
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
         ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=lock_path)
 
         lf = read_lockfile(lock_path)
         assert lf.marketplace_registered is False, (
-            "install with KANON_MARKETPLACE_INSTALL=false must write marketplace_registered=false"
+            "install with no KANON_SOURCE_<alias>_MARKETPLACE=true dependency must write marketplace_registered=false"
         )
         assert lf.marketplace_dir == "", "install must write empty marketplace_dir when no marketplace is registered"
 
 
-# ---------------------------------------------------------------------------
-# AC-1/AC-2/AC-4: install honors KANON_WORKSPACE_DIR
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
-class TestInstallWorkspaceDirEnvVar:
-    """install() places .packages/ and .kanon-data/ under KANON_WORKSPACE_DIR when set."""
+class TestInstallKanonHomeStore:
+    """install() places .packages/ and .kanon-data/ under <KANON_HOME>/store.
+
+    The artifact base resolves to the shared KANON_HOME store (spec Section 7.1 /
+    Section 8 / FR-15), replacing the removed KANON_WORKSPACE_DIR override. The
+    .kanon / .kanon.lock files stay in the project directory; only fetched
+    artifacts move into the store.
+    """
 
     _CATALOG_SOURCE = "https://catalog.example.com/repo.git@main"
     _FAKE_REF_RESOLUTION = None
@@ -797,141 +835,556 @@ class TestInstallWorkspaceDirEnvVar:
 
         self._FAKE_REF_RESOLUTION = _RefResolution(sha="a" * 40, resolved_ref="refs/heads/main")
 
-    def test_install_creates_artifacts_under_workspace_dir(
+    def _write_kanonenv(self, path: pathlib.Path) -> None:
+        path.write_text(
+            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
+            "KANON_SOURCE_build_REF=main\n"
+            "KANON_SOURCE_build_PATH=meta.xml\n"
+            "KANON_SOURCE_build_NAME=build\n"
+            "KANON_SOURCE_build_GITBASE=https://example.com\n"
+        )
+
+    def _patched_install(self, kanonenv: pathlib.Path, lock_path: pathlib.Path) -> None:
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
+            patch(
+                "kanon_cli.core.install._walk_includes",
+                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
+            ),
+        ):
+            install(kanonenv, lock_file_path=lock_path)
+
+    def test_install_creates_artifacts_under_kanon_home_store(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """AC-1: artifacts land under KANON_WORKSPACE_DIR, not under cwd."""
-        alt_workspace = tmp_path / "alt_workspace"
+        """AC-23: .kanon-data/ lands under <KANON_HOME>/store, never in cwd."""
+        kanon_home = tmp_path / "home"
+        store = kanon_home / "store"
         cwd_dir = tmp_path / "cwd_dir"
         cwd_dir.mkdir()
-        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(alt_workspace))
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
 
         kanonenv = cwd_dir / ".kanon"
-        kanonenv.write_text(
-            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
-            "KANON_SOURCE_build_PATH=meta.xml\n"
-        )
+        self._write_kanonenv(kanonenv)
         lock_path = cwd_dir / ".kanon.lock"
 
-        with (
-            patch("kanon_cli.repo.repo_init"),
-            patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
-            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
-            patch(
-                "kanon_cli.core.install._walk_includes",
-                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
-            ),
-        ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+        self._patched_install(kanonenv, lock_path)
 
-        assert (alt_workspace / ".kanon-data").exists(), (
-            "KANON_WORKSPACE_DIR set: .kanon-data/ must be created under the alt workspace"
-        )
-        assert not (cwd_dir / ".kanon-data").exists(), (
-            "KANON_WORKSPACE_DIR set: .kanon-data/ must NOT be created in cwd"
-        )
-        assert not (cwd_dir / ".packages").exists(), "KANON_WORKSPACE_DIR set: .packages/ must NOT be created in cwd"
+        assert (store / ".kanon-data").exists(), ".kanon-data/ must be created under <KANON_HOME>/store"
+        assert not (cwd_dir / ".kanon-data").exists(), ".kanon-data/ must NOT be created in cwd"
+        assert not (cwd_dir / ".packages").exists(), ".packages/ must NOT be created in cwd"
 
-    def test_install_creates_packages_under_workspace_dir(
+    def test_install_creates_packages_under_kanon_home_store(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """AC-1: .packages/ lands under KANON_WORKSPACE_DIR."""
-        alt_workspace = tmp_path / "alt_ws"
+        """AC-23: .packages/ lands under <KANON_HOME>/store."""
+        kanon_home = tmp_path / "home"
+        store = kanon_home / "store"
         cwd_dir = tmp_path / "project"
         cwd_dir.mkdir()
-        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(alt_workspace))
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
 
         kanonenv = cwd_dir / ".kanon"
-        kanonenv.write_text(
-            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
-            "KANON_SOURCE_build_PATH=meta.xml\n"
-        )
+        self._write_kanonenv(kanonenv)
         lock_path = cwd_dir / ".kanon.lock"
 
-        with (
-            patch("kanon_cli.repo.repo_init"),
-            patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
-            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
-            patch(
-                "kanon_cli.core.install._walk_includes",
-                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
-            ),
-        ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+        self._patched_install(kanonenv, lock_path)
 
-        assert (alt_workspace / ".packages").exists(), (
-            "KANON_WORKSPACE_DIR set: .packages/ must be created under the alt workspace"
-        )
+        assert (store / ".packages").exists(), ".packages/ must be created under <KANON_HOME>/store"
 
-    def test_install_workspace_dir_created_if_absent(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """AC-1: KANON_WORKSPACE_DIR is created automatically when it does not exist."""
-        alt_workspace = tmp_path / "new_dir" / "deeply_nested"
+    def test_install_store_created_if_absent(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """AC-23: the KANON_HOME store is created automatically when it does not exist."""
+        kanon_home = tmp_path / "new_dir" / "deeply_nested"
+        store = kanon_home / "store"
         cwd_dir = tmp_path / "project"
         cwd_dir.mkdir()
-        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(alt_workspace))
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
 
-        assert not alt_workspace.exists(), "pre-condition: alt workspace must not exist before install"
+        assert not store.exists(), "pre-condition: the store must not exist before install"
 
         kanonenv = cwd_dir / ".kanon"
-        kanonenv.write_text(
-            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
-            "KANON_SOURCE_build_PATH=meta.xml\n"
-        )
+        self._write_kanonenv(kanonenv)
         lock_path = cwd_dir / ".kanon.lock"
 
-        with (
-            patch("kanon_cli.repo.repo_init"),
-            patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
-            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
-            patch(
-                "kanon_cli.core.install._walk_includes",
-                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
-            ),
-        ):
-            install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
+        self._patched_install(kanonenv, lock_path)
 
-        assert alt_workspace.exists(), "install must create KANON_WORKSPACE_DIR if it does not exist"
+        assert store.exists(), "install must create the <KANON_HOME>/store directory if it does not exist"
 
-    def test_install_unwritable_workspace_dir_exits_nonzero(
+    def test_install_unwritable_kanon_home_exits_nonzero(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """AC-4: unwritable KANON_WORKSPACE_DIR causes non-zero exit with actionable message."""
+        """AC-23: an unwritable KANON_HOME causes a non-zero exit with no cwd fallback."""
         import stat
 
         locked_parent = tmp_path / "locked"
         locked_parent.mkdir()
-        unwritable = locked_parent / "workspace"
+        unwritable_home = locked_parent / "home"
         locked_parent.chmod(stat.S_IRUSR | stat.S_IXUSR)
 
-        monkeypatch.setenv("KANON_WORKSPACE_DIR", str(unwritable))
+        monkeypatch.setenv("KANON_HOME", str(unwritable_home))
         cwd_dir = tmp_path / "project"
         cwd_dir.mkdir(parents=True, exist_ok=True)
 
         kanonenv = cwd_dir / ".kanon"
-        kanonenv.write_text(
-            "KANON_SOURCE_build_URL=https://example.com/build.git\n"
-            "KANON_SOURCE_build_REVISION=main\n"
-            "KANON_SOURCE_build_PATH=meta.xml\n"
-        )
+        self._write_kanonenv(kanonenv)
         lock_path = cwd_dir / ".kanon.lock"
 
         try:
             with pytest.raises(SystemExit) as exc_info:
-                install(kanonenv, lock_file_path=lock_path, catalog_source=self._CATALOG_SOURCE)
-            assert exc_info.value.code != 0, "unwritable KANON_WORKSPACE_DIR must exit non-zero"
+                self._patched_install(kanonenv, lock_path)
+            assert exc_info.value.code != 0, "unwritable KANON_HOME must exit non-zero"
             assert not (cwd_dir / ".kanon-data").exists(), (
-                "on unwritable KANON_WORKSPACE_DIR, no artifacts must be written to cwd (no fallback)"
+                "on unwritable KANON_HOME, no artifacts must be written to cwd (no fallback)"
             )
             assert not (cwd_dir / ".packages").exists(), (
-                "on unwritable KANON_WORKSPACE_DIR, no .packages/ must appear in cwd (no fallback)"
+                "on unwritable KANON_HOME, no .packages/ must appear in cwd (no fallback)"
             )
         finally:
             locked_parent.chmod(stat.S_IRWXU)
+
+
+@pytest.mark.unit
+class TestInstallImportsGitRunner:
+    """install.py imports run_git_ls_remote from kanon_cli.core.git_runner (AC-4)."""
+
+    def test_run_git_ls_remote_importable_from_install_module(self) -> None:
+        """run_git_ls_remote is accessible in the install module namespace."""
+        import kanon_cli.core.install as install_mod
+
+        assert hasattr(install_mod, "run_git_ls_remote")
+
+    def test_install_uses_kanon_git_ls_remote_timeout_constant(self) -> None:
+        """install.py references KANON_GIT_LS_REMOTE_TIMEOUT from constants (not inline literal)."""
+        import inspect
+
+        import kanon_cli.core.install as install_mod
+
+        source = inspect.getsource(install_mod)
+        assert "KANON_GIT_LS_REMOTE_TIMEOUT" in source, (
+            "install.py must reference KANON_GIT_LS_REMOTE_TIMEOUT from constants"
+        )
+
+        assert 'os.environ.get("KANON_GIT_LS_REMOTE_TIMEOUT"' not in source, (
+            "install.py must not contain inline os.environ.get KANON_GIT_LS_REMOTE_TIMEOUT literal"
+        )
+
+
+@pytest.mark.unit
+class TestAggregateSymlinksUsesSymlink:
+    """aggregate_symlinks must route its directory link through create_dirsymlink (AC-10)."""
+
+    def test_aggregate_symlinks_calls_create_dirsymlink(self, tmp_path: pathlib.Path) -> None:
+        """aggregate_symlinks calls create_dirsymlink for each package link."""
+        build_pkg = tmp_path / ".kanon-data" / "sources" / "build" / ".packages"
+        build_pkg.mkdir(parents=True)
+        (build_pkg / "test-lint").mkdir()
+
+        with patch("kanon_cli.core.install.create_dirsymlink") as mock_helper:
+            aggregate_symlinks(["build"], tmp_path)
+
+        mock_helper.assert_called_once()
+        call_args = mock_helper.call_args
+
+        assert call_args[0][0].name == "test-lint", (
+            "create_dirsymlink must be called with link_path named after the package"
+        )
+
+    def test_aggregate_symlinks_produces_directory_link_on_posix(self, tmp_path: pathlib.Path) -> None:
+        """aggregate_symlinks produces a working directory link on POSIX (not a mock)."""
+        build_pkg = tmp_path / ".kanon-data" / "sources" / "build" / ".packages"
+        build_pkg.mkdir(parents=True)
+        pkg_dir = build_pkg / "my-tool"
+        pkg_dir.mkdir()
+        (pkg_dir / "tool.sh").write_text("#!/bin/sh\necho hi\n")
+
+        aggregate_symlinks(["build"], tmp_path)
+
+        link = tmp_path / ".packages" / "my-tool"
+        assert link.is_symlink(), f"Expected symlink at {link}"
+        assert link.is_dir(), f"Expected symlink to resolve to a directory at {link}"
+        assert (link / "tool.sh").is_file(), "Expected tool.sh accessible through the link"
+
+    def test_create_dirsymlink_fails_fast_on_error(self, tmp_path: pathlib.Path) -> None:
+        """create_dirsymlink raises OSError with an actionable message when link creation fails."""
+        target = tmp_path / "real-dir"
+        target.mkdir()
+        link = tmp_path / "the-link"
+
+        link.mkdir()
+
+        with pytest.raises(OSError):
+            create_dirsymlink(link, target)
+
+
+_INSTALL_PY = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "core" / "install.py"
+
+
+@pytest.mark.unit
+class TestInstallPyUtf8EncodingSweep:
+    """AC-12: all read_text/write_text calls in core/install.py specify encoding."""
+
+    def test_no_bare_read_text_calls(self) -> None:
+        """core/install.py must not contain bare .read_text() calls (no encoding arg)."""
+        bare = bare_text_io_calls(_INSTALL_PY)
+        read_bare = [b for b in bare if "read_text" in b[1]]
+        assert read_bare == [], (
+            f"core/install.py has bare read_text() calls: {read_bare}. "
+            "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
+        )
+
+    def test_no_bare_write_text_calls(self) -> None:
+        """core/install.py must not contain bare .write_text() calls (no encoding arg)."""
+        bare = bare_text_io_calls(_INSTALL_PY)
+        write_bare = [b for b in bare if "write_text" in b[1]]
+        assert write_bare == [], (
+            f"core/install.py has bare write_text() calls: {write_bare}. "
+            "Add encoding='utf-8' to every callsite (AC-12 / FR-38)."
+        )
+
+
+@pytest.mark.unit
+class TestComputeStoreEntryAddress:
+    """compute_store_entry_address derives a deterministic content address."""
+
+    def test_deterministic_for_same_url_and_sha(self) -> None:
+        """The same (url, sha) yields the same address across calls (dedup key)."""
+        from kanon_cli.core.install import compute_store_entry_address
+
+        sha = "a" * 40
+        first = compute_store_entry_address("https://example.com/repo.git", sha)
+        second = compute_store_entry_address("https://example.com/repo.git", sha)
+        assert first == second
+        assert len(first) == 64
+        assert all(c in "0123456789abcdef" for c in first)
+
+    def test_canonical_url_variants_collapse_to_one_address(self) -> None:
+        """SSH and HTTPS forms of the same remote produce one address (canonicalized)."""
+        from kanon_cli.core.install import compute_store_entry_address
+
+        sha = "b" * 40
+        https = compute_store_entry_address("https://example.com/org/repo.git", sha)
+        ssh = compute_store_entry_address("git@example.com:org/repo.git", sha)
+        assert https == ssh
+
+    def test_distinct_sha_yields_distinct_address(self) -> None:
+        """A different SHA produces a different content address (immutability)."""
+        from kanon_cli.core.install import compute_store_entry_address
+
+        url = "https://example.com/repo.git"
+        assert compute_store_entry_address(url, "a" * 40) != compute_store_entry_address(url, "c" * 40)
+
+    @pytest.mark.parametrize(
+        "url,sha",
+        [
+            ("", "a" * 40),
+            ("https://example.com/repo.git", ""),
+        ],
+    )
+    def test_empty_argument_fails_fast(self, url: str, sha: str) -> None:
+        """An empty url or sha raises ValueError (no silent unidentified address)."""
+        from kanon_cli.core.install import compute_store_entry_address
+
+        with pytest.raises(ValueError):
+            compute_store_entry_address(url, sha)
+
+
+@pytest.mark.unit
+class TestPublishStoreEntry:
+    """publish_store_entry publishes via atomic rename, dedups, and locks per entry."""
+
+    def test_publishes_into_final_content_addressed_path(self, tmp_path: pathlib.Path) -> None:
+        """A fresh publish materializes content under store/entries/<address>."""
+        from kanon_cli.core.install import publish_store_entry, store_entries_dir
+
+        store = tmp_path / "store"
+        store.mkdir()
+        address = "f" * 64
+
+        def materialize(dest: pathlib.Path) -> None:
+            (dest / "marker.txt").write_text("payload", encoding="utf-8")
+
+        final = publish_store_entry(store, address, materialize)
+
+        assert final == store_entries_dir(store) / address
+        assert final.is_dir()
+        assert (final / "marker.txt").read_text(encoding="utf-8") == "payload"
+
+    def test_dedup_skips_rematerialize_when_final_path_exists(self, tmp_path: pathlib.Path) -> None:
+        """A second publish of the same address is a dedup no-op (readiness via existence)."""
+        from kanon_cli.core.install import publish_store_entry
+
+        store = tmp_path / "store"
+        store.mkdir()
+        address = "1" * 64
+        call_count = {"n": 0}
+
+        def materialize(dest: pathlib.Path) -> None:
+            call_count["n"] += 1
+            (dest / "data").write_text("x", encoding="utf-8")
+
+        first = publish_store_entry(store, address, materialize)
+        second = publish_store_entry(store, address, materialize)
+
+        assert first == second
+        assert call_count["n"] == 1, "the second publish must not re-materialize an existing entry"
+
+    def test_no_sleep_call_in_install_core(self) -> None:
+        """AC-24: no time.sleep() call is introduced under src/kanon_cli/core (no poll-sleep).
+
+        The check matches the call syntax ``time.sleep(`` (a real sleep call),
+        not the bare token that appears in prose. ``core/git_runner.py`` documents
+        the ABSENCE of a sleep with the literal token inside its docstring; that
+        prose is not a sleep call and must not be flagged. The store-publish path
+        added by this work unit blocks on a kernel lock and detects readiness via
+        final-path existence, never a poll-sleep.
+        """
+        import re
+
+        core_dir = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "core"
+        call_pattern = re.compile(r"\btime\.sleep\s*\(")
+        offenders = []
+        for py in core_dir.rglob("*.py"):
+            text = py.read_text(encoding="utf-8")
+            if call_pattern.search(text):
+                offenders.append(str(py))
+        assert offenders == [], f"time.sleep() call must not appear under core/: {offenders}"
+
+    def test_atomic_rename_used_in_publish(self) -> None:
+        """AC-24: the publish path uses an atomic rename (Path.replace) into the store."""
+        install_py = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "core" / "install.py"
+        text = install_py.read_text(encoding="utf-8")
+        assert ".replace(final_path)" in text, "publish must atomically rename the temp dir into the final path"
+
+    def test_partial_materialize_leaves_no_final_entry(self, tmp_path: pathlib.Path) -> None:
+        """A failing materialize callback removes the temp dir and never creates the final entry."""
+        from kanon_cli.core.install import publish_store_entry, store_entries_dir
+
+        store = tmp_path / "store"
+        store.mkdir()
+        address = "2" * 64
+
+        def materialize(dest: pathlib.Path) -> None:
+            (dest / "half").write_text("partial", encoding="utf-8")
+            raise RuntimeError("materialize blew up")
+
+        with pytest.raises(RuntimeError, match="materialize blew up"):
+            publish_store_entry(store, address, materialize)
+
+        assert not (store_entries_dir(store) / address).exists(), "no final entry on materialize failure"
+
+    @pytest.mark.parametrize("bad_address", ["", "with/slash", "a" + __import__("os").sep + "b"])
+    def test_non_single_component_address_fails_fast(self, tmp_path: pathlib.Path, bad_address: str) -> None:
+        """An address that is not a single path component raises ValueError (fail fast)."""
+        from kanon_cli.core.install import publish_store_entry
+
+        store = tmp_path / "store"
+        store.mkdir()
+        with pytest.raises(ValueError):
+            publish_store_entry(store, bad_address, lambda dest: None)
+
+    def test_contended_publish_fails_fast_on_timeout(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A held per-entry lock makes a second in-process publish fail fast with diagnostics.
+
+        The E2 ``kanon_workspace_lock`` re-entrance guard raises immediately when
+        the same process already holds the per-entry lock, so a nested publish of
+        the same address fails fast (no deadlock, no sleep). This proves the
+        publish guards each entry with the per-entry lock rather than racing.
+        """
+        from kanon_cli.core.install import compute_store_entry_address, publish_store_entry
+        from kanon_cli.utils.concurrency import WorkspaceLockReentranceError
+
+        store = tmp_path / "store"
+        store.mkdir()
+        address = compute_store_entry_address("https://example.com/repo.git", "d" * 40)
+
+        captured: dict[str, Exception] = {}
+
+        def nested_materialize(dest: pathlib.Path) -> None:
+            try:
+                publish_store_entry(store, address, lambda d: None)
+            except WorkspaceLockReentranceError as exc:
+                captured["err"] = exc
+            (dest / "ok").write_text("done", encoding="utf-8")
+
+        publish_store_entry(store, address, nested_materialize)
+
+        assert "err" in captured, "nested publish of a held entry must hit the per-entry lock guard"
+        message = str(captured["err"])
+        assert "already held by this process" in message
+
+
+@pytest.mark.unit
+class TestStoreGitignoreSafetyNet:
+    """write_store_gitignore_if_in_git_repo writes .gitignore only inside a git repo."""
+
+    def test_no_gitignore_when_store_not_in_git_repo(self, tmp_path: pathlib.Path) -> None:
+        """Outside a git working tree nothing is written (conditional safety net)."""
+        from kanon_cli.core.install import write_store_gitignore_if_in_git_repo
+
+        store = tmp_path / "home" / "store"
+        store.mkdir(parents=True)
+        wrote = write_store_gitignore_if_in_git_repo(store)
+        assert wrote is False
+        assert not (store / ".gitignore").exists()
+
+    def test_gitignore_written_when_store_inside_git_repo(self, tmp_path: pathlib.Path) -> None:
+        """Inside a git working tree the store .gitignore gains the whole-store ignore entry."""
+        from kanon_cli.constants import KANON_HOME_STORE_GITIGNORE_ENTRY
+        from kanon_cli.core.install import write_store_gitignore_if_in_git_repo
+
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        store = repo / "nested" / "store"
+        store.mkdir(parents=True)
+
+        wrote = write_store_gitignore_if_in_git_repo(store)
+
+        assert wrote is True
+        lines = (store / ".gitignore").read_text(encoding="utf-8").splitlines()
+        assert KANON_HOME_STORE_GITIGNORE_ENTRY in lines
+
+    def test_gitignore_safety_net_preserves_existing_entries(self, tmp_path: pathlib.Path) -> None:
+        """The safety net appends the ignore entry without clobbering existing lines."""
+        from kanon_cli.constants import KANON_HOME_STORE_GITIGNORE_ENTRY
+        from kanon_cli.core.install import write_store_gitignore_if_in_git_repo
+
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        store = repo / "store"
+        store.mkdir(parents=True)
+        (store / ".gitignore").write_text(".packages/\n.kanon-data/\n", encoding="utf-8")
+
+        write_store_gitignore_if_in_git_repo(store)
+
+        lines = (store / ".gitignore").read_text(encoding="utf-8").splitlines()
+        assert ".packages/" in lines, "existing entries must be preserved"
+        assert ".kanon-data/" in lines, "existing entries must be preserved"
+        assert KANON_HOME_STORE_GITIGNORE_ENTRY in lines, "the whole-store ignore entry must be appended"
+
+    def test_gitignore_safety_net_is_idempotent(self, tmp_path: pathlib.Path) -> None:
+        """Calling the safety net twice does not duplicate the ignore entry."""
+        from kanon_cli.constants import KANON_HOME_STORE_GITIGNORE_ENTRY
+        from kanon_cli.core.install import write_store_gitignore_if_in_git_repo
+
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        store = repo / "store"
+        store.mkdir(parents=True)
+
+        write_store_gitignore_if_in_git_repo(store)
+        write_store_gitignore_if_in_git_repo(store)
+
+        lines = (store / ".gitignore").read_text(encoding="utf-8").splitlines()
+        assert lines.count(KANON_HOME_STORE_GITIGNORE_ENTRY) == 1
+
+    def test_kanon_home_inside_git_repo_detects_worktree_dotgit_file(self, tmp_path: pathlib.Path) -> None:
+        """A .git FILE (worktree/submodule) is detected as inside a git repo too."""
+        from kanon_cli.core.install import kanon_home_inside_git_repo
+
+        repo = tmp_path / "wt"
+        repo.mkdir()
+        (repo / ".git").write_text("gitdir: /elsewhere\n", encoding="utf-8")
+        store = repo / "store"
+        store.mkdir()
+        assert kanon_home_inside_git_repo(store) is True
+
+
+@pytest.mark.unit
+class TestPruneStore:
+    """prune_store removes content-addressed entries but keeps the store base."""
+
+    def test_prunes_entries_and_keeps_store_base(self, tmp_path: pathlib.Path) -> None:
+        """prune_store removes entries/.locks/.tmp, preserving the store base dir."""
+        from kanon_cli.constants import (
+            KANON_HOME_STORE_LOCKS_SUBDIR,
+            KANON_HOME_STORE_TMP_SUBDIR,
+        )
+        from kanon_cli.core.install import prune_store, store_entries_dir
+
+        store = tmp_path / "store"
+        entries = store_entries_dir(store)
+        (entries / "abc").mkdir(parents=True)
+        (store / KANON_HOME_STORE_LOCKS_SUBDIR / "abc").mkdir(parents=True)
+        (store / KANON_HOME_STORE_TMP_SUBDIR).mkdir(parents=True)
+
+        prune_store(store)
+
+        assert not entries.exists()
+        assert not (store / KANON_HOME_STORE_LOCKS_SUBDIR).exists()
+        assert not (store / KANON_HOME_STORE_TMP_SUBDIR).exists()
+        assert store.exists(), "the store base directory must survive a prune"
+
+    def test_prune_on_absent_store_is_noop(self, tmp_path: pathlib.Path) -> None:
+        """Pruning a store that was never populated is a no-op (clean before install)."""
+        from kanon_cli.core.install import prune_store
+
+        store = tmp_path / "store"
+        store.mkdir()
+        prune_store(store)
+        assert store.exists()
+
+
+@pytest.mark.unit
+class TestResolveKanonLockRoot:
+    """resolve_kanon_lock_root keys the edit lock under the KANON_HOME store.
+
+    The store-side lock keeps the CWD free of a ``.kanon-data`` lock dir (spec
+    G8: the CWD holds only ``.kanon`` + ``.kanon.lock``) while still serialising
+    concurrent edits to the same resolved ``.kanon`` path.
+    """
+
+    def test_lock_root_is_under_kanon_home_store_locks(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The lock root lands under ``<KANON_HOME>/store/.locks`` and not beside .kanon."""
+        from kanon_cli.constants import KANON_HOME_STORE_LOCKS_SUBDIR, KANON_HOME_STORE_SUBDIR
+        from kanon_cli.core.install import resolve_kanon_lock_root
+
+        kanon_home = tmp_path / "home"
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+
+        cwd_dir = tmp_path / "project"
+        cwd_dir.mkdir()
+        kanon_file = cwd_dir / ".kanon"
+        kanon_file.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
+
+        lock_root = resolve_kanon_lock_root(kanon_file)
+
+        locks_dir = (kanon_home / KANON_HOME_STORE_SUBDIR / KANON_HOME_STORE_LOCKS_SUBDIR).resolve()
+        assert locks_dir in lock_root.parents, "lock root must live under <KANON_HOME>/store/.locks"
+        assert cwd_dir.resolve() not in lock_root.parents, "lock root must NOT live under the .kanon parent"
+
+    def test_lock_root_is_stable_for_same_path(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The lock root is deterministic for repeated calls on the same .kanon path."""
+        from kanon_cli.core.install import resolve_kanon_lock_root
+
+        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
+        kanon_file = tmp_path / "project" / ".kanon"
+        kanon_file.parent.mkdir()
+        kanon_file.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
+
+        first = resolve_kanon_lock_root(kanon_file)
+        second = resolve_kanon_lock_root(kanon_file)
+
+        assert first == second
+
+    def test_lock_root_distinct_for_different_paths(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two different resolved .kanon paths produce distinct lock roots."""
+        from kanon_cli.core.install import resolve_kanon_lock_root
+
+        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
+        first_file = tmp_path / "a" / ".kanon"
+        second_file = tmp_path / "b" / ".kanon"
+        first_file.parent.mkdir()
+        second_file.parent.mkdir()
+        first_file.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
+        second_file.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
+
+        assert resolve_kanon_lock_root(first_file) != resolve_kanon_lock_root(second_file)

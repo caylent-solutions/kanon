@@ -14,11 +14,6 @@ import pytest
 from tests.scenarios.conftest import make_plain_repo, run_kanon
 
 
-# ---------------------------------------------------------------------------
-# Shared fixture
-# ---------------------------------------------------------------------------
-
-
 def _build_rp_ro_repo(base: pathlib.Path) -> pathlib.Path:
     """Build content repos + bare manifest repo, run init + sync, return checkout dir."""
     content_repos = base / "content-repos"
@@ -81,11 +76,6 @@ def rp_ro_checkout(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
     return _build_rp_ro_repo(base)
 
 
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestRPBranches:
     """RP-branches-01..03: kanon repo branches subcommand."""
@@ -110,7 +100,7 @@ class TestRPBranches:
         Pass criteria: exit code 0 OR documented skip if the flag is absent.
         """
         result = run_kanon("repo", "branches", "--current-branch", cwd=rp_ro_checkout)
-        # The doc says: exit code 0 OR skip if flag absent (error expected if flag unknown)
+
         assert result.returncode == 0 or result.returncode != 0, (
             "repo branches --current-branch must exit with any code (0 or non-zero)"
         )

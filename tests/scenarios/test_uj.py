@@ -6,9 +6,9 @@ against local bare git repos served over `file://` URLs.  No network access
 is required.
 
 Scenarios automated:
-- UJ-01: bootstrap kanon → produced .kanon and readme files
-- UJ-02: bootstrap list --catalog-source PEP 440 (>=2.0.0,<3.0.0) resolves correctly
-- UJ-03: multi-source install -- two sources aggregate into .packages/
+- UJ-01: bootstrap was removed -- exits 2 (invalid choice), produces no files
+- UJ-02: search --catalog-source PEP 440 (>=2.0.0,<3.0.0) resolves correctly
+- UJ-03: multi-source install -- two sources aggregate into the store .packages/
 - UJ-04: GITBASE env override respected by install
 - UJ-05: full marketplace lifecycle (skipped when claude CLI absent)
 - UJ-06: collision detection -- exit non-zero + collision name in output
@@ -47,9 +47,12 @@ from tests.scenarios.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Shared fixture builders
-# ---------------------------------------------------------------------------
+_KANON_HOME_STORE_SUBDIR = "store"
+
+
+def _store_dir(kanon_home: pathlib.Path) -> pathlib.Path:
+    """Return the artifact store directory (<KANON_HOME>/store) for a KANON_HOME."""
+    return kanon_home / _KANON_HOME_STORE_SUBDIR
 
 
 def _build_content_and_manifest(
@@ -101,23 +104,48 @@ def _build_content_and_manifest(
     return content_repos, manifest_bare
 
 
-def _build_catalog_repo_with_entry(parent: pathlib.Path, entry_name: str) -> pathlib.Path:
-    """Build a local catalog repo containing catalog/<entry_name>/<entry_name>-readme.md.
+def _uj02_entry_for_tag(tag: str) -> str:
+    """Return the unique catalog entry name published at the given tag for UJ-02."""
+    return f"entry_{tag.replace('.', '_')}"
 
-    Tags 1.0.0, 2.0.0, and 3.0.0 are applied as successive commits so that
-    PEP 440 constraint ``>=2.0.0,<3.0.0`` resolves to 2.0.0.
+
+def _build_catalog_repo_with_entry(parent: pathlib.Path) -> pathlib.Path:
+    """Build a 3.0.0 catalog repo whose every tag publishes a unique entry.
+
+    Tags 1.0.0, 2.0.0, and 3.0.0 each publish a single
+    ``repo-specs/<entry>-marketplace.xml`` whose entry name encodes the tag
+    (``entry_<tag>``), so the entry listed by ``kanon search`` pinpoints which
+    catalog-repo tag a PEP 440 constraint (e.g. ``>=2.0.0,<3.0.0`` -> 2.0.0)
+    resolved to.
     """
     work = parent / "catalog-work"
     bare = parent / "catalog.git"
     init_git_work_dir(work)
 
-    tags = ("1.0.0", "2.0.0", "3.0.0")
-    for tag in tags:
-        pkg_dir = work / "catalog" / entry_name
-        pkg_dir.mkdir(parents=True, exist_ok=True)
-        readme = pkg_dir / f"{entry_name}-readme.md"
-        readme.write_text(f"# {entry_name} version {tag}\n")
-        run_git(["add", "."], work)
+    repo_specs = work / "repo-specs"
+    repo_specs.mkdir()
+
+    for tag in ("1.0.0", "2.0.0", "3.0.0"):
+        for stale in repo_specs.glob("*.xml"):
+            stale.unlink()
+        entry = _uj02_entry_for_tag(tag)
+        (repo_specs / f"{entry}-marketplace.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<manifest>\n"
+            "  <catalog-metadata>\n"
+            f"    <name>{entry}</name>\n"
+            f"    <display-name>{entry} Display</display-name>\n"
+            f"    <description>UJ-02 catalog entry at tag {tag}.</description>\n"
+            f"    <version>=={tag}</version>\n"
+            "    <type>library</type>\n"
+            "    <owner-name>UJ Owner</owner-name>\n"
+            "    <owner-email>uj@example.com</owner-email>\n"
+            "    <keywords>uj catalog</keywords>\n"
+            "  </catalog-metadata>\n"
+            "</manifest>\n",
+            encoding="utf-8",
+        )
+        run_git(["add", "-A"], work)
         run_git(["commit", "-m", f"release {tag}"], work)
         run_git(["tag", tag], work)
 
@@ -184,61 +212,50 @@ def _build_marketplace_manifest_repo(
     return make_plain_repo(manifest_repos, "mfst-repo", {mfst_name: mfst_xml})
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestUJ:
-    # ------------------------------------------------------------------
-    # UJ-01: bootstrap kanon -> .kanon + readme produced
-    # ------------------------------------------------------------------
-
     def test_uj_01_bootstrap_kanon_produces_files(self, tmp_path: pathlib.Path) -> None:
-        """UJ-01: bootstrap was removed (exit 3 + deprecation message); no files produced."""
+        """UJ-01: bootstrap was removed entirely (exit 2 invalid choice); no files produced."""
         work_dir = tmp_path / "uj-01"
         work_dir.mkdir()
 
         result = run_kanon("bootstrap", "kanon", cwd=work_dir)
 
-        # bootstrap was removed in a major release: every invocation exits 3.
-        assert result.returncode == 3, (
-            f"bootstrap expected exit 3 (shim), got {result.returncode}\n"
+        assert result.returncode == 2, (
+            f"bootstrap expected exit 2 (argparse unknown command), got {result.returncode}\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"
-        # The shim must not produce any files.
-        assert not (work_dir / ".kanon").exists(), ".kanon must NOT be created (shim must not delegate)"
-        assert not (work_dir / "kanon-readme.md").exists(), "kanon-readme.md must NOT be created (shim)"
+        assert "invalid choice: 'bootstrap'" in result.stderr, (
+            f"stderr must name 'bootstrap' as an invalid choice: {result.stderr!r}"
+        )
 
-    # ------------------------------------------------------------------
-    # UJ-02: bootstrap list --catalog-source PEP 440 resolves to highest 2.x
-    # ------------------------------------------------------------------
+        assert not (work_dir / ".kanon").exists(), ".kanon must NOT be created"
+        assert not (work_dir / "kanon-readme.md").exists(), "kanon-readme.md must NOT be created"
 
-    def test_uj_02_bootstrap_list_catalog_source_pep440(self, tmp_path: pathlib.Path) -> None:
-        """UJ-02: bootstrap was removed (exit 3 + deprecation message) regardless of catalog-source flag."""
-        catalog_bare = _build_catalog_repo_with_entry(tmp_path / "fixtures", "test-entry")
+    def test_uj_02_search_catalog_source_pep440(self, tmp_path: pathlib.Path) -> None:
+        """UJ-02: search resolves a PEP 440 catalog-source range to the highest 2.x tag.
 
-        # Use PEP 440 range >=2.0.0,<3.0.0 -- shim exits 3 before resolving.
+        Catalog discovery moved from the removed ``bootstrap list`` to
+        ``kanon search``. A ``>=2.0.0,<3.0.0`` catalog source resolves the
+        catalog repo to its 2.0.0 tag, so search lists the entry published at
+        that tag and not the 1.0.0 or 3.0.0 entries.
+        """
+        catalog_bare = _build_catalog_repo_with_entry(tmp_path / "fixtures")
+
         catalog_source = f"{catalog_bare.as_uri()}@>=2.0.0,<3.0.0"
 
-        result = run_kanon("bootstrap", "list", "--catalog-source", catalog_source)
+        result = run_kanon("search", "--catalog-source", catalog_source)
 
-        # bootstrap was removed in a major release: every invocation exits 3.
-        assert result.returncode == 3, (
-            f"bootstrap list expected exit 3 (shim), got {result.returncode}\n"
+        assert result.returncode == 0, (
+            f"search (@>=2.0.0,<3.0.0) expected exit 0, got {result.returncode}\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert "DEPRECATED" in result.stderr, f"Expected deprecation message on stderr: {result.stderr!r}"
-        # The list-arm closest-replacement line points at `kanon list`.
-        assert "kanon list --catalog-source <git-url>@<ref>" in result.stderr, (
-            f"Expected the list-arm replacement line, got: {result.stderr!r}"
+        listed = result.stdout.split()
+        assert _uj02_entry_for_tag("2.0.0") in listed, (
+            f"the range must resolve to tag 2.0.0 (entry {_uj02_entry_for_tag('2.0.0')!r}); got {listed!r}"
         )
-
-    # ------------------------------------------------------------------
-    # UJ-03: multi-source install -- two sources aggregate
-    # ------------------------------------------------------------------
+        assert _uj02_entry_for_tag("3.0.0") not in listed, "the <3.0.0 upper bound must exclude the 3.0.0 entry"
+        assert _uj02_entry_for_tag("1.0.0") not in listed, "the >=2.0.0 lower bound must exclude the 1.0.0 entry"
 
     def test_uj_03_multi_source_install(self, tmp_path: pathlib.Path) -> None:
         """UJ-03: multi-source install -- pkg-alpha and pkg-bravo both symlinked."""
@@ -250,6 +267,8 @@ class TestUJ:
         work_dir = tmp_path / "uj-03"
         work_dir.mkdir()
         manifest_url = manifest_bare.as_uri()
+        kanon_home = tmp_path / "uj-03-home"
+        store = _store_dir(kanon_home)
 
         write_kanonenv(
             work_dir,
@@ -260,29 +279,23 @@ class TestUJ:
             marketplace_install="false",
         )
 
-        catalog_source = f"{manifest_url}@main"
-        install_result = kanon_install(
-            work_dir,
-            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
-        )
+        install_env = {"KANON_ALLOW_INSECURE_REMOTES": "1", "KANON_HOME": str(kanon_home)}
+        install_result = kanon_install(work_dir, extra_env=install_env)
         assert install_result.returncode == 0, (
             f"install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
         assert "kanon install: done" in install_result.stdout
-        assert (work_dir / ".packages" / "pkg-alpha").is_symlink(), ".packages/pkg-alpha is not a symlink"
-        assert (work_dir / ".packages" / "pkg-bravo").is_symlink(), ".packages/pkg-bravo is not a symlink"
 
-        gitignore_text = (work_dir / ".gitignore").read_text()
-        assert ".packages/" in gitignore_text, ".gitignore missing '.packages/'"
-        assert ".kanon-data/" in gitignore_text, ".gitignore missing '.kanon-data/'"
+        assert (store / ".packages" / "pkg-alpha").is_symlink(), "store .packages/pkg-alpha is not a symlink"
+        assert (store / ".packages" / "pkg-bravo").is_symlink(), "store .packages/pkg-bravo is not a symlink"
 
-        clean_result = kanon_clean(work_dir)
+        gitignore_text = (store / ".gitignore").read_text()
+        assert ".packages/" in gitignore_text, "store .gitignore missing '.packages/'"
+        assert ".kanon-data/" in gitignore_text, "store .gitignore missing '.kanon-data/'"
+
+        clean_result = kanon_clean(work_dir, extra_env={"KANON_HOME": str(kanon_home)})
         assert clean_result.returncode == 0, f"clean exited {clean_result.returncode}"
-
-    # ------------------------------------------------------------------
-    # UJ-04: GITBASE env override
-    # ------------------------------------------------------------------
 
     def test_uj_04_gitbase_env_override(self, tmp_path: pathlib.Path) -> None:
         """UJ-04: GITBASE env override is honoured by install."""
@@ -291,6 +304,8 @@ class TestUJ:
         work_dir = tmp_path / "uj-04"
         work_dir.mkdir()
         manifest_url = manifest_bare.as_uri()
+        kanon_home = tmp_path / "uj-04-home"
+        store = _store_dir(kanon_home)
 
         write_kanonenv(
             work_dir,
@@ -299,28 +314,24 @@ class TestUJ:
             extra_lines=["GITBASE=https://default.example.com"],
         )
 
-        # Override GITBASE via environment -- install must still succeed because
-        # the explicit KANON_SOURCE_a_URL (a file:// URL) is used directly.
-        catalog_source = f"{manifest_url}@main"
         install_result = kanon_install(
             work_dir,
             extra_env={
                 "GITBASE": "https://override.example.com",
-                "KANON_CATALOG_SOURCE": catalog_source,
                 "KANON_ALLOW_INSECURE_REMOTES": "1",
+                "KANON_HOME": str(kanon_home),
             },
         )
         assert install_result.returncode == 0, (
             f"install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
-        assert (work_dir / ".packages" / "pkg-alpha").is_symlink(), ".packages/pkg-alpha is not a symlink"
+        assert (store / ".packages" / "pkg-alpha").is_symlink(), "store .packages/pkg-alpha is not a symlink"
 
-        kanon_clean(work_dir, extra_env={"GITBASE": "https://override.example.com"})
-
-    # ------------------------------------------------------------------
-    # UJ-05: full marketplace lifecycle (skipped when claude absent)
-    # ------------------------------------------------------------------
+        kanon_clean(
+            work_dir,
+            extra_env={"GITBASE": "https://override.example.com", "KANON_HOME": str(kanon_home)},
+        )
 
     def test_uj_05_full_marketplace_lifecycle(
         self,
@@ -342,14 +353,13 @@ class TestUJ:
         plugin_fix_dir = tmp_path / "fixtures" / "plugin-fix"
         plugin_fix_dir.mkdir(parents=True)
 
-        # Build a plugin repo with a marketplace.json that satisfies the real claude CLI schema.
         plugin_name = "uj05-plugin"
         plugin_work = plugin_fix_dir / f"{plugin_name}.work"
         plugin_bare = plugin_fix_dir / f"{plugin_name}.git"
         init_git_work_dir(plugin_work)
         cp_dir = plugin_work / ".claude-plugin"
         cp_dir.mkdir()
-        # Use a file:// source URL so `claude` can clone it without network access.
+
         plugin_source_url = plugin_bare.as_uri()
         (cp_dir / "marketplace.json").write_text(
             json.dumps(
@@ -402,7 +412,7 @@ class TestUJ:
         assert install_result.returncode == 0, (
             f"install failed: stdout={install_result.stdout!r} stderr={install_result.stderr!r}"
         )
-        # Verify the marketplace directory exists after install (kanon created the linkfile symlink).
+
         marketplace_link = marketplaces_dir / plugin_name
         assert marketplace_link.exists(), f"marketplace directory not found at {marketplace_link} after install"
 
@@ -412,13 +422,9 @@ class TestUJ:
         )
         assert not marketplace_link.exists(), f"marketplace directory still present at {marketplace_link} after clean"
 
-    # ------------------------------------------------------------------
-    # UJ-06: collision detection
-    # ------------------------------------------------------------------
-
     def test_uj_06_collision_detection(self, tmp_path: pathlib.Path) -> None:
         """UJ-06: two sources mapping the same package path cause a collision error."""
-        # Build two separate manifest repos both declaring pkg-alpha at .packages/pkg-alpha
+
         _, manifest_a_bare = _build_content_and_manifest(
             tmp_path / "fixtures-a",
             pkg_names=["pkg-alpha"],
@@ -454,10 +460,6 @@ class TestUJ:
             f"Expected collision/conflict message in output: {combined!r}"
         )
 
-    # ------------------------------------------------------------------
-    # UJ-07: linkfile journey
-    # ------------------------------------------------------------------
-
     def test_uj_07_linkfile_journey(
         self,
         tmp_path: pathlib.Path,
@@ -477,7 +479,6 @@ class TestUJ:
 
         marketplaces_dir = claude_marketplaces_dir
 
-        # Build a manifest repo with a linkfile dest pointing at marketplaces_dir/mk22-deep.
         plugin_fix_url = plugin_fix_dir.as_uri()
         mfst_xml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -499,8 +500,6 @@ class TestUJ:
         write_kanonenv(
             work_dir,
             sources=[("mkt", mfst_bare.as_uri(), "main", "mk22.xml")],
-            # Use marketplace_install=false to avoid dependency on a real claude binary.
-            # The linkfile symlink is created by repo sync regardless of marketplace install.
             marketplace_install="false",
             extra_lines=[f"CLAUDE_MARKETPLACES_DIR={marketplaces_dir}"],
         )
@@ -523,16 +522,14 @@ class TestUJ:
 
         kanon_clean(work_dir)
 
-    # ------------------------------------------------------------------
-    # UJ-08: pipeline cache -- tar/restore then clean
-    # ------------------------------------------------------------------
-
     def test_uj_08_pipeline_cache(self, tmp_path: pathlib.Path) -> None:
         """UJ-08: clean succeeds against a state that was archived and restored (simulated cache)."""
         _, manifest_bare = _build_content_and_manifest(tmp_path / "fixtures")
 
         work_dir = tmp_path / "uj-08"
         work_dir.mkdir()
+        kanon_home = tmp_path / "uj-08-home"
+        store = _store_dir(kanon_home)
 
         write_kanonenv(
             work_dir,
@@ -540,64 +537,50 @@ class TestUJ:
             marketplace_install="false",
         )
 
-        catalog_source = f"{manifest_bare.as_uri()}@main"
-        install_result = kanon_install(
-            work_dir,
-            extra_env={"KANON_CATALOG_SOURCE": catalog_source, "KANON_ALLOW_INSECURE_REMOTES": "1"},
-        )
+        install_env = {"KANON_ALLOW_INSECURE_REMOTES": "1", "KANON_HOME": str(kanon_home)}
+        install_result = kanon_install(work_dir, extra_env=install_env)
         assert install_result.returncode == 0, (
             f"install failed: stdout={install_result.stdout!r} stderr={install_result.stderr!r}"
         )
 
-        # Archive .packages and .kanon-data
         archive_path = tmp_path / "cache.tgz"
         with tarfile.open(str(archive_path), "w:gz") as tar:
             for name in (".packages", ".kanon-data"):
-                entry = work_dir / name
+                entry = store / name
                 if entry.exists():
                     tar.add(str(entry), arcname=name)
 
-        # Remove the artifacts
-        shutil.rmtree(str(work_dir / ".packages"))
-        shutil.rmtree(str(work_dir / ".kanon-data"))
+        shutil.rmtree(str(store / ".packages"))
+        shutil.rmtree(str(store / ".kanon-data"))
 
-        # Restore from archive -- Python 3.12+ tarfile.extractall with 'data'
-        # filter rejects absolute symlink targets. Use 'tar' filter which
-        # preserves tar semantics (strips leading /) or fall back to no filter
-        # for older Python versions.
         with tarfile.open(str(archive_path), "r:gz") as tar:
             try:
-                tar.extractall(str(work_dir), filter="tar")
+                tar.extractall(str(store), filter="tar")
             except TypeError:
-                # filter parameter not available on Python < 3.12
-                tar.extractall(str(work_dir))
+                tar.extractall(str(store))
 
-        # Clean must succeed against the restored state
-        clean_result = kanon_clean(work_dir)
+        clean_result = kanon_clean(work_dir, extra_env={"KANON_HOME": str(kanon_home)})
         assert clean_result.returncode == 0, (
             f"clean failed after cache restore: stdout={clean_result.stdout!r} stderr={clean_result.stderr!r}"
         )
         assert "kanon clean: done" in clean_result.stdout
-        assert not (work_dir / ".packages").exists(), ".packages/ still exists after clean"
-        assert not (work_dir / ".kanon-data").exists(), ".kanon-data/ still exists after clean"
-
-    # ------------------------------------------------------------------
-    # UJ-09: shell variable expansion -- defined OK; undefined errors
-    # ------------------------------------------------------------------
+        assert not (store / ".packages").exists(), "store .packages/ still exists after clean"
+        assert not (store / ".kanon-data").exists(), "store .kanon-data/ still exists after clean"
 
     def test_uj_09_shell_variable_expansion(self, tmp_path: pathlib.Path) -> None:
         """UJ-09: defined shell vars expand; undefined vars produce a named error."""
         _, manifest_bare = _build_content_and_manifest(tmp_path / "fixtures")
 
-        # Case 1: ${HOME} in .kanon is accepted
         work_dir_ok = tmp_path / "uj-09-ok"
         work_dir_ok.mkdir()
         manifest_url = manifest_bare.as_uri()
 
         kanon_text = (
             f"KANON_SOURCE_a_URL={manifest_url}\n"
-            "KANON_SOURCE_a_REVISION=main\n"
+            "KANON_SOURCE_a_REF=main\n"
             "KANON_SOURCE_a_PATH=repo-specs/pkg-alpha-only.xml\n"
+            "KANON_SOURCE_a_NAME=a\n"
+            f"KANON_SOURCE_a_GITBASE={manifest_url}\n"
             "KANON_MARKETPLACE_INSTALL=false\n"
             "HOME_NOTE=${HOME}\n"
         )
@@ -613,13 +596,12 @@ class TestUJ:
         )
         kanon_clean(work_dir_ok)
 
-        # Case 2: undefined var in source URL must fail with the var name in the error
         work_dir_bad = tmp_path / "uj-09-bad"
         work_dir_bad.mkdir()
 
         bad_kanon_text = (
             "KANON_SOURCE_a_URL=${UNDEFINED_KANON_VAR}\n"
-            "KANON_SOURCE_a_REVISION=main\n"
+            "KANON_SOURCE_a_REF=main\n"
             "KANON_SOURCE_a_PATH=repo-specs/pkg-alpha-only.xml\n"
         )
         (work_dir_bad / ".kanon").write_text(bad_kanon_text)
@@ -631,10 +613,6 @@ class TestUJ:
         assert bad_result.returncode != 0, "Expected non-zero exit when KANON_SOURCE_a_URL is an undefined variable"
         combined = bad_result.stdout + bad_result.stderr
         assert "UNDEFINED_KANON_VAR" in combined, f"Expected undefined variable name in error output: {combined!r}"
-
-    # ------------------------------------------------------------------
-    # UJ-10: python -m kanon_cli entry point
-    # ------------------------------------------------------------------
 
     def test_uj_10_python_m_kanon_cli_entry_point(self) -> None:
         """UJ-10: python -m kanon_cli --version and --help exit 0 with expected output."""
@@ -648,14 +626,11 @@ class TestUJ:
 
         help_result = run_kanon("--help")
         assert help_result.returncode == 0, f"--help exited {help_result.returncode}\nstderr={help_result.stderr!r}"
-        for expected_cmd in ("install", "clean", "validate", "bootstrap"):
+
+        for expected_cmd in ("install", "clean", "validate", "search"):
             assert expected_cmd in help_result.stdout, (
                 f"Expected '{expected_cmd}' in --help stdout: {help_result.stdout!r}"
             )
-
-    # ------------------------------------------------------------------
-    # UJ-11: standalone-repo journey -- init / sync / status
-    # ------------------------------------------------------------------
 
     def test_uj_11_standalone_repo_journey(self, tmp_path: pathlib.Path) -> None:
         """UJ-11: kanon repo init / sync / status all exit 0."""
@@ -690,16 +665,10 @@ class TestUJ:
             f"stdout={status_result.stdout!r}\nstderr={status_result.stderr!r}"
         )
 
-    # ------------------------------------------------------------------
-    # UJ-12: manifest validation journey
-    # ------------------------------------------------------------------
-
     def test_uj_12_manifest_validation_journey(self, tmp_path: pathlib.Path) -> None:
         """UJ-12: validate xml on a valid manifest repo exits 0."""
         _, manifest_bare = _build_content_and_manifest(tmp_path / "fixtures")
 
-        # The manifest bare repo's work dir is the checkout we validate against.
-        # Re-create a non-bare checkout with the same repo-specs content.
         content_url = (tmp_path / "fixtures" / "content-repos").as_uri()
         repo_dir = tmp_path / "uj-12-repo"
         repo_dir.mkdir()

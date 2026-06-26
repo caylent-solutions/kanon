@@ -23,39 +23,30 @@ import pytest
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import create_source_dirs
 from kanon_cli.core.install import install
-from tests.conftest import DEFAULT_CATALOG_SOURCE
 
-
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in source files)
-# ---------------------------------------------------------------------------
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SRC_DIR = _REPO_ROOT / "src"
 
 _MINIMAL_KANONENV_CONTENT = (
     "KANON_SOURCE_src_URL=https://example.com/src.git\n"
-    "KANON_SOURCE_src_REVISION=main\n"
+    "KANON_SOURCE_src_REF=main\n"
     "KANON_SOURCE_src_PATH=repo-specs/default.xml\n"
+    "KANON_SOURCE_src_NAME=src\n"
+    "KANON_SOURCE_src_GITBASE=https://example.com\n"
 )
 
-# PATH_MAX is the maximum total path length on POSIX systems.
-# PC_PATH_MAX is the limit for the absolute path, or 4096 if unavailable.
+
 try:
     _PATH_MAX = os.pathconf("/", "PC_PATH_MAX")
 except (AttributeError, ValueError):
     _PATH_MAX = 4096
 
-# PC_NAME_MAX is the maximum length of a single filename component.
+
 try:
     _NAME_MAX = os.pathconf("/", "PC_NAME_MAX")
 except (AttributeError, ValueError):
     _NAME_MAX = 255
-
-
-# ---------------------------------------------------------------------------
-# Subprocess helper
-# ---------------------------------------------------------------------------
 
 
 def _run_kanon_subprocess(
@@ -110,11 +101,6 @@ def _write_kanonenv(directory: pathlib.Path) -> pathlib.Path:
     return kanonenv
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: non-UTF-8 filename in path produces a clear error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestNonUtf8PathError:
     """AC-TEST-001: when the CLI receives a path that contains non-UTF-8 bytes
@@ -146,9 +132,7 @@ class TestNonUtf8PathError:
         through the surrogateescape codec. The CLI must fail-fast with exit 1
         rather than raising an unhandled UnicodeDecodeError.
         """
-        # Build a path whose directory name embeds a non-UTF-8 octet (0xFF).
-        # os.fsdecode with surrogateescape produces a str that contains
-        # a lone surrogate (which is invalid Unicode but legal in Python str).
+
         raw_name = b"bad\xff" + b"dir"
         try:
             nonexistent_dir = tmp_path / os.fsdecode(raw_name)
@@ -157,8 +141,6 @@ class TestNonUtf8PathError:
 
         nonexistent_kanon = nonexistent_dir / ".kanon"
 
-        # The path will not exist (we never created the directory), so the CLI
-        # must fail fast with a missing-file or non-UTF-8 encoding error.
         result = _run_kanon_subprocess("install", str(nonexistent_kanon))
 
         assert result.returncode == 1, (
@@ -216,11 +198,6 @@ class TestNonUtf8PathError:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: paths with Unicode characters work
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestUnicodePathsWork:
     """AC-TEST-002: directories and paths containing non-ASCII Unicode characters
@@ -242,10 +219,15 @@ class TestUnicodePathsWork:
         tmp_path: pathlib.Path,
         dir_name: str,
     ) -> None:
-        """install creates .kanon-data/ correctly inside a Unicode-named directory."""
+        """install handles a Unicode-named project dir and writes .kanon-data/ to the store.
+
+        The .kanon file lives in the Unicode-named directory; install artifacts are
+        written to the shared KANON_HOME store regardless of the project directory name.
+        """
         unicode_dir = tmp_path / dir_name
         unicode_dir.mkdir()
         kanonenv = _write_kanonenv(unicode_dir)
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -253,10 +235,11 @@ class TestUnicodePathsWork:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.version.resolve_version", return_value="main"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (unicode_dir / ".kanon-data").is_dir(), (
-            f".kanon-data/ must be created in Unicode-named directory: {unicode_dir}"
+        assert kanonenv.is_file(), ".kanon must remain in the Unicode-named project directory"
+        assert (store_base / ".kanon-data").is_dir(), (
+            f".kanon-data/ must be created under the shared store for Unicode-named project {unicode_dir}: {store_base}"
         )
 
     @pytest.mark.parametrize(
@@ -274,20 +257,21 @@ class TestUnicodePathsWork:
         tmp_path: pathlib.Path,
         dir_name: str,
     ) -> None:
-        """clean removes .packages/ and .kanon-data/ inside a Unicode-named directory."""
+        """clean removes .packages/ and .kanon-data/ from the store for a Unicode-named project."""
         unicode_dir = tmp_path / dir_name
         unicode_dir.mkdir()
         kanonenv = _write_kanonenv(unicode_dir)
-        (unicode_dir / ".packages").mkdir()
-        (unicode_dir / ".kanon-data").mkdir()
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        (store_base / ".packages").mkdir(parents=True)
+        (store_base / ".kanon-data").mkdir(parents=True)
 
         clean(kanonenv)
 
-        assert not (unicode_dir / ".packages").exists(), (
-            f".packages/ must be removed by clean in Unicode directory: {unicode_dir}"
+        assert not (store_base / ".packages").exists(), (
+            f".packages/ must be removed from the store by clean for Unicode-named project {unicode_dir}"
         )
-        assert not (unicode_dir / ".kanon-data").exists(), (
-            f".kanon-data/ must be removed by clean in Unicode directory: {unicode_dir}"
+        assert not (store_base / ".kanon-data").exists(), (
+            f".kanon-data/ must be removed from the store by clean for Unicode-named project {unicode_dir}"
         )
 
     @pytest.mark.parametrize(
@@ -317,13 +301,11 @@ class TestUnicodePathsWork:
 
         result = _run_kanon_subprocess("install", str(kanonenv))
 
-        # The CLI must not report a file-not-found error: the file exists.
         assert ".kanon file not found" not in result.stderr, (
             f"install must not report '.kanon file not found' for a valid path in a "
             f"Unicode directory. Got stderr={result.stderr!r}"
         )
-        # A path-encoding error must not appear; any failure must be from
-        # network/repo, not from path handling.
+
         assert "UnicodeDecodeError" not in result.stderr, (
             f"Path encoding error must not appear for Unicode directory name. Got stderr={result.stderr!r}"
         )
@@ -364,11 +346,6 @@ class TestUnicodePathsWork:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: PATH_MAX length path is handled
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestPathMaxHandling:
     """AC-TEST-003: when a path at or beyond PATH_MAX is presented to the CLI,
@@ -382,9 +359,7 @@ class TestPathMaxHandling:
         approaches PATH_MAX. The CLI must either succeed or fail cleanly -- no
         unhandled exceptions.
         """
-        # Build a path using the maximum-length single component allowed (NAME_MAX).
-        # We nest one level deep to bring the total close to PATH_MAX.
-        # The segment length is capped at NAME_MAX to be accepted by the FS.
+
         available_depth = _PATH_MAX - len(str(tmp_path)) - len("/.kanon") - 2
         segment_len = min(_NAME_MAX, max(1, available_depth))
         long_segment = "a" * segment_len
@@ -404,7 +379,6 @@ class TestPathMaxHandling:
 
         result = _run_kanon_subprocess("install", str(kanonenv))
 
-        # Whatever the outcome, no raw traceback on stderr.
         assert "Traceback (most recent call last):" not in result.stderr, (
             f"Raw traceback must not appear for near-PATH_MAX path. Got stderr={result.stderr!r}"
         )
@@ -442,18 +416,17 @@ class TestPathMaxHandling:
         passes it to the CLI. The OS will reject the path; the CLI must convert
         that OS error to a clean exit-1 with an 'Error:' message on stderr.
         """
-        # Build a path string that is longer than PATH_MAX without touching disk.
+
         excess = "b" * (_PATH_MAX + 100)
         long_path_str = str(tmp_path / excess / ".kanon")
 
         result = _run_kanon_subprocess("install", long_path_str)
 
-        # The path cannot exist (too long), so the CLI must exit non-zero.
         assert result.returncode != 0, (
             f"Expected non-zero exit for PATH_MAX-exceeding path, got {result.returncode}.\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        # The error must be clean -- no raw traceback.
+
         assert "Traceback (most recent call last):" not in result.stderr, (
             f"Raw traceback must not appear for PATH_MAX-exceeding path. Got stderr={result.stderr!r}"
         )
@@ -472,11 +445,6 @@ class TestPathMaxHandling:
         assert not stdout_error_lines, f"Error text must not appear on stdout. stdout={result.stdout!r}"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-004: mid-operation deletion race produces a clear error
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestMidOperationDeletionRace:
     """AC-TEST-004: when a directory or file is deleted between the point at which
@@ -486,10 +454,11 @@ class TestMidOperationDeletionRace:
 
     The race is simulated by:
       - using in-process API tests where install() is called directly after the
-        base directory is made read-only (so create_source_dirs raises OSError)
-      - using subprocess tests where the base directory is made read-only before
-        the subprocess runs, ensuring the OS-level permission error propagates
-        through the full CLI error-handling chain.
+        store sources directory (<KANON_HOME>/store/.kanon-data/sources/) is made
+        read-only (so create_source_dirs raises OSError)
+      - using subprocess tests where the project directory is made read-only before
+        the subprocess runs, ensuring the install error path propagates through the
+        full CLI error-handling chain and surfaces a clean 'Error:' on stderr.
     """
 
     def test_source_dir_creation_fails_install_exits_1(
@@ -589,19 +558,27 @@ class TestMidOperationDeletionRace:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """install() propagates OSError when the project directory is read-only.
+        """install() propagates OSError when the store sources directory is read-only.
 
         This tests the library boundary: install() must let OSError from
         create_source_dirs propagate to the caller. The CLI command handler
         in commands/install.py catches this and prints 'Error:' + sys.exit(1).
+
+        Source directories are now created under the shared KANON_HOME store
+        (<KANON_HOME>/store/.kanon-data/sources/), so the read-only target that
+        triggers the OSError is the store's sources directory, not the project dir.
+        The store root itself stays writable (so the workspace lock can be created),
+        and the sources/ child is made read-only so the per-source mkdir fails.
         """
         kanonenv = _write_kanonenv(tmp_path)
-        tmp_path.chmod(0o555)
+        store_sources = pathlib.Path(os.environ["KANON_HOME"]) / "store" / ".kanon-data" / "sources"
+        store_sources.mkdir(parents=True)
+        store_sources.chmod(0o555)
         try:
             with pytest.raises(OSError, match="Cannot create source directory"):
-                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
+                install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
         finally:
-            tmp_path.chmod(0o755)
+            store_sources.chmod(0o755)
 
     def test_kanon_data_already_absent_clean_exits_0(
         self,
@@ -615,7 +592,6 @@ class TestMidOperationDeletionRace:
         directory-listing and its rmtree call.
         """
         kanonenv = _write_kanonenv(tmp_path)
-        # Intentionally do NOT create .packages/ or .kanon-data/
 
         result = _run_kanon_subprocess("clean", str(kanonenv))
 

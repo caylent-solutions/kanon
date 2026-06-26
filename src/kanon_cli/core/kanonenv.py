@@ -1,29 +1,43 @@
 """Multi-source .kanon file parser.
 
-Parses KEY=VALUE configuration files used by Kanon bootstrap. The .kanon
+Parses KEY=VALUE configuration files used by Kanon. The .kanon
 format supports:
   - Comments (lines starting with #) and blank lines
   - Shell variable expansion (``${VAR}``) resolved from environment
   - Environment variable overrides (env vars take precedence over file values)
-  - Auto-discovered named source groups from ``KANON_SOURCE_<name>_URL`` keys
-  - Boolean parsing for KANON_MARKETPLACE_INSTALL
+  - Auto-discovered alias-keyed source groups from ``KANON_SOURCE_<alias>_URL`` keys
+  - Per-dependency boolean parsing for the optional
+    ``KANON_SOURCE_<alias>_MARKETPLACE`` flag (absence == false)
 
-Source names are auto-discovered by scanning for keys matching the
-``KANON_SOURCE_<name>_URL`` pattern. Names are sorted alphabetically for
+Source aliases are auto-discovered by scanning for keys matching the
+``KANON_SOURCE_<alias>_URL`` pattern. Aliases are sorted alphabetically for
 deterministic ordering. Each discovered source must also define
-``KANON_SOURCE_<name>_REVISION`` and ``KANON_SOURCE_<name>_PATH``.
+``KANON_SOURCE_<alias>_REF`` (the verbatim version spec),
+``KANON_SOURCE_<alias>_PATH`` (the repo-relative manifest path), and
+``KANON_SOURCE_<alias>_NAME`` (the original catalog manifest name).
 
-If a partial source definition is found (``_REVISION`` or ``_PATH`` present
-without a corresponding ``_URL``), a ``ValueError`` is raised naming the
-exact missing ``KANON_SOURCE_<name>_URL`` variable so callers can surface
-it to stderr verbatim.
+Beyond the required structural suffixes (``_URL``/``_REF``/``_PATH``/``_NAME``)
+and the reserved ``_MARKETPLACE`` flag, any other
+``KANON_SOURCE_<alias>_<VAR>`` key is collected into the source's open,
+optional per-dependency env-var map (``source_data["env"][VAR] = value``).
+These env vars feed the manifest's ``${VAR}`` substitution at install time
+(``GITBASE`` is the common case). Missing env vars never fail the parse: a
+source declares an env var only when its manifest references the matching
+``${VAR}`` placeholder.
+
+If a partial source definition is found (any required non-URL structural
+suffix present without a corresponding ``_URL``), a ``ValueError`` is raised
+naming the exact missing ``KANON_SOURCE_<alias>_URL`` variable so callers can
+surface it to stderr verbatim.
 
 The parser reads the file, applies environment overrides, expands shell
 variables, validates required fields, and returns a structured dict.
 
 Security guards are applied before any data is returned:
   - Symlink detection (TOCTOU mitigation): the .kanon file must not be a symlink.
-  - Permission check: the .kanon file must not be group-writable or world-writable.
+  - Permission check: the .kanon file must not be writable by anyone other than
+    its owner. On POSIX this rejects the group-write and world-write mode bits.
+    The control is never silently skipped.
   - Path traversal rejection: KANON_SOURCE_<name>_PATH values must not contain '..'.
 """
 
@@ -33,19 +47,23 @@ import re
 import stat
 
 from kanon_cli.constants import (
+    MARKETPLACE_DIR_GLOBAL_KEY,
     SHELL_VAR_PATTERN,
+    SOURCE_ENV_KEY,
+    SOURCE_MARKETPLACE_KEY,
+    SOURCE_MARKETPLACE_SUFFIX,
     SOURCE_NON_URL_SUFFIXES,
     SOURCE_PREFIX,
+    SOURCE_RESERVED_SUFFIXES,
     SOURCE_SUFFIXES,
     SOURCE_URL_SUFFIX,
     SUFFIX_TO_KEY,
 )
 
-# Permission bits that indicate group-write or world-write access.
-# These are rejected to prevent privilege escalation via tampered .kanon files.
+
 _UNSAFE_WRITE_BITS = stat.S_IWGRP | stat.S_IWOTH
 
-# Suffix used to identify PATH variables for path-traversal checking.
+
 _PATH_SUFFIX = "_PATH"
 
 
@@ -71,7 +89,9 @@ def parse_kanonenv(path: pathlib.Path) -> dict:
 
     Security guards are applied before returning:
       - Symlink TOCTOU: the file must not be a symlink.
-      - Permissions: the file must not have group-write or world-write bits.
+      - Permissions: the file must not be writable by anyone other than its
+        owner. On POSIX the group-write and world-write mode bits are rejected.
+        The control is never skipped.
       - Path traversal: no KANON_SOURCE_<name>_PATH value may contain '..'.
 
     Args:
@@ -82,19 +102,24 @@ def parse_kanonenv(path: pathlib.Path) -> dict:
 
         - ``KANON_SOURCES``: list of source names (auto-discovered,
           sorted alphabetically)
-        - ``KANON_MARKETPLACE_INSTALL``: bool (defaults to False)
-        - ``sources``: dict mapping each source name to a dict with
-          ``url``, ``revision``, and ``path`` keys
+        - ``sources``: dict mapping each source alias to a dict with the
+          required ``url``, ``ref``, ``path``, ``name`` keys, a
+          ``marketplace`` bool (the per-dependency
+          ``KANON_SOURCE_<alias>_MARKETPLACE`` flag; defaults to False), and an
+          ``env`` dict mapping each optional per-dependency env-var name to its
+          value (every ``KANON_SOURCE_<alias>_<VAR>`` key whose ``<VAR>`` is not
+          a reserved structural/marketplace suffix; empty when the source
+          declares no env vars)
         - ``globals``: dict of all other KEY=VALUE pairs
 
     Raises:
         FileNotFoundError: If the file does not exist.
         ValueError: If the file is a symlink, if the file has unsafe
             permissions (group-writable or world-writable), if any
-            KANON_SOURCE_<name>_PATH value contains '..', if
+            KANON_SOURCE_<alias>_PATH value contains '..', if
             KANON_SOURCES is explicitly set (no longer supported),
-            if no sources are discovered, if a named source is missing
-            required variables (URL, REVISION, PATH), or if a shell
+            if no sources are discovered, if a named source is missing a
+            required structural variable (URL, REF, PATH, NAME), or if a shell
             variable reference cannot be resolved.
     """
     if not path.exists():
@@ -102,7 +127,7 @@ def parse_kanonenv(path: pathlib.Path) -> dict:
         raise FileNotFoundError(msg)
 
     _check_no_symlink(path)
-    _check_permissions(path)
+    _check_write_permission(path)
 
     raw_vars = _read_key_value_pairs(path)
     _check_no_path_traversal(raw_vars)
@@ -131,6 +156,24 @@ def _check_no_symlink(path: pathlib.Path) -> None:
             "Symlinks introduce a TOCTOU race -- use a regular file instead."
         )
         raise ValueError(msg)
+
+
+def _check_write_permission(path: pathlib.Path) -> None:
+    """Reject a .kanon file that is writable by anyone other than its owner.
+
+    Applies the POSIX mode-bit write-permission control
+    (``_check_permissions``), which rejects the group-write and world-write
+    bits. The control fails fast with an actionable ``ValueError`` and is never
+    a silent no-op.
+
+    Args:
+        path: Path to the .kanon file.
+
+    Raises:
+        ValueError: If the file grants write access beyond its owner
+            (group-writable or world-writable).
+    """
+    _check_permissions(path)
 
 
 def _check_permissions(path: pathlib.Path) -> None:
@@ -216,6 +259,21 @@ def _read_key_value_pairs(path: pathlib.Path) -> dict[str, str]:
 def _apply_env_overrides(raw_vars: dict[str, str]) -> dict[str, str]:
     """Override file values with environment variables of the same name.
 
+    Every key already present in the file is overridden by an OS environment
+    variable of the same name when one is set. Beyond that, two classes of key
+    are *adopted* from the OS environment even when absent from the file:
+
+    - any ``KANON_SOURCE_<alias>_<VAR>`` key (the alias-scoped source model); and
+    - the single global ``CLAUDE_MARKETPLACES_DIR`` key.
+
+    ``CLAUDE_MARKETPLACES_DIR`` is a single, environment-specific path (one per
+    machine / user), so per 12-factor it is resolved from the OS environment
+    rather than requiring a hand-written ``.kanon`` line. A ``.kanon`` value
+    takes precedence as an explicit override when present: it is exempt from the
+    same-name-override pass so the file value is never clobbered by the OS env;
+    the adoption pass below only fills the key from the OS env when ``.kanon``
+    declares no value for it.
+
     Args:
         raw_vars: Dict of KEY=VALUE pairs from the file.
 
@@ -224,13 +282,20 @@ def _apply_env_overrides(raw_vars: dict[str, str]) -> dict[str, str]:
     """
     merged = dict(raw_vars)
     for key in merged:
+        if key == MARKETPLACE_DIR_GLOBAL_KEY:
+            continue
         env_value = os.environ.get(key)
         if env_value is not None:
             merged[key] = env_value
-    # Also check for env vars that define source groups not in the file
+
     for key, value in os.environ.items():
         if key.startswith(SOURCE_PREFIX) and key not in merged:
             merged[key] = value
+
+    if MARKETPLACE_DIR_GLOBAL_KEY not in merged:
+        marketplace_dir_value = os.environ.get(MARKETPLACE_DIR_GLOBAL_KEY)
+        if marketplace_dir_value is not None:
+            merged[MARKETPLACE_DIR_GLOBAL_KEY] = marketplace_dir_value
     return merged
 
 
@@ -278,28 +343,30 @@ def _expand_value(value: str) -> str:
 
 
 def _discover_source_names(expanded: dict[str, str]) -> list[str]:
-    """Auto-discover source names from ``KANON_SOURCE_<name>_URL`` keys.
+    """Auto-discover source aliases from ``KANON_SOURCE_<alias>_URL`` keys.
 
-    Scans all keys for the ``KANON_SOURCE_<name>_URL`` pattern, extracts
-    the ``<name>`` portion, and returns a sorted list for deterministic
+    Scans all keys for the ``KANON_SOURCE_<alias>_URL`` pattern, extracts
+    the ``<alias>`` portion, and returns a sorted list for deterministic
     ordering.
 
-    Also scans for keys matching ``KANON_SOURCE_<name>_(REVISION|PATH)``
-    to detect sources that are partially defined without a URL; raises
-    ``ValueError`` naming the exact missing URL variable so callers can
-    surface it verbatim.
+    Also scans for keys matching any required structural non-URL suffix
+    (``KANON_SOURCE_<alias>_(REF|PATH|NAME)``) to detect sources that are
+    partially defined without a URL; raises ``ValueError`` naming the exact
+    missing URL variable so callers can surface it verbatim. Optional
+    per-dependency env-var keys (e.g. ``_GITBASE``) never imply a source on
+    their own and never trigger this partial-source error.
 
     Args:
         expanded: Dict of expanded KEY=VALUE pairs.
 
     Returns:
-        Sorted list of discovered source names.
+        Sorted list of discovered source aliases.
 
     Raises:
-        NoSourcesError: If no ``KANON_SOURCE_<name>_URL`` keys are found
+        NoSourcesError: If no ``KANON_SOURCE_<alias>_URL`` keys are found
             (a ``ValueError`` subclass; the zero-source case).
-        ValueError: If a source name is inferred from a non-URL suffix but the
-            corresponding ``KANON_SOURCE_<name>_URL`` key is absent.
+        ValueError: If a source alias is inferred from a non-URL suffix but the
+            corresponding ``KANON_SOURCE_<alias>_URL`` key is absent.
     """
     url_names: set[str] = set()
     for key in expanded:
@@ -325,8 +392,9 @@ def _discover_source_names(expanded: dict[str, str]) -> list[str]:
     if not url_names:
         msg = (
             "No sources found. Define at least one source using "
-            "KANON_SOURCE_<name>_URL, KANON_SOURCE_<name>_REVISION, "
-            "and KANON_SOURCE_<name>_PATH variables in .kanon"
+            "KANON_SOURCE_<alias>_URL, KANON_SOURCE_<alias>_REF, "
+            "KANON_SOURCE_<alias>_PATH, and KANON_SOURCE_<alias>_NAME "
+            "variables in .kanon"
         )
         raise NoSourcesError(msg)
 
@@ -344,13 +412,17 @@ def _build_result(expanded: dict[str, str]) -> dict:
         expanded: Dict of expanded KEY=VALUE pairs.
 
     Returns:
-        Structured dict with KANON_SOURCES (auto-discovered), sources,
-        globals, and KANON_MARKETPLACE_INSTALL.
+        Structured dict with KANON_SOURCES (auto-discovered), sources (each
+        carrying its per-dependency ``marketplace`` flag and open ``env`` map),
+        and globals. There is no global ``KANON_MARKETPLACE_INSTALL`` key:
+        marketplace install is a per-dependency
+        ``KANON_SOURCE_<alias>_MARKETPLACE`` flag (spec Section 0 item 8 /
+        Section 5.1 / FR-17), surfaced inside each source group.
 
     Raises:
         ValueError: If KANON_SOURCES is explicitly set, if no sources
-            are discovered, or if a named source is missing required
-            variables.
+            are discovered, or if a named source is missing a required
+            structural variable.
     """
     if "KANON_SOURCES" in expanded:
         msg = (
@@ -363,11 +435,9 @@ def _build_result(expanded: dict[str, str]) -> dict:
     source_names = _discover_source_names(expanded)
     sources = _extract_sources(expanded, source_names)
     globals_dict = _extract_globals(expanded, source_names)
-    marketplace_install = _parse_bool(expanded.get("KANON_MARKETPLACE_INSTALL", "false"))
 
     return {
         "KANON_SOURCES": source_names,
-        "KANON_MARKETPLACE_INSTALL": marketplace_install,
         "sources": sources,
         "globals": globals_dict,
     }
@@ -377,21 +447,25 @@ def validate_sources(
     expanded: dict[str, str],
     source_names: list[str],
 ) -> None:
-    """Validate that all named sources have required variables.
+    """Validate that all aliased sources have the required structural variables.
 
-    Each source name in ``source_names`` must have three corresponding
-    variables defined in ``expanded``:
-      - ``KANON_SOURCE_<name>_URL``
-      - ``KANON_SOURCE_<name>_REVISION``
-      - ``KANON_SOURCE_<name>_PATH``
+    Each alias in ``source_names`` must have every required structural suffix
+    defined in ``expanded`` (the alias-keyed block, spec Section 5.1):
+      - ``KANON_SOURCE_<alias>_URL``
+      - ``KANON_SOURCE_<alias>_REF``
+      - ``KANON_SOURCE_<alias>_PATH``
+      - ``KANON_SOURCE_<alias>_NAME``
+
+    Per-dependency env-var keys (e.g. ``KANON_SOURCE_<alias>_GITBASE``) are
+    optional and are never required by this validation.
 
     Args:
         expanded: Dict of expanded KEY=VALUE pairs from the .kanon file.
-        source_names: List of source names (auto-discovered, alphabetical).
+        source_names: List of source aliases (auto-discovered, alphabetical).
 
     Raises:
-        ValueError: If any named source is missing a required variable.
-            The error message includes both the source name and the
+        ValueError: If any aliased source is missing a required structural
+            variable. The error message includes both the alias and the
             missing variable name for actionable diagnostics.
     """
     for name in source_names:
@@ -405,54 +479,114 @@ def validate_sources(
 def _extract_sources(
     expanded: dict[str, str],
     source_names: list[str],
-) -> dict[str, dict[str, str]]:
+) -> dict[str, dict[str, str | bool | dict[str, str]]]:
     """Extract named source groups after validation.
+
+    Each source group carries the four required structural string fields (url,
+    ref, path, name), the optional per-dependency ``marketplace`` boolean parsed
+    from ``KANON_SOURCE_<alias>_MARKETPLACE`` (spec Section 5.1 / FR-17), and an
+    ``env`` dict holding every optional per-dependency env var: each
+    ``KANON_SOURCE_<alias>_<VAR>`` key whose ``<VAR>`` is not a reserved
+    structural/marketplace suffix is collected as ``env[VAR] = value`` (e.g.
+    ``GITBASE``). The ``env`` dict is empty when the source declares no env vars.
+    The marketplace flag is absent-means-false: a missing line yields ``False``,
+    an explicit ``=true`` yields ``True``, and a hand-written ``=false`` is
+    tolerated on read (also ``False``) though kanon never emits it.
 
     Args:
         expanded: Dict of expanded KEY=VALUE pairs.
         source_names: List of source names (auto-discovered, alphabetical).
 
     Returns:
-        Dict mapping source name to {url, revision, path}.
+        Dict mapping source alias to {url, ref, path, name, marketplace, env}.
 
     Raises:
-        ValueError: If a source is missing a required variable.
+        ValueError: If a source is missing a required structural variable.
     """
     validate_sources(expanded, source_names)
-    sources: dict[str, dict[str, str]] = {}
+    sources: dict[str, dict[str, str | bool | dict[str, str]]] = {}
     for name in source_names:
-        source_data: dict[str, str] = {}
+        source_data: dict[str, str | bool | dict[str, str]] = {}
         for suffix in SOURCE_SUFFIXES:
             var_name = f"{SOURCE_PREFIX}{name}{suffix}"
             result_key = SUFFIX_TO_KEY[suffix]
             source_data[result_key] = expanded[var_name]
+        marketplace_var = f"{SOURCE_PREFIX}{name}{SOURCE_MARKETPLACE_SUFFIX}"
+        source_data[SOURCE_MARKETPLACE_KEY] = _parse_bool(expanded.get(marketplace_var, "false"))
+        source_data[SOURCE_ENV_KEY] = _extract_source_env(expanded, name, source_names)
         sources[name] = source_data
     return sources
+
+
+def _extract_source_env(
+    expanded: dict[str, str],
+    name: str,
+    source_names: list[str],
+) -> dict[str, str]:
+    """Collect the open, optional per-dependency env-var map for one source.
+
+    Every ``KANON_SOURCE_<name>_<VAR>`` key whose ``<VAR>`` is not a reserved
+    structural suffix (``_URL``/``_REF``/``_PATH``/``_NAME``) or the
+    ``_MARKETPLACE`` flag is collected as ``{VAR: value}``. The ``<VAR>`` token
+    is the key text after the ``KANON_SOURCE_<name>_`` prefix (e.g. ``GITBASE``,
+    ``MYBASE``). Missing env vars never fail: an absent key simply does not
+    appear in the returned map.
+
+    Keys that are reserved structural/marketplace keys of any other discovered
+    source are excluded so that, when one alias is a textual prefix of another
+    (aliases may contain single underscores), a longer alias' structural keys do
+    not leak into the shorter alias' env map.
+
+    Args:
+        expanded: Dict of expanded KEY=VALUE pairs.
+        name: The source alias whose env vars are collected.
+        source_names: All discovered source aliases (used to exclude other
+            sources' reserved keys).
+
+    Returns:
+        Dict mapping each declared env-var name to its value (possibly empty).
+    """
+    prefix = f"{SOURCE_PREFIX}{name}_"
+    reserved_keys: set[str] = set()
+    for other in source_names:
+        for suffix in SOURCE_RESERVED_SUFFIXES:
+            reserved_keys.add(f"{SOURCE_PREFIX}{other}{suffix}")
+    env: dict[str, str] = {}
+    for key, value in expanded.items():
+        if key in reserved_keys:
+            continue
+        if key.startswith(prefix):
+            var = key[len(prefix) :]
+            if var:
+                env[var] = value
+    return env
 
 
 def _extract_globals(
     expanded: dict[str, str],
     source_names: list[str],
 ) -> dict[str, str]:
-    """Extract non-source, non-special variables as globals.
+    """Extract non-source variables as globals.
+
+    Every per-dependency key is excluded so that no alias-scoped key leaks into
+    the global namespace: the required structural ``SOURCE_SUFFIXES`` block, the
+    optional ``KANON_SOURCE_<alias>_MARKETPLACE`` flag, and every open
+    per-dependency env-var key (any other ``KANON_SOURCE_<alias>_<VAR>``). The
+    former global ``KANON_MARKETPLACE_INSTALL`` field no longer exists (spec
+    Section 0 item 8 / FR-17), so there is no global marketplace key to exclude.
 
     Args:
         expanded: Dict of expanded KEY=VALUE pairs.
         source_names: List of source names (auto-discovered, alphabetical).
 
     Returns:
-        Dict of global variables (excludes KANON_MARKETPLACE_INSTALL
-        and source-specific variables).
+        Dict of global variables (excludes every source-specific variable,
+        including each source's optional ``_MARKETPLACE`` flag and open env
+        vars).
     """
-    source_keys: set[str] = set()
-    for name in source_names:
-        for suffix in SOURCE_SUFFIXES:
-            source_keys.add(f"{SOURCE_PREFIX}{name}{suffix}")
+    alias_prefixes = tuple(f"{SOURCE_PREFIX}{name}_" for name in source_names)
 
-    special_keys = {"KANON_MARKETPLACE_INSTALL"}
-    exclude = source_keys | special_keys
-
-    return {k: v for k, v in expanded.items() if k not in exclude}
+    return {k: v for k, v in expanded.items() if not k.startswith(alias_prefixes)}
 
 
 def _parse_bool(value: str) -> bool:

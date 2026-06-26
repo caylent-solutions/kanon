@@ -1,17 +1,3 @@
-# Copyright (C) 2026 Caylent, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Integration tests for all 20 bug fixes from BACKLOG-repo-bugs.md Section 6.23.
 
 Tests use real temporary git repositories created via subprocess git init in
@@ -39,10 +25,6 @@ from kanon_cli.repo.error import ManifestInvalidPathError
 from kanon_cli.repo.project import Project, _LinkFile
 from kanon_cli.repo.subcmds.envsubst import Envsubst
 
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Bug Fix Integration Test User"
 _GIT_USER_EMAIL = "bug-fix-integration@example.com"
@@ -82,11 +64,6 @@ _MANIFEST_WITH_NESTED_VAR = """\
   <project name="myproject" path="myproject" />
 </manifest>
 """
-
-
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -135,11 +112,6 @@ def _make_project_with_mock_remote(
     return proj
 
 
-# ===========================================================================
-# CRITICAL SEVERITY -- Bugs 1-4 (Block production)
-# ===========================================================================
-
-
 @pytest.mark.integration
 def test_bug1_malformed_xml_skipped_processing_continues_end_to_end(tmp_path: pathlib.Path) -> None:
     """Bug 1: Malformed XML in real workspace is skipped; valid file is processed.
@@ -164,7 +136,6 @@ def test_bug1_malformed_xml_skipped_processing_continues_end_to_end(tmp_path: pa
     processed = []
 
     def _track_envsubst(infile: str) -> set:
-        # Delegate to the real EnvSubst but track which files were called.
         result = Envsubst.EnvSubst(cmd, infile)
         processed.append(infile)
         return result
@@ -227,7 +198,6 @@ def test_bug2_linkfile_oserror_propagates_from_real_readonly_directory(tmp_path:
     topdir = tmp_path / "checkout"
     topdir.mkdir()
 
-    # Make topdir read-only so the symlink creation fails.
     topdir.chmod(stat.S_IRUSR | stat.S_IXUSR)
 
     lf = _make_link_file(worktree, "data.txt", topdir, "linked-data.txt")
@@ -319,7 +289,6 @@ def test_bug4_foreign_symlink_in_real_directory_logs_warning_and_is_replaced(tmp
     topdir = tmp_path / "checkout"
     topdir.mkdir()
 
-    # Create a user-created (foreign) symlink at the destination.
     foreign_target = "/some/user/created/target"
     dest_path = topdir / "config.txt"
     os.symlink(foreign_target, str(dest_path))
@@ -333,7 +302,6 @@ def test_bug4_foreign_symlink_in_real_directory_logs_warning_and_is_replaced(tmp
             "but it was not. Bug 4: user-created symlinks must not be silently replaced."
         )
 
-    # The symlink must now point to the repo-managed relative source.
     expected_rel = os.path.relpath(str(src_file), str(topdir))
     assert dest_path.is_symlink(), f"Expected {dest_path} to be a symlink after _Link()"
     actual_target = os.readlink(str(dest_path))
@@ -361,7 +329,6 @@ def test_bug4_repo_managed_symlink_replaced_without_warning_in_real_directory(tm
     topdir = tmp_path / "checkout"
     topdir.mkdir()
 
-    # Create a symlink already pointing to the repo-managed relative source.
     expected_rel = os.path.relpath(str(src_file), str(topdir))
     dest_path = topdir / "schema.json"
     os.symlink(expected_rel, str(dest_path))
@@ -371,11 +338,6 @@ def test_bug4_repo_managed_symlink_replaced_without_warning_in_real_directory(tm
     with mock.patch("kanon_cli.repo.project.logger") as mock_logger:
         lf._Link()
         mock_logger.warning.assert_not_called()
-
-
-# ===========================================================================
-# HIGH SEVERITY -- Bugs 5-10 (Operational risk)
-# ===========================================================================
 
 
 @pytest.mark.integration
@@ -393,7 +355,6 @@ def test_bug5_empty_glob_result_logs_warning_in_real_workspace(
     """
     manifests_dir = tmp_path / ".repo" / "manifests"
     manifests_dir.mkdir(parents=True)
-    # No XML files in the directory -- glob will return empty.
 
     cmd = _make_envsubst_cmd()
 
@@ -512,12 +473,10 @@ def test_bug7_ls_remote_retried_on_transient_failure(monkeypatch: pytest.MonkeyP
         call_count[0] += 1
         result = mock.MagicMock()
         if call_count[0] == 1:
-            # First call: transient failure.
             result.returncode = 1
             result.stdout = ""
             result.stderr = "Connection reset by peer"
         else:
-            # Second call: success.
             result.returncode = 0
             result.stdout = success_output
             result.stderr = ""
@@ -655,7 +614,7 @@ def test_bug10_selfupdate_embedded_prints_message_and_exits_disabled() -> None:
         f"but got {result!r}. "
         f"Bug 10: selfupdate is disabled in embedded mode and must exit non-zero."
     )
-    # Verify no sync was attempted.
+
     instance.manifest.repoProject.Sync_NetworkHalf.assert_not_called()
 
 
@@ -695,11 +654,6 @@ def test_bug10_selfupdate_embedded_does_not_call_rp_sync() -> None:
     mock_manifest.repoProject.Sync_NetworkHalf.assert_not_called()
 
 
-# ===========================================================================
-# MEDIUM SEVERITY -- Bugs 11-15 (Edge cases / quality)
-# ===========================================================================
-
-
 @pytest.mark.integration
 def test_bug11_race_condition_retry_on_transient_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """Bug 11: Retry covers transient tag deletion race condition.
@@ -714,8 +668,6 @@ def test_bug11_race_condition_retry_on_transient_failure(monkeypatch: pytest.Mon
     monkeypatch.setenv("KANON_GIT_RETRY_COUNT", "3")
     monkeypatch.setenv("KANON_GIT_RETRY_DELAY", "0")
 
-    # Simulate: first call gets a transient error (tag was just deleted),
-    # second call succeeds with the available tags.
     call_results = [
         (1, "", "fatal: unable to connect to remote"),
         (0, "deadbeef\trefs/tags/dev/race/2.0.0\n", ""),
@@ -771,17 +723,14 @@ def test_bug12_backup_file_rotation_in_real_filesystem(tmp_path: pathlib.Path) -
     with mock.patch.dict(os.environ, env):
         cmd.EnvSubst(str(manifest_path))
 
-    # After first run, a .bak file must exist.
     bak_path = pathlib.Path(str(manifest_path) + ".bak")
     assert bak_path.exists(), (
         f"Expected .bak file {bak_path} to exist after first EnvSubst() call, but it was not found."
     )
 
-    # Run EnvSubst() a second time on the already-processed file.
     with mock.patch.dict(os.environ, env):
         cmd.EnvSubst(str(manifest_path))
 
-    # The .bak file must still exist after the second run.
     assert bak_path.exists(), (
         f"Expected .bak file {bak_path} to still exist after second EnvSubst() call, "
         f"but it was not found. Bug 12: backup rotation must not delete the backup."
@@ -925,11 +874,6 @@ def test_bug15_prerelease_exclusion_documented_in_version_constraints_module() -
     )
 
 
-# ===========================================================================
-# LOW SEVERITY -- Bugs 16-20 (Code quality / hardening)
-# ===========================================================================
-
-
 @pytest.mark.integration
 def test_bug16_nested_variable_warning_in_real_manifest_file(
     tmp_path: pathlib.Path,
@@ -1000,9 +944,6 @@ def test_bug17_path_operations_work_with_various_separators(
     topdir = tmp_path / "checkout"
     topdir.mkdir()
 
-    # Use the separator character specified by the parametrize.
-    # On Linux '/' == os.sep so both cases exercise the same code path,
-    # confirming no assumptions break.
     src_rel = f"configs{sep_char}app.conf"
     lf = _make_link_file(worktree, src_rel, topdir, "app.conf")
 
@@ -1031,7 +972,6 @@ def test_bug19_nonexistent_glob_src_directory_raises_clear_error(tmp_path: pathl
     topdir = tmp_path / "checkout"
     topdir.mkdir()
 
-    # Source directory that does not exist.
     nonexistent_src = "nonexistent_subdir/*.xml"
     lf = _make_link_file(worktree, nonexistent_src, topdir, "dest_dir")
 
@@ -1068,7 +1008,6 @@ def test_bug20_glob_dest_is_file_raises_exception_not_silently_skipped(tmp_path:
     topdir = tmp_path / "checkout"
     topdir.mkdir()
 
-    # Create dest as a regular file (not a directory) -- this is the bug condition.
     dest_file = topdir / "dest_as_file"
     dest_file.write_text("I am a file, not a directory", encoding="utf-8")
 

@@ -45,15 +45,10 @@ from kanon_cli.constants import (
 
 _COMPLETER_NAME = "__complete_source_names_in_kanon"
 
-# Pattern that matches KANON_SOURCE_<name>_URL where <name> is non-empty.
+
 _SOURCE_URL_RE = re.compile(
     r"^" + re.escape(SOURCE_PREFIX) + r"(.+)" + re.escape(SOURCE_URL_SUFFIX) + r"\s*=",
 )
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 
 def _resolve_kanon_file() -> Path:
@@ -98,11 +93,6 @@ def _extract_source_names(content: str) -> list[str]:
     return sorted(names)
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def complete(current_token: str) -> list[str]:
     """Return source names from the .kanon file that start with current_token.
 
@@ -140,11 +130,6 @@ def complete(current_token: str) -> list[str]:
         return []
 
     return [n for n in names if n.startswith(current_token)]
-
-
-# ---------------------------------------------------------------------------
-# CLI registration
-# ---------------------------------------------------------------------------
 
 
 def register(

@@ -24,11 +24,6 @@ from tests.scenarios.conftest import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Fixture builders
-# ---------------------------------------------------------------------------
-
-
 def _build_manifest_fixture(base: pathlib.Path) -> pathlib.Path:
     """Build a bare manifest repo containing repo-specs/alpha-only.xml.
 
@@ -69,17 +64,8 @@ def _build_manifest_fixture(base: pathlib.Path) -> pathlib.Path:
     )
 
 
-# ---------------------------------------------------------------------------
-# Test class
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.scenario
 class TestTCInstall:
-    # ------------------------------------------------------------------
-    # TC-install-01: auto-discover walks parent tree
-    # ------------------------------------------------------------------
-
     def test_tc_install_01_auto_discover_walks_parent_tree(self, tmp_path: pathlib.Path) -> None:
         """TC-install-01: install from a subdirectory discovers .kanon in the parent tree."""
         manifest_bare = _build_manifest_fixture(tmp_path / "fixtures")
@@ -100,7 +86,6 @@ class TestTCInstall:
             marketplace_install="false",
         )
 
-        # Run install from a deep subdirectory; auto-discover must walk up.
         sub_deep = project_root / "sub" / "deep"
         sub_deep.mkdir(parents=True)
 
@@ -114,16 +99,11 @@ class TestTCInstall:
             f"install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
-        assert (project_root / ".packages" / "pkg-alpha").is_symlink(), (
-            ".packages/pkg-alpha symlink not found in project root"
-        )
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert (store_base / ".packages" / "pkg-alpha").is_symlink(), ".packages/pkg-alpha symlink not found in store"
 
         clean_result = kanon_clean(project_root)
         assert clean_result.returncode == 0, f"clean exited {clean_result.returncode}\nstdout={clean_result.stdout!r}"
-
-    # ------------------------------------------------------------------
-    # TC-install-02: explicit path bypasses auto-discover
-    # ------------------------------------------------------------------
 
     def test_tc_install_02_explicit_path_bypasses_auto_discover(self, tmp_path: pathlib.Path) -> None:
         """TC-install-02: kanon install <path> uses the explicit env file, not auto-discover."""
@@ -145,7 +125,7 @@ class TestTCInstall:
             ],
             marketplace_install="false",
         )
-        # Rename .kanon to my.kanon so auto-discover cannot find it.
+
         (work_dir / ".kanon").rename(kanon_file)
 
         catalog_source = f"{manifest_bare.as_uri()}@main"
@@ -159,16 +139,13 @@ class TestTCInstall:
             f"install exited {install_result.returncode}\n"
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
-        assert (work_dir / ".packages" / "pkg-alpha").is_symlink(), (
-            ".packages/pkg-alpha symlink not found after explicit-path install"
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert (store_base / ".packages" / "pkg-alpha").is_symlink(), (
+            ".packages/pkg-alpha symlink not found in store after explicit-path install"
         )
 
         clean_result = run_kanon("clean", str(kanon_file), cwd=work_dir)
         assert clean_result.returncode == 0, f"clean exited {clean_result.returncode}\nstdout={clean_result.stdout!r}"
-
-    # ------------------------------------------------------------------
-    # TC-install-03: REPO_URL env emits deprecation warning
-    # ------------------------------------------------------------------
 
     def test_tc_install_03_repo_url_deprecation_warning(self, tmp_path: pathlib.Path) -> None:
         """TC-install-03: kanon install emits a deprecation warning when REPO_URL is set."""
@@ -206,10 +183,6 @@ class TestTCInstall:
         )
 
         kanon_clean(work_dir)
-
-    # ------------------------------------------------------------------
-    # TC-install-04: REPO_REV env emits deprecation warning
-    # ------------------------------------------------------------------
 
     def test_tc_install_04_repo_rev_deprecation_warning(self, tmp_path: pathlib.Path) -> None:
         """TC-install-04: kanon install emits a deprecation warning when REPO_REV is set."""

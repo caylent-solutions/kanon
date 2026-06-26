@@ -41,9 +41,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Cherry Pick Happy Test User"
 _GIT_USER_EMAIL = "repo-cherry-pick-happy@example.com"
@@ -51,37 +48,31 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "cherry-pick-test-project"
 
-# Branch names used in cherry-pick tests -- each test uses a unique name to
-# avoid cross-test interference when the same started repo is reused.
+
 _BRANCH_DEFAULT = "feature/default-cherry-pick"
 _BRANCH_CHANNEL_DISCIPLINE = "feature/channel-cherry-pick"
 
-# Local branch used to produce a cherry-pickable commit in the project worktree
+
 _CHERRY_SOURCE_BRANCH = "local/cherry-source"
 
-# File added on the cherry source branch -- unique name to avoid conflicts
+
 _CHERRY_SOURCE_FILE = "cherry-source-content.txt"
 _CHERRY_SOURCE_TEXT = "added by cherry-pick source branch"
 
-# Commit message for the cherry-pick source commit
+
 _CHERRY_COMMIT_MSG = "Add cherry source file"
 
-# Flag name constant
+
 _FLAG_ALL = "--all"
 
-# Expected exit code for all happy-path invocations
+
 _EXPECTED_EXIT_CODE = 0
 
-# Traceback indicator used in channel-discipline assertions
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs
+
 _ERROR_PREFIX = "Error:"
-
-
-# ---------------------------------------------------------------------------
-# Local setup helpers
-# ---------------------------------------------------------------------------
 
 
 def _setup_started_repo(
@@ -216,11 +207,6 @@ def _git_in_project(args: list[str], project_dir: pathlib.Path) -> None:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo cherry-pick with default args exits 0
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoCherryPickHappyPathDefaultArgs:
     """AC-TEST-001 / AC-FUNC-001: 'kanon repo cherry-pick' with default args exits 0.
@@ -290,11 +276,6 @@ class TestRepoCherryPickHappyPathDefaultArgs:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo cherry-pick has a happy-path test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoCherryPickPositionalArgHappyPath:
     """AC-TEST-002: happy-path test for the positional argument of 'repo cherry-pick'.
@@ -335,11 +316,6 @@ class TestRepoCherryPickPositionalArgHappyPath:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

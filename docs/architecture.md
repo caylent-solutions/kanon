@@ -250,6 +250,6 @@ binary for the following reasons:
 - [`docs/lockfile.md`](lockfile.md) -- lockfile TOML schema, `kanon_hash`
   field, and the five-row install state matrix.
 - [`docs/configuration.md`](configuration.md) -- all environment variables,
-  including `KANON_CATALOG_SOURCE` and `KANON_GIT_LS_REMOTE_TIMEOUT`.
+  including `KANON_CATALOG_SOURCES` and `KANON_GIT_LS_REMOTE_TIMEOUT`.
 - [`docs/security-model.md`](security-model.md) -- the no-provider-API rule,
   the no-credentials-caching rule, and the auth-error pattern list.

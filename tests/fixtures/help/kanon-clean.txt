@@ -2,9 +2,10 @@ usage: kanon clean [-h] [--orphans] [kanonenv_path]
 
 Execute the full Kanon clean lifecycle.
 
-If KANON_MARKETPLACE_INSTALL=true, runs the uninstall script
-and removes the marketplace directory. Then removes .packages/
-and .kanon-data/ directories.
+If any dependency set KANON_SOURCE_<alias>_MARKETPLACE=true, runs
+the uninstall script and removes the marketplace directory. Then
+removes .packages/ and .kanon-data/ directories and prunes the
+content-addressed entries from the shared KANON_HOME store.
 
 With --orphans, before the normal teardown kanon also unregisters
 any kanon-owned marketplaces recorded in .kanon.lock that are no

@@ -1,17 +1,3 @@
-# Copyright 2024 RPM Contributors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Functional tests for RPM-specific features.
 
 These tests exercise the features added over the Google upstream repo tool,
@@ -178,7 +164,6 @@ class TestAbsolutePathLinkfile:
         """_CheckLocalPath should allow absolute paths when abs_ok=True."""
         from kanon_cli.repo import manifest_xml
 
-        # Should NOT raise
         manifest_xml.XmlManifest._CheckLocalPath("/etc/myapp/config.yml", abs_ok=True)
 
     def test_check_local_path_rejects_traversal_even_with_abs_ok(self):
@@ -202,7 +187,6 @@ class TestMandatorySSH:
             result = ssh.version()
             assert isinstance(result, tuple)
         except SystemExit:
-            # Expected if ssh is not installed in test environment
             pass
         finally:
             ssh.version.cache_clear()
@@ -221,7 +205,6 @@ class TestLinkFileExclude:
         worktree.mkdir()
         topdir.mkdir()
 
-        # Create source directory with children.
         src_dir = worktree / "plugin"
         src_dir.mkdir()
         (src_dir / "main.py").write_text("# main")

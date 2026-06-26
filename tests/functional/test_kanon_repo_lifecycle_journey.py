@@ -14,9 +14,6 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Journey Test User"
 _GIT_USER_EMAIL = "journey-test@example.com"
@@ -29,10 +26,6 @@ _COPY_SOURCE_FILE = "copy-source.txt"
 _COPY_SOURCE_TEXT = "copy source content"
 _TAG_VERSION = "1.0.5"
 _TAG_CONSTRAINT = "refs/tags/~=1.0.0"
-
-# ---------------------------------------------------------------------------
-# Low-level git helper
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -53,11 +46,6 @@ def _git(args: list[str], cwd: pathlib.Path) -> None:
     )
     if result.returncode != 0:
         raise RuntimeError(f"git {args!r} failed in {cwd!r}:\n  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}")
-
-
-# ---------------------------------------------------------------------------
-# Shared git repo creation helpers
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -354,11 +342,6 @@ def _sync_checkout(checkout_dir: pathlib.Path, repo_dir: pathlib.Path) -> subpro
     )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-001: test_repo_init_sync_lifecycle
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoInitSyncLifecycle:
     """AC-TEST-001: kanon repo init -> sync -> verify projects cloned with correct files."""
@@ -401,11 +384,6 @@ class TestRepoInitSyncLifecycle:
         assert content == _CONTENT_FILE_TEXT, f"Content of {readme!r} was {content!r}, expected {_CONTENT_FILE_TEXT!r}."
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: test_repo_init_envsubst_sync_lifecycle
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoInitEnvsubstSyncLifecycle:
     """AC-TEST-002: init -> set env var -> envsubst -> sync -> verify substitution worked."""
@@ -428,7 +406,6 @@ class TestRepoInitEnvsubstSyncLifecycle:
         bare_content = _create_bare_content_repo(repos_dir)
         real_fetch_base = f"file://{bare_content.parent}"
 
-        # Manifest with placeholder
         envsubst_work_dir = repos_dir / "envsubst-manifest-work"
         envsubst_work_dir.mkdir()
         _init_git_work_dir(envsubst_work_dir)
@@ -481,11 +458,6 @@ class TestRepoInitEnvsubstSyncLifecycle:
         assert project_dir.is_dir(), f"Project directory {project_dir!r} was not created after envsubst + sync."
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: test_repo_init_sync_status
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoInitSyncStatus:
     """AC-TEST-003: after sync, kanon repo status verifies project names in output."""
@@ -514,10 +486,6 @@ class TestRepoInitSyncStatus:
         sync_result = _sync_checkout(checkout_dir, repo_dir)
         assert sync_result.returncode == 0, f"Prerequisite sync failed: {sync_result.stderr!r}"
 
-        # Modify a tracked file in the project so that status reports it as
-        # dirty -- this causes the project header line ("project status-project/")
-        # to appear in the output, which is what "verify project names in output"
-        # requires.
         tracked_file = checkout_dir / "status-project" / _CONTENT_FILE_NAME
         original_content = tracked_file.read_text(encoding="utf-8")
         tracked_file.write_text(original_content + "\nmodified for status test\n", encoding="utf-8")
@@ -540,11 +508,6 @@ class TestRepoInitSyncStatus:
             f"  stdout: {status_result.stdout!r}\n"
             f"  stderr: {status_result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: test_repo_init_sync_list
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -593,11 +556,6 @@ class TestRepoInitSyncList:
             f"  stdout: {list_result.stdout!r}\n"
             f"  stderr: {list_result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005: test_repo_init_sync_forall
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -650,11 +608,6 @@ class TestRepoInitSyncForall:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-006: test_repo_sync_with_linkfile
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoSyncWithLinkfile:
     """AC-TEST-006: manifest with <linkfile> elements -> sync -> verify symlinks exist."""
@@ -701,11 +654,6 @@ class TestRepoSyncWithLinkfile:
         assert link_path.exists() or link_path.is_symlink(), (
             f"Expected symlink or file at {link_path!r} after sync with <linkfile>."
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-007: test_repo_sync_with_copyfile
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -756,11 +704,6 @@ class TestRepoSyncWithCopyfile:
         assert content == _COPY_SOURCE_TEXT, f"Copied file content was {content!r}, expected {_COPY_SOURCE_TEXT!r}."
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-008: test_repo_sync_with_version_constraint
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoSyncWithVersionConstraint:
     """AC-TEST-008: manifest with revision='refs/tags/~=1.0.0' -> sync -> correct tag checked out."""
@@ -807,11 +750,6 @@ class TestRepoSyncWithVersionConstraint:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-009: test_repo_sync_idempotent
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoSyncIdempotent:
     """AC-TEST-009: sync twice -> second sync succeeds with no errors."""
@@ -852,11 +790,6 @@ class TestRepoSyncIdempotent:
         assert project_dir.is_dir(), f"Project directory {project_dir!r} missing after second sync."
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-010: test_repo_reinit_different_manifest
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoReinitDifferentManifest:
     """AC-TEST-010: init with manifest A, then init with manifest B -> second init works."""
@@ -873,7 +806,6 @@ class TestRepoReinitDifferentManifest:
         repos_dir = tmp_path / "repos"
         repos_dir.mkdir()
 
-        # Manifest A: references content-bare with path project-a
         bare_content_a = _create_bare_content_repo(repos_dir)
         fetch_base_a = f"file://{bare_content_a.parent}"
         manifest_bare_a = _create_manifest_repo(
@@ -883,7 +815,6 @@ class TestRepoReinitDifferentManifest:
             subdir_name="manifest-a",
         )
 
-        # Manifest B: references a second content repo with path project-b
         repos_dir_b = tmp_path / "repos-b"
         repos_dir_b.mkdir()
         bare_content_b_work = repos_dir_b / "content-b-work"
@@ -902,10 +833,8 @@ class TestRepoReinitDifferentManifest:
             subdir_name="manifest-b",
         )
 
-        # First init with manifest A
         checkout_dir, repo_dir = _init_checkout(tmp_path, manifest_bare_a)
 
-        # Second init with manifest B in the same checkout directory
         manifest_url_b = f"file://{manifest_bare_b}"
         reinit_result = _run_kanon(
             "repo",
@@ -926,11 +855,6 @@ class TestRepoReinitDifferentManifest:
             f"  stdout: {reinit_result.stdout!r}\n"
             f"  stderr: {reinit_result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-011: test_repo_selfupdate_embedded_message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -980,18 +904,12 @@ class TestRepoSelfupdateEmbeddedMessage:
             f"  stderr: {selfupdate_result.stderr!r}"
         )
 
-        # Verify against the authoritative constant
         assert SELFUPDATE_EMBEDDED_MESSAGE in combined, (
             f"Expected the full SELFUPDATE_EMBEDDED_MESSAGE constant {SELFUPDATE_EMBEDDED_MESSAGE!r} "
             f"to appear in output, but got:\n"
             f"  stdout: {selfupdate_result.stdout!r}\n"
             f"  stderr: {selfupdate_result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-012: test_repo_invalid_subcommand
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

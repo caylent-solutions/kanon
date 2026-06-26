@@ -11,6 +11,7 @@ Covers:
   - install with mocked repo APIs
 """
 
+import os
 import pathlib
 from unittest.mock import patch
 
@@ -18,7 +19,7 @@ import pytest
 
 import kanon_cli
 from kanon_cli.constants import (
-    CATALOG_ENV_VAR,
+    CATALOG_SOURCES_ENV_VAR,
     CONSTRAINT_RE,
     KANONENV_FILENAME,
     KANON_REPO_DIR_ENV,
@@ -44,12 +45,6 @@ from kanon_cli.core.install import (
     update_gitignore,
 )
 from kanon_cli.core.kanonenv import parse_kanonenv
-from tests.conftest import DEFAULT_CATALOG_SOURCE
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-010: Miscellaneous feature integration tests (24 tests)
-# ---------------------------------------------------------------------------
 
 
 def _write_kanonenv(path: pathlib.Path, content: str) -> pathlib.Path:
@@ -57,11 +52,6 @@ def _write_kanonenv(path: pathlib.Path, content: str) -> pathlib.Path:
     kanonenv = path / ".kanon"
     kanonenv.write_text(content)
     return kanonenv
-
-
-# -------------------------------------------------------------------------
-# Constants module integrity
-# -------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -74,8 +64,12 @@ class TestConstantsModule:
 
     def test_source_suffixes_tuple(self) -> None:
         assert "_URL" in SOURCE_SUFFIXES
-        assert "_REVISION" in SOURCE_SUFFIXES
+        assert "_REF" in SOURCE_SUFFIXES
         assert "_PATH" in SOURCE_SUFFIXES
+        assert "_NAME" in SOURCE_SUFFIXES
+        assert "_GITBASE" not in SOURCE_SUFFIXES, (
+            "_GITBASE is now an optional per-dependency env var, not a required structural suffix"
+        )
 
     def test_kanonenv_filename(self) -> None:
         assert KANONENV_FILENAME == ".kanon"
@@ -99,8 +93,8 @@ class TestConstantsModule:
         assert m.group(1) == "HOME"
 
     def test_catalog_env_var_defined(self) -> None:
-        assert isinstance(CATALOG_ENV_VAR, str)
-        assert CATALOG_ENV_VAR
+        assert isinstance(CATALOG_SOURCES_ENV_VAR, str)
+        assert CATALOG_SOURCES_ENV_VAR
 
     def test_selfupdate_message_defined(self) -> None:
         assert isinstance(SELFUPDATE_EMBEDDED_MESSAGE, str)
@@ -109,11 +103,6 @@ class TestConstantsModule:
     def test_kanon_repo_dir_env_defined(self) -> None:
         assert isinstance(KANON_REPO_DIR_ENV, str)
         assert KANON_REPO_DIR_ENV
-
-
-# -------------------------------------------------------------------------
-# Version export
-# -------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -126,11 +115,6 @@ class TestVersionExport:
     def test_version_is_non_empty_string(self) -> None:
         assert isinstance(kanon_cli.__version__, str)
         assert len(kanon_cli.__version__) > 0
-
-
-# -------------------------------------------------------------------------
-# Install core business logic
-# -------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -183,11 +167,6 @@ class TestInstallCoreLogic:
         assert list(mp_dir.iterdir()) == []
 
 
-# -------------------------------------------------------------------------
-# Clean lifecycle
-# -------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestCleanLifecycle:
     """Verify clean helper functions and full clean() lifecycle."""
@@ -220,18 +199,15 @@ class TestCleanLifecycle:
     def test_clean_removes_packages_and_kanon_data(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REF=main\nKANON_SOURCE_s_PATH=m.xml\nKANON_SOURCE_s_NAME=s\nKANON_SOURCE_s_GITBASE=https://example.com\n",
         )
-        (tmp_path / ".packages").mkdir()
-        (tmp_path / ".kanon-data").mkdir()
+
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        (store_base / ".packages").mkdir(parents=True)
+        (store_base / ".kanon-data").mkdir(parents=True)
         clean(kanonenv)
-        assert not (tmp_path / ".packages").exists()
-        assert not (tmp_path / ".kanon-data").exists()
-
-
-# -------------------------------------------------------------------------
-# kanonenv edge-case parsing
-# -------------------------------------------------------------------------
+        assert not (store_base / ".packages").exists()
+        assert not (store_base / ".kanon-data").exists()
 
 
 @pytest.mark.integration
@@ -243,8 +219,10 @@ class TestKanonenvEdgeCases:
             tmp_path,
             "# This is a comment\n"
             "KANON_SOURCE_s_URL=https://example.com/s.git\n"
-            "KANON_SOURCE_s_REVISION=main\n"
-            "KANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         for key in result.get("globals", {}):
@@ -254,8 +232,10 @@ class TestKanonenvEdgeCases:
         kanonenv = _write_kanonenv(
             tmp_path,
             "\n\nKANON_SOURCE_s_URL=https://example.com/s.git\n\n"
-            "KANON_SOURCE_s_REVISION=main\n"
-            "KANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_REF=main\n"
+            "KANON_SOURCE_s_PATH=m.xml\n"
+            "KANON_SOURCE_s_NAME=s\n"
+            "KANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         assert result["KANON_SOURCES"] == ["s"]
@@ -263,7 +243,7 @@ class TestKanonenvEdgeCases:
     def test_value_with_embedded_equals(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_SOURCE_s_URL=https://example.com?a=1&b=2\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_URL=https://example.com?a=1&b=2\nKANON_SOURCE_s_REF=main\nKANON_SOURCE_s_PATH=m.xml\nKANON_SOURCE_s_NAME=s\nKANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         result = parse_kanonenv(kanonenv)
         assert result["sources"]["s"]["url"] == "https://example.com?a=1&b=2"
@@ -271,13 +251,15 @@ class TestKanonenvEdgeCases:
     def test_install_with_mocked_repo_api(self, tmp_path: pathlib.Path) -> None:
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REVISION=main\nKANON_SOURCE_s_PATH=m.xml\n",
+            "KANON_SOURCE_s_URL=https://example.com/s.git\nKANON_SOURCE_s_REF=main\nKANON_SOURCE_s_PATH=m.xml\nKANON_SOURCE_s_NAME=s\nKANON_SOURCE_s_GITBASE=https://example.com\n",
         )
         with (
             patch("kanon_cli.repo.repo_init"),
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
         ):
-            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock", catalog_source=DEFAULT_CATALOG_SOURCE)
-        assert (tmp_path / ".kanon-data" / "sources" / "s").is_dir()
-        assert (tmp_path / ".gitignore").is_file()
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+
+        store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        assert (store_base / ".kanon-data" / "sources" / "s").is_dir()
+        assert (store_base / ".gitignore").is_file()

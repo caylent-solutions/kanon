@@ -55,9 +55,5 @@ def derive_lock_file_path(
     if env_lock_file is not None and env_lock_file != "":
         return Path(env_lock_file)
 
-    # Derive: append ".lock" to the full suffix of kanon_file_path.
-    # Path("./.kanon").suffix == "" -- .kanon has no dot-extension in Path's view
-    # because the filename starts with a dot.  We use string manipulation so
-    # that Path("./.kanon").with_suffix("" + ".lock") == Path("./.kanon.lock").
     suffix = kanon_file_path.suffix
     return kanon_file_path.with_suffix(suffix + ".lock")

@@ -27,11 +27,6 @@ from kanon_cli.core.marketplace import (
 )
 
 
-# ---------------------------------------------------------------------------
-# AC-FUNC-006: Marketplace lifecycle integration tests (28 tests)
-# ---------------------------------------------------------------------------
-
-
 def _create_marketplace(
     parent: pathlib.Path,
     name: str,
@@ -142,8 +137,7 @@ class TestDiscoverPlugins:
         array. Sibling directories without a corresponding array entry are NOT
         discovered (the previous plugin.json-subdirectory pattern is gone)."""
         mp = _create_marketplace(tmp_path, "mp", plugins=["real"])
-        # A bare directory next to the manifest must NOT be picked up by
-        # discover_plugins now that the contract is array-driven.
+
         (mp / "not-a-plugin").mkdir()
         plugins = discover_plugins(mp)
         assert len(plugins) == 1

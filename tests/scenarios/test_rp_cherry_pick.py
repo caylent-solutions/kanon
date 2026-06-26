@@ -55,12 +55,9 @@ class TestRPCherryPick:
 
         _configure_git_identity(pkg_alpha)
 
-        # Start a topic branch so the project is on a named branch.
         start_result = run_kanon("repo", "start", "cp-topic", "--all", cwd=ws)
         assert start_result.returncode == 0, f"repo start cp-topic failed: {start_result.stderr!r}"
 
-        # Add a new commit directly to the pkg-alpha worktree on a temporary
-        # branch, then cherry-pick it back onto cp-topic.
         try:
             run_git(["checkout", "-b", "cp-source"], pkg_alpha)
             (pkg_alpha / "cherry.txt").write_text("cherry content\n")
@@ -68,7 +65,7 @@ class TestRPCherryPick:
             run_git(["commit", "-m", "cherry commit"], pkg_alpha)
             rev_result = run_git(["rev-parse", "HEAD"], pkg_alpha)
             sha = rev_result.stdout.strip()
-            # Switch back to the topic branch before cherry-picking.
+
             run_git(["checkout", "cp-topic"], pkg_alpha)
         except RuntimeError as exc:
             pytest.skip(f"Failed to prepare cherry-pick fixture: {exc}")
@@ -76,8 +73,6 @@ class TestRPCherryPick:
         if not sha:
             pytest.skip("Empty SHA from cp-source HEAD; skipping cherry-pick test")
 
-        # `kanon repo cherry-pick` runs `git rev-parse --verify <sha>` from
-        # the cwd; the cwd must be inside a git worktree.
         result = run_kanon("repo", "cherry-pick", sha, cwd=pkg_alpha)
 
         assert result.returncode == 0, (

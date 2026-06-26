@@ -1,15 +1,15 @@
-"""Integration tests for 'kanon list --all-versions'.
+"""Integration tests for 'kanon search -A/--all'.
 
 Builds temporary local file:// manifest-repo fixtures (committed git repos
 with *-marketplace.xml files tagged at multiple versions) and invokes
-'kanon list --all-versions --catalog-source <file>@<ref>' via subprocess.run.
+'kanon search -A/--all --catalog-source <file>@<ref>' via subprocess.run.
 
 Covers AC-TEST-002, AC-TEST-003, AC-CYCLE-001:
 - Happy path: 4 tagged versions x 3 entries = 12 rows, spec format verified.
 - --limit 3 cap: 3 newest versions x 3 entries = 9 rows.
 - --no-limit: all versions walked.
 - --since-version filter: only matching versions.
-- --all-versions --tree mutual exclusion error.
+- -A/--all --tree mutual exclusion error.
 """
 
 import os
@@ -21,14 +21,10 @@ import textwrap
 import pytest
 
 
-# ---------------------------------------------------------------------------
-# Git helper constants
-# ---------------------------------------------------------------------------
-
 _GIT_USER_NAME = "Test User"
 _GIT_USER_EMAIL = "test@example.com"
 
-# Minimal *-marketplace.xml template.
+
 _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>
@@ -44,11 +40,6 @@ _MARKETPLACE_XML_TEMPLATE = textwrap.dedent("""\
       </catalog-metadata>
     </manifest>
 """)
-
-
-# ---------------------------------------------------------------------------
-# Low-level git helpers
-# ---------------------------------------------------------------------------
 
 
 def _git(args: list[str], cwd: pathlib.Path) -> None:
@@ -91,11 +82,6 @@ def _commit_and_tag(work_dir: pathlib.Path, tag: str, message: str) -> None:
     _git(["tag", tag], cwd=work_dir)
 
 
-# ---------------------------------------------------------------------------
-# Fixture: manifest repo with multiple tagged versions
-# ---------------------------------------------------------------------------
-
-
 def _build_multi_version_manifest_repo(
     tmp_path: pathlib.Path,
     entry_names: list[str],
@@ -118,7 +104,6 @@ def _build_multi_version_manifest_repo(
     work_dir.mkdir()
     _init_git_work_dir(work_dir)
 
-    # Initial commit so git is usable.
     (work_dir / "README.md").write_text("manifest repo\n")
     _git(["add", "README.md"], cwd=work_dir)
     _git(["commit", "-m", "init"], cwd=work_dir)
@@ -138,14 +123,14 @@ def _kanon_list_all_versions(
     extra_args: list[str] | None = None,
     env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run 'kanon list --all-versions' against a bare repo and return the process."""
+    """Run 'kanon search -A/--all' against a bare repo and return the process."""
     catalog_source = f"file://{bare_repo}@main"
     cmd = [
         sys.executable,
         "-m",
         "kanon_cli",
-        "list",
-        "--all-versions",
+        "search",
+        "--all",
         "--catalog-source",
         catalog_source,
     ]
@@ -163,11 +148,6 @@ def _kanon_list_all_versions(
         cwd=str(bare_repo.parent),
         env=env,
     )
-
-
-# ---------------------------------------------------------------------------
-# Test: basic --all-versions output (AC-TEST-002, AC-CYCLE-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -225,11 +205,6 @@ class TestAllVersionsBasicOutput:
         assert names == sorted(names)
 
 
-# ---------------------------------------------------------------------------
-# Test: --limit cap (AC-FUNC-005, AC-CYCLE-001)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestAllVersionsLimit:
     """AC-FUNC-005, AC-CYCLE-001: --limit caps the number of versions walked."""
@@ -244,7 +219,7 @@ class TestAllVersionsLimit:
 
         assert proc.returncode == 0, f"stderr: {proc.stderr}"
         output_lines = [ln for ln in proc.stdout.strip().splitlines() if ln]
-        # 3 versions x 2 entries = 6 rows
+
         assert len(output_lines) == 6
 
     def test_limit_3_shows_three_newest_version_numbers(self, tmp_path):
@@ -263,7 +238,7 @@ class TestAllVersionsLimit:
     def test_default_limit_is_50(self, tmp_path):
         """Default cap (no --limit flag) is KANON_LIST_LIMIT=50."""
         entry_names = ["entry"]
-        # Create 10 versions; all 10 should be walked (under the 50 cap).
+
         versions = [f"1.{i}.0" for i in range(10)]
         bare_repo = _build_multi_version_manifest_repo(tmp_path, entry_names, versions)
 
@@ -272,11 +247,6 @@ class TestAllVersionsLimit:
         assert proc.returncode == 0
         output_lines = [ln for ln in proc.stdout.strip().splitlines() if ln]
         assert len(output_lines) == 10
-
-
-# ---------------------------------------------------------------------------
-# Test: --no-limit (AC-FUNC-005, AC-CYCLE-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -293,13 +263,8 @@ class TestAllVersionsNoLimit:
 
         assert proc.returncode == 0, f"stderr: {proc.stderr}"
         output_lines = [ln for ln in proc.stdout.strip().splitlines() if ln]
-        # 6 versions x 2 entries = 12 rows
+
         assert len(output_lines) == 12
-
-
-# ---------------------------------------------------------------------------
-# Test: --since-version (AC-TEST-003, AC-CYCLE-001)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.integration
@@ -316,7 +281,7 @@ class TestAllVersionsSinceVersion:
 
         assert proc.returncode == 0, f"stderr: {proc.stderr}"
         output_lines = [ln for ln in proc.stdout.strip().splitlines() if ln]
-        # 3 versions (2.0.0, 2.1.0, 2.2.0) x 2 entries = 6 rows
+
         assert len(output_lines) == 6
 
     def test_since_version_filters_out_older_versions(self, tmp_path):
@@ -348,17 +313,12 @@ class TestAllVersionsSinceVersion:
         assert version_parts == {"1.0.0", "1.5.0"}
 
 
-# ---------------------------------------------------------------------------
-# Test: --all-versions --tree mutual exclusion (AC-FUNC-008, AC-CYCLE-001)
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.integration
 class TestAllVersionsTreeMutualExclusion:
-    """AC-FUNC-008, AC-CYCLE-001: combining --all-versions and --tree is a hard error."""
+    """AC-FUNC-008, AC-CYCLE-001: combining -A/--all and --tree is a hard error."""
 
     def test_all_versions_tree_exits_nonzero(self, tmp_path):
-        """--all-versions --tree exits non-zero."""
+        """-A/--all --tree exits non-zero."""
         entry_names = ["entry"]
         versions = ["1.0.0"]
         bare_repo = _build_multi_version_manifest_repo(tmp_path, entry_names, versions)
@@ -368,8 +328,8 @@ class TestAllVersionsTreeMutualExclusion:
             sys.executable,
             "-m",
             "kanon_cli",
-            "list",
-            "--all-versions",
+            "search",
+            "--all",
             "--tree",
             "--catalog-source",
             catalog_source,
@@ -378,7 +338,7 @@ class TestAllVersionsTreeMutualExclusion:
         assert proc.returncode != 0
 
     def test_all_versions_tree_writes_error_to_stderr(self, tmp_path):
-        """--all-versions --tree emits an error message to stderr."""
+        """-A/--all --tree emits an error message to stderr."""
         entry_names = ["entry"]
         versions = ["1.0.0"]
         bare_repo = _build_multi_version_manifest_repo(tmp_path, entry_names, versions)
@@ -388,39 +348,33 @@ class TestAllVersionsTreeMutualExclusion:
             sys.executable,
             "-m",
             "kanon_cli",
-            "list",
-            "--all-versions",
+            "search",
+            "--all",
             "--tree",
             "--catalog-source",
             catalog_source,
         ]
         proc = subprocess.run(cmd, capture_output=True, text=True)
-        assert "mutually exclusive" in proc.stderr.lower() or "--tree" in proc.stderr or "--all-versions" in proc.stderr
+        assert "mutually exclusive" in proc.stderr.lower() or "--tree" in proc.stderr or "--all" in proc.stderr
 
     def test_all_versions_tree_detected_before_catalog_work(self, tmp_path):
         """Mutual exclusion is caught before any git clone or catalog walk."""
-        # Use a fake catalog source that would fail if cloned -- no catalog work
-        # should happen before the mutual-exclusion check.
+
         catalog_source = "file:///this/does/not/exist@main"
         cmd = [
             sys.executable,
             "-m",
             "kanon_cli",
-            "list",
-            "--all-versions",
+            "search",
+            "--all",
             "--tree",
             "--catalog-source",
             catalog_source,
         ]
         proc = subprocess.run(cmd, capture_output=True, text=True)
-        # Must fail with mutual-exclusion error, NOT with a git/clone error.
+
         assert proc.returncode != 0
-        assert "mutually exclusive" in proc.stderr.lower() or "--tree" in proc.stderr or "--all-versions" in proc.stderr
-
-
-# ---------------------------------------------------------------------------
-# Test: --limit and --no-limit mutual exclusion (AC-FUNC-009)
-# ---------------------------------------------------------------------------
+        assert "mutually exclusive" in proc.stderr.lower() or "--tree" in proc.stderr or "--all" in proc.stderr
 
 
 @pytest.mark.integration
@@ -434,8 +388,8 @@ class TestLimitNoLimitMutualExclusion:
             sys.executable,
             "-m",
             "kanon_cli",
-            "list",
-            "--all-versions",
+            "search",
+            "--all",
             "--limit",
             "5",
             "--no-limit",
@@ -452,8 +406,8 @@ class TestLimitNoLimitMutualExclusion:
             sys.executable,
             "-m",
             "kanon_cli",
-            "list",
-            "--all-versions",
+            "search",
+            "--all",
             "--limit",
             "5",
             "--no-limit",
@@ -464,15 +418,6 @@ class TestLimitNoLimitMutualExclusion:
         assert "--limit" in proc.stderr or "--no-limit" in proc.stderr or "mutually exclusive" in proc.stderr.lower()
 
 
-# ---------------------------------------------------------------------------
-# Test: explicit <name> takes precedence over derived directory name
-# (AC-FUNC-004, AC-FUNC-005 -- E49-F4-S1-T1 derived-name parity)
-# ---------------------------------------------------------------------------
-
-
-# Marketplace XML where <name> differs from the directory name.  The directory
-# containing this file is named after dir_name, but the XML declares a
-# different explicit name.  The fixed implementation MUST use the explicit name.
 _EXPLICIT_NAME_OVERRIDE_TEMPLATE = textwrap.dedent("""\
     <?xml version="1.0" encoding="UTF-8"?>
     <manifest>

@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Unit tests for revision kind disambiguation: tag vs branch vs SHA.
 
 Covers AC-TEST-001 through AC-TEST-004:
@@ -27,11 +13,6 @@ from kanon_cli.repo.git_config import IsId
 from kanon_cli.repo.git_config import IsTag
 from kanon_cli.repo.git_refs import R_HEADS
 from kanon_cli.repo.git_refs import R_TAGS
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: refs/tags/X is recognized as tag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -63,11 +44,6 @@ def test_refs_tags_is_recognized_as_tag(revision):
 def test_non_tag_revisions_are_not_recognized_as_tag(revision):
     """Non-tag revisions are not falsely classified as tags."""
     assert not IsTag(revision), f"expected {revision!r} to NOT be recognized as a tag"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: refs/heads/X is recognized as branch
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -112,11 +88,6 @@ def test_r_tags_constant_value():
     assert R_TAGS == "refs/tags/"
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: bare commit SHA is recognized as SHA
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "revision",
@@ -149,11 +120,6 @@ def test_bare_sha_is_recognized_as_id(revision):
 def test_non_sha_revisions_are_not_recognized_as_id(revision):
     """Non-SHA strings are not falsely classified as commit SHAs."""
     assert not IsId(revision), f"expected {revision!r} to NOT be recognized as a SHA"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: upstream attribute interaction with revision
-# ---------------------------------------------------------------------------
 
 
 class _FakeRemote:

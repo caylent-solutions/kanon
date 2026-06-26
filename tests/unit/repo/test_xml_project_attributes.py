@@ -49,10 +49,6 @@ from kanon_cli.repo.error import ManifestInvalidPathError
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -146,11 +142,6 @@ def _get_project(manifest: manifest_xml.XmlManifest, project_name: str):
     """
     projects_by_name = {p.name: p for p in manifest.projects}
     return projects_by_name[project_name]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests -- one per documented <project> attribute
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -581,12 +572,6 @@ class TestProjectValidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Invalid-value tests -- raise ManifestParseError or
-#              ManifestInvalidPathError
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestProjectInvalidValues:
     """AC-TEST-002: Every attribute has invalid-value tests that raise an error.
@@ -868,12 +853,6 @@ class TestProjectInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Required attribute omission raises with message naming
-#              the attribute
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestProjectRequiredAttributeOmission:
     """AC-TEST-003: Required attribute omission raises ManifestParseError naming the attribute.
@@ -1003,14 +982,8 @@ class TestProjectRequiredAttributeOmission:
         manifest_file.write_text(xml_content, encoding="utf-8")
         m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
 
-        # Construction must not raise -- error is deferred until Load().
         with pytest.raises(ManifestParseError):
             m.Load()
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Attribute validation happens at parse time (during m.Load())
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -1040,7 +1013,6 @@ class TestProjectAttributeValidatedAtParseTime:
         manifest_file.write_text(xml_content, encoding="utf-8")
         m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
 
-        # Construction must not raise -- error is deferred until Load().
         with pytest.raises(ManifestParseError):
             m.Load()
 
@@ -1066,7 +1038,6 @@ class TestProjectAttributeValidatedAtParseTime:
         manifest_file.write_text(xml_content, encoding="utf-8")
         m = manifest_xml.XmlManifest(str(repodir), str(manifest_file))
 
-        # Construction must not raise -- error is deferred until Load().
         with pytest.raises((ManifestParseError, ManifestInvalidPathError)):
             m.Load()
 
@@ -1107,11 +1078,6 @@ class TestProjectAttributeValidatedAtParseTime:
         assert project.upstream == "refs/heads/main", (
             f"AC-FUNC-001: expected upstream='refs/heads/main' after m.Load() but got: {project.upstream!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

@@ -59,32 +59,22 @@ import pytest
 from tests.functional.conftest import _run_kanon
 from tests.functional.test_repo_rebase_happy import _setup_started_repo
 
-# ---------------------------------------------------------------------------
-# Module-level constants -- all hard-coded test-fixture values extracted here;
-# no domain literals in test logic.
-# ---------------------------------------------------------------------------
 
-# Error exit code for argument-parsing errors.
 _ARGPARSE_ERROR_EXIT_CODE = 2
 
-# Expected exit code for successful invocations.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Nonexistent repo-dir name used in argument-parser acceptance tests that
-# do not require a real initialized repository (e.g. boolean-with-inline-value
-# negative tests that fail at parse time before repo discovery).
+
 _NONEXISTENT_REPO_DIR_NAME = "nonexistent-rebase-flags-repo-dir"
 
-# Inline-value token for boolean-flag negative tests.
-# optparse exits 2 with '--<flag> option does not take a value' when a
-# store_true or store_false flag is supplied with an inline value.
+
 _INLINE_VALUE_SUFFIX = "=unexpected"
 
-# Valid whitespace action value for --whitespace flag.
-# 'strip' is a valid git rebase --whitespace action.
+
 _VALID_WHITESPACE_VALUE = "strip"
 
-# Branch names for individual flag behavior tests -- each test uses a unique name.
+
 _BRANCH_WHITESPACE_FLAG = "feature/rebase-whitespace-flag"
 _BRANCH_THIS_MANIFEST_FLAG = "feature/rebase-this-manifest-flag"
 _BRANCH_ABSENCE_DEFAULT = "feature/rebase-absence-default"
@@ -98,15 +88,13 @@ _BRANCH_FUNC_AUTO_STASH = "feature/rebase-func-auto-stash"
 _BRANCH_FUNC_ONTO_MANIFEST = "feature/rebase-func-onto-manifest"
 _BRANCH_CHANNEL_VALID = "feature/rebase-channel-valid"
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# Boolean flags from Rebase._Options() that are safe to run against a real
-# started repo (i.e., they do NOT open an interactive editor).
-# Excludes -i/--interactive which triggers git interactive rebase (opens vim).
+
 _BOOL_FLAGS_SAFE_ON_STARTED_REPO: list[tuple[str, str]] = [
     ("--fail-fast", "fail-fast"),
     ("-f", "short-force-rebase"),
@@ -118,8 +106,7 @@ _BOOL_FLAGS_SAFE_ON_STARTED_REPO: list[tuple[str, str]] = [
     ("--onto-manifest", "long-onto-manifest"),
 ]
 
-# Boolean store_true flags from _CommonOptions() that rebase inherits.
-# All are safe to run against a real started repo.
+
 _BOOL_STORE_TRUE_FLAGS_COMMON: list[tuple[str, str]] = [
     ("-v", "short-verbose"),
     ("--verbose", "long-verbose"),
@@ -127,7 +114,7 @@ _BOOL_STORE_TRUE_FLAGS_COMMON: list[tuple[str, str]] = [
     ("--this-manifest-only", "this-manifest-only"),
 ]
 
-# Boolean store_false flags from _CommonOptions() that rebase inherits.
+
 _BOOL_STORE_FALSE_FLAGS_COMMON: list[tuple[str, str]] = [
     ("-q", "short-quiet"),
     ("--quiet", "long-quiet"),
@@ -136,21 +123,18 @@ _BOOL_STORE_FALSE_FLAGS_COMMON: list[tuple[str, str]] = [
     ("--all-manifests", "all-manifests"),
 ]
 
-# All boolean flags safe to run against a real started repo.
+
 _ALL_BOOL_FLAGS_SAFE: list[tuple[str, str]] = (
     _BOOL_FLAGS_SAFE_ON_STARTED_REPO + _BOOL_STORE_TRUE_FLAGS_COMMON + _BOOL_STORE_FALSE_FLAGS_COMMON
 )
 
-# Interactive flag short and long form -- tested separately (nonexistent repo dir)
-# because -i triggers git's interactive rebase editor and would block test execution.
+
 _INTERACTIVE_FLAGS: list[tuple[str, str]] = [
     ("-i", "short-interactive"),
     ("--interactive", "long-interactive"),
 ]
 
-# Long-form boolean flags used in AC-TEST-002 negative tests.
-# Short-form flags cannot use '--flag=value' syntax in optparse.
-# Includes all long-form flags from both _Options() and _CommonOptions().
+
 _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--interactive", "interactive"),
     ("--fail-fast", "fail-fast"),
@@ -168,15 +152,8 @@ _LONG_BOOL_FLAGS_FOR_NEGATIVE_TEST: list[tuple[str, str]] = [
     ("--all-manifests", "all-manifests"),
 ]
 
-# Placeholder branch name used in argument-parser tests that do not require
-# an initialized repository (rejection happens before repo discovery).
+
 _NONEXISTENT_BRANCH_NAME = "some-branch"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid-value tests for every _Options() flag in subcmds/rebase.py
-# (Also covers AC-FUNC-001: every documented flag behaves per its help text.)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -323,11 +300,6 @@ class TestRepoRebaseFlagsValidValues:
             f"'--this-manifest-only --all-manifests' triggered an argument-parsing "
             f"error (exit {result.returncode}).\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Negative tests for flags with typed or inline values
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -509,11 +481,6 @@ class TestRepoRebaseFlagsInvalidValues:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Absence-default behavior when flags are omitted
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoRebaseFlagsAbsenceDefaults:
     """AC-TEST-003: Flags have correct absence-default behavior when omitted.
@@ -654,11 +621,6 @@ class TestRepoRebaseFlagsAbsenceDefaults:
             f"{result.returncode}, expected {_EXPECTED_EXIT_CODE}.\n"
             f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: Documented flag behavior per help text
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -949,11 +911,6 @@ class TestRepoRebaseFlagsDocumentedBehavior:
             f"expected {_EXPECTED_EXIT_CODE}.\n"
             f"  stdout: {result.stdout!r}\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

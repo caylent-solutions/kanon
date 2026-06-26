@@ -20,27 +20,12 @@ import pytest
 
 from tests.functional.conftest import _git, _run_kanon
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo Init Happy Test User"
 _GIT_USER_EMAIL = "repo-init-happy@example.com"
 _MANIFEST_FILENAME = "default.xml"
 _CONTENT_FILE_NAME = "README.md"
 _CONTENT_FILE_TEXT = "hello from repo-init-happy test content"
-
-# ---------------------------------------------------------------------------
-# Git helpers
-# ---------------------------------------------------------------------------
-# NOTE: _git is imported from tests.functional.conftest (canonical definition).
-#
-# The helpers below (_init_git_work_dir, _clone_as_bare,
-# _create_bare_content_repo, _create_manifest_repo) are near-duplicates of
-# same-named functions in test_kanon_repo_cli.py. Consolidating them into a
-# shared module requires touching that file, which is outside this task's
-# Changes Manifest. This duplication is tracked as a follow-up DRY cleanup.
-# ---------------------------------------------------------------------------
 
 
 def _init_git_work_dir(work_dir: pathlib.Path) -> None:
@@ -140,11 +125,6 @@ def _setup_repos(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, st
 
     repo_dir = checkout_dir / ".repo"
     return checkout_dir, repo_dir, manifest_url
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo init with default args exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -274,11 +254,6 @@ class TestRepoInitHappyPathDefaultArgs:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo init has a happy-path test
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestRepoInitPositionalArgHappyPath:
     """AC-TEST-002: happy-path test for the manifest URL positional argument.
@@ -346,11 +321,6 @@ class TestRepoInitPositionalArgHappyPath:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

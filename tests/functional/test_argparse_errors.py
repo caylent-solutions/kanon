@@ -21,21 +21,6 @@ import pytest
 
 from tests.functional.conftest import _run_kanon
 
-# ---------------------------------------------------------------------------
-# NOTE: _run_kanon is imported from tests.functional.conftest (canonical
-# definition). No _git helper is needed for most tests here because argparse
-# errors are triggered before any .repo directory is consulted.
-#
-# AC-TEST-005 and AC-TEST-002 require a nonexistent-path fixture so the repo
-# tool's argument parser is invoked (the 'kanon repo' subcommand parses its
-# remaining argv with the embedded repo option parser, which runs before
-# consulting the .repo directory structure for argument-validation errors).
-# ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Shared fixture
-# ---------------------------------------------------------------------------
-
 
 @pytest.fixture
 def nonexistent_repo_dir(tmp_path: pathlib.Path) -> str:
@@ -47,11 +32,6 @@ def nonexistent_repo_dir(tmp_path: pathlib.Path) -> str:
     a real .repo directory on disk.
     """
     return str(tmp_path / "nonexistent-argparse-errors-repo-dir")
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Unknown flag '--xyz' exits 2 and stderr names the flag
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -125,11 +105,6 @@ class TestUnknownFlagError:
         assert unknown_flag in result.stderr, (
             f"Expected {unknown_flag!r} in stderr for unrecognised flag.\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Invalid type '--jobs=abc' exits 2 with 'invalid int' in message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -229,11 +204,6 @@ class TestInvalidIntTypeError:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-003: Empty invocation 'kanon' exits 2 with usage text
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.functional
 class TestEmptyInvocationError:
     """AC-TEST-003: Empty invocation 'kanon' exits 2 with usage text."""
@@ -269,7 +239,7 @@ class TestEmptyInvocationError:
         result = _run_kanon()
         assert result.returncode == 2
         combined = result.stdout + result.stderr
-        for subcommand in ("bootstrap", "install", "clean", "validate", "repo"):
+        for subcommand in ("install", "clean", "validate", "repo"):
             assert subcommand in combined, (
                 f"'kanon' output does not mention subcommand {subcommand!r}.\n"
                 f"  stdout: {result.stdout!r}\n"
@@ -282,11 +252,6 @@ class TestEmptyInvocationError:
         assert result.returncode == 2
         combined = result.stdout + result.stderr
         assert len(combined) > 0, "'kanon' with no arguments produced empty output on both stdout and stderr."
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-004: Unknown subcommand 'kanon foo' exits 2 with error message
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -360,11 +325,6 @@ class TestUnknownSubcommandError:
         assert bad_subcommand in result.stderr, (
             f"Expected {bad_subcommand!r} in stderr for unknown subcommand.\n  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-005: '--' sentinel for repo passthrough forwards remaining args
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -460,21 +420,13 @@ class TestSentinelForwardsArgs:
             nonexistent_repo_dir,
             "--",
         )
-        # The repo tool receives empty argv and may exit non-zero for any
-        # reason; kanon must NOT intercept with its own exit code 2 (argparse).
-        # The kanon argparse layer itself should not error out on an empty
-        # remaining argv after '--'.
+
         assert result.returncode != 2 or "unrecognized arguments" not in result.stderr, (
             f"kanon's own argparse rejected '--' with empty trailing argv "
             f"as an unrecognised argument error (exit 2).\n"
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-FUNC-001: argparse produces deterministic, user-actionable error messages
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -545,11 +497,6 @@ class TestDeterministicErrorMessages:
                 f"'kanon {list(args)}' produced empty output; expected a diagnostic message.\n"
                 f"  returncode: {result.returncode}"
             )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline for error scenarios
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

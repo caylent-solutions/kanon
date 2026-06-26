@@ -30,10 +30,6 @@ from kanon_cli.repo.error import ManifestInvalidPathError
 from kanon_cli.repo.error import ManifestParseError
 
 
-# ---------------------------------------------------------------------------
-# Shared setup helpers
-# ---------------------------------------------------------------------------
-
 _GIT_CONFIG_TEMPLATE = '[remote "origin"]\n        url = https://localhost:0/manifest\n'
 
 
@@ -135,11 +131,6 @@ def _get_project(manifest: manifest_xml.XmlManifest, project_name: str):
     """
     projects_by_name = {p.name: p for p in manifest.projects}
     return projects_by_name[project_name]
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001: Valid <copyfile> with minimum required attributes parses correctly
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -316,11 +307,6 @@ class TestCopyfileMinimumAttributes:
         )
 
 
-# ---------------------------------------------------------------------------
-# AC-TEST-002: Valid <copyfile> with all documented attributes parses correctly
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCopyfileAllDocumentedAttributes:
     """Verify that a <copyfile> element with all documented attributes parses correctly.
@@ -461,11 +447,6 @@ class TestCopyfileAllDocumentedAttributes:
         project = _get_project(manifest, "platform/core")
         copyfile = project.copyfiles[0]
         assert copyfile.topdir is not None, "Expected copyfile.topdir to be set but got None"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-003: <copyfile> with default attribute values behaves per docs
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -609,11 +590,6 @@ class TestCopyfileDefaultAttributeValues:
         assert len(project.copyfiles) >= 1, (
             f"Expected at least 1 copyfile after <copyfile src={src!r} dest={dest!r}> but got 0"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit

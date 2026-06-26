@@ -5,9 +5,9 @@ clear error message naming the missing variable when any of the three
 required KANON_SOURCE_* variables is absent from the .kanon file.
 
 AC-TEST-001: install fails fast with clear message when KANON_SOURCE_*_URL is missing
-AC-TEST-002: install fails fast when KANON_SOURCE_*_REVISION is missing
+AC-TEST-002: install fails fast when KANON_SOURCE_*_REF is missing
 AC-TEST-003: install fails fast when KANON_SOURCE_*_PATH is missing
-AC-TEST-004: install succeeds with all three required variables supplied
+AC-TEST-004: install succeeds with all required variables supplied
 AC-FUNC-001: Every required variable must be present or install exits 1 naming the missing variable
 AC-CHANNEL-001: Error output goes to stderr only; stdout is clean on failure
 """
@@ -24,22 +24,21 @@ _SOURCE_NAME = "testsource"
 _VALID_URL = "https://example.com/repo.git"
 _VALID_REVISION = "main"
 _VALID_PATH = "repo-specs/manifest.xml"
+_VALID_GITBASE = "https://example.com"
 
-_ALL_THREE_VARS = (
+_ALL_REQUIRED_VARS = (
     f"KANON_SOURCE_{_SOURCE_NAME}_URL={_VALID_URL}\n"
-    f"KANON_SOURCE_{_SOURCE_NAME}_REVISION={_VALID_REVISION}\n"
+    f"KANON_SOURCE_{_SOURCE_NAME}_REF={_VALID_REVISION}\n"
     f"KANON_SOURCE_{_SOURCE_NAME}_PATH={_VALID_PATH}\n"
+    f"KANON_SOURCE_{_SOURCE_NAME}_NAME={_SOURCE_NAME}\n"
+    f"KANON_SOURCE_{_SOURCE_NAME}_GITBASE={_VALID_GITBASE}\n"
 )
 
-_MISSING_URL = (
-    f"KANON_SOURCE_{_SOURCE_NAME}_REVISION={_VALID_REVISION}\nKANON_SOURCE_{_SOURCE_NAME}_PATH={_VALID_PATH}\n"
-)
+_MISSING_URL = f"KANON_SOURCE_{_SOURCE_NAME}_REF={_VALID_REVISION}\nKANON_SOURCE_{_SOURCE_NAME}_PATH={_VALID_PATH}\n"
 
 _MISSING_REVISION = f"KANON_SOURCE_{_SOURCE_NAME}_URL={_VALID_URL}\nKANON_SOURCE_{_SOURCE_NAME}_PATH={_VALID_PATH}\n"
 
-_MISSING_PATH = (
-    f"KANON_SOURCE_{_SOURCE_NAME}_URL={_VALID_URL}\nKANON_SOURCE_{_SOURCE_NAME}_REVISION={_VALID_REVISION}\n"
-)
+_MISSING_PATH = f"KANON_SOURCE_{_SOURCE_NAME}_URL={_VALID_URL}\nKANON_SOURCE_{_SOURCE_NAME}_REF={_VALID_REVISION}\n"
 
 
 def _write_kanonenv(directory: pathlib.Path, content: str) -> pathlib.Path:
@@ -65,10 +64,10 @@ class TestInstallMissingRequiredVars:
         "content,missing_var_suffix",
         [
             (_MISSING_URL, f"KANON_SOURCE_{_SOURCE_NAME}_URL"),
-            (_MISSING_REVISION, f"KANON_SOURCE_{_SOURCE_NAME}_REVISION"),
+            (_MISSING_REVISION, f"KANON_SOURCE_{_SOURCE_NAME}_REF"),
             (_MISSING_PATH, f"KANON_SOURCE_{_SOURCE_NAME}_PATH"),
         ],
-        ids=["missing_URL", "missing_REVISION", "missing_PATH"],
+        ids=["missing_URL", "missing_REF", "missing_PATH"],
     )
     def test_install_exits_1_when_required_var_missing(
         self,
@@ -96,10 +95,10 @@ class TestInstallMissingRequiredVars:
         "content,missing_var_suffix",
         [
             (_MISSING_URL, f"KANON_SOURCE_{_SOURCE_NAME}_URL"),
-            (_MISSING_REVISION, f"KANON_SOURCE_{_SOURCE_NAME}_REVISION"),
+            (_MISSING_REVISION, f"KANON_SOURCE_{_SOURCE_NAME}_REF"),
             (_MISSING_PATH, f"KANON_SOURCE_{_SOURCE_NAME}_PATH"),
         ],
-        ids=["missing_URL_no_stdout", "missing_REVISION_no_stdout", "missing_PATH_no_stdout"],
+        ids=["missing_URL_no_stdout", "missing_REF_no_stdout", "missing_PATH_no_stdout"],
     )
     def test_install_error_on_stderr_not_stdout(
         self,
@@ -125,14 +124,14 @@ class TestInstallMissingRequiredVars:
 
 @pytest.mark.integration
 class TestInstallAllVarsPresent:
-    """AC-TEST-004: install does not exit 1 when all three required variables are supplied."""
+    """AC-TEST-004: install does not exit 1 when all required variables are supplied."""
 
     def test_install_proceeds_when_all_required_vars_supplied(
         self,
         tmp_path: pathlib.Path,
     ) -> None:
         """AC-TEST-004: install does not raise SystemExit when all required vars are present."""
-        kanonenv = _write_kanonenv(tmp_path, _ALL_THREE_VARS)
+        kanonenv = _write_kanonenv(tmp_path, _ALL_REQUIRED_VARS)
 
         with patch("kanon_cli.commands.install.install") as mock_install:
             main(["install", str(kanonenv)])

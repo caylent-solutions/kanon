@@ -17,7 +17,7 @@ so you can regenerate quickly.
 Examples:
 
 - `kanon-toplevel.txt` -- top-level `kanon --help`
-- `kanon-list.txt` -- `kanon list --help`
+- `kanon-search.txt` -- `kanon search --help`
 - `kanon-catalog.txt` -- `kanon catalog --help` (subcommand-group head)
 - `kanon-catalog-audit.txt` -- `kanon catalog audit --help` (nested subparser child; hyphenated filename mirrors the `catalog audit` argv path)
 
@@ -26,7 +26,8 @@ Examples:
 | File | Command |
 |------|---------|
 | `kanon-toplevel.txt` | `kanon --help` |
-| `kanon-list.txt` | `kanon list --help` |
+| `kanon-search.txt` | `kanon search --help` |
+| `kanon-marketplace.txt` | `kanon marketplace --help` (per-dependency Claude marketplace flag manager; lists `enable`, `disable`, `status`) |
 | `kanon-add.txt` | `kanon add --help` |
 | `kanon-remove.txt` | `kanon remove --help` |
 | `kanon-outdated.txt` | `kanon outdated --help` |
@@ -37,16 +38,6 @@ Examples:
 | `kanon-catalog-audit.txt` | `kanon catalog audit --help` (nested subparser child; covers `--check`, `--format`, Catalog source group; hyphenated filename mirrors the `catalog audit` argv path) |
 | `kanon-completion.txt` | `kanon completion --help` (shell completion script emitter; covers `<shell>` positional argument) |
 
-> **Note:** There is intentionally no `kanon-bootstrap.txt` fixture. `kanon
-> bootstrap` was removed in a major release (a breaking change). `kanon
-> bootstrap --help` is no longer help output -- every `kanon bootstrap ...`
-> invocation prints a deprecation message to **stderr** and exits **3**. The
-> deprecation behavior is covered by `tests/unit/test_bootstrap_deprecation.py`,
-> `tests/integration/test_bootstrap_shim.py`, and the functional bootstrap
-> tests; it is asserted by key substrings, not a byte-for-byte snapshot. The
-> top-level `kanon-toplevel.txt` snapshot still lists `bootstrap` under
-> "Deprecated".
-
 ## Regeneration Procedure
 
 If a fixture test fails because the CLI output changed intentionally (e.g., a
@@ -54,13 +45,13 @@ new subcommand was added), regenerate the fixture by running the command with
 the deterministic environment variables and redirecting stdout:
 
 ```bash
-NO_COLOR=1 COLUMNS=80 env -u KANON_CATALOG_SOURCE python -m kanon_cli --help > tests/fixtures/help/kanon-toplevel.txt
+NO_COLOR=1 COLUMNS=80 env -u KANON_CATALOG_SOURCES python -m kanon_cli --help > tests/fixtures/help/kanon-toplevel.txt
 ```
 
 For a subcommand fixture:
 
 ```bash
-NO_COLOR=1 COLUMNS=80 env -u KANON_CATALOG_SOURCE python -m kanon_cli <command> --help > tests/fixtures/help/kanon-<command>.txt
+NO_COLOR=1 COLUMNS=80 env -u KANON_CATALOG_SOURCES python -m kanon_cli <command> --help > tests/fixtures/help/kanon-<command>.txt
 ```
 
 The three environment controls used during regeneration match exactly what
@@ -68,7 +59,7 @@ The three environment controls used during regeneration match exactly what
 
 - `NO_COLOR=1` -- disables ANSI colour codes for deterministic plain-text output.
 - `COLUMNS=80` -- pins terminal width so argparse wraps at a fixed column count.
-- `env -u KANON_CATALOG_SOURCE` -- unsets the variable so ambient catalog-source
+- `env -u KANON_CATALOG_SOURCES` -- unsets the variable so ambient catalog-source
   overrides do not affect the help text.
 
 After regenerating, run the snapshot test to confirm the fixture matches:

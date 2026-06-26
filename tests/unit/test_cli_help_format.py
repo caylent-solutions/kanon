@@ -38,7 +38,6 @@ class TestTopLevelHelpConstant:
             "Lifecycle:",
             "Manifest repo (catalog author):",
             "Shell integration:",
-            "Deprecated:",
             "Global options (always available):",
             "Catalog source",
         ],

@@ -27,9 +27,6 @@ from tests.functional.conftest import (
     _setup_synced_repo,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level constants (no hard-coded values in test logic)
-# ---------------------------------------------------------------------------
 
 _GIT_USER_NAME = "Repo List Happy Test User"
 _GIT_USER_EMAIL = "repo-list-happy@example.com"
@@ -37,27 +34,22 @@ _MANIFEST_FILENAME = "default.xml"
 _PROJECT_NAME = "content-bare"
 _PROJECT_PATH = "list-happy-test-project"
 
-# Expected exit code for all happy-path invocations.
+
 _EXPECTED_EXIT_CODE = 0
 
-# Separator between project path and project name in 'repo list' output.
+
 _LIST_SEPARATOR = " : "
 
-# Traceback indicator used in channel-discipline assertions.
+
 _TRACEBACK_MARKER = "Traceback (most recent call last)"
 
-# Error prefix that must not appear on stdout for successful runs.
+
 _ERROR_PREFIX = "Error:"
 
-# CLI token constants.
+
 _CLI_TOKEN_REPO = "repo"
 _CLI_TOKEN_LIST = "list"
 _CLI_FLAG_REPO_DIR = "--repo-dir"
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-001 / AC-FUNC-001: kanon repo list with default args exits 0
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -195,11 +187,6 @@ class TestRepoListHappyPathDefaultArgs:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-TEST-002: every positional argument of repo list has a happy-path test
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional
@@ -342,11 +329,6 @@ class TestRepoListPositionalArgHappyPath:
             f"  stdout: {result.stdout!r}\n"
             f"  stderr: {result.stderr!r}"
         )
-
-
-# ---------------------------------------------------------------------------
-# AC-CHANNEL-001: stdout vs stderr channel discipline
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.functional

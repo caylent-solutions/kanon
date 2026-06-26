@@ -20,7 +20,7 @@ from kanon_cli.completions.lockfile_names import (
 )
 from kanon_cli.utils.lock_file_path import derive_lock_file_path
 from kanon_cli.core.lockfile import (
-    CatalogBlock,
+    CURRENT_SCHEMA_VERSION,
     IncludeEntry,
     Lockfile,
     ProjectEntry,
@@ -29,33 +29,20 @@ from kanon_cli.core.lockfile import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 _DUMMY_SHA = "a" * 40
 _DUMMY_SHA2 = "b" * 40
 _DUMMY_SHA3 = "c" * 40
-
-_MINIMAL_CATALOG = CatalogBlock(
-    source="",
-    url="",
-    revision_spec="",
-    resolved_ref="",
-    resolved_sha="",
-)
 
 
 def _make_lockfile(
     sources: list[SourceEntry] | None = None,
 ) -> Lockfile:
-    """Build a minimal valid Lockfile with the supplied sources."""
+    """Build a minimal valid schema-v4 Lockfile with the supplied sources."""
     return Lockfile(
-        schema_version=1,
+        schema_version=CURRENT_SCHEMA_VERSION,
         generated_at="2024-01-01T00:00:00Z",
         generator="kanon-cli/test",
         kanon_hash="sha256:" + "a" * 64,
-        catalog=_MINIMAL_CATALOG,
         sources=sources or [],
     )
 
@@ -66,9 +53,10 @@ def _make_source(
     projects: list[ProjectEntry] | None = None,
 ) -> SourceEntry:
     return SourceEntry(
+        alias=name,
         name=name,
         url="https://github.com/org/repo",
-        revision_spec="main",
+        ref_spec="main",
         resolved_ref="refs/heads/main",
         resolved_sha=_DUMMY_SHA,
         path=f"vendor/{name}",
@@ -102,15 +90,10 @@ def _make_project(
         name=name,
         url=url,
         canonical_url=canonical,
-        revision_spec="main",
+        ref_spec="main",
         resolved_ref="refs/heads/main",
         resolved_sha=_DUMMY_SHA,
     )
-
-
-# ---------------------------------------------------------------------------
-# derive_lock_file_path (via utils.lock_file_path -- completer reuses this)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -156,11 +139,6 @@ class TestResolveLockfilePath:
             env_lock_file=explicit,
         )
         assert result == Path(explicit)
-
-
-# ---------------------------------------------------------------------------
-# _extract_names
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -230,7 +208,7 @@ class TestExtractNames:
         )
         result = _extract_names(lockfile)
         assert "https://github.com/org/repo.git" in result
-        # The project name attribute should NOT appear (only URL)
+
         assert "myname" not in result
 
     def test_include_path_in_repo_extracted(self) -> None:
@@ -245,12 +223,12 @@ class TestExtractNames:
         )
         result = _extract_names(lockfile)
         assert "repo-specs/foo.xml" in result
-        # The include name attribute should NOT appear (only path_in_repo)
+
         assert "human_name" not in result
 
     def test_deep_recursion_depth_3(self) -> None:
         """AC-FUNC-008: nested includes at depth 3 are extracted (recursion exercised)."""
-        # Depth-3 chain: source -> include_L1 -> include_L2 -> include_L3
+
         include_l3 = _make_include("name_l3", "deep/path/level3.xml")
         include_l2 = _make_include("name_l2", "deep/path/level2.xml", includes=[include_l3])
         include_l1 = _make_include("name_l1", "deep/path/level1.xml", includes=[include_l2])
@@ -274,11 +252,6 @@ class TestExtractNames:
         assert result == sorted(result)
 
 
-# ---------------------------------------------------------------------------
-# complete() -- KANON_COMPLETION_ENABLED=0 short-circuit
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.unit
 class TestCompleteDisabled:
     """KANON_COMPLETION_ENABLED=0 causes complete() to return [] without reading lockfile."""
@@ -286,7 +259,7 @@ class TestCompleteDisabled:
     def test_disabled_returns_empty(self, tmp_path: Path) -> None:
         """KANON_COMPLETION_ENABLED=0 -> empty list, no file read attempted."""
         lock_path = tmp_path / ".kanon.lock"
-        # Do NOT create the file -- if code reads it, FileNotFoundError would surface.
+
         with patch.dict(
             os.environ,
             {
@@ -307,16 +280,11 @@ class TestCompleteDisabled:
                 "KANON_COMPLETION_ENABLED": "0",
                 "KANON_LOCK_FILE": str(lock_path),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             complete("")
         assert not log_path.exists()
-
-
-# ---------------------------------------------------------------------------
-# complete() -- happy path
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -345,7 +313,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -375,7 +343,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("foo")
@@ -401,7 +369,7 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("https")
@@ -439,16 +407,11 @@ class TestCompleteHappyPath:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete(prefix)
         assert result == expected
-
-
-# ---------------------------------------------------------------------------
-# complete() -- missing lockfile
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -463,7 +426,7 @@ class TestCompleteMissingLockfile:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -479,7 +442,7 @@ class TestCompleteMissingLockfile:
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             complete("")
@@ -488,11 +451,6 @@ class TestCompleteMissingLockfile:
         assert "__complete_names_in_lockfile" in content
         assert "FileNotFoundError" in content
         assert str(lock_path) in content
-
-
-# ---------------------------------------------------------------------------
-# complete() -- malformed TOML
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -508,7 +466,7 @@ class TestCompleteMalformedLockfile:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -525,21 +483,21 @@ class TestCompleteMalformedLockfile:
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             complete("")
         assert log_path.exists()
         content = log_path.read_text()
         assert "__complete_names_in_lockfile" in content
-        # TOMLDecodeError or LockfileValidationError should appear
+
         assert "Error" in content or "error" in content
 
     def test_valid_toml_invalid_lockfile_schema_returns_empty(self, tmp_path: Path) -> None:
         """Valid TOML that fails lockfile schema validation -> empty + log entry."""
         lock_path = tmp_path / ".kanon.lock"
-        # Valid TOML but missing required lockfile fields
-        lock_path.write_text("schema_version = 1\nfoo = 'bar'\n")
+
+        lock_path.write_text("schema_version = 5\nfoo = 'bar'\n")
         log_path = tmp_path / "completion-errors.log"
         with patch.dict(
             os.environ,
@@ -547,17 +505,12 @@ class TestCompleteMalformedLockfile:
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
                 "KANON_COMPLETION_LOG": str(log_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
         assert result == []
         assert log_path.exists()
-
-
-# ---------------------------------------------------------------------------
-# complete() -- deep recursion
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -577,7 +530,7 @@ class TestCompleteDeepRecursion:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -585,11 +538,6 @@ class TestCompleteDeepRecursion:
         assert "deep/level1/spec.xml" in result
         assert "deep/level2/spec.xml" in result
         assert "deep/level3/spec.xml" in result
-
-
-# ---------------------------------------------------------------------------
-# complete() -- lockfile path resolution (AC-FUNC-003)
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -606,7 +554,7 @@ class TestCompleteLockfilePathResolution:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = complete("")
@@ -621,15 +569,10 @@ class TestCompleteLockfilePathResolution:
         env = {k: v for k, v in os.environ.items() if k not in ("KANON_LOCK_FILE", "KANON_KANON_FILE")}
         env["KANON_KANON_FILE"] = str(kanon_file)
         env["KANON_COMPLETION_ENABLED"] = "1"
-        env["KANON_CACHE_DIR"] = str(tmp_path)
+        env["KANON_HOME"] = str(tmp_path)
         with patch.dict(os.environ, env, clear=True):
             result = complete("")
         assert result == ["derived_source"]
-
-
-# ---------------------------------------------------------------------------
-# _handle() -- argparse entry point
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
@@ -652,7 +595,7 @@ class TestHandle:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = _handle(args)
@@ -669,7 +612,7 @@ class TestHandle:
             {
                 "KANON_COMPLETION_ENABLED": "1",
                 "KANON_LOCK_FILE": str(lock_path),
-                "KANON_CACHE_DIR": str(tmp_path),
+                "KANON_HOME": str(tmp_path),
             },
         ):
             result = _handle(args)

@@ -43,9 +43,7 @@ class TestT5XmlEscapeHelpers:
     @pytest.mark.parametrize("helper", ["mk_rx_xml", "mk_mfst_xml", "pk_xml"])
     def test_helper_uses_sed_to_escape_xml_specials(self, helper: str) -> None:
         block = _helper_block(_load_doc(), helper)
-        # The fix introduces a sed pipeline that escapes `&`, `<`, `>` in order.
-        # Order matters (`&` must be escaped first) so the test pins the
-        # ampersand-first sequence.
+
         assert "s/&/\\&amp;/g" in block, (
             f"Helper {helper}() must escape `&` -> `&amp;` (must be first to avoid double-escaping)"
         )
@@ -56,7 +54,7 @@ class TestT5XmlEscapeHelpers:
     def test_helper_emits_escaped_revision(self, helper: str) -> None:
         """The XML attribute must use the escaped variable, not the raw input."""
         block = _helper_block(_load_doc(), helper)
-        # Look for the revision="${rev_xml}" attribute (the escaped variant).
+
         assert 'revision="${rev_xml}"' in block, (
             f'Helper {helper}() must emit revision="${{rev_xml}}" (the escaped value), not the raw ${{rev}}'
         )
@@ -85,13 +83,8 @@ class TestT5DocGlobalNoRawXmlSpecialsInAttributes:
 
     def test_no_raw_lt_in_revision_attribute_value(self) -> None:
         doc = _load_doc()
-        # Match `revision="..."` where `...` contains a literal `<`. Be
-        # tolerant of surrounding whitespace.
+
         bad = re.findall(r'revision="[^"]*<[^"]*"', doc)
-        # Some Pass-criteria text may legitimately contain `revision="<...>"`
-        # as a snippet of error output; we only flag the helper-emitted
-        # template line itself if it contains a raw `<` inside quotes.
-        # Filter for lines that look like XML being written to disk via
-        # `<project ...>` (the actual emitted form).
+
         offenders = [m for m in bad if "<project " in m or "default remote" in m]
         assert not offenders, f"Doc contains XML emission lines with raw `<` in revision attribute: {offenders}"

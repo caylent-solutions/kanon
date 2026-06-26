@@ -1,17 +1,3 @@
-# Copyright (C) 2024 The Android Open Source Project
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Comprehensive unit tests for subcmds/sync.py uncovered code paths."""
 
 import time
@@ -55,9 +41,9 @@ class TestSafeCheckoutOrder(unittest.TestCase):
         mock_proj3.relpath = "foo/bar/baz"
 
         result = _SafeCheckoutOrder([mock_proj1, mock_proj2, mock_proj3])
-        # Should have multiple levels
+
         self.assertGreater(len(result), 1)
-        # First level should have foo
+
         self.assertEqual(result[0][0].relpath, "foo")
 
     def test_safe_checkout_order_mixed_nesting(self):
@@ -99,8 +85,7 @@ class TestSafeCheckoutOrder(unittest.TestCase):
         mock_proj3.relpath = "foo/bar"
 
         result = _SafeCheckoutOrder([mock_proj1, mock_proj2, mock_proj3])
-        # foo and foo-bar should be in first level (not nested)
-        # foo/bar should be in second level (nested under foo)
+
         self.assertGreater(len(result), 1)
 
 
@@ -115,7 +100,7 @@ class TestChunksize(unittest.TestCase):
 
     def test_chunksize_respects_worker_batch_size(self):
         """Test _chunksize respects WORKER_BATCH_SIZE."""
-        # With many projects and few jobs, should cap at WORKER_BATCH_SIZE
+
         from kanon_cli.repo.command import WORKER_BATCH_SIZE
 
         result = _chunksize(10000, 1)
@@ -264,7 +249,6 @@ class TestUpdateProjectsRevisionId(unittest.TestCase):
         mock_manifest.superproject = None
         mock_manifest.all_children = []
 
-        # Should return early
         sync_cmd._UpdateProjectsRevisionId(mock_opt, [], {}, mock_manifest)
 
     def test_updateprojectsrevisionid_local_only(self):
@@ -371,11 +355,9 @@ class TestSyncOptions(unittest.TestCase):
         parser = optparse.OptionParser()
         sync_cmd._Options(parser)
 
-        # Check that some key options were added
         options = [opt.get_opt_string() for group in parser.option_groups for opt in group.option_list]
         options.extend([opt.get_opt_string() for opt in parser.option_list if hasattr(opt, "get_opt_string")])
 
-        # Should have network-related options
         self.assertTrue(any("-n" in str(o) or "--network-only" in str(o) for o in options))
 
 
@@ -390,7 +372,6 @@ class TestSyncLocalOnly(unittest.TestCase):
         mock_opt.local_only = True
         mock_opt.network_only = False
 
-        # local_only should be True
         self.assertTrue(mock_opt.local_only)
 
     def test_sync_network_only_flag(self):
@@ -400,7 +381,6 @@ class TestSyncLocalOnly(unittest.TestCase):
         mock_opt.local_only = False
         mock_opt.network_only = True
 
-        # network_only should be True
         self.assertTrue(mock_opt.network_only)
 
 
@@ -438,9 +418,7 @@ class TestFetchMain(unittest.TestCase):
         mock_opt.verbose = False
         mock_opt.output_mode = None
 
-        # Empty projects should return early
         with mock.patch.object(sync_cmd, "ExecuteInParallel"):
-            # This would normally be called but we're testing the setup
             pass
 
 
@@ -456,9 +434,7 @@ class TestCheckoutMain(unittest.TestCase):
         mock_opt.quiet = False
         mock_opt.verbose = False
 
-        # Empty projects should return early
         with mock.patch.object(sync_cmd, "ExecuteInParallel"):
-            # This would normally be called but we're testing the setup
             pass
 
 
@@ -470,13 +446,11 @@ class TestFindOrphans(unittest.TestCase):
         """Test _FindOrphans basic functionality."""
         Sync()
 
-        # Mock manifest with projects
         mock_manifest = mock.Mock()
         mock_project = mock.Mock()
         mock_project.relpath = "project1"
         mock_manifest.projects = [mock_project]
 
-        # This tests the setup for orphan detection
         self.assertIsNotNone(mock_manifest.projects)
 
 
@@ -490,7 +464,6 @@ class TestUpdateManifestProjects(unittest.TestCase):
         mock_opt = mock.Mock()
         mock_opt.mp_update = "auto"
 
-        # Test that mp_update option can be set
         self.assertEqual(mock_opt.mp_update, "auto")
 
 
@@ -515,7 +488,7 @@ class TestFetchHelper(unittest.TestCase):
 
     def test_fetchhelper_concept(self):
         """Test _FetchHelper conceptual setup."""
-        # _FetchHelper would coordinate fetching
+
         Sync()
         mock_opt = mock.Mock()
         mock_opt.force_broken = False

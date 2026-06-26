@@ -13,7 +13,8 @@ For lifecycle details see [docs/lifecycle.md](lifecycle.md).
 ## Synopsis
 
 ```text
-kanon install [--refresh-lock | --refresh-lock-source <name>]
+kanon install [--reconcile]
+              [--refresh-lock | --refresh-lock-source <name>]
               [--strict-lock] [--strict-drift]
               [--lock-file <path>]
               [<kanonenv_path>]

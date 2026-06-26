@@ -37,16 +37,19 @@ and organizations.
 ## Named Source Format (.kanon)
 
 Kanon auto-discovers sources from `KANON_SOURCE_<name>_URL` variable
-patterns in `.kanon`. Each source is defined by three required variables
-(plus an optional `_MARKETPLACE` toggle) following the
-`KANON_SOURCE_<name>_<property>` naming convention:
+patterns in `.kanon`. Each source is defined by four required variables
+(plus an optional `_MARKETPLACE` toggle and an open set of per-dependency
+env-var lines) following the `KANON_SOURCE_<name>_<property>` naming
+convention:
 
 |Suffix|Required?|Purpose|
 |---|---|---|
 |`_URL`|Required|Git repository URL for the manifest source|
 |`_REF`|Required|Branch name, exact tag ref, or PEP 440 version constraint|
 |`_PATH`|Required|Path to the entry-point manifest XML within the repository|
+|`_NAME`|Required|Original catalog entry name for the source (written by `kanon add`)|
 |`_MARKETPLACE`|Optional|Set to `true` to enable the Claude marketplace lifecycle for this source; absence means disabled (kanon never writes `=false`)|
+|`_<VAR>`|Optional|Per-dependency env var (e.g. `_GITBASE`) supplying one `${VAR}` the source's manifest references; `GITBASE` is auto-derived from the source URL by `kanon add`|
 
 Sources are processed in alphabetical order by name.
 
@@ -151,14 +154,18 @@ them in alphabetical order.
 KANON_SOURCE_build_URL=https://example.com/org/kanon-build-tools.git
 KANON_SOURCE_build_REF=refs/tags/2.0.0
 KANON_SOURCE_build_PATH=repo-specs/build-meta.xml
+KANON_SOURCE_build_NAME=kanon-build-tools
 
 # Marketplace source -- compatible release constraint (>=1.1.0, <1.2.0)
 KANON_SOURCE_marketplaces_URL=https://example.com/org/kanon-marketplace.git
 KANON_SOURCE_marketplaces_REF=refs/tags/~=1.1.0
 KANON_SOURCE_marketplaces_PATH=repo-specs/common/plugins/plugins-marketplace.xml
+KANON_SOURCE_marketplaces_NAME=kanon-marketplace
 
-# Global variables available to all sources
-GITBASE=https://example.com/org/
+# CLAUDE_MARKETPLACES_DIR is the single workspace-wide marketplace path
+# (resolved from the OS environment when omitted here). Each source's
+# ${GITBASE} is auto-derived per dependency into KANON_SOURCE_<alias>_GITBASE
+# by kanon add; there is no global GITBASE.
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
 ```
 
@@ -173,29 +180,36 @@ and all packages are aggregated into a unified `.packages/` directory.
 KANON_SOURCE_build-core_URL=https://example.com/org/kanon-build-core.git
 KANON_SOURCE_build-core_REF=refs/tags/~=2.0.0
 KANON_SOURCE_build-core_PATH=repo-specs/build-meta.xml
+KANON_SOURCE_build-core_NAME=kanon-build-core
 
 KANON_SOURCE_build-infra_URL=https://example.com/org/kanon-build-infra.git
 KANON_SOURCE_build-infra_REF=refs/tags/>=1.0.0,<2.0.0
 KANON_SOURCE_build-infra_PATH=repo-specs/build-meta.xml
+KANON_SOURCE_build-infra_NAME=kanon-build-infra
 
 KANON_SOURCE_build-security_URL=https://example.com/org/kanon-build-security.git
 KANON_SOURCE_build-security_REF=refs/tags/~=1.4.0
 KANON_SOURCE_build-security_PATH=repo-specs/build-meta.xml
+KANON_SOURCE_build-security_NAME=kanon-build-security
 
 # Marketplace sources -- each provides Claude Code plugins and opts in to
 # the marketplace lifecycle with its own per-source KANON_SOURCE_<alias>_MARKETPLACE flag
 KANON_SOURCE_marketplaces-core_URL=https://example.com/org/kanon-marketplace-core.git
 KANON_SOURCE_marketplaces-core_REF=main
 KANON_SOURCE_marketplaces-core_PATH=repo-specs/common/core/core-marketplace.xml
+KANON_SOURCE_marketplaces-core_NAME=kanon-marketplace-core
 KANON_SOURCE_marketplaces-core_MARKETPLACE=true
 
 KANON_SOURCE_marketplaces-team_URL=https://example.com/org/kanon-marketplace-team.git
 KANON_SOURCE_marketplaces-team_REF=main
 KANON_SOURCE_marketplaces-team_PATH=repo-specs/common/team/team-marketplace.xml
+KANON_SOURCE_marketplaces-team_NAME=kanon-marketplace-team
 KANON_SOURCE_marketplaces-team_MARKETPLACE=true
 
-# Global variables available to all sources
-GITBASE=https://example.com/org/
+# CLAUDE_MARKETPLACES_DIR is the single workspace-wide marketplace path
+# (resolved from the OS environment when omitted here). Each source's
+# ${GITBASE} is auto-derived per dependency into KANON_SOURCE_<alias>_GITBASE
+# by kanon add; there is no global GITBASE.
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
 ```
 

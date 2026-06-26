@@ -508,7 +508,8 @@ Executes the full install lifecycle and reconciles `.kanon` against
 ```bash
 kanon install                     # auto-discover .kanon by walking up from cwd
 kanon install .kanon              # explicit path to .kanon file
-kanon install --strict-lock       # error when an orphaned lock entry is present
+kanon install --reconcile         # opt in to prune/re-resolve when .kanon and .kanon.lock drift
+kanon install --strict-lock       # error when an orphaned lock entry survives a hash match
 kanon install --strict-drift      # error when a branch source has drifted
 kanon install --refresh-lock      # re-resolve every transitive version from scratch
 kanon install --refresh-lock-source NAME  # re-resolve one source's chain only
@@ -522,13 +523,18 @@ kanon install --refresh-lock-source NAME  # re-resolve one source's chain only
   `KANON_HOME` store; detects cross-source name collisions (fail-fast). When
   the store lives inside a git repo, writes a `.gitignore` safety net into
   the store root.
-- Reconciles against `.kanon.lock`: a plain `install` prunes orphaned lock
-  entries (a source removed from `.kanon`) with an info-line; `--strict-lock`
-  promotes that to an error. Branch drift (a locked SHA differing from the
-  branch's current tip) reuses the locked SHA with an info-line; `--strict-drift`
+- Reconciles against `.kanon.lock` like `npm ci`: a plain `install` fails fast
+  (exit 1) without mutating the lock when `.kanon` and `.kanon.lock` have
+  drifted (a source added, removed, or with a changed ref). `--reconcile` opts
+  in to the lenient prune-and-re-resolve (prune orphaned entries, re-resolve
+  added/changed sources, replay unchanged ones, rewrite the lock on success).
+  `--strict-lock` additionally rejects an orphaned lock entry that survives a
+  `kanon_hash` match. Branch drift (a locked SHA differing from the branch's
+  current tip) reuses the locked SHA with an info-line; `--strict-drift`
   promotes that to an error.
-- **Auto-prune:** when a source is removed from `.kanon`, its registered
-  marketplace is unregistered on the next install.
+- **Marketplace prune:** when a source is removed from `.kanon` and the lock is
+  rebuilt (via `--reconcile`, `--refresh-lock`, or `kanon clean --orphans`),
+  the marketplaces that source registered are unregistered.
 - For any source with `KANON_SOURCE_<alias>_MARKETPLACE=true`: runs the
   marketplace install lifecycle.
 

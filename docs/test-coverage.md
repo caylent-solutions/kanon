@@ -425,7 +425,7 @@ new multi-step test was required because:
   and 85 (multi-source-install) end-to-end via a six-entry synthetic fixture lifecycle.
 - E26 (DEFECT-011) authors `TestStrictLockOrphanErrorMessage` and E34 (DEFECT-014) authors
   `TestStrictLockDefaultAutoPrune`, which together cover row 81 (install-detect-orphan):
-  the structured error message path and the default auto-prune path respectively.
+  the structured error message path and the `--reconcile` prune path respectively.
 - E36 (FIXTURE-DEFECT-001) resolves the manifest schema defect that blocked row 80
   (upgrade-via-refresh-lock-source) and row 82 (install-detect-drift) by replacing the
   legacy static seeds with runtime-generated fixtures that include the required `<remote>`
@@ -469,8 +469,9 @@ new multi-step test was required because:
 - Row 81 requires two classes because E26 and E34 cover distinct sub-scenarios. E26
   (`TestStrictLockOrphanErrorMessage`) guards that the structured orphan-naming error message
   is emitted with each orphan source named and a remediation hint. E34
-  (`TestStrictLockDefaultAutoPrune`) guards that bare `kanon install` (no `--strict-lock` flag)
-  automatically prunes orphaned entries and emits one INFO line per pruned entry.
+  (`TestStrictLockDefaultAutoPrune`) guards that `kanon install --reconcile` prunes orphaned
+  entries and emits one INFO line per pruned entry (a plain `kanon install` fails fast on the
+  drift instead).
 - Row 84 requires two classes because the collision-then-force user journey spans two
   command sub-paths. `TestAddCollisionError` guards that `kanon add` exits non-zero when a
   source name collision is detected and that the error message names both the existing and

@@ -72,7 +72,8 @@ is pipeable directly into `kanon add`.
 | `--regex pattern` | none | Filter by regex on same four fields. |
 | `--match-fields csv` | all | Narrow filter fields. Requires a filter. |
 | `--no-filter-required` | off | Skip filter for --tree on large catalogs. |
-| `--catalog-source url@ref` | env | Catalog source. Env: KANON_CATALOG_SOURCES |
+| `--catalog-source url[@ref]` | env | Catalog source; `@ref` optional. Env: KANON_CATALOG_SOURCES |
+| `--catalog-default-branch name` | env | Branch used when the catalog source omits `@ref`. Env: KANON_CATALOG_DEFAULT_BRANCH (default `main`; `auto` = remote HEAD). |
 | `--no-color` | auto | Disable color output. |
 
 ### list -- Mutually exclusive combinations
@@ -459,7 +460,8 @@ between two installs. See
 
 | Flag | Default | Description |
 | ---- | ------- | ----------- |
-| `--catalog-source url@ref` | env | Catalog source. Env: KANON_CATALOG_SOURCES. |
+| `--catalog-source url[@ref]` | env | Catalog source; `@ref` optional. Env: KANON_CATALOG_SOURCES. |
+| `--catalog-default-branch name` | env | Branch used when the catalog source omits `@ref`. Env: KANON_CATALOG_DEFAULT_BRANCH (default `main`; `auto` = remote HEAD). |
 | `--as alias` | auto | Override the auto-computed local alias (single entry only). Charset `[A-Za-z0-9_]`, no `__` run. |
 | `--kanon-file path` | `./.kanon` | Target file. Env: KANON_KANON_FILE. |
 | `--force` | off | Re-add an existing alias (same source@ref): overwrite the block and re-pin its lock entry. Without it, a re-add is a hard error. |

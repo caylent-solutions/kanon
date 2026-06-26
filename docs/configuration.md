@@ -216,6 +216,25 @@ These are the only two layers. There is no lockfile or `.kanon`
 fallback: the schema-v5 lockfile carries no catalog block, and `.kanon`
 records no catalog source.
 
+**Optional `@ref` and default-branch resolution.** The `@ref` portion of a
+catalog source is optional (`url[@ref]`). When a catalog source is given
+without `@ref`, `kanon add` and `kanon search` resolve a default branch and
+print a yellow `WARNING` naming the branch and suggesting you pin `@<ref>` to
+silence it. The branch is chosen by this precedence (highest to lowest):
+
+1. An inline `@ref` on the source (when present, no default-branch resolution
+   happens).
+2. The `--catalog-default-branch <name>` CLI flag (available on `kanon add`
+   and `kanon search`).
+3. The `KANON_CATALOG_DEFAULT_BRANCH` environment variable (default: `main`).
+4. The literal value `auto`, which resolves the remote's `HEAD` symref via
+   `git ls-remote --symref`.
+
+**`KANON_CATALOG_DEFAULT_BRANCH`** (default: `main`) -- The default branch
+used by `kanon add` / `kanon search` when a catalog source omits `@ref` and
+no `--catalog-default-branch` flag is passed. Set it to `auto` to resolve the
+remote's `HEAD` symref instead of assuming `main`.
+
 When neither source is set, a catalog-requiring command (`kanon search`,
 `kanon add`, `kanon outdated`, `kanon why`, `kanon catalog audit`) exits
 with a hard error and remediation text. See

@@ -587,13 +587,18 @@ against the catalog), and prints every chain reaching the requested node.
 ```bash
 kanon why my-project              # by source name, repo URL, or XML path
 kanon why https://example.com/org/project.git
+kanon why remote                  # a transitive include, by its name
 kanon why --format json my-project
 ```
 
-The argument is matched three ways: a `<project>` repo URL (canonicalized), a
-transitive XML manifest path (exact-string equality), or a top-level source
-name (normalized via `derive_source_name`). A catalog source is required only
-on the live-resolve path (when `.kanon.lock` is absent).
+The argument is matched four ways: a `<project>` repo URL (canonicalized), a
+transitive XML manifest path (exact-string equality), a top-level source name,
+or a transitive include name (the last two normalized via `derive_source_name`).
+When a single logical node is reached by many chains -- for example a transitive
+include pulled in by several sources -- every chain is printed; an error is
+raised only when the argument matches two or more distinct interpretations. A
+catalog source is required only on the live-resolve path (when `.kanon.lock` is
+absent).
 
 ### kanon doctor
 

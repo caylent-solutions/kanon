@@ -629,7 +629,7 @@ class TestDefensivePaths:
         """
         from unittest.mock import patch
 
-        from kanon_cli.commands.why import _MatchHit
+        from kanon_cli.commands.why import _ResolvedIdentity
 
         broken_project = ChainNode(
             kind="project",
@@ -643,10 +643,10 @@ class TestDefensivePaths:
         source.children = [broken_project]
         tree = ResolvedTree(sources=[source])
 
-        broken_hit = _MatchHit(
+        broken_identity = _ResolvedIdentity(
             category="url",
-            label="project URL 'https://github.com/org/broken'",
-            node=broken_project,
+            token="https://github.com/org/broken",
+            nodes=[broken_project],
         )
 
         kanon_file = _make_minimal_kanon_file(tmp_path, "FOO")
@@ -660,7 +660,7 @@ class TestDefensivePaths:
         )
 
         with (
-            patch("kanon_cli.commands.why._resolve_match", return_value=broken_hit),
+            patch("kanon_cli.commands.why._resolve_match", return_value=broken_identity),
             patch("kanon_cli.commands.why._build_tree_from_lockfile", return_value=tree),
         ):
             with pytest.raises(SystemExit) as exc_info:
@@ -680,15 +680,15 @@ class TestDefensivePaths:
         """
         from unittest.mock import patch
 
-        from kanon_cli.commands.why import _MatchHit
+        from kanon_cli.commands.why import _ResolvedIdentity
 
         empty_source = _make_source_node("MY_EMPTY_SOURCE")
         tree = ResolvedTree(sources=[empty_source])
 
-        source_hit = _MatchHit(
+        source_identity = _ResolvedIdentity(
             category="source_name",
-            label="source name 'MY_EMPTY_SOURCE'",
-            node=empty_source,
+            token="MY_EMPTY_SOURCE",
+            nodes=[empty_source],
         )
 
         kanon_file = _make_minimal_kanon_file(tmp_path, "MY_EMPTY_SOURCE")
@@ -702,7 +702,7 @@ class TestDefensivePaths:
         )
 
         with (
-            patch("kanon_cli.commands.why._resolve_match", return_value=source_hit),
+            patch("kanon_cli.commands.why._resolve_match", return_value=source_identity),
             patch("kanon_cli.commands.why._build_tree_from_lockfile", return_value=tree),
             patch("kanon_cli.commands.why._walk_chains_from_node", return_value=[]),
         ):
@@ -712,3 +712,103 @@ class TestDefensivePaths:
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
         assert "not found" in captured.err.lower()
+
+
+@pytest.mark.unit
+class TestMultiplicityNotAmbiguity:
+    """The same logical node matched many times prints all chains, not an ambiguity."""
+
+    def test_same_include_in_many_sources_collects_all_chains(self) -> None:
+        """A transitive include shared by N sources is one identity with N chains."""
+        from kanon_cli.commands.why import _collect_chains_for_identity, _resolve_match
+
+        shared_path = "repo-specs/git-connection/remote.xml"
+        shared_sha = "d" * 40
+        sources = []
+        for index in range(3):
+            include = _make_include_node("remote", shared_path, sha=shared_sha)
+            source = _make_source_node(f"src{index}")
+            source.children = [include]
+            sources.append(source)
+        tree = ResolvedTree(sources=sources)
+
+        identity = _resolve_match(tree, shared_path)
+
+        assert identity.category == "xml_path"
+        assert identity.token == shared_path
+        assert len(identity.nodes) == 3
+
+        chains = _collect_chains_for_identity(tree, identity)
+
+        assert len(chains) == 3
+        for chain in chains:
+            assert [node.kind for node in chain] == ["source", "include"]
+            assert chain[1].ref == shared_path
+
+    def test_include_name_resolves_and_prints(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
+        """Querying a transitive include by its name resolves and annotates include_name."""
+        from unittest.mock import patch
+
+        include = _make_include_node("remote", "repo-specs/git-connection/remote.xml")
+        source = _make_source_node("only")
+        source.children = [include]
+        tree = ResolvedTree(sources=[source])
+
+        kanon_file = _make_minimal_kanon_file(tmp_path, "only")
+        lock_path = _write_lockfile(tmp_path, "only", "https://github.com/org/proj")
+        args = _make_args(target="remote", kanon_file=str(kanon_file), lock_file=str(lock_path))
+
+        with patch("kanon_cli.commands.why._build_tree_from_lockfile", return_value=tree):
+            exit_code = run(args)
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "matched include_name 'remote'" in captured.out
+
+    def test_include_path_and_name_both_resolve(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
+        """The same include resolves both by its path and by its name without ambiguity."""
+        from unittest.mock import patch
+
+        include_path = "repo-specs/git-connection/remote.xml"
+
+        kanon_file = _make_minimal_kanon_file(tmp_path, "only")
+        lock_path = _write_lockfile(tmp_path, "only", "https://github.com/org/proj")
+
+        for target, expected in ((include_path, "matched xml_path"), ("remote", "matched include_name")):
+            include = _make_include_node("remote", include_path)
+            source = _make_source_node("only")
+            source.children = [include]
+            tree = ResolvedTree(sources=[source])
+            args = _make_args(target=target, kanon_file=str(kanon_file), lock_file=str(lock_path))
+            with patch("kanon_cli.commands.why._build_tree_from_lockfile", return_value=tree):
+                exit_code = run(args)
+            assert exit_code == 0
+            captured = capsys.readouterr()
+            assert expected in captured.out
+
+    def test_same_name_different_identity_still_ambiguous(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        """A name matching both a source and a distinct include is a genuine ambiguity."""
+        from unittest.mock import patch
+
+        project = _make_project_node("proj", "https://github.com/org/proj")
+        source_named = _make_source_node("remote")
+        source_named.children = [project]
+        other_source = _make_source_node("other")
+        other_source.children = [_make_include_node("remote", "repo-specs/remote.xml")]
+        tree = ResolvedTree(sources=[source_named, other_source])
+
+        kanon_file = _make_minimal_kanon_file(tmp_path, "remote")
+        lock_path = _write_lockfile(tmp_path, "remote", "https://github.com/org/proj")
+        args = _make_args(target="remote", kanon_file=str(kanon_file), lock_file=str(lock_path))
+
+        with patch("kanon_cli.commands.why._build_tree_from_lockfile", return_value=tree):
+            with pytest.raises(SystemExit) as exc_info:
+                run(args)
+
+        assert exc_info.value.code != 0
+        captured = capsys.readouterr()
+        assert "ambiguous" in captured.err.lower()
+        assert "source name" in captured.err.lower()
+        assert "include name" in captured.err.lower()

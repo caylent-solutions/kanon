@@ -26,6 +26,7 @@ import pytest
 
 from kanon_cli.commands.why import (
     ChainNode,
+    ResolvedTree,
     _build_why_payload,
     _render_json,
     run,
@@ -915,3 +916,40 @@ class TestBuildWhyPayload:
         node_b = self._make_chain_node(name="b")
         payload = _build_why_payload([[node_a], [node_b]])
         assert len(payload) == 2
+
+
+@pytest.mark.unit
+class TestRunJsonMultiplicity:
+    """JSON output for a multiply-present node: one matched object, every chain."""
+
+    def test_shared_include_emits_single_matched_object_and_all_chains(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture
+    ) -> None:
+        """A transitive include shared by 3 sources emits one matched object and 3 chains."""
+        from unittest.mock import patch
+
+        shared_path = "repo-specs/git-connection/remote.xml"
+        shared_sha = "d" * 40
+        sources = []
+        for index in range(3):
+            include = _make_include_node("remote", shared_path, sha=shared_sha)
+            source = _make_source_node(f"src{index}")
+            source.children = [include]
+            sources.append(source)
+        tree = ResolvedTree(sources=sources)
+
+        kanon_file = _make_minimal_kanon_file(tmp_path, "src0")
+        lockfile = _make_minimal_lockfile(project_url="https://github.com/org/baz", project_sha="b" * 40)
+        lock_file = _write_lockfile_to_tmp(tmp_path, lockfile)
+        args = _make_args(target=shared_path, kanon_file=str(kanon_file), lock_file=str(lock_file), fmt="json")
+
+        with patch("kanon_cli.commands.why._build_tree_from_lockfile", return_value=tree):
+            exit_code = run(args)
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        parsed = json.loads(captured.out)
+        assert isinstance(parsed["matched"], dict)
+        assert parsed["matched"]["category"] == "xml_path"
+        assert parsed["matched"]["token"] == shared_path
+        assert len(parsed["chains"]) == 3

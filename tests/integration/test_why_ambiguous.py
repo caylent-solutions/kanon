@@ -352,3 +352,94 @@ class TestWhyXmlPathOnlyMatch:
         assert result.returncode != 0, (
             f"Expected non-zero for partial XML path\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
         )
+
+
+def _write_multi_source_lockfile(
+    tmp_path: pathlib.Path, count: int, include_name: str, include_path: str
+) -> pathlib.Path:
+    """Write a lockfile with `count` top-level sources that share one identical include."""
+    from kanon_cli.core.lockfile import (
+        CURRENT_SCHEMA_VERSION,
+        IncludeEntry,
+        Lockfile,
+        ProjectEntry,
+        SourceEntry,
+        write_lockfile,
+    )
+    from kanon_cli.core.url import canonicalize_repo_url
+
+    shared_sha = "d" * 40
+    sources = []
+    for index in range(count):
+        project_url = f"https://github.com/org/proj{index}"
+        sources.append(
+            SourceEntry(
+                alias=f"src{index}",
+                name=f"src{index}",
+                url="https://github.com/org/catalog",
+                ref_spec="main",
+                resolved_ref="main",
+                resolved_sha="a" * 40,
+                path=f"./src{index}",
+                includes=[
+                    IncludeEntry(
+                        name=include_name,
+                        path_in_repo=include_path,
+                        url="https://github.com/org/catalog",
+                        resolved_sha=shared_sha,
+                        includes=[],
+                    )
+                ],
+                projects=[
+                    ProjectEntry(
+                        name=f"proj{index}",
+                        url=project_url,
+                        canonical_url=canonicalize_repo_url(project_url),
+                        ref_spec="main",
+                        resolved_ref="main",
+                        resolved_sha="b" * 40,
+                    )
+                ],
+            )
+        )
+    lockfile = Lockfile(
+        schema_version=CURRENT_SCHEMA_VERSION,
+        generated_at="2024-01-01T00:00:00Z",
+        generator="kanon-test",
+        kanon_hash="sha256:" + "a" * 64,
+        sources=sources,
+    )
+    lock_path = tmp_path / ".kanon.lock"
+    write_lockfile(lockfile, lock_path)
+    return lock_path
+
+
+@pytest.mark.integration
+class TestWhyMultiplicityAndIncludeName:
+    """A transitive node shared by many sources prints all chains and is matchable by name."""
+
+    def test_shared_include_path_prints_all_chains(self, tmp_path: pathlib.Path) -> None:
+        """An include shared by 3 sources, queried by its path, exits 0 with all 3 chains."""
+        include_path = "repo-specs/git-connection/remote.xml"
+        kanon_file = _make_minimal_kanon_file(tmp_path, "src0")
+        lock_file = _write_multi_source_lockfile(tmp_path, 3, "remote", include_path)
+
+        result = _run_why(kanon_file, lock_file, include_path)
+
+        assert result.returncode == 0, f"stderr: {result.stderr!r}"
+        assert "matched xml_path" in result.stdout
+        chain_lines = [line for line in result.stdout.splitlines() if include_path in line and " -> " in line]
+        assert len(chain_lines) == 3, f"expected 3 chains, got: {result.stdout!r}"
+
+    def test_shared_include_name_prints_all_chains(self, tmp_path: pathlib.Path) -> None:
+        """The same include, queried by its name, exits 0 and annotates include_name."""
+        include_path = "repo-specs/git-connection/remote.xml"
+        kanon_file = _make_minimal_kanon_file(tmp_path, "src0")
+        lock_file = _write_multi_source_lockfile(tmp_path, 3, "remote", include_path)
+
+        result = _run_why(kanon_file, lock_file, "remote")
+
+        assert result.returncode == 0, f"stderr: {result.stderr!r}"
+        assert "matched include_name 'remote'" in result.stdout
+        chain_lines = [line for line in result.stdout.splitlines() if include_path in line and " -> " in line]
+        assert len(chain_lines) == 3, f"expected 3 chains, got: {result.stdout!r}"

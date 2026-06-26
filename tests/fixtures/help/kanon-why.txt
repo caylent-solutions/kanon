@@ -7,10 +7,13 @@ Reads the .kanon file, resolves the full dependency tree
 the catalog), and prints every chain reaching the requested
 node.
 
-Argument matching (all three categories evaluated):
+Argument matching (all categories evaluated, grouped by identity):
   (a) <project> repo URL -- canonicalized via canonicalize_repo_url.
   (b) Transitive XML manifest path -- exact-string equality.
   (c) Top-level source name -- normalized via derive_source_name.
+  (d) Transitive include name -- normalized via derive_source_name.
+The same node reached by many chains prints all of them; only two or
+more distinct interpretations is an ambiguity.
 
 Chain format:
   <top-source> -> <xml-path>@<sha> -> ... -> <project>@<sha>
@@ -21,11 +24,12 @@ is absent (live-resolve path).
 
 positional arguments:
   <project-url-or-name>
-                        The project URL, XML manifest path, or source name to
-                        look up. Project URLs are canonicalized via
-                        canonicalize_repo_url before matching. XML manifest
-                        paths are matched by exact string equality. Source
-                        names are normalized via derive_source_name (case- and
+                        The project URL, XML manifest path, source name, or
+                        transitive include name to look up. Project URLs are
+                        canonicalized via canonicalize_repo_url before
+                        matching. XML manifest paths are matched by exact
+                        string equality. Source and include names are
+                        normalized via derive_source_name (case- and
                         separator-insensitive).
 
 options:

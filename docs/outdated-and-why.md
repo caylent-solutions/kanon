@@ -250,6 +250,7 @@ The single positional argument is matched in the following precedence:
 | Source URL | `https://example.com/org/catalog-repo.git` |
 | Root manifest path | `repo-specs/package-a-marketplace.xml` |
 | Transitive XML manifest path | `repo-specs/network/remote.xml` |
+| Transitive include name | `remote` |
 | Entry name | `package-a` |
 | Source name | `package_a` |
 
@@ -265,6 +266,14 @@ Notes:
 - **Root manifest path** -- the `KANON_SOURCE_<name>_PATH` value (e.g.
   `repo-specs/package-a-marketplace.xml`) -- resolves to the owning source
   on the live-resolve path.
+- **Transitive include name** -- the `name` of an `<include>` node, normalized
+  via `derive_source_name`, resolves to that include wherever it appears in the
+  tree (queryable interchangeably with its manifest path).
+- Matched nodes are grouped by logical identity. When a single logical node is
+  reached by many chains (for example a transitive include pulled in by several
+  sources), every chain is printed. An ambiguity error is raised only when the
+  argument matches two or more **distinct** interpretations (different kinds, or
+  different logical nodes).
 
 ### why -- Placeholder fetch URLs on the live-resolve path
 
@@ -302,6 +311,7 @@ The annotation form differs by query type:
 | Root manifest path | `matched xml_path 'repo-specs/package-a-marketplace.xml'` |
 | Transitive XML path | `matched xml_path 'repo-specs/network/remote.xml'` |
 | Source name | `matched source_name 'package_a'` |
+| Transitive include name | `matched include_name 'remote'` |
 
 The annotation is emitted on the first output line. The chain line(s)
 follow unchanged. The annotation is omitted on error paths (miss,
@@ -325,6 +335,10 @@ package-a -> repo-specs/base.xml@a1b2c3d4e5f6 \
 ```
 
 Each node in the chain is annotated with its resolved SHA.
+
+When the requested node is reached by multiple chains -- for example a
+transitive include pulled in by several top-level sources, or a diamond in the
+include graph -- every chain is printed under the single match annotation.
 
 ### why -- Cycle detection
 
@@ -354,16 +368,18 @@ package-a -> repo-specs/extra.xml@e5f6a1b2c3d4 \
 
 ### why -- Ambiguity behaviour
 
-If the argument matches in more than one category simultaneously (for
-example, a string that is both a valid source name and a valid XML
-path), `kanon why` exits with a hard error listing all matching
-interpretations:
+`kanon why` raises an ambiguity error only when the argument matches two or
+more **distinct** interpretations -- different kinds (for example a string that
+is both a valid source name and a valid XML path), or different logical nodes.
+The same logical node reached by many chains is **not** an ambiguity; all of its
+chains are printed. On a genuine ambiguity the command exits non-zero, listing
+each distinct interpretation:
 
 ```text
-ERROR: 'shared' is ambiguous. It matches:
-  source name : shared (KANON_SOURCE_shared_*)
-  XML path    : repo-specs/shared.xml
-Disambiguate by passing the full XML path or the exact source name.
+ERROR: argument 'shared' is ambiguous: it matches 2 distinct interpretations:
+  source name: shared
+  XML manifest path: repo-specs/shared.xml
+Disambiguate by passing one of the exact tokens above.
 ```
 
 ### why -- Not-found behaviour

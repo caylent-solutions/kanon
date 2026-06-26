@@ -366,7 +366,7 @@ _shtab_kanon_why_options=(
   "--kanon-file[Path to the .kanon file. Defaults to \'.\/.kanon\'. Overridden by the KANON_KANON_FILE environment variable\; the CLI flag takes precedence when both are set.]:kanon_file:"
   "--lock-file[Path to the .kanon.lock file. When present, the tree is built from lockfile entries (no git calls). When absent, the command live-resolves against the catalog. Defaults to \<kanon-file\>.lock. Overridden by the KANON_LOCK_FILE environment variable\; the CLI flag takes precedence when both are set.]:lock_file:"
   "--format[Output format\: \'text\' (default) or \'json\'. Overridden by the KANON_WHY_FORMAT environment variable\; the CLI flag takes precedence when both are set.]:format:(text json)"
-  ":The project URL, XML manifest path, or source name to look up. Project URLs are canonicalized via canonicalize_repo_url before matching. XML manifest paths are matched by exact string equality. Source names are normalized via derive_source_name (case- and separator-insensitive).:"
+  ":The project URL, XML manifest path, source name, or transitive include name to look up. Project URLs are canonicalized via canonicalize_repo_url before matching. XML manifest paths are matched by exact string equality. Source and include names are normalized via derive_source_name (case- and separator-insensitive).:"
 )
 
 # guard to ensure default positional specs are added only once per session

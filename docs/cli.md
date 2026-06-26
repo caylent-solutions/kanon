@@ -159,9 +159,10 @@ guaranteeing format consistency.
 
 ### Argument types: `<git-url>` and `<xml-manifest-path>`
 
-On the live-resolve path, `kanon why` accepts three distinct argument
-forms. All three are evaluated before deciding; the command errors if
-two or more forms match simultaneously (ambiguity).
+On the live-resolve path, `kanon why` accepts four distinct argument
+forms. All are evaluated before deciding; matched nodes are grouped by
+logical identity, and the command errors only when two or more **distinct**
+interpretations match (ambiguity).
 
 - **Project repo URL** (`<git-url>`) -- a full Git URL such as
   `https://github.com/org/project.git` or `git@github.com:org/project`.
@@ -176,6 +177,10 @@ two or more forms match simultaneously (ambiguity).
 - **Source name** -- the `KANON_SOURCE_<name>` key (or its
   `derive_source_name`-normalized form). Matched against the top-level
   source nodes.
+
+- **Transitive include name** -- the `name` of an `<include>` node, normalized
+  via `derive_source_name`. Matched against every include node in the resolved
+  tree, and queryable interchangeably with the include's manifest path.
 
 On the no-lockfile live-resolve path (no `.kanon.lock` present), the
 tree is built by cloning the catalog source and walking each manifest

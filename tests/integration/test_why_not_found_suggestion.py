@@ -213,3 +213,18 @@ class TestWhyNotFoundWithSuggestion:
         assert _INCLUDE_PATH in result.stderr, (
             f"Expected include path '{_INCLUDE_PATH}' in suggestions; stderr:\n{result.stderr}"
         )
+
+    def test_typo_in_include_name_includes_suggestion(
+        self, why_suggestion_fixture: tuple[pathlib.Path, pathlib.Path, pathlib.Path]
+    ) -> None:
+        """'kanon why bart' (one-char typo on the include name 'bar') suggests the include name."""
+        tmp_path, kanon_file, lock_file = why_suggestion_fixture
+
+        result = _invoke_why(tmp_path, kanon_file, lock_file, "bart")
+
+        assert result.returncode != 0
+        assert "Did you mean" in result.stderr, f"Expected suggestions; stderr:\n{result.stderr}"
+        suggestions = result.stderr.split("Did you mean", 1)[1]
+        assert _INCLUDE_NAME in suggestions, (
+            f"Expected include name '{_INCLUDE_NAME}' in suggestions; stderr:\n{result.stderr}"
+        )

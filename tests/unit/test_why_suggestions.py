@@ -247,8 +247,8 @@ class TestBuildSuggestionUniverse:
         universe = _build_suggestion_universe(tree)
         assert "repo-specs/manifests/main.xml" in universe
 
-    def test_include_node_with_none_ref_not_in_universe(self) -> None:
-        """An include ChainNode with ref=None contributes nothing to the universe."""
+    def test_include_node_name_in_universe_ref_none_adds_no_path(self) -> None:
+        """An include ChainNode contributes its name; a None ref adds no path entry."""
         include = ChainNode(
             kind="include",
             name="inc",
@@ -267,7 +267,9 @@ class TestBuildSuggestionUniverse:
         tree = ResolvedTree(sources=[source])
         universe = _build_suggestion_universe(tree)
 
-        assert "inc" not in universe
+        assert "inc" in universe
+        assert universe.count("inc") == 1
+        assert None not in universe
 
     def test_project_node_canonical_url_in_universe(self) -> None:
         """A project ChainNode with a canonical_url has that URL in the universe."""

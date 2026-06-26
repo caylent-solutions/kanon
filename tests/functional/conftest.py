@@ -85,6 +85,7 @@ import pytest
 
 from kanon_cli.core.include_walker import _walk_includes as _real_walk_includes
 from kanon_cli.core.install import _RefResolution
+from tests.conftest import _isolation_env, managed_repo_dir
 
 _MINIMAL_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
 
@@ -399,7 +400,9 @@ def _run_kanon(
 
     resolved_env: "dict[str, str] | None"
     if env is not None:
-        resolved_env = env
+        resolved_env = dict(env)
+        for key, value in _isolation_env().items():
+            resolved_env.setdefault(key, value)
     elif extra_env is not None:
         resolved_env = dict(os.environ)
         resolved_env.update(extra_env)
@@ -879,38 +882,40 @@ def functional_repo_dir(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Pat
     """
     from kanon_cli.constants import KANON_REPO_DIR_ENV
 
-    base = tmp_path_factory.mktemp("functional_repo")
-    repo_dot_dir = base / ".repo"
-    manifests_dir = repo_dot_dir / "manifests"
-    manifests_dir.mkdir(parents=True, exist_ok=True)
+    with managed_repo_dir(tmp_path_factory, "functional_repo") as base:
+        repo_dot_dir = base / ".repo"
+        manifests_dir = repo_dot_dir / "manifests"
+        manifests_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest_content = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        "<manifest>\n"
-        '  <remote name="origin" fetch="https://github.com/caylent-solutions/" />\n'
-        '  <default revision="main" remote="origin" />\n'
-        "</manifest>\n"
-    )
-    manifest_path = manifests_dir / "default.xml"
-    manifest_path.write_text(manifest_content, encoding="utf-8")
+        manifest_content = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<manifest>\n"
+            '  <remote name="origin" fetch="https://github.com/caylent-solutions/" />\n'
+            '  <default revision="main" remote="origin" />\n'
+            "</manifest>\n"
+        )
+        manifest_path = manifests_dir / "default.xml"
+        manifest_path.write_text(manifest_content, encoding="utf-8")
 
-    manifest_link = repo_dot_dir / "manifest.xml"
-    manifest_link.symlink_to(manifest_path)
+        manifest_link = repo_dot_dir / "manifest.xml"
+        manifest_link.symlink_to(manifest_path)
 
-    repo_tool_dir = repo_dot_dir / "repo"
-    repo_tool_dir.mkdir(parents=True, exist_ok=True)
-    _git(["init", "-b", "main"], cwd=repo_tool_dir)
-    _git(["config", "user.email", "test@example.com"], cwd=repo_tool_dir)
-    _git(["config", "user.name", "Test"], cwd=repo_tool_dir)
-    (repo_tool_dir / "VERSION").write_text("1.0.0\n", encoding="utf-8")
-    _git(["add", "VERSION"], cwd=repo_tool_dir)
-    _git(["commit", "-m", "Initial commit"], cwd=repo_tool_dir)
-    _git(["tag", "-a", "v1.0.0", "-m", "Version 1.0.0"], cwd=repo_tool_dir)
+        repo_tool_dir = repo_dot_dir / "repo"
+        repo_tool_dir.mkdir(parents=True, exist_ok=True)
+        _git(["init", "-b", "main"], cwd=repo_tool_dir)
+        _git(["config", "user.email", "test@example.com"], cwd=repo_tool_dir)
+        _git(["config", "user.name", "Test"], cwd=repo_tool_dir)
+        (repo_tool_dir / "VERSION").write_text("1.0.0\n", encoding="utf-8")
+        _git(["add", "VERSION"], cwd=repo_tool_dir)
+        _git(["commit", "-m", "Initial commit"], cwd=repo_tool_dir)
+        _git(["tag", "-a", "v1.0.0", "-m", "Version 1.0.0"], cwd=repo_tool_dir)
 
-    previous = os.environ.get(KANON_REPO_DIR_ENV)
-    os.environ[KANON_REPO_DIR_ENV] = str(repo_dot_dir)
-    yield repo_dot_dir
-    if previous is None:
-        del os.environ[KANON_REPO_DIR_ENV]
-    else:
-        os.environ[KANON_REPO_DIR_ENV] = previous
+        previous = os.environ.get(KANON_REPO_DIR_ENV)
+        os.environ[KANON_REPO_DIR_ENV] = str(repo_dot_dir)
+        try:
+            yield repo_dot_dir
+        finally:
+            if previous is None:
+                del os.environ[KANON_REPO_DIR_ENV]
+            else:
+                os.environ[KANON_REPO_DIR_ENV] = previous

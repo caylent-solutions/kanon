@@ -3,11 +3,112 @@
 from __future__ import annotations
 
 import ast
+import contextlib
 import os
 import pathlib
+import shutil
+import tempfile
 from collections.abc import Generator
 
 import pytest
+
+
+_TMP_ROOT_ENV = "KANON_TEST_TMP_ROOT"
+_TMP_ROOT_DEFAULT = "/var/tmp/kanon-test-runs"
+_KEEP_TMP_ENV = "KANON_TEST_KEEP_TMP"
+_XDIST_WORKER_ENV = "PYTEST_XDIST_WORKER"
+_TEMP_VARS = ("TMPDIR", "TMP", "TEMP")
+
+
+def _reap_dead_run_roots(parent: pathlib.Path) -> None:
+    """Remove managed ``run-<pid>-*`` roots whose owning process is no longer alive.
+
+    Recovers space leaked by a previously interrupted or killed run without ever
+    touching a concurrently live run (its pid still exists), so it is safe to call
+    while another test session is in progress.
+    """
+    if not parent.is_dir():
+        return
+    for child in parent.glob("run-*"):
+        pid = next((int(part) for part in child.name.split("-") if part.isdigit()), None)
+        if pid is None:
+            continue
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            shutil.rmtree(child, ignore_errors=True)
+        except PermissionError:
+            continue
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Point every test temp at a managed, real-filesystem run root.
+
+    The kanon store and the vendored repo tool rely on gitlinks plus atomic
+    renames that do not work on the orbstack workspace mount (fuseblk), and the
+    default ``/tmp`` is a small tmpfs. So pytest's basetemp, ``tmp_path``,
+    ``tmp_path_factory``, the OS tempdir that source ``tempfile.mkdtemp`` and git
+    use, and any ``python -m kanon_cli`` subprocess are all redirected to a per-run
+    directory under ``KANON_TEST_TMP_ROOT`` (default ``/var/tmp/kanon-test-runs``,
+    an env-overridable real filesystem). The whole run root is removed in
+    :func:`pytest_unconfigure`, so nothing accumulates across runs and ``/tmp`` is
+    never touched. Stale roots from a crashed prior run are reaped on startup by
+    dead-pid detection. Under xdist only the controller creates the root; workers
+    inherit ``TMPDIR`` and ``--basetemp`` from it.
+    """
+    if os.environ.get(_XDIST_WORKER_ENV):
+        return
+    parent = pathlib.Path(os.environ.get(_TMP_ROOT_ENV, _TMP_ROOT_DEFAULT))
+    parent.mkdir(parents=True, exist_ok=True)
+    _reap_dead_run_roots(parent)
+    run_root = parent / f"run-{os.getpid()}-{os.urandom(4).hex()}"
+    run_root.mkdir(parents=True, exist_ok=True)
+    for var in _TEMP_VARS:
+        os.environ[var] = str(run_root)
+    tempfile.tempdir = None
+    if getattr(config.option, "basetemp", None) is None:
+        config.option.basetemp = str(run_root / "pytest")
+    config._kanon_run_root = str(run_root)
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    """Remove the managed run root at session end unless ``KANON_TEST_KEEP_TMP`` is set."""
+    if os.environ.get(_KEEP_TMP_ENV) or os.environ.get(_XDIST_WORKER_ENV):
+        return
+    root = getattr(config, "_kanon_run_root", None)
+    if root:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def _isolation_env() -> dict[str, str]:
+    """Return the mandatory temp and home env floor for kanon/git subprocesses.
+
+    A caller that passes a full replacement environment to a subprocess would
+    otherwise drop ``TMPDIR``/``KANON_HOME`` and let the child's
+    ``tempfile.mkdtemp`` and ``~/.kanon`` escape the managed run root. Subprocess
+    helpers overlay this floor so the isolation cannot be bypassed.
+    """
+    floor: dict[str, str] = {}
+    for var in (*_TEMP_VARS, "KANON_HOME", _TMP_ROOT_ENV):
+        value = os.environ.get(var)
+        if value is not None:
+            floor[var] = value
+    return floor
+
+
+@contextlib.contextmanager
+def managed_repo_dir(tmp_path_factory: pytest.TempPathFactory, name: str) -> Generator[pathlib.Path, None, None]:
+    """Yield a fresh ``tmp_path_factory`` dir and remove it on teardown.
+
+    Session and module scoped fixtures that build real git repositories use this
+    so the inode-heavy git objects are reaped promptly instead of persisting for
+    the whole session inside the run root.
+    """
+    base = tmp_path_factory.mktemp(name)
+    try:
+        yield base
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
 
 
 _TEXT_IO_METHODS = ("read_text", "write_text")

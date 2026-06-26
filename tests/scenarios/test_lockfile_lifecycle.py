@@ -185,7 +185,7 @@ def _write_kanon_for_source(
     """
     lines = [
         "GITBASE=https://unused.example.com",
-        "CLAUDE_MARKETPLACES_DIR=/tmp/kanon-test-mktplc",
+        f"CLAUDE_MARKETPLACES_DIR={project_dir / 'kanon-test-mktplc'}",
         "KANON_MARKETPLACE_INSTALL=false",
         f"KANON_SOURCE_{source_name}_URL={manifest_url}",
         f"KANON_SOURCE_{source_name}_REF={revision_spec}",

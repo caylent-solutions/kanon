@@ -28,6 +28,7 @@ import pytest
 import kanon_cli.repo.color as color
 import kanon_cli.repo.platform_utils as platform_utils
 import kanon_cli.repo.repo_trace as repo_trace
+from tests.conftest import managed_repo_dir
 
 SMOKE_TEST_TIMEOUT_ENV_VAR = "SMOKE_TEST_TIMEOUT"
 
@@ -105,8 +106,13 @@ def session_tmp_home_dir(tmp_path_factory, monkeysession):
     """Set HOME to a temporary directory, avoiding the user's .gitconfig.
 
     Set home at session scope to take effect prior to test class setUpClass.
+
+    The session-scoped HOME accumulates git state for the whole run, so its
+    backing temp directory is removed on session teardown via
+    :func:`tests.conftest.managed_repo_dir` to reap that state promptly.
     """
-    return _set_home(monkeysession, tmp_path_factory.mktemp("home"))
+    with managed_repo_dir(tmp_path_factory, "home") as home:
+        yield _set_home(monkeysession, home)
 
 
 @pytest.fixture(autouse=True)

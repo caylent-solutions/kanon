@@ -27,6 +27,8 @@ from typing import Iterable
 
 import pytest
 
+from tests.conftest import _isolation_env
+
 
 INTEGRATION_DOC = pathlib.Path(__file__).resolve().parents[2] / "docs" / "integration-testing.md"
 
@@ -68,7 +70,9 @@ def run_kanon(
         raise ValueError("Provide either 'env' or 'extra_env', not both.")
     resolved_env: dict[str, str] | None
     if env is not None:
-        resolved_env = env
+        resolved_env = dict(env)
+        for key, value in _isolation_env().items():
+            resolved_env.setdefault(key, value)
     elif extra_env is not None:
         resolved_env = dict(os.environ)
         resolved_env.update(extra_env)

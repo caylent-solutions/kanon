@@ -181,7 +181,7 @@ def _write_kanon(
     """
     lines: list[str] = [
         "GITBASE=https://unused.example.com",
-        "CLAUDE_MARKETPLACES_DIR=/tmp/kanon-test-mktplc",
+        f"CLAUDE_MARKETPLACES_DIR={project_dir / 'kanon-test-mktplc'}",
         "KANON_MARKETPLACE_INSTALL=false",
     ]
     for name, manifest_bare, revision in sources:

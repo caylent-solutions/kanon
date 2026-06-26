@@ -139,7 +139,7 @@ def _write_two_same_name_kanon(
     """
     content = textwrap.dedent(
         f"""\
-        CLAUDE_MARKETPLACES_DIR=/tmp/.claude-marketplaces
+        CLAUDE_MARKETPLACES_DIR={workspace / ".claude-marketplaces"}
         KANON_SOURCE_{_ALIAS_FIRST}_URL={url_first}
         KANON_SOURCE_{_ALIAS_FIRST}_REF={_REF_FIRST}
         KANON_SOURCE_{_ALIAS_FIRST}_PATH=./{_MANIFEST_NAME}

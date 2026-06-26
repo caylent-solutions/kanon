@@ -52,9 +52,14 @@ from kanon_cli.constants import (
     SOURCE_URL_SUFFIX,
     TAG_ERROR_DISPLAY_CAP,
 )
-from kanon_cli.core.catalog import _parse_catalog_source, resolve_env_catalog_source
+from kanon_cli.core.catalog import (
+    DefaultBranchResolutionError,
+    _parse_catalog_source,
+    normalize_catalog_source_ref,
+    resolve_env_catalog_source,
+)
 from kanon_cli.core.manifest_vars import detect_functional_manifest_vars
-from kanon_cli.core.cli_args import add_catalog_source_arg
+from kanon_cli.core.cli_args import add_catalog_default_branch_arg, add_catalog_source_arg
 from kanon_cli.core.kanon_hash import kanon_hash
 from kanon_cli.core.install import _resolve_ref_to_sha, read_lockfile_if_present
 from kanon_cli.core.lockfile import write_lockfile
@@ -127,6 +132,7 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
     )
 
     add_catalog_source_arg(parser)
+    add_catalog_default_branch_arg(parser)
 
     parser.add_argument(
         "--as",
@@ -981,20 +987,43 @@ def _resolve_spec(url: str, spec: str | None) -> str:
     return resolve_version(url, spec)
 
 
-def _resolve_manifest_repo_for_add(catalog_source: str) -> tuple[pathlib.Path, str, str]:
+def _resolve_manifest_repo_for_add(
+    catalog_source: str,
+    *,
+    catalog_default_branch: str | None,
+) -> tuple[pathlib.Path, str, str]:
     """Clone the manifest repo and return (repo_root, url, ref).
 
+    When ``catalog_source`` omits its ``@ref`` the manifest-repo ref is supplied
+    by the default-branch precedence (spec Section 6 / FR-26 / FR-27) via
+    :func:`normalize_catalog_source_ref`: ``--catalog-default-branch`` >
+    ``KANON_CATALOG_DEFAULT_BRANCH`` env (default ``main``) > the literal
+    ``auto`` HEAD-symref resolution. A defaulted branch is verified to exist on
+    the remote (fail fast) and a single WARNING naming it is written to stderr.
+
     Args:
-        catalog_source: A '<git_url>@<ref>' string.
+        catalog_source: A '<git_url>[@<ref>]' string; the ``@<ref>`` is optional.
+        catalog_default_branch: The ``--catalog-default-branch`` flag value
+            (tier-2 of the default-branch precedence), or ``None`` when absent.
 
     Returns:
         Tuple of (repo_root_path, url, ref).
 
     Raises:
-        SystemExit: When the git clone fails or catalog source format is invalid.
+        SystemExit: When the git clone fails, the catalog source format is
+            invalid, or the default branch cannot be resolved.
     """
     try:
-        url, ref = _parse_catalog_source(catalog_source)
+        normalized_source = normalize_catalog_source_ref(catalog_source, flag_value=catalog_default_branch)
+    except DefaultBranchResolutionError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        url, ref = _parse_catalog_source(normalized_source)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -1396,10 +1425,15 @@ def run_add(args: argparse.Namespace) -> int:
             print(str(exc), file=sys.stderr)
             sys.exit(1)
 
+    catalog_default_branch: str | None = getattr(args, "catalog_default_branch", None)
+
     raw_names = [_split_name_spec(raw)[0] for raw in args.entries]
     _check_within_request_collisions(raw_names)
 
-    manifest_root, url, _ref = _resolve_manifest_repo_for_add(catalog_source)
+    manifest_root, url, _ref = _resolve_manifest_repo_for_add(
+        catalog_source,
+        catalog_default_branch=catalog_default_branch,
+    )
 
     catalog = _build_entry_catalog(manifest_root, url)
 

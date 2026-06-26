@@ -21,8 +21,10 @@ branch-existence verification run against genuine git output, not a stub.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import subprocess
+import sys
 
 import pytest
 
@@ -183,3 +185,171 @@ class TestDefaultBranchJourney:
         with pytest.raises(DefaultBranchResolutionError) as exc_info:
             resolve_default_branch(url, inline_ref=None, flag_value=None)
         assert "not found on remote" in str(exc_info.value)
+
+
+_ENTRY_NAME = "history"
+_ENTRY_XML_FILENAME = "history-marketplace.xml"
+_ENTRY_RELEASE_TAG = "1.0.0"
+_INVALID_FORMAT_TOKEN = "Invalid catalog source format"
+_PRECEDENCE_DEFAULT_BRANCH = "main"
+
+
+def _catalog_entry_xml(name: str) -> str:
+    """Return a valid catalog-metadata XML body for the given entry name."""
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<repo-specs>\n"
+        "  <catalog-metadata>\n"
+        f"    <name>{name}</name>\n"
+        f"    <version>=={_ENTRY_RELEASE_TAG}</version>\n"
+        "    <display-name>History Package</display-name>\n"
+        "    <description>An entry published for the default-branch CLI journey.</description>\n"
+        "    <type>library</type>\n"
+        "    <owner-name>Journey Owner</owner-name>\n"
+        "    <owner-email>journey@example.com</owner-email>\n"
+        "    <keywords>test journey</keywords>\n"
+        "  </catalog-metadata>\n"
+        "</repo-specs>\n"
+    )
+
+
+def _make_bare_catalog_repo(base: pathlib.Path, branch: str, *, with_tag: bool) -> str:
+    """Create a real bare catalog repo on ``branch`` and return its ``file://`` URL.
+
+    The repo carries ``repo-specs/<entry>-marketplace.xml`` so ``kanon add`` /
+    ``kanon search`` can resolve a real entry. When ``with_tag`` is True an
+    annotated PEP 440 release tag is created so the per-entry version resolver
+    has a tag to pin (the manifest-repo ref is the resolved default branch; the
+    per-entry version is a SEPARATE concern resolved from the highest tag).
+    """
+    work = base / "catalog-work"
+    work.mkdir()
+    _git(["init", "-b", branch], cwd=work)
+    _git(["config", "user.name", _GIT_USER_NAME], cwd=work)
+    _git(["config", "user.email", _GIT_USER_EMAIL], cwd=work)
+    repo_specs = work / "repo-specs"
+    repo_specs.mkdir()
+    (repo_specs / _ENTRY_XML_FILENAME).write_text(_catalog_entry_xml(_ENTRY_NAME), encoding="utf-8")
+    _git(["add", "."], cwd=work)
+    _git(["commit", "-m", "Add history catalog entry"], cwd=work)
+    if with_tag:
+        _git(["tag", "-a", _ENTRY_RELEASE_TAG, "-m", f"Release {_ENTRY_RELEASE_TAG}"], cwd=work)
+
+    bare = base / "catalog-bare.git"
+    _git(["clone", "--bare", str(work), str(bare)], cwd=base)
+    return f"file://{bare.resolve()}"
+
+
+def _run_kanon_no_catalog_env(
+    args: list[str],
+    cwd: pathlib.Path,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run the kanon CLI in a subprocess with no ambient catalog env vars.
+
+    Drops ``KANON_CATALOG_SOURCES`` and ``KANON_CATALOG_DEFAULT_BRANCH`` from the
+    inherited environment so each test controls the default-branch precedence
+    explicitly via the flag or ``extra_env``.
+    """
+    env = dict(os.environ)
+    env.pop("KANON_CATALOG_SOURCES", None)
+    env.pop(CATALOG_DEFAULT_BRANCH_ENV_VAR, None)
+    env["NO_COLOR"] = "1"
+    if extra_env:
+        env.update(extra_env)
+    return subprocess.run(
+        [sys.executable, "-m", "kanon_cli", *args],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(cwd),
+    )
+
+
+@pytest.mark.functional
+class TestDefaultBranchCliJourney:
+    """End-to-end CLI coverage of the omit-@ref default-branch wiring (F-011 / F-067).
+
+    These journeys drive the real ``kanon add`` / ``kanon search`` CLI via
+    subprocess against real bare catalog repos, closing the gap the in-process
+    resolver unit tests missed: that a ``--catalog-source`` supplied WITHOUT an
+    ``@ref`` now resolves the default branch instead of hard-erroring with
+    "Invalid catalog source format".
+    """
+
+    def test_add_without_ref_resolves_default_branch_and_warns(self, tmp_path: pathlib.Path) -> None:
+        """add <entry> --catalog-source <url-no-@ref> resolves the default branch + WARNs."""
+        url = _make_bare_catalog_repo(tmp_path, _PRECEDENCE_DEFAULT_BRANCH, with_tag=True)
+        project = tmp_path / "project"
+        project.mkdir()
+        kanon_file = project / ".kanon"
+
+        result = _run_kanon_no_catalog_env(
+            ["add", _ENTRY_NAME, "--catalog-source", url, "--kanon-file", str(kanon_file)],
+            cwd=project,
+        )
+
+        assert result.returncode == 0, (
+            f"ref-less add must resolve the default branch, not error.\n"
+            f"  stdout={result.stdout!r}\n  stderr={result.stderr!r}"
+        )
+        assert _INVALID_FORMAT_TOKEN not in result.stderr
+        assert _WARN_TOKEN in result.stderr
+        assert _PRECEDENCE_DEFAULT_BRANCH in result.stderr
+        assert url in result.stderr
+
+        kanon_text = kanon_file.read_text(encoding="utf-8")
+        assert f"KANON_SOURCE_{_ENTRY_NAME}_URL=" in kanon_text
+
+    def test_add_flag_overrides_env_default_branch(self, tmp_path: pathlib.Path) -> None:
+        """--catalog-default-branch <b> overrides KANON_CATALOG_DEFAULT_BRANCH for a ref-less add."""
+        flag_branch = "trunk"
+        url = _make_bare_catalog_repo(tmp_path, flag_branch, with_tag=True)
+        project = tmp_path / "project"
+        project.mkdir()
+        kanon_file = project / ".kanon"
+
+        result = _run_kanon_no_catalog_env(
+            [
+                "add",
+                _ENTRY_NAME,
+                "--catalog-source",
+                url,
+                "--catalog-default-branch",
+                flag_branch,
+                "--kanon-file",
+                str(kanon_file),
+            ],
+            cwd=project,
+            extra_env={CATALOG_DEFAULT_BRANCH_ENV_VAR: "main"},
+        )
+
+        assert result.returncode == 0, (
+            f"the flag must win over the env var (env=main, flag={flag_branch}).\n"
+            f"  stdout={result.stdout!r}\n  stderr={result.stderr!r}"
+        )
+        assert _INVALID_FORMAT_TOKEN not in result.stderr
+        assert flag_branch in result.stderr
+        assert kanon_file.exists()
+
+    def test_search_auto_resolves_symref_through_cli(self, tmp_path: pathlib.Path) -> None:
+        """KANON_CATALOG_DEFAULT_BRANCH=auto resolves the HEAD symref via the search CLI path."""
+        symref_branch = "trunk"
+        url = _make_bare_catalog_repo(tmp_path, symref_branch, with_tag=False)
+        project = tmp_path / "project"
+        project.mkdir()
+
+        result = _run_kanon_no_catalog_env(
+            ["search", "--catalog-source", url],
+            cwd=project,
+            extra_env={CATALOG_DEFAULT_BRANCH_ENV_VAR: _AUTO},
+        )
+
+        assert result.returncode == 0, (
+            f"auto must resolve the advertised HEAD symref through the search CLI.\n"
+            f"  stdout={result.stdout!r}\n  stderr={result.stderr!r}"
+        )
+        assert _INVALID_FORMAT_TOKEN not in result.stderr
+        assert _WARN_TOKEN in result.stderr
+        assert symref_branch in result.stderr
+        assert _ENTRY_NAME in result.stdout

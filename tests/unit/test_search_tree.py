@@ -329,7 +329,7 @@ class TestThresholdGuardrail:
         max_depth: int | None = None,
         no_filter_required: bool = False,
         all_versions: bool = False,
-        catalog_source: str = "unused",
+        catalog_source: str = "https://example.com/repo.git@main",
     ) -> argparse.Namespace:
         return argparse.Namespace(
             catalog_source=catalog_source,
@@ -468,7 +468,7 @@ class TestThresholdGuardrail:
         self._make_large_catalog(tmp_path, count)
 
         args = argparse.Namespace(
-            catalog_source="unused",
+            catalog_source="https://example.com/repo.git@main",
             tree=False,
             max_depth=None,
             no_filter_required=False,
@@ -586,7 +586,7 @@ class TestTreeAllVersionsMutualExclusion:
         _write_marketplace_xml(repo_specs, "my-entry", "1.0.0")
 
         args = argparse.Namespace(
-            catalog_source="unused",
+            catalog_source="https://example.com/repo.git@main",
             tree=True,
             max_depth=None,
             no_filter_required=False,
@@ -693,7 +693,7 @@ class TestTreeRendersWithoutFilterBelowThreshold:
             _write_marketplace_xml(repo_specs, f"entry-{i}", "1.0.0")
 
         args = argparse.Namespace(
-            catalog_source="unused",
+            catalog_source="https://example.com/repo.git@main",
             tree=True,
             max_depth=0,
             no_filter_required=False,
@@ -714,7 +714,7 @@ class TestTreeRendersWithoutFilterBelowThreshold:
             _write_marketplace_xml(repo_specs, f"entry-{i:02d}", "1.0.0")
 
         args = argparse.Namespace(
-            catalog_source="unused",
+            catalog_source="https://example.com/repo.git@main",
             tree=True,
             max_depth=0,
             no_filter_required=False,
@@ -1040,7 +1040,7 @@ class TestRunListTreeEmptyCatalog:
         (tmp_path / "repo-specs").mkdir()
 
         args = argparse.Namespace(
-            catalog_source="unused",
+            catalog_source="https://example.com/repo.git@main",
             tree=True,
             max_depth=None,
             no_filter_required=True,
@@ -1059,7 +1059,7 @@ class TestRunListTreeEmptyCatalog:
         (tmp_path / "repo-specs").mkdir()
 
         args = argparse.Namespace(
-            catalog_source="unused",
+            catalog_source="https://example.com/repo.git@main",
             tree=True,
             max_depth=None,
             no_filter_required=True,

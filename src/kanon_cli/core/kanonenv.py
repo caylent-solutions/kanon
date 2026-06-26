@@ -47,6 +47,7 @@ import re
 import stat
 
 from kanon_cli.constants import (
+    MARKETPLACE_DIR_GLOBAL_KEY,
     SHELL_VAR_PATTERN,
     SOURCE_ENV_KEY,
     SOURCE_MARKETPLACE_KEY,
@@ -258,6 +259,21 @@ def _read_key_value_pairs(path: pathlib.Path) -> dict[str, str]:
 def _apply_env_overrides(raw_vars: dict[str, str]) -> dict[str, str]:
     """Override file values with environment variables of the same name.
 
+    Every key already present in the file is overridden by an OS environment
+    variable of the same name when one is set. Beyond that, two classes of key
+    are *adopted* from the OS environment even when absent from the file:
+
+    - any ``KANON_SOURCE_<alias>_<VAR>`` key (the alias-scoped source model); and
+    - the single global ``CLAUDE_MARKETPLACES_DIR`` key.
+
+    ``CLAUDE_MARKETPLACES_DIR`` is a single, environment-specific path (one per
+    machine / user), so per 12-factor it is resolved from the OS environment
+    rather than requiring a hand-written ``.kanon`` line. A ``.kanon`` value
+    takes precedence as an explicit override when present: it is exempt from the
+    same-name-override pass so the file value is never clobbered by the OS env;
+    the adoption pass below only fills the key from the OS env when ``.kanon``
+    declares no value for it.
+
     Args:
         raw_vars: Dict of KEY=VALUE pairs from the file.
 
@@ -266,6 +282,8 @@ def _apply_env_overrides(raw_vars: dict[str, str]) -> dict[str, str]:
     """
     merged = dict(raw_vars)
     for key in merged:
+        if key == MARKETPLACE_DIR_GLOBAL_KEY:
+            continue
         env_value = os.environ.get(key)
         if env_value is not None:
             merged[key] = env_value
@@ -273,6 +291,11 @@ def _apply_env_overrides(raw_vars: dict[str, str]) -> dict[str, str]:
     for key, value in os.environ.items():
         if key.startswith(SOURCE_PREFIX) and key not in merged:
             merged[key] = value
+
+    if MARKETPLACE_DIR_GLOBAL_KEY not in merged:
+        marketplace_dir_value = os.environ.get(MARKETPLACE_DIR_GLOBAL_KEY)
+        if marketplace_dir_value is not None:
+            merged[MARKETPLACE_DIR_GLOBAL_KEY] = marketplace_dir_value
     return merged
 
 

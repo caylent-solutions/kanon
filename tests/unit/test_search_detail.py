@@ -275,7 +275,7 @@ class TestRunListDetail:
     def test_detail_flag_emits_multi_line_records(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """run_search with detail=True emits more than one line per entry."""
         self._write_full_xml(tmp_path / "repo-specs", "alpha")
-        args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", detail=True, no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             result = run_search(args)
         captured = capsys.readouterr()
@@ -286,7 +286,7 @@ class TestRunListDetail:
     def test_detail_flag_emits_entry_name_as_header(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """run_search --detail emits entry name as the first line of each record."""
         self._write_full_xml(tmp_path / "repo-specs", "alpha")
-        args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", detail=True, no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
@@ -298,7 +298,7 @@ class TestRunListDetail:
         repo_specs = tmp_path / "repo-specs"
         for name in ["zebra", "alpha", "mango"]:
             self._write_full_xml(repo_specs, name)
-        args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", detail=True, no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
@@ -311,7 +311,7 @@ class TestRunListDetail:
         repo_specs = tmp_path / "repo-specs"
         for name in ["alpha", "beta", "gamma"]:
             self._write_full_xml(repo_specs, name)
-        args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", detail=True, no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
@@ -321,7 +321,7 @@ class TestRunListDetail:
     def test_detail_missing_type_shows_placeholder(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """run_search --detail renders <missing> for entries with type=None."""
         self._write_partial_xml(tmp_path / "repo-specs", "partial-entry")
-        args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", detail=True, no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
@@ -330,7 +330,7 @@ class TestRunListDetail:
     def test_detail_missing_type_warning_on_stderr(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """run_search --detail preserves stderr warning emitted by _parse_catalog_metadata."""
         self._write_partial_xml(tmp_path / "repo-specs", "partial-entry")
-        args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", detail=True, no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
@@ -340,7 +340,7 @@ class TestRunListDetail:
     def test_detail_missing_type_warning_not_duplicated(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """run_search --detail does not duplicate the recommended-field warning."""
         self._write_partial_xml(tmp_path / "repo-specs", "partial-entry")
-        args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", detail=True, no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
@@ -352,7 +352,7 @@ class TestRunListDetail:
     def test_detail_without_flag_uses_default_mode(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """run_search without detail=True uses the default one-name-per-line mode."""
         self._write_full_xml(tmp_path / "repo-specs", "my-entry")
-        args = argparse.Namespace(catalog_source="unused", detail=False, no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", detail=False, no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
@@ -363,7 +363,7 @@ class TestRunListDetail:
     def test_detail_empty_catalog_exits_0(self, tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
         """run_search --detail exits 0 for empty catalog (no records emitted)."""
         (tmp_path / "repo-specs").mkdir()
-        args = argparse.Namespace(catalog_source="unused", detail=True, no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", detail=True, no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             result = run_search(args)
         assert result == 0

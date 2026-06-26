@@ -57,6 +57,41 @@ _CATALOG_SOURCE_HELP_MULTIPLE = (
 )
 
 
+_CATALOG_DEFAULT_BRANCH_HELP = (
+    "Branch to use for a catalog source supplied without an '@ref'. "
+    "Precedence: an inline '@ref' on the source > this flag > the "
+    "KANON_CATALOG_DEFAULT_BRANCH env var (default 'main') > the literal "
+    "'auto', which resolves the remote HEAD symref via "
+    "'git ls-remote --symref'. A defaulted branch is verified to exist on the "
+    "remote (fail fast) and a single WARNING naming it is written to stderr."
+)
+
+
+def add_catalog_default_branch_arg(parser: argparse.ArgumentParser) -> None:
+    """Add the --catalog-default-branch flag to the given argparse parser.
+
+    The flag carries the tier-2 value of the default-branch precedence used
+    wherever a ``--catalog-source`` omits its ``@ref`` (spec Section 6 / FR-26 /
+    FR-27): an inline ``@ref`` wins over this flag, which wins over the
+    ``KANON_CATALOG_DEFAULT_BRANCH`` env var (default ``main``), which falls back
+    to the literal ``auto`` (remote HEAD symref resolution). The flag carries a
+    lazy ``default=None`` so the env var is consulted only when the flag is
+    absent; the resolution itself is performed by
+    :func:`kanon_cli.core.catalog.resolve_default_branch` inside each command
+    handler, not at parser-build time.
+
+    Args:
+        parser: The ``ArgumentParser`` (or sub-parser) to extend.
+    """
+    parser.add_argument(
+        "--catalog-default-branch",
+        dest="catalog_default_branch",
+        default=None,
+        metavar="<branch>",
+        help=_CATALOG_DEFAULT_BRANCH_HELP,
+    )
+
+
 def add_catalog_source_arg(parser: argparse.ArgumentParser, *, allow_multiple: bool = False) -> None:
     """Add the --catalog-source flag to the given argparse parser.
 

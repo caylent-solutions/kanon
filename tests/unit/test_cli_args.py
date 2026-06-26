@@ -226,6 +226,52 @@ class TestCycleEndToEnd:
 
 
 @pytest.mark.unit
+class TestAddCatalogDefaultBranchArg:
+    """add_catalog_default_branch_arg registers a lazy-default --catalog-default-branch flag."""
+
+    def test_dest_is_catalog_default_branch(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_default_branch_arg
+
+        parser = _make_parser()
+        add_catalog_default_branch_arg(parser)
+        args = parser.parse_args([])
+        assert hasattr(args, "catalog_default_branch")
+
+    def test_default_is_none(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_default_branch_arg
+
+        parser = _make_parser()
+        add_catalog_default_branch_arg(parser)
+        args = parser.parse_args([])
+        assert args.catalog_default_branch is None
+
+    def test_flag_value_parses_verbatim(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_default_branch_arg
+
+        parser = _make_parser()
+        add_catalog_default_branch_arg(parser)
+        args = parser.parse_args(["--catalog-default-branch", "trunk"])
+        assert args.catalog_default_branch == "trunk"
+
+    def test_metavar_is_branch(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_default_branch_arg
+
+        parser = _make_parser()
+        add_catalog_default_branch_arg(parser)
+        action = next(a for a in parser._actions if "--catalog-default-branch" in getattr(a, "option_strings", []))
+        assert action.metavar == "<branch>"
+
+    def test_help_text_documents_precedence(self) -> None:
+        from kanon_cli.core.cli_args import add_catalog_default_branch_arg
+
+        parser = _make_parser()
+        add_catalog_default_branch_arg(parser)
+        action = next(a for a in parser._actions if "--catalog-default-branch" in getattr(a, "option_strings", []))
+        assert "KANON_CATALOG_DEFAULT_BRANCH" in action.help
+        assert "auto" in action.help
+
+
+@pytest.mark.unit
 class TestAddGlobalFlagsRegistration:
     """add_global_flags registers exactly --quiet, --verbose, --no-color."""
 

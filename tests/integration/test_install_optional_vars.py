@@ -434,22 +434,18 @@ class TestClaudeMarketplacesDirDefault:
             f"Error message about missing CLAUDE_MARKETPLACES_DIR must appear on stderr; got stderr={captured.err!r}"
         )
 
-    def test_marketplace_dir_from_env_used_when_not_in_file(
+    def test_marketplace_dir_resolved_from_os_env_when_absent_from_file(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
-        make_install_args,
     ) -> None:
-        """When CLAUDE_MARKETPLACES_DIR is not in .kanon but is provided via env var
-        override alongside KANON_MARKETPLACE_INSTALL=true, the install should pick it
-        up because env overrides are applied for file-present keys only -- so this
-        verifies the correct boundary: CLAUDE_MARKETPLACES_DIR must be in the file
-        (not just env) for the marketplace path to activate.
+        """CLAUDE_MARKETPLACES_DIR is adopted from the OS env when absent from .kanon.
 
-        This test verifies that CLAUDE_MARKETPLACES_DIR not in file means the CLI
-        handler fails even when CLAUDE_MARKETPLACES_DIR is set in the environment,
-        because the env-override mechanism only applies to keys already declared in
-        the file.
+        CLAUDE_MARKETPLACES_DIR is a single, environment-specific path (12-factor),
+        so a fresh marketplace add+install must succeed using the OS-env value
+        WITHOUT a hand-edited .kanon line: the parser surfaces the env value in
+        ``globals`` and ``install`` activates the marketplace path with it (the
+        previous missing-dir fail-fast no longer fires).
         """
         marketplace_dir = tmp_path / "env-only-dir"
         marketplace_dir.mkdir()
@@ -457,16 +453,60 @@ class TestClaudeMarketplacesDirDefault:
 
         kanonenv = _write_kanonenv(
             tmp_path,
-            "KANON_MARKETPLACE_INSTALL=true\n" + _minimal_source_block(),
+            _minimal_source_block(marketplace=True),
         )
-        args = make_install_args(kanonenv.resolve())
 
-        with pytest.raises(SystemExit) as exc_info:
-            _install_run(args)
+        parsed = parse_kanonenv(kanonenv)
+        assert parsed["globals"].get("CLAUDE_MARKETPLACES_DIR") == str(marketplace_dir), (
+            "parser must surface the OS-env CLAUDE_MARKETPLACES_DIR in globals when the .kanon omits it"
+        )
 
-        assert exc_info.value.code != 0, (
-            "CLI handler must fail when CLAUDE_MARKETPLACES_DIR is only in env (not in .kanon file) "
-            "because env-override only applies to keys present in the file"
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst") as mock_envsubst,
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install.install_marketplace_plugins") as mock_mp,
+            patch("kanon_cli.core.install.prepare_marketplace_dir"),
+        ):
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+
+        assert mock_mp.called, (
+            "the marketplace install path must activate using the OS-env CLAUDE_MARKETPLACES_DIR "
+            "even though the .kanon file declares no such line"
+        )
+        assert mock_mp.call_args[0][0] == marketplace_dir, (
+            f"install_marketplace_plugins must receive the OS-env dir; got {mock_mp.call_args!r}"
+        )
+
+        envsubst_calls = [c for c in mock_envsubst.call_args_list if len(c[0]) >= 2]
+        assert envsubst_calls, "repo envsubst must be invoked so linkfile dests are substituted"
+        for call in envsubst_calls:
+            env_map = call[0][1]
+            assert env_map.get("CLAUDE_MARKETPLACES_DIR") == str(marketplace_dir), (
+                "the OS-env CLAUDE_MARKETPLACES_DIR must be exported into the envsubst map so "
+                f"${{CLAUDE_MARKETPLACES_DIR}} linkfile dests resolve; got {env_map!r}"
+            )
+
+    def test_dot_kanon_value_overrides_os_env_marketplace_dir(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A .kanon CLAUDE_MARKETPLACES_DIR value takes precedence over the OS env value."""
+        file_dir = tmp_path / "from-file"
+        env_dir = tmp_path / "from-env"
+        file_dir.mkdir()
+        env_dir.mkdir()
+        monkeypatch.setenv("CLAUDE_MARKETPLACES_DIR", str(env_dir))
+
+        kanonenv = _write_kanonenv(
+            tmp_path,
+            f"CLAUDE_MARKETPLACES_DIR={file_dir}\n" + _minimal_source_block(marketplace=True),
+        )
+
+        parsed = parse_kanonenv(kanonenv)
+        assert parsed["globals"].get("CLAUDE_MARKETPLACES_DIR") == str(file_dir), (
+            "an explicit .kanon CLAUDE_MARKETPLACES_DIR value must win over the OS env value"
         )
 
 

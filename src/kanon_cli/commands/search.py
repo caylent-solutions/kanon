@@ -70,10 +70,12 @@ from kanon_cli.constants import (
     SEARCH_UNREACHABLE_SOURCE_WARN_TEMPLATE,
 )
 from kanon_cli.core.catalog import (
+    DefaultBranchResolutionError,
     _parse_catalog_source,
+    normalize_catalog_source_ref,
     resolve_env_catalog_sources,
 )
-from kanon_cli.core.cli_args import add_catalog_source_arg
+from kanon_cli.core.cli_args import add_catalog_default_branch_arg, add_catalog_source_arg
 from kanon_cli.core.metadata import (
     CatalogMetadata,
     CatalogMetadataParseError,
@@ -1438,7 +1440,11 @@ def _emit_source_group_header(source: str) -> None:
     print(_format_source_group_header(source), file=sys.stderr)
 
 
-def _resolve_search_sources(flag_value: list[str] | str | None) -> list[str]:
+def _resolve_search_sources(
+    flag_value: list[str] | str | None,
+    *,
+    catalog_default_branch: str | None = None,
+) -> list[str]:
     """Resolve the ordered, deduplicated catalog discovery set for ``search``.
 
     The ``--catalog-source`` flag(s) FULLY REPLACE ``KANON_CATALOG_SOURCES`` for
@@ -1450,17 +1456,28 @@ def _resolve_search_sources(flag_value: list[str] | str | None) -> list[str]:
     :func:`resolve_env_catalog_sources`. Duplicate sources are collapsed while
     preserving first-seen order.
 
+    Each surviving source whose ``@ref`` is omitted has its ref supplied by the
+    default-branch precedence (spec Section 6 / FR-26 / FR-27) via
+    :func:`normalize_catalog_source_ref`, sharing a single ``warned_urls`` dedup
+    set so the defaulted-branch WARNING fires at most once per defaulted source
+    across the whole discovery set.
+
     Args:
         flag_value: The parsed ``--catalog-source`` value (list, str, or None).
+        catalog_default_branch: The ``--catalog-default-branch`` flag value
+            (tier-2 of the default-branch precedence), or ``None`` when absent.
 
     Returns:
-        Order-preserving, deduplicated list of ``<url>@<ref>`` source strings.
-        Empty when neither the flag nor the env var supplies a source.
+        Order-preserving, deduplicated list of fully-pinned ``<url>@<ref>``
+        source strings. Empty when neither the flag nor the env var supplies a
+        source.
 
     Raises:
         ValueError: When a configured env entry is malformed (propagated from
             :func:`resolve_env_catalog_sources`); a bad entry is never silently
             skipped (fail fast).
+        DefaultBranchResolutionError: When a ref-less source's default branch
+            cannot be resolved or does not exist on the remote (fail fast).
     """
     if flag_value is None:
         raw_sources = resolve_env_catalog_sources()
@@ -1476,7 +1493,12 @@ def _resolve_search_sources(flag_value: list[str] | str | None) -> list[str]:
             continue
         seen.add(source)
         deduped.append(source)
-    return deduped
+
+    warned_urls: set[str] = set()
+    return [
+        normalize_catalog_source_ref(source, flag_value=catalog_default_branch, warned_urls=warned_urls)
+        for source in deduped
+    ]
 
 
 def _run_search_multi_source(
@@ -1690,7 +1712,14 @@ def run_search(args: argparse.Namespace) -> int:
         source is configured or a flag conflict is detected.
     """
 
-    sources: list[str] = _resolve_search_sources(getattr(args, "catalog_source", None))
+    try:
+        sources: list[str] = _resolve_search_sources(
+            getattr(args, "catalog_source", None),
+            catalog_default_branch=getattr(args, "catalog_default_branch", None),
+        )
+    except DefaultBranchResolutionError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
     catalog_source: str | None = sources[0] if sources else None
     detail: bool = getattr(args, "detail", False)
@@ -2019,6 +2048,7 @@ def register(subparsers) -> None:
     )
 
     add_catalog_source_arg(parser, allow_multiple=True)
+    add_catalog_default_branch_arg(parser)
 
     parser.add_argument(
         "substring",

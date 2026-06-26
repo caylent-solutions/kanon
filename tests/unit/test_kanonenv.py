@@ -142,6 +142,41 @@ class TestEnvOverrides:
         result = parse_kanonenv(kanonenv)
         assert result["globals"]["REPO_REV"] == "override"
 
+    def test_marketplace_dir_adopted_from_os_env_when_absent_from_file(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CLAUDE_MARKETPLACES_DIR is resolved from the OS env when the .kanon omits it.
+
+        CLAUDE_MARKETPLACES_DIR is a single, environment-specific path (12-factor),
+        so it is adopted from the OS environment rather than requiring a hand-edited
+        .kanon line that ``kanon add`` never writes.
+        """
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(_block("build"))
+        monkeypatch.setenv("CLAUDE_MARKETPLACES_DIR", "/env/marketplaces")
+        result = parse_kanonenv(kanonenv)
+        assert result["globals"]["CLAUDE_MARKETPLACES_DIR"] == "/env/marketplaces"
+
+    def test_marketplace_dir_absent_from_both_is_not_in_globals(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When neither the .kanon nor the OS env defines it, the key is not injected (no default)."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(_block("build"))
+        monkeypatch.delenv("CLAUDE_MARKETPLACES_DIR", raising=False)
+        result = parse_kanonenv(kanonenv)
+        assert "CLAUDE_MARKETPLACES_DIR" not in result["globals"]
+
+    def test_marketplace_dir_file_value_overrides_os_env(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An explicit .kanon CLAUDE_MARKETPLACES_DIR value takes precedence over the OS env value."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text("CLAUDE_MARKETPLACES_DIR=/from/file\n" + _block("build"))
+        monkeypatch.setenv("CLAUDE_MARKETPLACES_DIR", "/from/env")
+        result = parse_kanonenv(kanonenv)
+        assert result["globals"]["CLAUDE_MARKETPLACES_DIR"] == "/from/file"
+
 
 @pytest.mark.unit
 class TestValidation:

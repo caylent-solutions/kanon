@@ -255,7 +255,7 @@ class TestRunListEmptyCatalog:
         """run_search exits 0 when the manifest repo has zero marketplace XMLs."""
         (tmp_path / "repo-specs").mkdir()
 
-        args = argparse.Namespace(catalog_source="unused", no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             result = run_search(args)
         assert result == 0
@@ -264,7 +264,7 @@ class TestRunListEmptyCatalog:
         """run_search writes nothing to stdout when the manifest repo is empty."""
         (tmp_path / "repo-specs").mkdir()
 
-        args = argparse.Namespace(catalog_source="unused", no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
@@ -274,7 +274,7 @@ class TestRunListEmptyCatalog:
         """run_search writes 'manifest repo contains 0 entries' to stderr."""
         (tmp_path / "repo-specs").mkdir()
 
-        args = argparse.Namespace(catalog_source="unused", no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
@@ -291,7 +291,7 @@ class TestRunListHappyPath:
         for name in ["zebra", "alpha", "mango"]:
             _write_marketplace_xml(repo_specs, name)
 
-        args = argparse.Namespace(catalog_source="unused", no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             result = run_search(args)
 
@@ -305,7 +305,7 @@ class TestRunListHappyPath:
         repo_specs = tmp_path / "repo-specs"
         _write_marketplace_xml(repo_specs, "my-entry")
 
-        args = argparse.Namespace(catalog_source="unused", no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             result = run_search(args)
         assert result == 0
@@ -315,7 +315,7 @@ class TestRunListHappyPath:
         repo_specs = tmp_path / "repo-specs"
         _write_marketplace_xml(repo_specs, "my-entry")
 
-        args = argparse.Namespace(catalog_source="unused", no_color=False)
+        args = argparse.Namespace(catalog_source="https://example.com/repo.git@main", no_color=False)
         with patch("kanon_cli.commands.search._resolve_manifest_repo", return_value=tmp_path):
             run_search(args)
         captured = capsys.readouterr()
@@ -646,6 +646,39 @@ class TestResolveSearchSources:
 
         monkeypatch.delenv("KANON_CATALOG_SOURCES", raising=False)
         assert _resolve_search_sources(None) == []
+
+    def test_refless_source_resolves_default_branch(self) -> None:
+        """A ref-less flag source has its ref supplied by the default-branch precedence."""
+        from kanon_cli.commands.search import _resolve_search_sources
+
+        with patch("kanon_cli.core.catalog.resolve_default_branch", return_value="trunk") as mock_resolve:
+            result = _resolve_search_sources(["https://h/a.git"], catalog_default_branch="trunk")
+        assert result == ["https://h/a.git@trunk"]
+        assert mock_resolve.call_args.kwargs["flag_value"] == "trunk"
+
+    def test_pinned_sources_skip_resolution(self) -> None:
+        """Pinned sources are returned verbatim without invoking the default-branch resolver."""
+        from kanon_cli.commands.search import _resolve_search_sources
+
+        with patch("kanon_cli.core.catalog.resolve_default_branch") as mock_resolve:
+            result = _resolve_search_sources(["https://h/a.git@main", "https://h/b.git@dev"])
+        assert result == ["https://h/a.git@main", "https://h/b.git@dev"]
+        mock_resolve.assert_not_called()
+
+    def test_warn_deduped_once_per_defaulted_source_across_set(self) -> None:
+        """A shared warned_urls dedup set is threaded across the discovery set for the WARN dedup."""
+        from kanon_cli.commands.search import _resolve_search_sources
+
+        seen_sets: list[object] = []
+
+        def _record(url: str, *, inline_ref, flag_value, warned_urls):
+            seen_sets.append(warned_urls)
+            return "main"
+
+        with patch("kanon_cli.core.catalog.resolve_default_branch", side_effect=_record):
+            _resolve_search_sources(["https://h/a.git", "https://h/b.git"])
+        assert len(seen_sets) == 2
+        assert seen_sets[0] is seen_sets[1]
 
 
 @pytest.mark.unit

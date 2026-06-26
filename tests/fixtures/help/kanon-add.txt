@@ -1,4 +1,5 @@
-usage: kanon add [-h] [--catalog-source <git-url>@<ref>] [--as <alias>]
+usage: kanon add [-h] [--catalog-source <git-url>@<ref>]
+                 [--catalog-default-branch <branch>] [--as <alias>]
                  [--kanon-file <path>] [--force] [--dry-run]
                  [--marketplace-install | --no-marketplace-install]
                  <name>[@<spec>] [<name>[@<spec>] ...]
@@ -28,6 +29,15 @@ options:
                         is a branch, tag, or 'latest'. Overrides the
                         KANON_CATALOG_SOURCES env var. Required when
                         KANON_CATALOG_SOURCES configures no single source.
+  --catalog-default-branch <branch>
+                        Branch to use for a catalog source supplied without an
+                        '@ref'. Precedence: an inline '@ref' on the source >
+                        this flag > the KANON_CATALOG_DEFAULT_BRANCH env var
+                        (default 'main') > the literal 'auto', which resolves
+                        the remote HEAD symref via 'git ls-remote --symref'. A
+                        defaulted branch is verified to exist on the remote
+                        (fail fast) and a single WARNING naming it is written
+                        to stderr.
   --as <alias>          Override the auto-computed local alias for the
                         (single) added entry. The alias charset is
                         [A-Za-z0-9_] with no '__' run. When the alias is

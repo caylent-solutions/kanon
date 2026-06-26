@@ -29,10 +29,14 @@ from collections.abc import Callable
 
 import pytest
 
+from unittest.mock import patch
+
 from kanon_cli.constants import CATALOG_SOURCES_ENV_VAR
 from kanon_cli.core.catalog import (
     MultipleCatalogSourcesError,
     _parse_catalog_source,
+    _split_catalog_source_optional_ref,
+    normalize_catalog_source_ref,
     parse_catalog_sources,
     resolve_catalog_dir,
     resolve_env_catalog_source,
@@ -416,3 +420,64 @@ def test_resolve_env_catalog_source_malformed_fails_fast(monkeypatch: pytest.Mon
     with pytest.raises(ValueError) as exc_info:
         resolve_env_catalog_source()
     assert CATALOG_SOURCES_ENV_VAR in str(exc_info.value)
+
+
+_OPTIONAL_SPLIT_CASES = [
+    ("https://github.com/org/repo.git@main", ("https://github.com/org/repo.git", "main"), "pinned-https"),
+    ("https://github.com/org/repo.git", ("https://github.com/org/repo.git", None), "refless-https"),
+    ("git@host:org/repo.git", ("git@host:org/repo.git", None), "refless-ssh-shorthand"),
+    ("git@host:org/repo.git@dev", ("git@host:org/repo.git", "dev"), "pinned-ssh-shorthand"),
+    ("ssh://git@host.com/org/repo.git@main", ("ssh://git@host.com/org/repo.git", "main"), "pinned-explicit-ssh"),
+    ("plain-token", ("plain-token", None), "refless-bare-token"),
+]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "source,expected",
+    [(s, e) for s, e, _ in _OPTIONAL_SPLIT_CASES],
+    ids=[label for _, _, label in _OPTIONAL_SPLIT_CASES],
+)
+def test_split_catalog_source_optional_ref(source: str, expected: tuple[str, str | None]) -> None:
+    """The optional splitter returns ``ref=None`` for a ref-less source, parsing a pinned ref otherwise."""
+    assert _split_catalog_source_optional_ref(source) == expected
+
+
+@pytest.mark.unit
+def test_split_catalog_source_optional_ref_empty_ref_fails_fast() -> None:
+    """A trailing '@' with an empty ref still fails fast (a pinned-but-empty ref is malformed)."""
+    with pytest.raises(ValueError) as exc_info:
+        _split_catalog_source_optional_ref("https://h/r.git@")
+    assert "Empty ref" in str(exc_info.value)
+
+
+@pytest.mark.unit
+def test_normalize_catalog_source_ref_pinned_is_verbatim_no_resolution() -> None:
+    """A pinned source is returned verbatim without invoking the default-branch resolver."""
+    with patch("kanon_cli.core.catalog.resolve_default_branch") as mock_resolve:
+        result = normalize_catalog_source_ref("https://h/r.git@main", flag_value=None)
+    assert result == "https://h/r.git@main"
+    mock_resolve.assert_not_called()
+
+
+@pytest.mark.unit
+def test_normalize_catalog_source_ref_refless_resolves_default_branch() -> None:
+    """A ref-less source has its ref supplied by the default-branch precedence."""
+    with patch("kanon_cli.core.catalog.resolve_default_branch", return_value="trunk") as mock_resolve:
+        result = normalize_catalog_source_ref("https://h/r.git", flag_value="trunk")
+    assert result == "https://h/r.git@trunk"
+    mock_resolve.assert_called_once_with(
+        "https://h/r.git",
+        inline_ref=None,
+        flag_value="trunk",
+        warned_urls=None,
+    )
+
+
+@pytest.mark.unit
+def test_normalize_catalog_source_ref_passes_warned_urls_through() -> None:
+    """The shared ``warned_urls`` dedup set is forwarded to the resolver for multi-source dedup."""
+    shared: set[str] = set()
+    with patch("kanon_cli.core.catalog.resolve_default_branch", return_value="main") as mock_resolve:
+        normalize_catalog_source_ref("https://h/r.git", flag_value=None, warned_urls=shared)
+    assert mock_resolve.call_args.kwargs["warned_urls"] is shared

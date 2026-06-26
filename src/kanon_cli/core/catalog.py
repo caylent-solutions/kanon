@@ -340,6 +340,9 @@ def resolve_catalog_dir(catalog_source: str | None = None) -> pathlib.Path:
     raise MissingCatalogSourceError()
 
 
+_NO_REF_SEPARATOR_MARKER = "No ref separator '@' found after the URL"
+
+
 def _parse_catalog_source(source: str) -> tuple[str, str]:
     """Parse a catalog source string into URL and ref.
 
@@ -384,12 +387,104 @@ def _parse_catalog_source(source: str) -> tuple[str, str]:
     if "://" not in url and "@" not in url:
         msg = (
             f"Invalid catalog source format: '{source}'. "
-            "No ref separator '@' found after the URL -- "
+            f"{_NO_REF_SEPARATOR_MARKER} -- "
             "expected '<git_url>@<ref>' (e.g. 'git@host:org/repo.git@main')"
         )
         raise ValueError(msg)
 
     return url, ref
+
+
+def _split_catalog_source_optional_ref(source: str) -> tuple[str, str | None]:
+    """Split a catalog source into ``(url, ref)`` allowing an omitted ``@ref``.
+
+    Unlike :func:`_parse_catalog_source` (which hard-errors when no ref is
+    pinned), this splitter tolerates a source with no separable ``@ref`` and
+    returns ``ref=None`` so the caller can fill it in via the default-branch
+    precedence (:func:`resolve_default_branch`).
+
+    The pinned case is delegated verbatim to :func:`_parse_catalog_source` so the
+    two functions agree on what a well-formed pinned source is, and on the same
+    deterministic last-``@`` split (DRY). Two unambiguous shapes are recognised
+    as ref-less and yield ``(source, None)``:
+
+    - a source with no ``@`` at all (e.g. ``https://github.com/org/repo.git``);
+      and
+    - an SCP-shorthand source with no trailing ``@<ref>`` (e.g.
+      ``git@host:org/repo.git``), which :func:`_parse_catalog_source` rejects
+      with its "No ref separator '@' found after the URL" message.
+
+    An empty source, an empty URL, or a present-but-empty ``@<ref>`` still fails
+    fast (those are malformed, not ref-less).
+
+    Args:
+        source: Catalog source string, with or without a trailing ``@<ref>``.
+
+    Returns:
+        Tuple of ``(url, ref)`` where ``ref`` is ``None`` when no ref was pinned.
+
+    Raises:
+        ValueError: If the source is empty, the URL component is empty, or a
+            pinned ``@<ref>`` is present but empty.
+    """
+    if not source:
+        raise ValueError("Empty catalog source")
+
+    if "@" not in source:
+        return source, None
+
+    try:
+        return _parse_catalog_source(source)
+    except ValueError as exc:
+        if _NO_REF_SEPARATOR_MARKER in str(exc):
+            return source, None
+        raise
+
+
+def normalize_catalog_source_ref(
+    source: str,
+    *,
+    flag_value: str | None,
+    warned_urls: set[str] | None = None,
+) -> str:
+    """Return ``<url>@<ref>`` for a catalog source, resolving an omitted ref.
+
+    The shared entry point for the omit-ref gap (spec Section 6 / FR-26 /
+    FR-27): a source that already pins ``@<ref>`` is returned verbatim, while a
+    ref-less source has its ref supplied by the default-branch precedence via
+    :func:`resolve_default_branch` (``--catalog-default-branch`` flag >
+    ``KANON_CATALOG_DEFAULT_BRANCH`` env, default ``main`` > the literal
+    ``auto`` HEAD-symref resolution). The defaulted branch is verified to exist
+    on the remote (fail fast) and a single yellow WARN naming it is written to
+    stderr. The returned string always carries a ``@<ref>`` so every downstream
+    consumer (which calls :func:`_parse_catalog_source`) sees a fully pinned
+    source.
+
+    Args:
+        source: Catalog source string, with or without a trailing ``@<ref>``.
+        flag_value: The ``--catalog-default-branch`` flag value, or ``None``.
+        warned_urls: Mutable dedup set passed through to
+            :func:`resolve_default_branch` so a multi-source invocation warns
+            once per defaulted source; ``None`` warns unconditionally.
+
+    Returns:
+        The ``<url>@<ref>`` source string with the ref resolved.
+
+    Raises:
+        ValueError: If the source URL is empty or a pinned ref is empty.
+        DefaultBranchResolutionError: If a defaulted branch cannot be resolved
+            or does not exist on the remote.
+    """
+    url, inline_ref = _split_catalog_source_optional_ref(source)
+    if inline_ref is not None:
+        return source
+    resolved_ref = resolve_default_branch(
+        url,
+        inline_ref=None,
+        flag_value=flag_value,
+        warned_urls=warned_urls,
+    )
+    return f"{url}@{resolved_ref}"
 
 
 def _clone_remote_catalog(source: str) -> pathlib.Path:

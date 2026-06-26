@@ -1,4 +1,5 @@
 usage: kanon search [-h] [--catalog-source <git-url>@<ref>]
+                    [--catalog-default-branch <branch>]
                     [--format {names,json}] [--detail] [--tree]
                     [--max-depth N] [--no-filter-required] [-A] [--limit N]
                     [--no-limit] [--since-version <spec>] [--regex <pattern>]
@@ -64,6 +65,15 @@ options:
                         be repeated to search several sources; the supplied
                         flags fully replace KANON_CATALOG_SOURCES for this
                         invocation.
+  --catalog-default-branch <branch>
+                        Branch to use for a catalog source supplied without an
+                        '@ref'. Precedence: an inline '@ref' on the source >
+                        this flag > the KANON_CATALOG_DEFAULT_BRANCH env var
+                        (default 'main') > the literal 'auto', which resolves
+                        the remote HEAD symref via 'git ls-remote --symref'. A
+                        defaulted branch is verified to exist on the remote
+                        (fail fast) and a single WARNING naming it is written
+                        to stderr.
   --format {names,json}
                         Output format. 'names' (default): one entry name per
                         line, pipeable into kanon add. 'json': structured JSON

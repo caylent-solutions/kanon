@@ -927,11 +927,11 @@ class TestResolveManifestRepoForAdd:
     """_resolve_manifest_repo_for_add error paths."""
 
     def test_invalid_catalog_source_exits_nonzero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """An invalid catalog source string (no '@') exits non-zero."""
+        """An invalid catalog source string (empty ref after '@') exits non-zero."""
         from kanon_cli.commands.add import _resolve_manifest_repo_for_add
 
         with pytest.raises(SystemExit) as exc_info:
-            _resolve_manifest_repo_for_add("not-a-valid-source")
+            _resolve_manifest_repo_for_add("https://example.com/repo.git@", catalog_default_branch=None)
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err
@@ -941,7 +941,7 @@ class TestResolveManifestRepoForAdd:
         from kanon_cli.commands.add import _resolve_manifest_repo_for_add
 
         with pytest.raises(SystemExit) as exc_info:
-            _resolve_manifest_repo_for_add("file:///does/not/exist.git@main")
+            _resolve_manifest_repo_for_add("file:///does/not/exist.git@main", catalog_default_branch=None)
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err
@@ -1097,7 +1097,9 @@ class TestResolveManifestRepoForAddVersionConstraint:
             ),
         ):
             (tmp_path / "clone").mkdir(exist_ok=True)
-            repo_dir, url, resolved_ref = _resolve_manifest_repo_for_add("https://example.com/repo.git@latest")
+            repo_dir, url, resolved_ref = _resolve_manifest_repo_for_add(
+                "https://example.com/repo.git@latest", catalog_default_branch=None
+            )
         assert resolved_ref == "2.0.0"
 
     def test_version_constraint_ref_is_resolved(self, tmp_path: pathlib.Path) -> None:
@@ -1119,9 +1121,35 @@ class TestResolveManifestRepoForAddVersionConstraint:
             ),
         ):
             (tmp_path / "clone").mkdir(exist_ok=True)
-            _repo_dir, url, resolved_ref = _resolve_manifest_repo_for_add("https://example.com/repo.git@>=1.0.0")
+            _repo_dir, url, resolved_ref = _resolve_manifest_repo_for_add(
+                "https://example.com/repo.git@>=1.0.0", catalog_default_branch=None
+            )
         assert resolved_ref == "1.5.0"
         assert url == "https://example.com/repo.git"
+
+    def test_omitted_ref_resolves_default_branch_for_manifest_repo(self, tmp_path: pathlib.Path) -> None:
+        """A source with no '@ref' resolves the manifest-repo ref via the default-branch precedence."""
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import _resolve_manifest_repo_for_add
+
+        with (
+            patch("kanon_cli.commands.add.normalize_catalog_source_ref") as mock_normalize,
+            patch(
+                "kanon_cli.commands.add.subprocess.run",
+                return_value=type("R", (), {"returncode": 0, "stderr": ""})(),
+            ),
+            patch("kanon_cli.commands.add.tempfile.mkdtemp", return_value=str(tmp_path / "clone")),
+        ):
+            mock_normalize.return_value = "https://example.com/repo.git@trunk"
+            (tmp_path / "clone").mkdir(exist_ok=True)
+            _repo_dir, url, resolved_ref = _resolve_manifest_repo_for_add(
+                "https://example.com/repo.git", catalog_default_branch="trunk"
+            )
+
+        mock_normalize.assert_called_once_with("https://example.com/repo.git", flag_value="trunk")
+        assert url == "https://example.com/repo.git"
+        assert resolved_ref == "trunk"
 
 
 @pytest.mark.unit

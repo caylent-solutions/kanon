@@ -84,12 +84,13 @@ def _isolation_env() -> dict[str, str]:
     """Return the mandatory temp and home env floor for kanon/git subprocesses.
 
     A caller that passes a full replacement environment to a subprocess would
-    otherwise drop ``TMPDIR``/``KANON_HOME`` and let the child's
-    ``tempfile.mkdtemp`` and ``~/.kanon`` escape the managed run root. Subprocess
-    helpers overlay this floor so the isolation cannot be bypassed.
+    otherwise drop ``TMPDIR``/``KANON_HOME``/``CLAUDE_CONFIG_DIR`` and let the
+    child's ``tempfile.mkdtemp``, the real ``~/.kanon`` store, and the real
+    ``~/.claude`` config escape the per-test isolation. Subprocess helpers overlay
+    this floor so the isolation cannot be bypassed.
     """
     floor: dict[str, str] = {}
-    for var in (*_TEMP_VARS, "KANON_HOME", _TMP_ROOT_ENV):
+    for var in (*_TEMP_VARS, "KANON_HOME", "CLAUDE_CONFIG_DIR", _TMP_ROOT_ENV):
         value = os.environ.get(var)
         if value is not None:
             floor[var] = value
@@ -627,6 +628,29 @@ def _isolate_kanon_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: p
     likewise override it.
     """
     monkeypatch.setenv("KANON_HOME", str(tmp_path_factory.mktemp("kanon_home")))
+
+
+@pytest.fixture(autouse=True)
+def _isolate_claude_config(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point CLAUDE_CONFIG_DIR at a per-test temp dir so the real ~/.claude is never touched.
+
+    A ``claude-marketplace`` install shells out to the real ``claude`` binary
+    (``claude plugin marketplace add`` / ``plugin install`` in
+    ``core/marketplace.py``); that subprocess inherits ``os.environ`` and reads
+    its config from ``CLAUDE_CONFIG_DIR`` (falling back to ``~/.claude`` when
+    unset). Without isolation a test that drives a real marketplace install would
+    register marketplaces and plugins into the developer's real ``~/.claude``,
+    each pointing at the test's temporary marketplace directory; once that temp
+    directory is reaped the registrations dangle and surface as
+    ``failed to load: cache-miss`` errors in Claude Code.
+
+    This autouse fixture sets ``CLAUDE_CONFIG_DIR`` to a fresh per-test temporary
+    directory (reverted on teardown via ``monkeypatch`` and inherited by every
+    spawned ``claude`` and ``python -m kanon_cli`` subprocess), so marketplace
+    registration is fully isolated. Tests that need a specific config override it
+    with their own ``monkeypatch.setenv``.
+    """
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path_factory.mktemp("claude_config")))
 
 
 @pytest.fixture()

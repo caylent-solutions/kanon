@@ -2,7 +2,830 @@
 
 
 
+## v3.0.0 (2026-06-26)
+
+### Breaking
+
+* feat!: kanon 3.0.0 refinements -- manifest/lockfile redesign, search + marketplace commands, hermetic install
+
+feat!: kanon 3.0.0 refinements -- manifest/lockfile redesign, search + marketplace commands, hermetic install ([`f8fad46`](https://github.com/caylent-solutions/kanon/commit/f8fad462f72592e13e4ce685cbb1e39b760464ab))
+
+### Build
+
+* build: scope make validate to lint + unit tests (full suite + coverage stay in CI)
+
+Per-unit validation ran the entire suite + coverage (check test), making every
+work unit&#39;s executor pay a full-suite run on each TDD/validate step. Scope
+validate to check + test-unit (lint + unit tests); the full suite + coverage
+remain enforced in CI via pr-validation.yml / main-validation.yml
+(test / test-integration / test-functional / test-scenarios). Updated
+tests/unit/repo/test_makefile_structure.py::test_validate_depends_on_check_and_test
+to assert the new prerequisite so the Makefile-structure gate stays green. ([`56bf2c0`](https://github.com/caylent-solutions/kanon/commit/56bf2c0b2f655cdd2d028fd40e71882e59cafc61))
+
+* build: restore make validate to full check+test pipeline
+
+Reverts the operator-only per-unit scope-change (commit a8b3441) that pointed
+validate at test-unit; that change was an unsanctioned deliverable edit and
+broke tests/unit/repo/test_makefile_structure.py::test_validate_depends_on_check_and_test
+which asserts the validate target depends on check and test. The devbench
+orchestrate daemon is no longer in use, so the per-unit-speed rationale no
+longer applies. validate now again runs the full lint + test pipeline. ([`c5aebfc`](https://github.com/caylent-solutions/kanon/commit/c5aebfc8f300dec25d5e85b9797c1a550abf379e))
+
+* build: scope per-unit `make validate` to unit tests; full suite + coverage run in CI
+
+Per-unit executor validation ran the full ~11k-test suite with coverage single-threaded
+(~30-40 min/unit, and the OOM driver). CI (pr-validation.yml / main-validation.yml) already
+runs unit + integration + functional + scenario + `make test` as independent steps, so scoping
+`make validate` to lint + unit tests preserves full regression coverage at CI while cutting
+per-unit validation time substantially. pytest-xdist parallelism was evaluated and reverted:
+the suite&#39;s test collection is non-deterministic across xdist workers (gw collection mismatch). ([`a8b3441`](https://github.com/caylent-solutions/kanon/commit/a8b344134cb2eba39ed3f48aee812e27ce7167e1))
+
+### Ci
+
+* ci: split CI into Linux + Windows sets with platform markers; fix cross-platform bugs
+
+Two CI sets per the cross-platform contract:
+- Linux set (ubuntu-24.04): pytest `-m &#34;&lt;tier&gt; and not windows_only&#34;`.
+- Windows set (windows-latest, native VM): pytest `-m &#34;&lt;tier&gt; and not linux_only&#34;`.
+Registered `linux_only` / `windows_only` markers (unmarked tests run on both and must pass
+on both). Removed the old windows-matrix leg; fail-fast: false; all run steps shell: bash;
+windows jobs use actions/setup-python + pip (asdf/make/zsh guarded to runner.os == &#39;Linux&#39;).
+
+Marked linux_only (POSIX-only features): bash/zsh shell-completion suites, fcntl/SIGALRM
+(test_concurrency, test_signal_handling), and the vendored Google repo-tool suites
+(tests/{unit,integration}/repo/** via directory conftest hooks).
+
+Fixed the genuine cross-platform bugs (not filtered):
+- Windows ACL check (core/kanonenv.py): accept write by owner + Administrators (S-1-5-32-544)
+  + SYSTEM (S-1-5-18, via WinLocalSystemSid); still reject Everyone/Authenticated-Users/Users
+  and NULL DACL. Fixes the ~hundreds of &#34;insecure ACL&#34; ValueErrors (kanon was unusable on
+  Windows). Security intent preserved; tests assert both the secure-pass and insecure-reject cases.
+- Windows workspace lock (utils/concurrency.py): binary-mode lock file + sentinel-byte region
+  seek so msvcrt.locking targets [0,1) within the file; thread-join fail-fast timeout (no
+  interrupt-main, no poll/sleep). POSIX flock path unchanged.
+- Vendored repo platform_utils.py: `import platform_utils_win32` -&gt; `from . import
+  platform_utils_win32` (the shim is packaged) so the windows path resolves; patch sites updated.
+- test_cross_platform_contract.py: replaced obsolete &#34;not supported on Windows&#34; assertions with
+  the real cross-platform lock contract + a per-OS native non-blocking contender probe.
+
+Linux verified: `pytest -m &#34;not windows_only&#34;` 16105 passed / 0 failed; make validate 11392 passed;
+0 collection errors. Windows verified via this CI run. ([`8eb7423`](https://github.com/caylent-solutions/kanon/commit/8eb74234602261904548b5683e394495c9ac007e))
+
+* ci: skip the POSIX-only fcntl/signal integration suites at collection on Windows
+
+tests/integration/test_concurrency.py and test_signal_handling.py import fcntl
+(a POSIX-only stdlib module) and exercise the POSIX fcntl.flock locking + SIGALRM
+signal paths. On the windows-latest matrix leg fcntl is absent, so the modules
+raised ModuleNotFoundError at collection (2 collection errors -&gt; exit 2). Replace
+the top-level `import fcntl` with `fcntl = pytest.importorskip(&#34;fcntl&#34;)` so the
+whole module skips at collection on Windows; on POSIX the tests run unchanged
+(verified locally: 19 passed, 7 pre-existing conditional skips). The Windows lock
+backend is covered by tests/integration/test_cross_platform_contract.py. ([`815acd9`](https://github.com/caylent-solutions/kanon/commit/815acd91e44180ed58061482f71f2c3b2eb6997f))
+
+* ci: fix cross-platform CI failures on the integration + full-suite legs
+
+- tests/test_wheel_layout.py: the expected-core-files list named the removed
+  commands/bootstrap.py (deleted in E1-F1-S3); point it at the current
+  commands/search.py so the wheel-layout assertion matches the shipped package
+  (fixes the &#34;Full suite regression&#34; check: `assert not [&#39;kanon_cli/commands/bootstrap.py&#39;]`).
+- .github/actions/setup-kanon: gate the apt-get zsh install to `runner.os == &#39;Linux&#39;`
+  so the windows-latest integration leg no longer fails with `sudo: command not found`
+  (exit 127).
+- tests/integration/test_{completion,preamble,midtoken}_zsh.py: add a module-level
+  skipif when zsh is absent (e.g. Windows runners). zsh completion is a POSIX-shell
+  feature (Windows uses the powershell completion delivered in E9); the zsh suite is
+  still fully exercised on the Linux leg where zsh is installed.
+- .github/workflows/pr-validation.yml: fail-fast: false on the integration matrix so
+  the ubuntu and windows legs report independently. ([`6bb1c83`](https://github.com/caylent-solutions/kanon/commit/6bb1c833cfe45e197b9db333f38a0ecbeea3470c))
+
+### Documentation
+
+* docs: sync kanon docs to 3.0.0 behavior
+
+- README: kanon install fails fast on lock drift (like npm ci); --reconcile is the opt-in prune/re-resolve;
+  --strict-lock rejects a hash-match orphan (was stale: claimed plain install auto-prunes by default).
+- configuration.md: document ref-optional --catalog-source + the default-branch precedence (inline @ref &gt;
+  --catalog-default-branch flag &gt; KANON_CATALOG_DEFAULT_BRANCH env (default main) &gt; auto) + the WARN; add the env var.
+- list-and-add.md: add the --catalog-default-branch flag row to search + add; --catalog-source url[@ref].
+- installation.md: add --reconcile to the install synopsis.
+- test-coverage.md: fix two stale notes describing bare-install default auto-prune (now --reconcile).
+- multi-source-guide.md: required keys are four (add _NAME) + a per-dependency _&lt;VAR&gt;/_GITBASE row; remove the
+  misleading bare global GITBASE= lines (GITBASE is per-dependency auto-derived).
+markdown lint clean. ([`872a855`](https://github.com/caylent-solutions/kanon/commit/872a855cb70b76f05ec6d463de9607c93a054a95))
+
+* docs: sweep all kanon docs for 3.0.0 accuracy and valid links
+
+Full doc-perfection pass across 34 docs (markdown-lint clean, 0 broken links, doc-validation +
+help-contract tests 136 passed):
+- lockfile.md: schema v3 -&gt; v4 throughout; DELETED the obsolete forward-only auto-upgrade section and
+  replaced it with the real hard-fail-regenerate behavior (LockfileSchemaError on any v1/v2/v3 lock,
+  verified against core/lockfile.py); revision_spec -&gt; ref_spec; alias-keyed [[sources]];
+  alias-keyed kanon_hash; hermetic-install section; removed the bogus CatalogSourceMismatchError.
+- validate.md: documented the new `kanon validate lockfile` subcommand.
+- configuration.md / cli.md / cli-reference.md / list-and-add.md: per-dependency
+  KANON_SOURCE_&lt;alias&gt;_MARKETPLACE (global KANON_MARKETPLACE_INSTALL removed) + kanon marketplace
+  enable/disable/status; alias-keyed _{URL,REF,PATH,NAME,GITBASE}; hermetic install (no
+  --catalog-source); completion powershell + cmd.exe gap; --home/--store-dir + KANON_HOME;
+  --no-update-check / KANON_SKIP_UPDATE_CHECK; corrected fabricated error texts.
+- Removed `kanon list` (-&gt; search) and `kanon bootstrap` usages across docs (kept only the intentional
+  &#34;removed in 3.0.0&#34; migration/removal sections); singular KANON_CATALOG_SOURCE -&gt; plural
+  KANON_CATALOG_SOURCES (token-only, prose preserved); KANON_WORKSPACE_DIR/KANON_CACHE_DIR documented
+  as removed; integration-testing.md stale recipes refreshed.
+Release is 3.0.0 (semantic-release computes the number at merge; pyproject/__init__ not hand-edited). ([`b295e3b`](https://github.com/caylent-solutions/kanon/commit/b295e3b00f73a7109badd7a0dfd16ca7417d8614))
+
+### Feature
+
+* feat(install): default colorized repo output and never prompt for it (all shells)
+
+`kanon install` runs the vendored `repo init`, which in an interactive (TTY) shell with no `color.ui`
+configured shows a blocking &#34;Enable color display in this user account (y/N)?&#34; prompt -- so an interactive
+install hangs on it while non-TTY runs (CI, scripts) sail through.
+
+New TTY-gated helper `_ensure_color_default_for_interactive_repo()` pre-sets the global git `color.ui=auto`
+before `repo init`, so the prompt never fires and repo output defaults to colorized (auto = color only on a
+tty, which is what &#34;colorized if possible&#34; means). Gated on a TTY (the only context the prompt fires),
+idempotent (only sets when unset), and best-effort (a color preference never fails the install). Non-interactive
+runs and the test suite (both non-TTY) are untouched and never write the global git config.
+
+Adds tests/unit/test_install_color_default.py (TTY-sets / non-TTY no-op / idempotent-when-set). ([`53960dc`](https://github.com/caylent-solutions/kanon/commit/53960dca8e2dd2febd545260ef694eef34bcb797))
+
+* feat(install): auto-manage CLAUDE_MARKETPLACES_DIR header + keep the CWD clean
+
+Two fixes that make `kanon add &lt;claude-marketplace&gt; ; kanon install` work from a clean checkout and keep the
+working directory to just .kanon + .kanon.lock (spec G8); both surfaced while building a marketplace demo.
+
+CLAUDE_MARKETPLACES_DIR auto-managed (FR-17 / spec 5.1):
+- A claude-marketplace install needs the global `CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces` header,
+  but `kanon add` wrote no global header, so a clean add then install failed with &#34;CLAUDE_MARKETPLACES_DIR is
+  not defined in .kanon&#34;. New core/kanonenv_writer.py: ensure_claude_marketplaces_dir() inserts the header once
+  (idempotent, matches on the parsed key not the substring, never clobbers a custom value);
+  prune_claude_marketplaces_dir_if_unused() removes it once the last KANON_SOURCE_&lt;alias&gt;_MARKETPLACE=true is
+  gone. Wired into add (write + dry-run preview), marketplace enable (ensure), marketplace disable + remove
+  (prune). install keeps its fail-fast error for a hand-edited .kanon (hermetic install does not self-heal).
+
+CWD-clean workspace lock (spec G8):
+- add / remove / marketplace locked on the CWD (kanon_file.parent), creating a stray &lt;CWD&gt;/.kanon-data/ for the
+  process lock. New install.resolve_kanon_lock_root() keys the lock by a sha256 of the resolved .kanon path
+  under &lt;KANON_HOME&gt;/store/.locks/&lt;address&gt;, like install already does, so same-file edits still serialise
+  while the CWD never gets a .kanon-data/. The CWD now holds only .kanon + .kanon.lock; the lock and all
+  fetched artifacts live under KANON_HOME.
+
+Tests + docs:
+- New unit tests (test_kanonenv_writer, resolve_kanon_lock_root) + integration/functional coverage for
+  end-to-end add-&gt;install with no manual header, exact-header-once, multi-marketplace, dry-run preview, prune
+  on last removal, and the CWD-clean guarantee. Updated the superseded-behavior tests.
+- add --help + README / docs/{cli,configuration,claude-marketplaces-guide} describe the auto-managed header and
+  the store-side lock; regenerated tests/fixtures/help/kanon-add.txt.
+Verified: full make test 16911 passed, coverage 94%; manual real add-&gt;install-&gt;clean of a marketplace
+registers 9 plugins, CWD stays .kanon + .kanon.lock, artifacts under ~/.kanon, real ~/.claude untouched. ([`d81fcdc`](https://github.com/caylent-solutions/kanon/commit/d81fcdc44cc12653a2f238b35fddfe1ece05e822))
+
+* feat: wire default-branch resolution into add/search + --catalog-default-branch flag; CLAUDE_MARKETPLACES_DIR from OS env
+
+F-011/F-067: the resolve_default_branch machinery existed (53 unit tests) but no command called it, so a
+ref-less `add --catalog-source &lt;url&gt;` errored &#34;Invalid catalog source format&#34; and there was no flag.
+
+- core/catalog.py: _split_catalog_source_optional_ref (tolerant ref=None splitter incl SCP shorthand) +
+  normalize_catalog_source_ref (single entry point: pinned sources verbatim/no-network; ref-less sources get
+  their ref from resolve_default_branch -- precedence @ref &gt; --catalog-default-branch flag &gt;
+  KANON_CATALOG_DEFAULT_BRANCH env (default main) &gt; literal auto -&gt; ls-remote --symref -- verified-to-exist,
+  deduped yellow WARN).
+- add: _resolve_manifest_repo_for_add normalizes the source first, so a ref-less --catalog-source resolves the
+  default branch (+ WARN) instead of erroring; per-entry highest-tag version resolution unchanged.
+- search: _resolve_search_sources normalizes each deduped source (WARN once per defaulted source).
+- core/cli_args.py: new add_catalog_default_branch_arg, registered on add + search.
+- core/kanonenv.py: _apply_env_overrides adopts the single global CLAUDE_MARKETPLACES_DIR from the OS env when
+  absent from .kanon (.kanon value takes precedence); flows into install&#39;s envsubst base_env_vars + the existing
+  missing-dir fail-fast (core/install.py NOT modified). Fresh marketplace add+install now works with the OS-env
+  value and no hand-edited .kanon line.
+- tests: + tests/functional/test_default_branch_journey.py (ref-less add resolves+WARNs; flag override; auto
+  symref via the CLI) + marketplace-dir-from-OS-env integration + unit coverage; updated superseded callers.
+- regenerated kanon-add / kanon-search help fixtures + bash/zsh completion goldens (the new flag).
+ruff 0.11.13 + no-comments clean; unit+integration 13224 passed/0 failed; scenarios+functional 3456 passed/0 failed. ([`639cdfb`](https://github.com/caylent-solutions/kanon/commit/639cdfbed040c5b2ad50318e2e527de92714481e))
+
+* feat: npm-style content-SHA locking (lockfile v5) + install fail-fast on drift
+
+Content pins (option 4): a &lt;project revision&gt; may now be an exact deep-path tag, a branch ref
+(refs/heads/&lt;name&gt;), or a 40-hex SHA. On resolve, kanon pins the resolved content commit SHA per project in
+.kanon.lock ([[sources.content_pins]]); reinstalls replay the exact locked SHA (byte-deterministic), and a
+branch tip only advances on --refresh-lock -- mirroring npm&#39;s #main + package-lock. This supersedes spec F-71
+(no-content-pinning). Validator _is_exact_tag_revision -&gt; _is_pinnable_revision (tag/branch/sha accepted;
+wildcards/bare-branch/ranges still rejected), shared by validate marketplace + catalog audit. builders-plugins
+revision=&#34;refs/heads/main&#34; is now valid.
+
+- lockfile: CURRENT_SCHEMA_VERSION 4 -&gt; 5; ContentPinEntry + per-source content_pins (sorted, byte-stable,
+  EXCLUDED from kanon_hash since it is a resolved output); a v4/older lock fails fast with the regenerate message.
+- install: capture_content_pins (git rev-parse HEAD post-sync) + apply_content_pins_to_manifests (rewrite
+  &lt;project revision&gt; to the locked SHA before sync on replay); --refresh-lock re-captures the tip.
+- install drift (Q2/FR-24): check_lockfile_consistency wired into install -&gt; drift fails fast (exit 1) before
+  resolving, never mutating the lock; the user-facing &#34;BUG:&#34; string removed (LockfileConsistencyError); the old
+  lenient auto-prune is now opt-in via --reconcile; --strict-lock/--strict-drift kept coherent + documented.
+- tests: + tests/scenarios/test_content_pins.py (tag + branch lock/replay/advance/--refresh-lock) + v5 lockfile
+  round-trip / v4-rejection; updated all v4-&gt;v5 + validator branch/sha + install-drift + orphan-remediation;
+  regenerated kanon-install help + bash/zsh completion goldens.
+- docs: lockfile.md (v5 + content pins), exit-codes/installation/troubleshooting/doctor/cli docs (drift fail-fast).
+ruff 0.11.13 + no-comments clean; unit+integration 13201 passed/0 failed; scenarios+functional 3453 passed/0 failed. ([`4208498`](https://github.com/caylent-solutions/kanon/commit/4208498121835ad6d2e79e02d6195b0dc3910d0e))
+
+* feat: generic optional per-dependency env-var substitution (generalize required GITBASE)
+
+A catalog entry&#39;s manifest may use 0+ &lt;remote&gt; tags (any name, any ${VAR} fetch, declared in remote.xml /
+the entry XML / any include). kanon no longer hardcodes/requires GITBASE; it detects per-dependency which
+env vars an entry actually needs and treats them as an optional, open set. Supersedes the E4 required-_GITBASE
+design (spec/backlog amended with dated notes; the repo tool&#39;s XML parsing is untouched).
+
+- constants: _GITBASE out of the required structural suffixes; add SOURCE_ENV_KEY/SOURCE_GITBASE_VAR/
+  SOURCE_RESERVED_SUFFIXES.
+- kanonenv: _URL/_REF/_PATH/_NAME stay required; any other suffix (incl _GITBASE) -&gt; open per-source env dict;
+  missing env vars never fail parse.
+- add: _detect_manifest_env_vars walks the include chain + resolves project-&gt;remote-&gt;${VAR}; writes
+  KANON_SOURCE_&lt;alias&gt;_&lt;VAR&gt; per detected var (GITBASE auto-derived, others empty); no ${VAR} -&gt; no line.
+- install: overlay the per-source env dict into repo envsubst (per-dep, no global); assert_manifest_vars_resolved
+  raises UnresolvedManifestVarError if a needed ${VAR} is still unresolved after envsubst (clean fail pre repo-sync).
+- remove: structural-key threshold (4); still strips env-var + _MARKETPLACE lines.
+- tests: + test_add_env_var_detection.py, test_install_env_var_resolution.py; doctor-journey unreachable test
+  now mutates _URL (what doctor reachability checks) instead of the removed always-on _GITBASE; ~10 updated.
+- docs: README + 8 docs re-document _GITBASE as conditional / optional open env-var set; lockfile.md hash claim fixed.
+ruff 0.11.13 + no-comments clean; unit+integration 13172 passed/0 failed; scenarios green; kanon_hash unaffected. ([`ef86a2b`](https://github.com/caylent-solutions/kanon/commit/ef86a2bde3b8a7ff62bcbc3fbf30abeebac34d07))
+
+### Fix
+
+* fix(why): match transitive include names and print all chains for shared nodes
+
+`kanon why` grouped matches per node and errored &#34;ambiguous&#34; whenever an argument
+matched more than one node, so a transitive manifest (e.g. a shared remote.xml)
+included by many top-level sources was unqueryable -- and the &#34;pass the canonical
+form&#34; hint could not help because the matched paths were byte-identical. The
+transitive include `name` was also not a matchable key at all.
+
+- Group matched nodes by value-based logical identity (_node_identity): the same
+  logical node reached by many chains is ONE identity and prints every chain;
+  only two or more DISTINCT identities is an ambiguity, reported with an accurate
+  deduplicated message naming each interpretation.
+- Add _match_by_include_name so `kanon why &lt;include-name&gt;` resolves; include names
+  also join the not-found suggestion universe.
+- _resolve_match now returns _ResolvedIdentity; _collect_chains_for_identity
+  unions chains across all nodes of the matched identity.
+
+Adds multiplicity / include-name unit, JSON, and integration tests (16924 passed,
+92% coverage). Regenerates the why help fixture + zsh completion snapshot. Updates
+README, docs/outdated-and-why.md, docs/cli.md with generic examples only. ([`452fa65`](https://github.com/caylent-solutions/kanon/commit/452fa652c08e8ac066598a5ccf9680a9355a5f1d))
+
+* fix(install): scope the unresolved-var guard to functional attributes (ignore comments/CDATA)
+
+ef86a2b&#39;s assert_manifest_vars_resolved scanned the raw resolved-manifest text, so a ${VAR} surviving only
+in an XML comment or &lt;description&gt; CDATA prose (e.g. cpk remote.xml&#39;s explanatory ${GITBASE} comment, or a
+${HOME} doc reference) false-positived and blocked install before repo sync -- even though the functional
+&lt;remote fetch&gt; had resolved correctly. Root cause: scope mismatch with the add side (which only scans
+functional &lt;remote&gt;/&lt;default&gt;/&lt;project&gt; attribute values).
+
+- New src/kanon_cli/core/manifest_vars.py: functional_vars_in_manifest_files / detect_functional_manifest_vars
+  -- single source of truth for &#34;${VAR} in functional attribute values across a manifest + its include tree&#34;
+  (ElementTree.attrib never exposes comments/CDATA/text).
+- install.assert_manifest_vars_resolved now delegates to the shared helper (same UnresolvedManifestVarError +
+  message, still fires before repo sync).
+- add._detect_manifest_env_vars is now a thin wrapper over the shared helper; duplicated parsing removed.
+  Detection (unresolved manifest at add) and the guard (resolved manifest at install) are consistent by construction.
+- tests: + test_prose_var_in_comment_and_cdata_is_ignored (install succeeds), + add-side mirror; the
+  functional-${VAR}-missing-value case still fails cleanly. fails-before/passes-after proven.
+ruff 0.11.13 + no-comments clean; unit+integration 13174 passed/0 failed; scenarios 408 passed/0 failed. ([`34ba663`](https://github.com/caylent-solutions/kanon/commit/34ba663cbbd67069487cda7610829801e6c01753))
+
+* fix(validate): existence-check resolves the real project repo URL (#5); catalog audit enforces exact-tag revisions (#4)
+
+#5: validate_revision_existence ran git ls-remote against the bare &lt;remote fetch&gt; org base instead of the
+project&#39;s actual repo URL. Add shared manifest.join_project_repo_url(fetch, name) (fetch.rstrip(&#39;/&#39;)+&#39;/&#39;+name);
+marketplace_validator._resolve_project_remote_urls and commands/why.py now use it (DRY). The existence check
+now genuinely verifies &lt;project revision&gt; against its real repo, so REQUIRE_EXISTENCE=1 (or a local/reachable
+source) correctly FAILS a non-existent tag. Default WARN-on-unreachable behavior unchanged.
+
+#4: `catalog audit --check tag-format` only scanned git tag NAMES and never validated the manifest&#39;s
+&lt;project revision&gt;, so a range/branch/wildcard passed catalog audit while validate marketplace rejected it.
+Add _check_project_revision_exact_tags reusing the shared _is_exact_tag_revision predicate + _iter_project_revisions
+(no grammar duplication); emits a T002 ERROR (exit 1) for any non-exact revision incl inherited default,
+matching validate marketplace. T001 git-tag-name WARN preserved.
+
+tests/unit + tests/integration: 13165 passed, 0 failed; pinned ruff 0.11.13 format+check clean; no-comments clean. ([`634f43e`](https://github.com/caylent-solutions/kanon/commit/634f43e93084fac5fc1738898fd68617d52a2926))
+
+* fix(install): promote per-alias _GITBASE into repo envsubst; add scenario coverage for 9 new 3.0.0 scenarios
+
+install GITBASE fix (journey-breaker found testing the cpk catalog): install built the repo envsubst env
+from .kanon globals only and never promoted the per-dependency KANON_SOURCE_&lt;alias&gt;_GITBASE that `kanon add`
+writes, so a plain add -&gt; install on a ${GITBASE} manifest failed &#34;Unresolved environment variables: GITBASE&#34;.
+build_source_envsubst_vars now sets GITBASE per source from its per-alias value (source value wins over a
+global; multi-source isolated; fail-fast on empty), matching the spec + README contract. New
+tests/integration/test_install_per_alias_gitbase.py (single + multi-source, precedence, fail-fast); updated
+the 2 integration tests that encoded the superseded global-GITBASE contract.
+
+Scenario coverage: the doc sweep documented 9 new 3.0.0 scenarios in integration-testing.md (VA-05/06 validate
+lockfile; NS-01..07 marketplace status/enable/disable, completion powershell, --home, --no-update-check,
+KANON_SKIP_UPDATE_CHECK) but the doc&lt;-&gt;test parity meta-test requires each to have a test. Added
+tests/scenarios/test_va_validate_lockfile.py + test_ns_marketplace_and_global_flags.py (real, fixture-driven;
+NS-06/07 falsifiable via the editable-install gate + stale-cache harness, no network). Corrected NS-01&#39;s recipe
+to match real CLI behavior (`marketplace status` filters non-marketplace deps; `--all` surfaces the disabled row).
+
+Pinned ruff 0.11.13 format+check clean; no-comments clean; scenario tier 408 passed/0 failed; meta-test 0 missing. ([`22ddb57`](https://github.com/caylent-solutions/kanon/commit/22ddb571826e2fe3dc9fed931a0ed99291f03ee4))
+
+* fix(windows): declare pywin32 as a windows-only runtime dependency
+
+core/kanonenv.py::_check_windows_acl() imports ntsecuritycon + win32security
+(inside the sys.platform == &#34;win32&#34; branch) for the Windows ACL-equivalent of the
+.kanon group/world-writable permission check (E2-F1-S4). pywin32 was never declared
+as a dependency, so on the windows-latest CI leg every command that parses a .kanon
+crashed with ModuleNotFoundError: No module named &#39;ntsecuritycon&#39; (654 integration
+failures, all downstream of that import). Declare `pywin32&gt;=312 ; sys_platform == &#39;win32&#39;`
+so the modules are installed on Windows; the marker excludes it on POSIX (no Linux impact). ([`61437ae`](https://github.com/caylent-solutions/kanon/commit/61437ae9b494a67f6aef729f8fb2892416447eae))
+
+### Test
+
+* test(isolation): isolate CLAUDE_CONFIG_DIR so the suite never touches the real ~/.claude
+
+A claude-marketplace install shells out to the real `claude` binary
+(core/marketplace.py register_marketplace / install_plugin run `claude plugin
+marketplace add` / `plugin install` with no env=, inheriting os.environ and
+reading CLAUDE_CONFIG_DIR or ~/.claude). tests/conftest.py isolated KANON_HOME but
+not CLAUDE_CONFIG_DIR, so every local run of the marketplace tests registered
+marketplaces + plugins into the developer&#39;s real ~/.claude pointing at the test&#39;s
+temp marketplace dir; once the temp dir was reaped the registrations dangled and
+broke Claude Code with &#34;failed to load: cache-miss&#34;.
+
+- New autouse _isolate_claude_config fixture sets CLAUDE_CONFIG_DIR to a per-test
+  temp dir (mirrors _isolate_kanon_home); add CLAUDE_CONFIG_DIR to the
+  _isolation_env() subprocess floor so env-replace callers keep it too.
+- New tests/unit/test_isolation_fixtures.py guards that CLAUDE_CONFIG_DIR and
+  KANON_HOME are isolated to temp dirs, never the real home.
+Verified: full make test 16911 passed; real ~/.claude md5 identical before/after
+(CI is unaffected -- ephemeral runners -- this fixes the local-only pollution). ([`99c65aa`](https://github.com/caylent-solutions/kanon/commit/99c65aa459c2a3c96a31a06bd81038ea618280d7))
+
+* test(perf): parallelize the suite with pytest-xdist (-n auto) + make tests parallel-safe
+
+Run every test tier under pytest-xdist `-n auto --dist loadscope` for a large measured speedup, and fix the
+test-isolation races that high parallelism exposes. All test-tree only, no src/ edits, no test weakened.
+
+Parallelism:
+- requirements-dev.txt + pyproject.toml [dependency-groups].dev: add pytest-xdist (both the pip install-dev and
+  uv sync paths); pyproject [tool.coverage.run] parallel=true + concurrency=multiprocessing so xdist worker
+  coverage combines correctly (verified TOTAL 93%, the 90% gate holds).
+- Makefile: test / test-unit / test-integration / test-functional / test-scenarios / test-cov / coverage-json
+  gain `-n auto --dist loadscope`; test-operator-path stays single-process. The Makefile + CI structural guard
+  tests stay green (substring contracts preserved).
+- .github/workflows/{pr,main}-validation.yml: the per-tier `python -m pytest -m &#34;&lt;marker&gt;&#34;` steps gain
+  `-n auto --dist loadscope`; scenario + full-suite parallelize via the make targets. One job per tier with the
+  bare marker is preserved (guard contract).
+
+Parallel-safety (each race fails ONLY under xdist; each passes in isolation):
+- test_completion_sanitization.py: parametrize over sorted(SHELL_METACHARS) not list(...) so collection order is
+  deterministic across workers (fixes the xdist &#34;different tests collected&#34; error).
+- tests/unit/repo/conftest.py: autouse reset of the leaked Command._parallel_context class attr.
+- test_project_deep_boost.py: restore the Project.UserEmail class descriptor leaked by a PropertyMock.
+- test_subcmds_sync.py: redirect the gnupg homedir to a short per-worker path so the gpg-agent AF_UNIX socket
+  stays under the 108-char limit on the deep run-root path.
+- test_concurrency.py: raise the env-overridable holder-process scaffolding timeouts (load-tolerant; the
+  WorkspaceLockTimeoutError assertion is unchanged).
+- test_constants.py + test_constants_env_int.py: restore sys.modules + the package attr after del/reimport of
+  kanon_cli.constants so a later importer test reads the same module object.
+
+Measured (sequential -&gt; -n auto, 16 cores): unit 181-&gt;47s, integration 280-&gt;81s, functional 733-&gt;110s,
+scenario 164-&gt;35s (aggregate 1194-&gt;~273s, ~4.4x). Unit verified 15x consecutive green under -n auto; coverage 93%. ([`50f02fa`](https://github.com/caylent-solutions/kanon/commit/50f02fa6f8c9e220c28391780aa1521fb16e20b9))
+
+* test(perf): managed temp-root + subprocess env floor + teardowns (leak elimination)
+
+Eliminate the test suite&#39;s /tmp file+inode leaks without touching src/ or weakening any test, as the foundation
+for safe high parallelism. The kanon store + vendored repo tool use gitlinks + atomic renames that fail on the
+orbstack workspace fuse mount, and the default /tmp is a small tmpfs, so all test temp now lands on a managed,
+real-fs run root cleaned per run.
+
+- tests/conftest.py: pytest_configure/unconfigure create a per-run dir under KANON_TEST_TMP_ROOT (default
+  /var/tmp/kanon-test-runs, env-overridable real fs), redirect TMPDIR/TMP/TEMP + pytest basetemp there, rmtree
+  at session end, reap dead-pid roots on startup; xdist-safe (controller-only). Adds _isolation_env() (the
+  TMPDIR/KANON_HOME floor) + managed_repo_dir() (yield+rmtree) helpers.
+- functional/scenarios conftest: _run_kanon/run_kanon overlay _isolation_env() on the full-replacement env=
+  branch (setdefault) so a subprocess never drops TMPDIR/KANON_HOME and leaks a tempdir to /tmp; functional_repo_dir
+  + unit/repo session_tmp_home_dir reap their git-repo dirs on teardown.
+- 4 scenario/functional tests: CLAUDE_MARKETPLACES_DIR=/tmp/... literals consumed by a real kanon subprocess
+  redirected to tmp_path; the rest are mock-returns/argparse/read-only (no real write), left as-is.
+- tools/test_tmp_monitor.py: stdlib space+inode watchdog (df + df -i), safe-sweep dead-pid run-roots + aged
+  orphaned /tmp dirs, env-driven thresholds, fail-fast; driven on a 15-min cadence.
+Verified: ruff 0.11.13 + no-comments clean; representative + /tmp-literal suites pass (390+ tests); /tmp dir
+count before==after every run (zero new /tmp leak). ([`7ff73b7`](https://github.com/caylent-solutions/kanon/commit/7ff73b78bd16a8f62a96b6e27bb5a043b015c2e7))
+
+* test: regenerate add/remove help snapshots for the generic env-var schema
+
+The generic per-dependency env-var change updated `kanon add`/`kanon remove` help text
+(KANON_SOURCE_&lt;alias&gt;_{URL,REF,PATH,NAME} block + optional per-dependency env-var lines, instead of the old
+fixed {...,GITBASE} block). The implementation regenerated the completion fixture but missed the help-snapshot
+fixtures, so the functional `test_help_snapshot[kanon-add]` / `[kanon-remove]` byte-for-byte checks failed
+(and the full-suite-regression job with them). Regenerated both fixtures with the test&#39;s exact env
+(NO_COLOR=1, COLUMNS=80, no KANON_CATALOG_SOURCES); both snapshot tests pass. No code change. ([`c8d8f61`](https://github.com/caylent-solutions/kanon/commit/c8d8f614d18543083ec0b3bdc72b495d30d71d51))
+
+### Unknown
+
+* P3: triple test coverage + --home/--store-dir flag + LockfileSchemaError fail-fast; ruff 0.11.13 format parity
+
+Coverage (P3 audit found 10 gaps of 35 change-inventory items; 25 already fully covered): add real
+functional/integration/scenario tests for singular KANON_CATALOG_SOURCE inert, .kanon.lock v3-&gt;v4
+fail-fast, per-dependency _MARKETPLACE add/resolve semantics, marketplace revision-existence,
+outdated + doctor scenario journeys, env-int parse guards, powershell completion, and the
+init.defaultBranch=main test prerequisite (22 new/extended test files).
+
+Bug fixes surfaced by P3:
+- The E5-specced global --home/--store-dir flag (precedence flag &gt; KANON_HOME env &gt; default) was
+  never implemented; now added (cli.py, cli_args.py, constants.py) with unit + integration +
+  functional tests.
+- LockfileSchemaError leaked a raw Python traceback instead of a clean fail-fast error; now caught at
+  the top-level dispatcher (covers install/doctor/why/outdated), matching the InstallError handler.
+  Strengthened the v3-lock functional test to forbid a traceback.
+
+Format parity: reformat with ruff 0.11.13 (the requirements-dev.txt `ruff~=0.11.0` pin == CI&#39;s
+version). The E18 comment-purge had reformatted ~700 files with a newer local ruff (0.15.5) whose
+formatter disagrees with 0.11.13, so CI `ruff format --check` rejected them. 34 files re-normalized;
+ruff 0.11.13 format --check + check both clean; no-comments gate clean; vendored repo/ + docs/repo/
+untouched. Full Linux suite 16589 passed / 0 failed (reformat is semantics-preserving). ([`90eb153`](https://github.com/caylent-solutions/kanon/commit/90eb1537681810eb9a69ed88ea8fb75376371a6d))
+
+* convergence: extend no-comments gate to all first-party Python; strip Windows test residuals
+
+Honors the directive to remove all `#` comments from ALL kanon-owned Python (the gate previously
+scanned only src/kanon_cli + tests):
+- tools/lint/check_no_comments.py: default scan roots broadened to `src/kanon_cli tests scripts tools
+  .devcontainer` (793 first-party files; vendored src/kanon_cli/repo/ + generated dirs excluded). Purged
+  its own 2 header comments. New unit tests cover the broadened defaults.
+- Makefile lint-no-comments + CONTRIBUTING No-Comments Policy updated to &#34;all first-party kanon Python&#34;.
+- .devcontainer/fix-line-endings.py: purged 8 comments (INERT -- AST-identical to HEAD; comment-only).
+
+Windows residual cleanup (windows-support-removal intent):
+- tests/unit/test_spawn.py: removed 6 dead `if sys.platform == &#34;win32&#34;: pytest.skip()` guards (+ unused
+  import); all assertions intact, Linux behavior unchanged.
+- tests/unit/test_marketplace.py + test_install.py: renamed the misleading `...UsesJunctionHelper`
+  classes to `...UsesSymlink` (bodies already assert POSIX os.symlink).
+
+check_no_comments exit 0 over all 793 files; make validate 11411 passed; full suite 16508 passed / 0
+failed; ruff + format clean; no em-dash; vendored repo/ + docs/repo/ untouched. ([`073d481`](https://github.com/caylent-solutions/kanon/commit/073d481dd70b5fcf0622ea6f8780a3ffc0269baa))
+
+* E17-F1-S2-T1: wire the no-comments gate into make, pre-commit, and docs
+
+- Makefile: add `lint-no-comments` (runs tools/lint/check_no_comments.py over src/kanon_cli + tests,
+  excluding vendored repo/); make `lint-check` depend on it so the gate runs in `make lint-check`/`lint`/
+  `check` and transitively in the CI lint-check + pre-commit jobs (no workflow edit -- AC-10).
+- .pre-commit-config.yaml: add a `local` `no-comments` hook (system entry, python types, scoped to
+  src/kanon_cli + tests, excluding repo/).
+- CONTRIBUTING.md: document the no-comments policy + the two allowed exceptions (line-1 shebang, PEP 263
+  encoding cookie) + how to run it.
+verify-ac AC-5/6/7/8/10 all exit 0; make lint-no-comments + lint-check + pre-commit + make validate green;
+full suite 16505 passed / 0 failed; ruff clean. ([`00c96f6`](https://github.com/caylent-solutions/kanon/commit/00c96f6dbdd58d1a24774ce172c8d9ea3b5a73a4))
+
+* E18-F1-S1-T1: purge all # comments from kanon-owned Python (AST-equivalent)
+
+Remove 18,717 disallowed `#` comment tokens across 709 files (44 under src/kanon_cli/, 665 under
+tests/) via a one-time stdlib tokenize-based stripper (the committed enforcement tool is E17&#39;s
+tools/lint/check_no_comments.py). Keeps docstrings, line-1 shebangs, PEP 263 encoding cookies,
+string-literal `#`, and all code; `ruff format` normalized blank-line artifacts.
+
+Proven comments-only: 789/790 files are AST-identical pre/post; whole-tree docstrings 17,215 ==
+17,215. The sole intentional AST change is tests/unit/test_provider_agnosticism.py, whose
+self-inspection test delimited a region with `# BEGIN/END _PATTERN_LITERALS_BLOCK` comment markers
+-- now replaced with code-level sentinel string constants (honest fix; restoring the comments would
+fail the no-comments gate, and skip/xfail is prohibited).
+
+verify-ac AC-1..AC-8 all exit 0; full suite 16,505 passed / 0 failed; ruff check + format --check
+clean; no em-dash, no bypass annotations; vendored src/kanon_cli/repo/ byte-unchanged. ([`4afe06c`](https://github.com/caylent-solutions/kanon/commit/4afe06c0884527ceaae42544133acd6ce90c5380))
+
+* tests(scenarios): migrate marketplace scenario fixtures to the per-alias _MARKETPLACE model
+
+Completes the E6 (per-dependency marketplace) test-migration that updated the unit + integration
+tiers but missed the scenario tier. The shared scenario write_kanonenv helper only emitted the
+REMOVED global KANON_MARKETPLACE_INSTALL, so direct-checkout sources never opted in
+(register_direct_checkout_marketplaces never ran) and TC-clean-03&#39;s per-source ledger was empty.
+
+Adds a keyword-only marketplace_aliases param to write_kanonenv that emits
+KANON_SOURCE_&lt;alias&gt;_MARKETPLACE=true per source (guarded against unknown aliases), and migrates the
+marketplace-bearing scenarios (DC bp/src/plain; TC-clean-03 orphan+keep). All original assertions
+intact (entry appears in CLAUDE_MARKETPLACES_DIR; orphan-mp unregistered, keep-mp not). Pure
+test-fixture migration -- no src/kanon_cli change (per-alias code already proven by passing
+integration tests). Full suite: 16505 passed, 30 skipped, 0 failed; ruff clean. ([`2984f22`](https://github.com/caylent-solutions/kanon/commit/2984f228113c9ebba7db85064922e86f65790705))
+
+* E17-F1-S1-T1: add tokenize-based no-`#`-comments lint check
+
+tools/lint/check_no_comments.py: stdlib tokenize-based check that flags any `#` COMMENT
+token in src/kanon_cli (excluding the vendored repo/) + tests/, EXCEPT a line-1 shebang
+and a PEP 263 encoding cookie; docstrings and string-literal `#` are never flagged
+(a tokenize property). Ruff has no native no-comments rule (ERA001 only targets
+commented-out code), hence this custom check. Unit-tested (tests/unit/test_check_no_comments.py,
+19 tests). verify-ac AC-1/2/3/4/9 all exit 0 (AC-4 is a fixture-based exclusion test). ([`2604814`](https://github.com/caylent-solutions/kanon/commit/2604814c5fba0c52d3a15c7fb03239291b542ac9))
+
+* E16-F1-S2-T1 + E16-F1-S3-T1 + E16-F2-S3-T1: concurrency + marketplace POSIX-only; remove platform markers
+
+Completes the Windows-support strip (atomic, build-green on Linux):
+- utils/concurrency.py: drop the msvcrt `_exclusive_kernel_lock_windows` backend + the win32
+  dispatch arm; POSIX `fcntl.flock` path + public kanon_workspace_lock contract intact.
+- core/marketplace.py: create_dirsymlink is now bare os.symlink; the mklink/junction win32 arm gone
+  (runtime no-op on Linux -- it already took the symlink branch).
+- Remove the linux_only/windows_only pytest markers (declarations + all usages across the POSIX-only
+  suites, which now run on the single Linux CI set) and the Makefile PYTEST_PLATFORM_MARK plumbing;
+  updated the marker-asserting tests (test_ci_workflows guard, test_make_operator_path/test_pre_push_hook
+  stale comments). Removed the obsolete Windows-monkeypatch tests in test_cross_platform_contract.py.
+AC-5 (no `sys.platform==&#34;win32&#34;` in src/kanon_cli excl repo/) = 0; AC-2 (no markers) = 0; verify-ac
+E16-F1-S2/S3 + F2-S3 all exit 0; make validate 11408 passed; vendored repo/ untouched. ([`9add88b`](https://github.com/caylent-solutions/kanon/commit/9add88b0749ef5a39a32f1e23ce4d902f28aff6e))
+
+* E16-F3-S1-T1: state Windows unsupported-but-planned (WSL2) in kanon docs ([`3c9d3ad`](https://github.com/caylent-solutions/kanon/commit/3c9d3ad4501d5e3df34c1060b6276f020bdcb200))
+
+* E16-F2-S2-T1: collapse CI to a single Linux set in both validation workflows ([`a9c4b8e`](https://github.com/caylent-solutions/kanon/commit/a9c4b8e0df5b5e3d0d89476fa91ddda99778002b))
+
+* E16-F2-S1-T1: Remove pywin32 dependency from pyproject.toml and uv.lock ([`ca672da`](https://github.com/caylent-solutions/kanon/commit/ca672da1497906eb21436bdcf5a3a865d3a05b78))
+
+* E16-F1-S4-T1: make spawn.spawn_detached POSIX-only, drop Windows backend and tests ([`bf063fb`](https://github.com/caylent-solutions/kanon/commit/bf063fb2a299ea855b9bbdc87b81e6dd067e9e1a))
+
+* E16-F1-S1-T1: make kanonenv .kanon permission check POSIX-only, remove Windows-ACL code and tests ([`4ef2608`](https://github.com/caylent-solutions/kanon/commit/4ef2608c893950d8d5097d63c81c5c58cc35673a))
+
+* E10-F1-S2-T1: regenerate help/completion fixtures + cross-cutting tests + full-suite green (capstone)
+
+Epic capstone: regenerated all help fixtures (kanon-list removed; search/marketplace/completion/
+toplevel) + completion fixtures (bash/zsh/powershell); added the J1 full-lifecycle journey.
+Migrated ~50 integration/functional/scenario test files to the shipped 3.0.0 surface (list-&gt;search,
+bootstrap removed -&gt; exit 2, hermetic install, KANON_HOME store layout, per-dep marketplace, alias
+schema, exact revision). Rewrote the parallel-install concurrency tests to real subprocesses
+(cross-process model; the signal-based lock timeout is main-thread/process-correct) and pinned
+`git init -b main` in the catalog-completion fixtures (deterministic under load). Swept the stale
+exit-3 bootstrap narrative in integration-testing.md. Test-only + docs (0 src/kanon_cli changes;
+no skip/xfail added). Full suite green: 16102 passed / 0 failed (unit+integration+functional);
+make validate 11389 passed. verify-ac AC-31/AC-46/AC-32/AC-FINAL-016/AC-FINAL-017 exit 0. ([`6c47852`](https://github.com/caylent-solutions/kanon/commit/6c478528c52cd592b616b76ada86db3675615d16))
+
+* E9-F1-S1-T1: Add kanon completion powershell, extend SUPPORTED_SHELLS, document the cmd gap ([`1846272`](https://github.com/caylent-solutions/kanon/commit/184627251453ca14742b9b26f44b38276238bdc8))
+
+* E10-F1-S1-T1: sweep all kanon docs to the 3.0.0 surface
+
+23 docs (README + docs/**) updated to document SHIPPED 3.0.0 behavior: kanon list -&gt; search
+(-A flag), KANON_WORKSPACE_DIR/KANON_CACHE_DIR -&gt; KANON_HOME, singular -&gt; plural
+KANON_CATALOG_SOURCES, global -&gt; per-alias KANON_SOURCE_&lt;alias&gt;_MARKETPLACE, _REVISION -&gt; _REF,
+alias-keyed .kanon, hermetic install, kanon marketplace, exact-only revision; bootstrap kept
+as removed/historical. AC-33 grep clean (0 matches over docs README.md); make lint-markdown
+exit 0; verify-ac failures: []. Docs-only; vendored docs/repo untouched. ([`deae6c6`](https://github.com/caylent-solutions/kanon/commit/deae6c66d3fdde54178d5864e212d28b23596444))
+
+* E7-F1-S2-T1: exact-only `&lt;project revision&gt;` validation (replace permissive _is_valid_revision)
+
+The project-revision form now requires an exact PEP 440 tag match (refs/tags/&lt;path&gt;/&lt;pep440&gt;,
+reusing E7-S1&#39;s is_pep440_version); the permissive _is_valid_revision (which accepted main/*/
+constraints), ALLOWED_BRANCHES, and REVISION_WILDCARD are removed entirely. Added two-tier +
+local-aware existence validation via the shared run_git_ls_remote (KANON_GIT_LS_REMOTE_TIMEOUT;
+remote-offline -&gt; format-only WARN; local/file:// + KANON_VALIDATE_REQUIRE_EXISTENCE -&gt; mandatory)
+and &lt;default revision&gt; inheritance. Added the J9 validate journey. Full unit suite 11366 passed /
+0 failed; verify-ac AC-54 exit 0; vendored repo/ untouched. ([`698a9b1`](https://github.com/caylent-solutions/kanon/commit/698a9b115aeba8e808bb3cfc870d2a8607804f61))
+
+* E8-F1-S1-T1: Add core/update_check.py PyPI update-available alert + cli.py pre-dispatch hook
+
+Add the best-effort &#34;update available&#34; alert (FR-29 / AC-28 / AC-55):
+
+- New src/kanon_cli/core/update_check.py: hardened PyPI JSON lookup
+  (env-driven connect/read timeouts, 200KB body cap, explicit User-Agent,
+  HTTPS-only, graceful-fail), TTL cache under &lt;KANON_HOME&gt;/cache/update-check
+  reusing the completions/cache.py primitives, spawn_detached background
+  refresh on a stale hit (no temporal-delay sync, no direct process-fork),
+  and a bright TTY/NO_COLOR-aware stderr alert that is silent when current.
+- Skip conditions: __complete_* completer subcommands, dev/editable installs
+  (direct_url.json dir_info.editable / missing distribution), --no-update-check,
+  and KANON_SKIP_UPDATE_CHECK=1.
+- cli_args.py: register the --no-update-check global flag.
+- cli.py: invoke the update-check hook in main() before subcommand dispatch
+  and document --no-update-check in the top-level help.
+- constants.py: KANON_UPDATE_CHECK_TTL (86400) plus connect/read/size-cap
+  knobs via _env_int, the PyPI endpoint, and the alert/upgrade-command strings.
+- Tests: tests/unit/test_update_check.py (lookup, cache-TTL, every skip
+  condition, graceful-fail, silent-when-current, color gating), plus
+  test_cli/test_cli_args/test_constants additions and the
+  tests/functional/test_update_alert_journey.py J10 journey. ([`8bb1d54`](https://github.com/caylent-solutions/kanon/commit/8bb1d540eee0fa3b85e177fcc61f9d4e294128f7))
+
+* E6-F1-S2-T1: kanon marketplace enable/disable/status command + cli wiring ([`16c1899`](https://github.com/caylent-solutions/kanon/commit/16c18997f4b280bdc1b79001856538ee885821f9))
+
+* E6-F1-S1-T1: per-dependency `_MARKETPLACE` semantics; remove global KANON_MARKETPLACE_INSTALL
+
+Marketplace install is now per-alias: the alias-keyed .kanon carries KANON_SOURCE_&lt;alias&gt;_MARKETPLACE
+(parsed into sources[alias][&#34;marketplace&#34;]); the global KANON_MARKETPLACE_INSTALL env + header are
+removed. `add` auto-detects marketplace sources from catalog metadata and writes the per-alias key
+(only when true), with --marketplace-install/--no-marketplace-install (mutually exclusive) and a
+fail-fast MarketplaceInstallError on a forced non-marketplace type. install dispatches the side
+effect per-source (any_marketplace gates shared resources). clean fallback keys off per-dep flags.
+Full unit suite 11266 passed / 0 failed; verify-ac AC-25 exit 0; vendored repo/ untouched. ([`65b5cca`](https://github.com/caylent-solutions/kanon/commit/65b5cca9d3038218bfbb8ced82e5ddcf101017ff))
+
+* E7-F1-S1-T1: Widen the shared validator grammar to full PEP 440 ([`e4b55f3`](https://github.com/caylent-solutions/kanon/commit/e4b55f374197199f1f19a1da473c8edd4a4ff655))
+
+* E5-F1-S2-T1: concurrency-safe KANON_HOME store + `kanon clean`
+
+Store publishes atomically (os.replace) with per-entry locks and a configurable
+fail-fast acquisition timeout (no time.sleep -- readiness-based); concurrent installs
+of the same manifest@SHA from two project dirs converge on one store entry (J7 journey).
+`kanon clean` prunes the store. Full unit suite 11215 passed / 0 failed; verify-ac
+AC-24/AC-52 exit 0 (AC-24 grep scoped to the sleep call, not docstring prose);
+vendored repo/ untouched. ([`5651eaf`](https://github.com/caylent-solutions/kanon/commit/5651eafec70d01a9bb29f266926ae2a5541b3472))
+
+* E5-F1-S1-T1: shared KANON_HOME store; remove KANON_WORKSPACE_DIR/KANON_CACHE_DIR
+
+resolve_workspace_base_dir now resolves &lt;KANON_HOME&gt;/store (env KANON_HOME, default
+~/.kanon derived from Path.home(); fail-fast on unwritable); completions cache resolves
+&lt;KANON_HOME&gt;/cache. Removed WORKSPACE_DIR_ENV_VAR / KANON_CACHE_DIR_ENV / its default and
+the &#34;unset -&gt; skip/exit&#34; gates in catalog/doctor; clean reads .kanon.lock from cwd.
+Migrated all consumers + ~58 test/e2e files to the store model (autouse conftest fixture
+isolates KANON_HOME per test). Full unit suite 11188 passed / 0 failed; verify-ac AC-23
+exit 0; old vars 0 in src; vendored repo/ untouched. ([`7637223`](https://github.com/caylent-solutions/kanon/commit/76372236c335997cc0ab6b6f243f2f1d62176ebb))
+
+* E3-F1-S4-T1: concurrent multi-source `search` backed by the completions TTL cache
+
+Extends the completions TTL cache to a concurrent, namespaced multi-source search across
+all configured KANON_CATALOG_SOURCES (ThreadPoolExecutor + as_completed readiness, no
+time.sleep; unreachable sources warn+skip, never hard-fail). Search-path cache namespaced
+under cache_dir()/search/&lt;sha&gt;; refs/tags/&lt;name&gt;/* prefix enumeration. Fixed a parser
+build-time crash by making add_catalog_source_arg use a lazy default (resolution moved into
+the why/outdated handlers); added KANON_SEARCH_MAX_WORKERS (env-driven). Added the J4
+multi-source search scenario. Full unit suite 11186 passed / 0 failed; verify-ac AC-17/AC-49
+exit 0; vendored repo/ untouched. ([`91c1b9b`](https://github.com/caylent-solutions/kanon/commit/91c1b9b17579f3304030f4fc41fea03737146847))
+
+* E4-F1-S3-T1: source-explicit add with alias auto-compute, --as, --force re-pin, same-NAME guard
+
+Rework kanon add to be source-explicit with deterministic alias keying
+(FR-6, FR-11, spec Section 4.2 / 5.1):
+
+- Auto-compute the local alias as the sanitized manifest name; on a
+  cross-source collision auto-suffix the sanitized source-repo name, then
+  the sanitized ref (non-charset runs collapse to a single underscore,
+  never a double underscore), first-added keeps the bare alias.
+- Add --as &lt;alias&gt; override (charset [A-Za-z0-9_], no double underscore;
+  already-taken-by-a-different-source is a hard error without --force).
+- Re-add of the same alias at the same source@ref is a true duplicate:
+  a hard error with a diff and the guiding message without --force; with
+  --force the block is overwritten and its .kanon.lock entry re-pinned
+  (resolved_sha re-resolved, kanon_hash recomputed) while the dep&#39;s NAME
+  is preserved.
+- Replace the old any-same-alias-is-an-error collision model and its tests
+  with the new auto-suffix / same-NAME-guard model; add the J2 functional
+  journey driving the real CLI black-box against synthetic file:// catalog
+  repos.
+- Regenerate the add help and bash/zsh completion fixtures for --as. ([`1513270`](https://github.com/caylent-solutions/kanon/commit/15132700d61fd21d44eb98c0f67f984841284303))
+
+* E4-F1-S1-T1: rework .kanon to alias-keyed _URL/_REF/_PATH/_NAME/_GITBASE blocks
+
+Per FR schema rework: .kanon source blocks are alias-keyed with required _REF (renamed
+from _REVISION), _NAME, _GITBASE (plus _URL/_PATH); kanonenv parser surfaces ref/name/gitbase
+per alias with fail-fast validation. Migrated every consumer (add/remove/why/outdated +
+core install/kanon_hash/validate + completions source_names/lockfile_names) and ~100 tests to
+the 5-key schema; removed the superseded add --marketplace-install flags + global [catalog]/
+GITBASE header writer; added the J6 alias-consumer functional journey. Full unit suite 11120
+passed / 0 failed (zero new failures); verify-ac AC-18/AC-45/AC-51 exit 0; vendored repo/ untouched. ([`3d4c996`](https://github.com/caylent-solutions/kanon/commit/3d4c99673f5e73d5e003093d3617a5d63271aaf4))
+
+* E3-F1-S3-T1: search command implementation + reference sweep (content for the rename)
+
+Content edits accompanying the file renames in the prior commit: search.py run_search
+(source-group header, -A/--all), cli.py registers `search`, add.py hint, doctor/constants/
+metadata comment sweep, migrated test bodies (test_search*.py, test_cli, test_add),
+regenerated help fixtures + snapshots. Full unit suite 11111 passed / 0 failed; verify-ac
+AC-16 exit 0. (Renames landed in the preceding commit; this carries their content.) ([`b650be0`](https://github.com/caylent-solutions/kanon/commit/b650be037c2a1f0c55fdc0d6f7fb8ce948da7934))
+
+* E3-F1-S3-T1: rename `kanon list` -&gt; `kanon search` (group by source, -A/--all), sweep references
+
+Hard rename per FR-10: commands/list.py -&gt; commands/search.py (run_list -&gt; run_search,
+source-group header to stderr preserving the stdout pipe contract, -A/--all flag);
+cli.py registers `search` not `list` so `kanon list` is argparse exit 2; add.py hint
+updated. Migrated test_list.py -&gt; test_search.py + the 6 sibling test_list_*.py unit
+files -&gt; test_search_*.py; updated test_cli/test_add; regenerated kanon-search.txt help
+fixture; swept residual `kanon list` comment refs (doctor/constants/metadata) +
+help-snapshot rows. Full unit suite 11111 passed / 0 failed; verify-ac AC-16 exit 0.
+Note: integration/scenario suites that drive the `list` subprocess token are migrated by
+the full-suite-gate unit E10-F1-S2-T1 (now ordered after this rename). ([`9679682`](https://github.com/caylent-solutions/kanon/commit/96796824cafced2f5fd530b5a75d83d6be661c0e))
+
+* E10-F1-S1-T3 + E15-F1-S1-T1: markdown-lint gate (vendored docs/repo excluded) + test-prereq docs
+
+E10-F1-S1-T3: `make lint-markdown` runs pymarkdownlnt over kanon&#39;s own docs + README.md,
+EXCLUDING the vendored `docs/repo/*` tree (-e glob), governed by [tool.pymarkdown] mirroring
+.markdownlint.json (MD013 off, MD024 siblings_only); pymarkdownlnt dev dep + uv.lock; 4 unit
+tests (target/.PHONY/recipe + vendored-exclusion). Gate proven real (bad fixture exits 1).
+Lint-cleaned all kanon-owned docs (formatting only -- fences, blank lines, code-span spacing)
+so the gate exits 0; no markdownlint rule disabled.
+E15-F1-S1-T1: documented the init.defaultBranch=main integration-test prerequisite in
+docs/integration-testing.md, referenced it from CONTRIBUTING.md, and set it in the devcontainer
+postcreate. make lint-markdown exit 0; verify-ac failures: [] for both units; full unit suite green. ([`3ca6ebe`](https://github.com/caylent-solutions/kanon/commit/3ca6ebeb26f427f88a740af13d79cc3641d12985))
+
+* E4-F1-S4-T1: make `kanon install` hermetic (reject --catalog-source flag, ignore env)
+
+install is now driven solely by committed .kanon + .kanon.lock. The --catalog-source
+CLI flag is rejected (argparse exit 2); KANON_CATALOG_SOURCES in the env is IGNORED
+(no longer errors -- supersedes the reject-the-env behavior from E4-F1-S2-T1).
+Removed CatalogSourceMismatchError / HermeticInstallCatalogSourceError /
+_reject_catalog_source_on_install and the catalog_source parameter threaded through
+install(); added the J3 hermetic-install functional journey (reproducible lockfile,
+env URL never recorded); per-dep _REF specs resolved by shape against refs/tags/&lt;NAME&gt;/*.
+Migrated all consumer + integration tests to the ignore-env model (clears the 8
+prior hermetic-install integration failures). Full unit suite 11094 passed / 0 failed;
+verify-ac AC-21/AC-48/AC-T4S4-1 exit 0. ([`beaa27a`](https://github.com/caylent-solutions/kanon/commit/beaa27a2a563f8223f6c69de56a9ffe89c7ccb43))
+
+* E3-F1-S2-T1: Default-branch precedence with auto/--symref resolution, existence verify, yellow WARN
+
+Add the shared default-branch precedence (inline @ref -&gt; --catalog-default-branch
+-&gt; KANON_CATALOG_DEFAULT_BRANCH default main -&gt; literal auto via
+git ls-remote --symref) consumed by search and add when a source omits its ref.
+
+- version.py: _resolve_symref_default_branch routes ls-remote --symref HEAD
+  through the shared git_runner runner (KANON_GIT_LS_REMOTE_TIMEOUT, DRY) and
+  parses the advertised ref: refs/heads/&lt;branch&gt; symref; absent symref -&gt; None.
+- core/catalog.py: resolve_default_branch implements the precedence, verifies a
+  defaulted branch via version._list_branch_head (fail fast on missing), and
+  emits a single deduped yellow WARN to stderr (JSON/pipe stays clean). A
+  symref-absent auto fails fast with the actionable Section 6 error.
+- constants.py: catalog default-branch env var, auto sentinel, symref/WARN
+  templates, ANSI codes.
+- tests: precedence + symref + WARN unit tests, defaulted-branch existence unit
+  tests, and the J8 functional journey against real bare repos (AC-15, AC-53). ([`c5efe7d`](https://github.com/caylent-solutions/kanon/commit/c5efe7dbe2c16d91d77293f166fa59f440235edc))
+
+* E3-F1-S1-T1 + E2-F1-S5-T1 + E2-F1-S5-T3: plural KANON_CATALOG_SOURCES migration + utf-8/cross-platform sweep
+
+Atomic completion of three coupled units (shared consumers in add/cache/install/conftest):
+- E3-F1-S1-T1: parse plural KANON_CATALOG_SOURCES (newline-delimited, order-preserving,
+  deduped url[@ref]); remove the singular KANON_CATALOG_SOURCE env, CATALOG_ENV_VAR,
+  KANON_CATALOG_BLOCK_KEY and [catalog] block handling; migrate all 12 consumers
+  (add/doctor/install/list/outdated/why/completions/cli_args/core.install/core.catalog).
+- E2-F1-S5-T1: utf-8 read_text/write_text encoding sweep across kanon source; add
+  tests/integration/test_cross_platform_contract.py; add the windows-latest matrix to
+  the integration leg of pr-validation.yml.
+- E2-F1-S5-T3: add bare_text_io_calls helper to tests/conftest.py + rewire
+  test_add/test_cache/test_cached_catalogs/test_install to it.
+Regenerated help/completion snapshot fixtures from the new CLI. Full unit suite green
+(11076 passed); verify-ac AC-13/AC-14, AC-12/AC-56 all exit 0; vendored repo/ untouched. ([`2f53e95`](https://github.com/caylent-solutions/kanon/commit/2f53e95a18036f673bb2651660e53c5aa25a6c8e))
+
+* E2-F1-S4-T1: Windows ACL-equivalent for the .kanon group/world-writable check
+
+Add a per-OS write-permission dispatcher in core/kanonenv.py selected at the
+check site (Strategy by sys.platform, not a fallback). The POSIX mode-bit
+control is preserved unchanged; on Windows a new ACL-equivalent reads the
+file DACL via GetFileSecurity and rejects any write grant to a principal
+other than the owner or local Administrators, failing fast with the same
+actionable error shape (never a silent no-op). The accept/reject policy is a
+pure, platform-agnostic function exercised by real falsifiable tests; the
+GetFileSecurity mechanism is verified via an injected win32security-shaped
+fake so the contract is testable off Windows. Resolves #11 / FR-37. ([`0abf943`](https://github.com/caylent-solutions/kanon/commit/0abf9432377d6bb3855b73c37b78fe676bff50f2))
+
+* E2-F1-S1-T1: cross-platform kanon_workspace_lock backend, re-entrance guard, configurable timeout ([`27aff0d`](https://github.com/caylent-solutions/kanon/commit/27aff0d31465bc6bfcc4c4827934107f94352ab3))
+
+* E1-F1-S3: remove the kanon `bootstrap` command + deprecation shim + all residual refs
+
+Atomic completion of the coupled units E1-F1-S3-T1 (remove the shim) and
+E1-F1-S3-T2 (clean residual refs in 5 more test/fixture files). `kanon bootstrap`
+is no longer registered -- it is an unknown argparse command (exit 2). Deletes
+commands/bootstrap.py + 4 bootstrap test files; removes the import /
+register_bootstrap / pre-parse deprecation-intercept / help line / docstring refs
+from cli.py, constants.py, kanonenv.py; rewrites the removal-affected
+consumer tests (argparse/help/exit-code/entry-point/completion) to assert the new
+unknown-command behavior; regenerates the bootstrap-free top-level help fixture.
+kanon source is bootstrap-free (vendored repo/ tool excluded). Full unit suite
+green (11019 passed); AC-5 + AC-6 verify-ac exit 0. ([`1a87a4a`](https://github.com/caylent-solutions/kanon/commit/1a87a4a4aaf6c8b8b73973e126ce63ab9b8bf0ef))
+
+* E2-F1-S3-T1: Junction-aware directory-link helper at marketplace and install link sites ([`c08b198`](https://github.com/caylent-solutions/kanon/commit/c08b1985f04a8e853770e3317734772290a3e0b2))
+
+* E1-F1-S3-T3: Rename docs/migration-bootstrap-to-add.md to docs/migration-to-add.md and update all docs-tree references ([`0006fee`](https://github.com/caylent-solutions/kanon/commit/0006fee6316eca3bff5c663635b9e2fa55912a16))
+
+* E1-F1-S2-T1: Extract core/git_runner.py, remove time.sleep, move timeout to constants ([`5c02c08`](https://github.com/caylent-solutions/kanon/commit/5c02c082abccd2c80fa2dfbf110d7803c197384c))
+
+* E4-F1-S5-T1: Add validate lockfile target checking .kanon &lt;-&gt; .kanon.lock consistency ([`811541c`](https://github.com/caylent-solutions/kanon/commit/811541cffc36d454e82dc66c76c2ed977823a9ef))
+
+* E4-F1-S2-T1: bump .kanon.lock to v4 alias-keyed, remove lockfile [catalog] block
+
+Schema v4: CURRENT_SCHEMA_VERSION=4; [[sources]] re-keyed by alias with fields
+alias/name/url/ref_spec/resolved_ref/resolved_sha/path (revision_spec -&gt; ref_spec).
+Removed the lockfile [catalog] concept entirely (CatalogBlock dataclass,
+Lockfile.catalog field, lockfile _parse_catalog_block) and its consumers in the
+same atomic change per complete-replacement: kanon install is now hermetic
+(reads .kanon + .kanon.lock, no catalog-source resolution; --catalog-source /
+KANON_CATALOG_SOURCE reaching install is rejected fail-fast), doctor drops the
+lockfile-[catalog] provenance tier. v3 (and older) locks now hard-fail with an
+actionable regenerate message (no silent upgrader). The catalog-of-packages
+feature used by add/list/outdated/why (and the .kanon [catalog] source) is
+intentionally untouched -- distinct from the removed lockfile block. All
+affected unit/integration/scenario/functional tests migrated to the new
+alias-keyed/hermetic model. Full unit suite green (10987 passed); AC-19 holds. ([`39e13b0`](https://github.com/caylent-solutions/kanon/commit/39e13b0b597a2d79e6bce37e2ad18b0c134b4533))
+
+* E2-F1-S2-T1: replace os.fork/setsid/dup2 with cross-platform spawn_detached helper
+
+Add src/kanon_cli/utils/spawn.py providing spawn_detached: POSIX path forks,
+detaches (setsid), redirects stdio, and hardens the log dir to 0700 (chmod after
+mkdir so umask cannot weaken it); Windows path uses subprocess.Popen with
+DETACHED_PROCESS and pickle-serialises the callable. cache.py&#39;s
+fork_background_refresh now delegates to spawn_detached via a module-level
+_run_refresh_with_logging wrapped in functools.partial (no os.fork remains).
+
+Core picklability fix at the real callsite: project_versions.complete() now
+passes functools.partial(_fetch_and_cache_versions, repo_url, entry_dir) instead
+of a nested closure, so the callable serialises on the Windows path end-to-end.
+
+Tests: test_spawn.py covers success + fail-fast paths (fork OSError, Popen
+OSError, unpicklable-callable, refresh-raises child exit 1) using a
+production-shaped partial; test_background_refresh.py patches spawn_detached
+(not os.fork); test_complete_project_versions.py asserts the exact callsite
+callable pickles and round-trips. AC-9 verified. ([`0daaaff`](https://github.com/caylent-solutions/kanon/commit/0daaaffb483100771613d3e3ff03bdd9df2a405b))
+
+* E10-F1-S1-T4: Reconcile .markdownlint.json MD013 posture with the kanon docs lint gate ([`b82c605`](https://github.com/caylent-solutions/kanon/commit/b82c605abcb22d05d4cb6f0f0a7dc0d4c127f021))
+
+* E10-F1-S1-T2: Sweep docs/doctor.md and docs/setup-guide.md to the 3.0.0 surface ([`42836c8`](https://github.com/caylent-solutions/kanon/commit/42836c84c4a5a203a0e3722615c16dc90b670f1f))
+
+* E1-F1-S1-T1: Add _env_int helper and route the 3 unguarded env-ints ([`f536f14`](https://github.com/caylent-solutions/kanon/commit/f536f144981ce5f445372708d0d626a9d3e2a38a))
+
+
 ## v2.1.0 (2026-06-09)
+
+### Chore
+
+* chore(release): 2.1.0 ([`53935b2`](https://github.com/caylent-solutions/kanon/commit/53935b264b4ab724da75614897fe38353a3b9097))
 
 ### Feature
 
@@ -31,6 +854,12 @@ not only packaged Claude marketplaces.
   &lt;catalog-metadata&gt;; add find_catalog_entry_files unit coverage and a
   comment-exclusion regression.
 - Update author/explainer docs to describe content-based discovery. ([`3faca3f`](https://github.com/caylent-solutions/kanon/commit/3faca3fbb6aef3e9db871145e9998cd38efbb3c5))
+
+### Unknown
+
+* Merge pull request #78 from caylent-solutions/release-2.1.0
+
+Release 2.1.0 ([`7b36c19`](https://github.com/caylent-solutions/kanon/commit/7b36c1902d711235b582cafb970735ec13e1117d))
 
 
 ## v2.0.1 (2026-06-03)

@@ -1476,6 +1476,35 @@ def create_source_dirs(
     return result
 
 
+def _ensure_color_default_for_interactive_repo() -> None:
+    """Default the global git ``color.ui`` to ``auto`` in an interactive shell.
+
+    The vendored repo tool's ``repo init`` shows an interactive
+    "Enable color display in this user account (y/N)?" prompt the first time it
+    runs in a TTY with no ``color.ui`` configured. Pre-setting ``color.ui=auto``
+    makes ``repo init`` skip that prompt and default to colorized output, so
+    ``kanon install`` is non-interactive in every shell (interactive shells get
+    color, piped/non-TTY runs get none, which is what ``auto`` already means).
+
+    Gated on a TTY -- the only context where the prompt fires -- so
+    non-interactive runs and the test suite never write the global git config.
+    Idempotent and best-effort: it only sets ``color.ui`` when unset and never
+    fails the install if git config cannot be written (the prompt is a UX nicety,
+    not a correctness requirement).
+    """
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        return
+    existing = subprocess.run(
+        ["git", "config", "--global", "--get", "color.ui"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if existing.returncode == 0 and existing.stdout.strip():
+        return
+    subprocess.run(["git", "config", "--global", "color.ui", "auto"], check=False)
+
+
 def run_repo_init(
     source_dir: pathlib.Path,
     url: str,
@@ -1495,6 +1524,7 @@ def run_repo_init(
     Raises:
         RepoCommandError: If repo init exits non-zero.
     """
+    _ensure_color_default_for_interactive_repo()
     _repo.repo_init(str(source_dir), url, revision, manifest_path, repo_rev)
 
 

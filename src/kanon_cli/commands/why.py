@@ -996,16 +996,24 @@ class _ResolvedIdentity:
 
 
 def _identity_token(hit: _MatchHit) -> str:
-    """Return the canonical token to display for a matched identity.
+    """Return the canonical, re-passable token to display for a matched identity.
 
-    The token is the user-facing canonical form of what matched: the canonical
-    project URL or source URL, the exact XML manifest path, or the include/source
-    name. It is derived from the matched node, never from the raw argument.
+    The token is the user-facing canonical form of what matched and must be a
+    valid ``kanon why`` argument that resolves back to this one identity (it is
+    what the ambiguity message tells the operator to "pass one of"). For a
+    project URL match it is the canonical project URL; for an XML-path match the
+    exact manifest path; for an include/source-name match the name. For a
+    URL match on a SOURCE node it is the source ALIAS (its
+    ``derive_source_name`` identity), NOT the repository URL: several sources may
+    share one URL at different commits, so the URL is not distinct between them,
+    while the alias is -- and it round-trips through the source-name grammar
+    (caylent-solutions/kanon#86). It is derived from the matched node, never from
+    the raw argument.
     """
     node = hit.node
     if hit.category == "url":
         if node.kind == "source":
-            return node.url or ""
+            return derive_source_name(node.name, warn=False)
         return node.canonical_url or ""
     if hit.category == "xml_path":
         return node.ref or ""
@@ -1015,7 +1023,7 @@ def _identity_token(hit: _MatchHit) -> str:
 def _identity_label(hit: _MatchHit) -> str:
     """Return the human-readable interpretation label for the ambiguity message."""
     if hit.category == "url":
-        return "source URL" if hit.node.kind == "source" else "project URL"
+        return "source name" if hit.node.kind == "source" else "project URL"
     if hit.category == "xml_path":
         return "XML manifest path"
     if hit.category == "source_name":

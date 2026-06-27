@@ -155,17 +155,20 @@ def _normalize_revision_for_constraint(rev: str) -> tuple[str | None, str]:
 
 
 def _normalize_tag_revision_to_constraint(revision: str) -> str:
-    """Convert a bare refs/tags/<version> REVISION to a PEP 440 exact-match constraint.
+    """Convert an exact ``refs/tags/...`` REVISION to a PEP 440 exact-match constraint.
 
-    When ``kanon add foo@==1.0.0`` writes ``refs/tags/1.0.0`` as the REVISION,
-    ``_resolve_constraint_from_tags`` cannot evaluate it because the last path
-    component ``1.0.0`` is a bare version, not a PEP 440 specifier. This helper
-    converts ``refs/tags/1.0.0`` to ``refs/tags/==1.0.0`` so the specifier
-    evaluation succeeds (DEFECT-007 fix).
+    When ``kanon add`` pins a source to an exact tag it writes the resolved ref as
+    the REVISION -- a bare ``refs/tags/<version>`` (single-purpose repo) or a
+    namespaced ``refs/tags/<path>/<version>`` (mono repo). ``_resolve_constraint_from_tags``
+    cannot evaluate that directly because the terminal ``<version>`` component is a
+    bare version, not a PEP 440 specifier. This helper rewrites the terminal
+    component to an exact-match specifier (``==<version>``) while preserving any
+    namespace path, so the specifier evaluation succeeds for both forms (DEFECT-007;
+    namespaced/bare exact-tag fix for caylent-solutions/kanon#85).
 
-    Only the ``refs/tags/`` prefix form is relevant here; other forms (plain
-    constraints like ``~=1.0.0``, prefixed constraints like
-    ``refs/tags/prefix/~=1.0.0``) are left unchanged.
+    Only an exact terminal version is rewritten; other forms (plain constraints
+    like ``~=1.0.0``, prefixed constraints like ``refs/tags/prefix/~=1.0.0``, and
+    wildcards like ``refs/tags/prefix/*``) are left unchanged.
 
     Args:
         revision: The REVISION string for a TAG-classified source.
@@ -178,13 +181,16 @@ def _normalize_tag_revision_to_constraint(revision: str) -> str:
     if not revision.startswith(REVISION_REF_PREFIX_TAGS):
         return revision
 
-    bare = revision[len(REVISION_REF_PREFIX_TAGS) :]
+    remainder = revision[len(REVISION_REF_PREFIX_TAGS) :]
+    namespace, _, last = remainder.rpartition("/")
 
     try:
-        Version(bare)
-        return REVISION_REF_PREFIX_TAGS + "==" + bare
+        Version(last)
     except InvalidVersion:
         return revision
+
+    prefix = REVISION_REF_PREFIX_TAGS + (namespace + "/" if namespace else "")
+    return prefix + "==" + last
 
 
 @dataclass

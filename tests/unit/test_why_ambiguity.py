@@ -812,3 +812,36 @@ class TestMultiplicityNotAmbiguity:
         assert "ambiguous" in captured.err.lower()
         assert "source name" in captured.err.lower()
         assert "include name" in captured.err.lower()
+
+
+@pytest.mark.unit
+class TestIdentityTokenForSources:
+    """A URL match on a source yields its alias (distinct, re-passable), not the shared URL (#86)."""
+
+    def test_url_matched_source_token_is_alias_with_source_name_label(self) -> None:
+        from kanon_cli.commands.why import _MatchHit, _identity_label, _identity_token
+        from kanon_cli.core.metadata import derive_source_name
+
+        node = _make_source_node(name="builders_plugins", url="https://github.com/org/catalog")
+        hit = _MatchHit(category="url", label="x", node=node)
+        assert _identity_token(hit) == derive_source_name("builders_plugins", warn=False)
+        assert _identity_token(hit) != node.url
+        assert _identity_label(hit) == "source name"
+
+    def test_same_url_distinct_aliases_yield_distinct_tokens(self) -> None:
+        from kanon_cli.commands.why import _MatchHit, _identity_token
+
+        url = "https://github.com/org/catalog"
+        tokens = {
+            _identity_token(_MatchHit(category="url", label="x", node=_make_source_node(name=alias, url=url)))
+            for alias in ("src0", "src1", "src2")
+        }
+        assert tokens == {"src0", "src1", "src2"}
+
+    def test_url_matched_project_token_stays_canonical_url(self) -> None:
+        from kanon_cli.commands.why import _MatchHit, _identity_label, _identity_token
+
+        node = _make_project_node(name="proj", url="https://github.com/org/proj")
+        hit = _MatchHit(category="url", label="x", node=node)
+        assert _identity_token(hit) == node.canonical_url
+        assert _identity_label(hit) == "project URL"

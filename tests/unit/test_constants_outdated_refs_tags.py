@@ -194,6 +194,14 @@ class TestNormalizeTagRevisionToConstraint:
             ("refs/tags/*", "refs/tags/*"),
             ("~=1.0.0", "~=1.0.0"),
             (">=1.0.0", ">=1.0.0"),
+            ("refs/tags/history/0.1.1", "refs/tags/history/==0.1.1"),
+            ("refs/tags/0.1.0", "refs/tags/==0.1.0"),
+            ("refs/tags/a/b/c/2.3.4", "refs/tags/a/b/c/==2.3.4"),
+            ("refs/tags/history/1.0.0a1", "refs/tags/history/==1.0.0a1"),
+            ("refs/tags/history/~=0.1.0", "refs/tags/history/~=0.1.0"),
+            ("refs/tags/history/>=1.0.0,<2.0.0", "refs/tags/history/>=1.0.0,<2.0.0"),
+            ("refs/tags/history/*", "refs/tags/history/*"),
+            ("refs/tags/builders-plugins/0.1.2", "refs/tags/builders-plugins/==0.1.2"),
         ],
     )
     def test_normalize_tag_revision(self, revision: str, expected: str) -> None:

@@ -443,3 +443,37 @@ class TestWhyMultiplicityAndIncludeName:
         assert "matched include_name 'remote'" in result.stdout
         chain_lines = [line for line in result.stdout.splitlines() if include_path in line and " -> " in line]
         assert len(chain_lines) == 3, f"expected 3 chains, got: {result.stdout!r}"
+
+    def test_same_url_sources_print_distinct_alias_tokens_and_round_trip(self, tmp_path: pathlib.Path) -> None:
+        """Querying a URL shared by several sources prints DISTINCT, re-passable alias tokens.
+
+        Regression for caylent-solutions/kanon#86: when multiple sources resolve
+        from the same repo URL at different commits (now a supported config), the
+        old ambiguity message printed N identical `source URL: <url>` lines, so
+        the operator could not disambiguate. The tokens are now the distinct
+        source aliases under a `source name` label, and re-passing one alias
+        resolves to exactly that source.
+        """
+        include_path = "repo-specs/git-connection/remote.xml"
+        kanon_file = _make_minimal_kanon_file(tmp_path, "src0")
+        lock_file = _write_multi_source_lockfile(tmp_path, 3, "remote", include_path)
+
+        ambiguous = _run_why(kanon_file, lock_file, "https://github.com/org/catalog")
+        assert ambiguous.returncode != 0, f"expected ambiguity exit; stdout: {ambiguous.stdout!r}"
+        assert "is ambiguous" in ambiguous.stderr
+        assert "source name" in ambiguous.stderr
+        assert "source URL" not in ambiguous.stderr
+
+        token_lines = [
+            line.strip() for line in ambiguous.stderr.splitlines() if line.strip().startswith("source name:")
+        ]
+        tokens = sorted(line.split(":", 1)[1].strip() for line in token_lines)
+        assert tokens == ["src0", "src1", "src2"], (
+            f"disambiguation tokens must be the distinct aliases, got: {tokens!r}\nstderr: {ambiguous.stderr!r}"
+        )
+
+        resolved = _run_why(kanon_file, lock_file, "src1")
+        assert resolved.returncode == 0, (
+            f"re-passing the alias 'src1' must resolve to exactly one source.\nstderr: {resolved.stderr!r}"
+        )
+        assert "src1" in resolved.stdout

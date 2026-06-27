@@ -168,3 +168,55 @@ class TestOutdatedRefsTagsParsing:
                 f"branch revision {revision!r}.\n"
                 f"stdout: {outdated_result.stdout!r}"
             )
+
+    def test_outdated_accepts_namespaced_exact_tag_revision(self, tmp_path: pathlib.Path) -> None:
+        """kanon outdated handles a namespaced exact-tag REVISION (refs/tags/<name>/<ver>).
+
+        Regression for caylent-solutions/kanon#85: ``kanon add foo`` against a
+        catalog whose tags are namespaced (``foo/1.0.0``) writes
+        ``KANON_SOURCE_FOO_REF=refs/tags/foo/1.0.0``; outdated previously raised
+        ``invalid version constraint '1.0.0'`` because the namespaced exact tag
+        was not normalised to ``==``. Now it resolves and reports the available
+        upgrade to ``1.1.0``.
+        """
+        bare = _create_manifest_repo_with_tags(
+            tmp_path / "catalog",
+            entry_names=["foo"],
+            tags=["foo/1.0.0", "foo/1.1.0"],
+        )
+        catalog_source = f"file://{bare}@main"
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        add_result = _run_kanon(
+            ["add", "foo@==1.0.0", "--catalog-source", catalog_source],
+            cwd=workspace,
+        )
+        assert add_result.returncode == 0, (
+            f"kanon add setup failed (expected 0, got {add_result.returncode}).\n"
+            f"stdout: {add_result.stdout!r}\nstderr: {add_result.stderr!r}"
+        )
+        kanon_text = (workspace / ".kanon").read_text(encoding="utf-8")
+        assert "refs/tags/foo/1.0.0" in kanon_text, f"expected the namespaced exact tag in .kanon; got:\n{kanon_text}"
+
+        env = dict(os.environ)
+        env.pop("KANON_CATALOG_SOURCES", None)
+        outdated_result = subprocess.run(
+            [sys.executable, "-m", "kanon_cli", "outdated", "--catalog-source", catalog_source],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=str(workspace),
+        )
+
+        assert outdated_result.returncode == 0, (
+            f"Expected exit 0 for namespaced exact tag, got {outdated_result.returncode}.\n"
+            f"stdout: {outdated_result.stdout!r}\nstderr: {outdated_result.stderr!r}"
+        )
+        assert "invalid version constraint" not in outdated_result.stderr, (
+            f"outdated still raises the constraint error.\nstderr: {outdated_result.stderr!r}"
+        )
+        assert "1.0.0" in outdated_result.stdout and "1.1.0" in outdated_result.stdout, (
+            f"Expected current 1.0.0 and latest 1.1.0 in the outdated table.\nstdout: {outdated_result.stdout!r}"
+        )

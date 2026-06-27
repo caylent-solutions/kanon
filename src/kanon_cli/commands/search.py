@@ -82,7 +82,7 @@ from kanon_cli.core.metadata import (
     _parse_catalog_metadata,
     find_catalog_entry_files,
 )
-from kanon_cli.version import _list_branch_head, is_version_constraint, resolve_version
+from kanon_cli.version import _list_branch_head, is_version_constraint, resolve_version, select_entry_namespace
 
 
 _LATEST_TIP_MARKER = "latest"
@@ -268,30 +268,33 @@ def _resolve_search_ttl() -> int:
 
 
 def _list_namespaced_version_tags(url: str, entry_name: str) -> list[str]:
-    """Return PEP 440 version strings under ``refs/tags/<entry_name>/`` for a repo.
+    """Return a catalog entry's PEP 440 version strings, newest-first.
 
-    Runs ``git ls-remote --tags <url> refs/tags/<entry_name>/*`` (a prefix filter,
-    no ancestry walk and no tree reads -- spec Section 4.1 / Section 6), strips the
-    ``refs/tags/<entry_name>/`` prefix, drops peeled ``^{}`` deref lines, keeps only
-    last components that parse as PEP 440, and returns them sorted newest-first.
+    Lists the manifest repo's tags once via ``git ls-remote --tags`` and scopes
+    them with :func:`kanon_cli.version.select_entry_namespace`, the rule shared
+    with ``kanon add`` (spec Section 4.1 / Section 6): when the entry has
+    ``refs/tags/<entry_name>/<pep440>`` tags those are used; otherwise the bare
+    ``refs/tags/<pep440>`` tags are used (a single-purpose, poly repo). Peeled
+    ``^{}`` deref lines, other entries' namespaced tags, and non-PEP-440 last
+    components are dropped. Listing once and selecting the namespace keeps
+    ``kanon search`` consistent with what ``kanon add`` would resolve.
 
     Args:
         url: Git repository URL of the catalog manifest repo.
-        entry_name: The catalog entry name whose tag namespace is enumerated.
+        entry_name: The catalog entry name whose versions are enumerated.
 
     Returns:
         Newest-first list of PEP 440 version strings. Empty when the entry has no
-        ``refs/tags/<entry_name>/*`` tags.
+        namespaced and no bare version tags.
 
     Raises:
         SourceUnreachableError: When the underlying ``git ls-remote`` exits
             non-zero or the git binary is missing (the caller decides whether to
             skip+warn or propagate).
     """
-    pattern = f"refs/tags/{entry_name}/*"
     try:
         result = subprocess.run(
-            ["git", "ls-remote", "--tags", url, pattern],
+            ["git", "ls-remote", "--tags", url],
             capture_output=True,
             text=True,
             check=False,
@@ -302,17 +305,26 @@ def _list_namespaced_version_tags(url: str, entry_name: str) -> list[str]:
     if result.returncode != 0:
         raise SourceUnreachableError(url, result.stderr.strip() or f"git ls-remote exited {result.returncode}")
 
-    prefix = f"refs/tags/{entry_name}/"
-    versions: list[Version] = []
+    refs: list[str] = []
     for line in result.stdout.splitlines():
         line = line.strip()
         if not line or "\t" not in line:
             continue
         _sha, ref = line.split("\t", 1)
         ref = ref.strip()
-        if ref.endswith("^{}") or not ref.startswith(prefix):
+        if ref.endswith("^{}") or not ref.startswith("refs/tags/"):
+            continue
+        refs.append(ref)
+
+    namespace = select_entry_namespace(refs, entry_name)
+    prefix = f"refs/tags/{namespace}/" if namespace is not None else "refs/tags/"
+    versions: list[Version] = []
+    for ref in refs:
+        if not ref.startswith(prefix):
             continue
         suffix = ref[len(prefix) :]
+        if namespace is None and "/" in suffix:
+            continue
         try:
             versions.append(Version(suffix))
         except InvalidVersion:

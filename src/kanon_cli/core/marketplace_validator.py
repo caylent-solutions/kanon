@@ -166,18 +166,22 @@ def _is_pinnable_revision(revision: str) -> bool:
     """Return True if *revision* is a pinnable ``<project revision>``.
 
     The pinnable revision grammar (spec Section 4.5 / Section 6 / FR-22, AMENDED
-    2026-06-25 -- npm-style content-SHA locking) accepts any of three shapes:
+    2026-06-25 -- npm-style content-SHA locking; 2026-06-27 -- bare tags for
+    single-purpose poly repos, issue caylent-solutions/kanon#82) accepts any of
+    four shapes:
 
-        refs/tags/<deep/path>/<pep440>   -- an exact deep-path tag.
+        refs/tags/<path>/<pep440>        -- a namespaced exact tag (mono repo).
+        refs/tags/<pep440>               -- a bare exact tag (poly repo).
         refs/heads/<branch>              -- a branch ref (e.g. refs/heads/main).
         <40-hex>                         -- a full 40-character commit SHA.
 
-    For the tag shape, ``<pep440>`` is a single, canonical PEP 440 version token
+    For the tag shapes, ``<pep440>`` is a single, canonical PEP 440 version token
     validated by the shared :func:`kanon_cli.version.is_pep440_version` grammar
-    (the same full-PEP-440 grammar the resolver uses -- E7-F1-S1, DRY); the
-    trailing component is split off the last ``/`` and the path between the
-    ``refs/tags/`` prefix and that component must be non-empty. For the branch
-    shape, the name after ``refs/heads/`` must be non-empty.
+    (the same full-PEP-440 grammar the resolver uses -- E7-F1-S1, DRY): the
+    version is the whole remainder after ``refs/tags/`` for a bare tag, or the
+    component after the final ``/`` for a namespaced tag whose path before that
+    component must be non-empty. For the branch shape, the name after
+    ``refs/heads/`` must be non-empty.
 
     The wildcard ``*``, a bare branch name (e.g. ``main`` without the
     ``refs/heads/`` prefix), and a single or compound version-range constraint
@@ -192,9 +196,10 @@ def _is_pinnable_revision(revision: str) -> bool:
             (or the inherited ``<default revision>``).
 
     Returns:
-        True when *revision* is a deep-path tag, a ``refs/heads/<name>`` branch
-        ref, or a 40-hex commit SHA; False for the wildcard, bare branch names,
-        version-range constraints, and any other shape.
+        True when *revision* is a namespaced or bare exact tag, a
+        ``refs/heads/<name>`` branch ref, or a 40-hex commit SHA; False for the
+        wildcard, bare branch names, version-range constraints, and any other
+        shape.
     """
     if revision.startswith(REVISION_REF_PREFIX_HEADS):
         return bool(revision[len(REVISION_REF_PREFIX_HEADS) :])
@@ -207,7 +212,7 @@ def _is_pinnable_revision(revision: str) -> bool:
     remainder = revision[len(REVISION_REF_PREFIX_TAGS) :]
 
     if "/" not in remainder:
-        return False
+        return is_pep440_version(remainder)
     path_part, _, last_component = remainder.rpartition("/")
     if not path_part:
         return False
@@ -215,8 +220,8 @@ def _is_pinnable_revision(revision: str) -> bool:
 
 
 _INVALID_REVISION_HINT = (
-    "must be an exact tag refs/tags/<path>/<pep440>, a branch ref "
-    "refs/heads/<name>, or a 40-hex commit SHA "
+    "must be an exact tag refs/tags/<path>/<pep440> or refs/tags/<pep440>, a "
+    "branch ref refs/heads/<name>, or a 40-hex commit SHA "
     "(no '*' wildcard, no bare branch name, no version-range constraint)"
 )
 

@@ -76,8 +76,9 @@ manifest correctness.
 - Project path values (`<project path="...">`) are unique across all marketplace
   files.
 - Revision attributes (`<project revision="...">`) use one of the allowed
-  pinnable formats: an exact deep-path tag `refs/tags/<path>/<pep440>`, a
-  branch ref `refs/heads/<name>`, or a 40-hex commit SHA. The wildcard `*`,
+  pinnable formats: an exact tag `refs/tags/<path>/<pep440>` (namespaced) or
+  `refs/tags/<pep440>` (bare, for single-purpose repos), a branch ref
+  `refs/heads/<name>`, or a 40-hex commit SHA. The wildcard `*`,
   a bare branch name (e.g. `main` without the `refs/heads/` prefix), and
   version-range constraints (`>=X,<Y`, `~=`) are rejected. On install a tag
   or branch revision resolves to a content SHA pinned in `.kanon.lock`

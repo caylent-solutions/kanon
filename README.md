@@ -1223,7 +1223,10 @@ Constraints resolve to the best matching tag at sync time.
 
 The resolver splits the `revision` attribute at the last `/` into a tag-path
 prefix and a constraint. It filters available tags by that prefix, evaluates
-the constraint, and returns the highest matching version.
+the constraint, and returns the highest matching version. The prefix is
+optional: `refs/tags/<pep440>` (and a bare constraint such as `~=1.0.0`)
+resolves against the bare `refs/tags/` namespace for single-purpose repos,
+while `refs/tags/<name>/<pep440>` scopes to that namespace.
 
 ```text
 revision="refs/tags/example/development/dev-lint/~=1.2.0"

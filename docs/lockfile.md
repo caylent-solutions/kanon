@@ -276,9 +276,10 @@ Exception: `LockfileValidationError`.
 
 This `ref_spec` is the source / catalog ref-spec. It is distinct from a
 manifest `<project revision>` (the content revision validated by
-`kanon validate marketplace`), which accepts an exact deep-path tag
-(`refs/tags/<path>/<pep440>`), a branch ref (`refs/heads/<name>`), or a
-40-hex commit SHA, and rejects the `*` wildcard, a bare branch name, and
+`kanon validate marketplace`), which accepts an exact tag
+(`refs/tags/<path>/<pep440>` namespaced or `refs/tags/<pep440>` bare), a
+branch ref (`refs/heads/<name>`), or a 40-hex commit SHA, and rejects the
+`*` wildcard, a bare branch name, and
 version-range constraints. On install a tag or branch `<project revision>`
 resolves to a content SHA pinned in `[[sources.content_pins]]`, so a
 branch revision does not pin a moving target.
@@ -391,9 +392,10 @@ source's resolved manifest tree, captured after `repo sync`:
   lock time.
 
 A reinstall replays each locked content SHA byte-for-byte (npm-style
-content-SHA locking). A manifest `<project revision>` may be an exact
-deep-path tag (`refs/tags/<path>/<pep440>`), a branch ref
-(`refs/heads/<name>`), or a 40-hex commit SHA. On install a tag or branch
+content-SHA locking). A manifest `<project revision>` may be an exact tag
+(`refs/tags/<path>/<pep440>` namespaced or `refs/tags/<pep440>` bare), a
+branch ref (`refs/heads/<name>`), or a 40-hex commit SHA. On install a tag
+or branch
 revision resolves to a content SHA that is pinned here, so a branch
 revision does NOT pin a moving target: the locked SHA is replayed until an
 explicit `kanon install --refresh-lock` re-resolves it.

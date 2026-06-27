@@ -655,7 +655,8 @@ def _check_project_revision_exact_tags(target_path: pathlib.Path) -> list[AuditF
                     ),
                     remediation=(
                         f"Pin {project_name!r} to an exact tag refs/tags/<path>/<pep440> "
-                        "(e.g. refs/tags/my-plugin/1.0.0), a branch ref refs/heads/<name>, "
+                        "or refs/tags/<pep440> (e.g. refs/tags/my-plugin/1.0.0 or "
+                        "refs/tags/1.0.0), a branch ref refs/heads/<name>, "
                         "or a 40-hex commit SHA. "
                         "Run 'kanon validate marketplace' to confirm the manifest is clean."
                     ),

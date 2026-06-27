@@ -77,7 +77,13 @@ from kanon_cli.core.metadata import (
     derive_source_name,
     find_catalog_entry_files,
 )
-from kanon_cli.version import _list_tags, _resolve_constraint_from_tags, is_version_constraint, resolve_version
+from kanon_cli.version import (
+    _list_tags,
+    _resolve_constraint_from_tags,
+    is_version_constraint,
+    resolve_version,
+    select_entry_namespace,
+)
 
 
 _ZERO_PEP440_TAGS_ERROR = (
@@ -119,7 +125,8 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "constraint (e.g. ==1.0.0, ~=1.2, >=1.0.0,<2.0.0). The last '@' in\n"
             "each argument is the delimiter -- see spec Section 4.0 resolver rules.\n"
             "When <spec> is omitted the highest PEP 440-valid git tag in the\n"
-            "manifest repo is selected automatically."
+            "entry's refs/tags/<name>/ namespace is selected, or the highest\n"
+            "bare refs/tags/<pep440> tag when the entry has no namespaced tags."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -790,10 +797,10 @@ def _build_source_block_lines(
     prefix = f"{SOURCE_PREFIX}{source_name}"
 
     lines = [
-        f"{prefix}_URL={url}",
-        f"{prefix}_REF={ref}",
-        f"{prefix}_PATH={path}",
         f"{prefix}_NAME={name}",
+        f"{prefix}_REF={ref}",
+        f"{prefix}_URL={url}",
+        f"{prefix}_PATH={path}",
     ]
     lines.extend(env_var_lines)
     if marketplace:
@@ -941,37 +948,52 @@ def _find_entry_by_name(
     sys.exit(1)
 
 
-def _resolve_spec(url: str, spec: str | None) -> str:
-    """Resolve the version spec for a catalog entry.
+def _resolve_spec(entry_name: str, url: str, spec: str | None) -> str:
+    """Resolve the version spec for a catalog entry, scoped to its tag namespace.
 
-    When spec is None (default-spec path), selects the highest PEP 440-valid
-    git tag on the manifest repo via git ls-remote --tags. Raises SystemExit
+    A catalog may tag an entry under a per-entry namespace
+    (``refs/tags/<entry_name>/<pep440>``) or with bare ``refs/tags/<pep440>``
+    tags. Resolution scopes to the entry's namespace when such tags exist (so
+    ``kanon add history`` resolves the highest ``refs/tags/history/<pep440>`` and
+    never another entry's tag), and falls back to the bare namespace otherwise
+    (a single-purpose, poly repo). The chosen namespace comes from
+    :func:`kanon_cli.version.select_entry_namespace`, the rule shared with
+    ``kanon search``.
+
+    When spec is None (default-spec path), selects the highest PEP 440-valid git
+    tag in the resolved namespace via git ls-remote --tags. Raises SystemExit
     with the spec-verbatim error if:
 
     - The repo has zero tags total (AC-FUNC-002), or
-    - The repo has tags but none parse as ``packaging.version.Version``
-      (AC-FUNC-003). In this subcase the first up-to-10 skipped tag names
-      are printed so the operator can identify the offending tags.
+    - The resolved namespace has tags but none parse as
+      ``packaging.version.Version`` (AC-FUNC-003). In this subcase the first
+      up-to-10 skipped tag names are printed so the operator can identify the
+      offending tags.
 
-    When spec is a non-empty string, delegates to resolve_version() to
-    resolve the PEP 440 constraint against the available tags (AC-FUNC-005).
+    When spec is a non-empty string, delegates to resolve_version() to resolve
+    the PEP 440 constraint within the resolved namespace (AC-FUNC-005).
 
     Args:
+        entry_name: The catalog entry name (its per-entry tag namespace).
         url: The manifest repo git URL.
         spec: The version spec string (e.g. '==1.0.0', '~=1.2') or None.
 
     Returns:
-        A full tag ref string (e.g. 'refs/tags/1.2.0').
+        A full tag ref string (e.g. 'refs/tags/history/0.1.1').
     """
+    tags = _list_tags(url)
+    namespace = select_entry_namespace(tags, entry_name)
+    scope_prefix = f"refs/tags/{namespace}/" if namespace is not None else "refs/tags/"
+
     if spec is None:
-        tags = _list_tags(url)
         if not tags:
             print(f"ERROR: {_ZERO_PEP440_TAGS_ERROR}", file=sys.stderr)
             sys.exit(1)
 
+        scoped_tags = [tag for tag in tags if tag.startswith(scope_prefix)]
         skipped: list[str] = []
         has_pep440 = False
-        for tag in tags:
+        for tag in scoped_tags:
             last = tag.rsplit("/", 1)[-1]
             try:
                 Version(last)
@@ -991,9 +1013,11 @@ def _resolve_spec(url: str, spec: str | None) -> str:
             print("\n".join(lines), file=sys.stderr)
             sys.exit(1)
 
-        return _resolve_constraint_from_tags("*", tags)
+        constraint = f"refs/tags/{namespace}/*" if namespace is not None else "*"
+        return _resolve_constraint_from_tags(constraint, tags)
 
-    return resolve_version(url, spec)
+    namespaced_spec = f"refs/tags/{namespace}/{spec}" if namespace is not None else spec
+    return resolve_version(url, namespaced_spec)
 
 
 def _resolve_manifest_repo_for_add(
@@ -1457,7 +1481,7 @@ def run_add(args: argparse.Namespace) -> int:
 
         metadata, xml_path, entry_url = _find_entry_by_name(name, catalog)
 
-        resolved_revision = _resolve_spec(entry_url, spec)
+        resolved_revision = _resolve_spec(name, entry_url, spec)
 
         base_alias = derive_source_name(metadata.name)
 

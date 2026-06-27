@@ -2,6 +2,63 @@
 
 
 
+## v3.1.0 (2026-06-27)
+
+### Feature
+
+* feat: resolve catalog entries by tag namespace and accept bare project revisions #83
+
+feat: resolve catalog entries by tag namespace and accept bare project revisions ([`6099846`](https://github.com/caylent-solutions/kanon/commit/6099846bbc1b3f5f0988564d00b05df055bb52a8))
+
+* feat: key install conflict detection on package destination path, not repo URL
+
+Allow the same repository to be installed at different commits for different
+destination paths -- the mono-repo catalog case: install any version of package
+A and any version of package B even when both live in the same repo under
+different per-package tags. Previously `kanon install` rejected this with a
+canonical-URL conflict whenever two sources (or two &lt;project&gt; entries) shared a
+repository URL at different SHAs, which blocked multi-entry installs from a
+per-entry-tagged mono-repo catalog.
+
+- Replace the URL-keyed pre-flight (_detect_canonical_url_conflicts,
+  ResolvedProject, CanonicalUrlConflictError, _gather_resolved_projects) with a
+  destination-path-keyed check (_detect_package_path_conflicts, PackagePin,
+  PackagePathConflictError, _gather_package_pins) sourced from the per-source
+  content pins. The genuine invariant: no two &lt;project&gt; entries may occupy the
+  same .packages/&lt;path&gt; slot with different content. Same path + same SHA is a
+  benign duplicate; different paths are always allowed. Source/catalog manifest
+  entries are excluded (they never occupy a .packages/ slot). No lockfile schema
+  bump -- content_pins already carry path + resolved_sha.
+- aggregate_symlinks remains the on-disk backstop for duplicate package names.
+- Rewrite the unit + integration conflict tests for the path-keyed semantics
+  (including the same-repo/different-path/different-SHA success case), rename the
+  integration file, update the CD scenarios and the conflict error snapshot, and
+  update the multi-source / lockfile / url-canonicalization / troubleshooting /
+  integration-testing docs. ([`6f4f9a8`](https://github.com/caylent-solutions/kanon/commit/6f4f9a891504e890076776f0be6785573e0f1f59))
+
+* feat: resolve catalog entries by tag namespace and accept bare project revisions
+
+Exercising the catalog surfaced resolution bugs and the need to support
+both a per-entry namespaced tag (refs/tags/&lt;name&gt;/&lt;pep440&gt;) and a bare
+PEP 440 tag (refs/tags/&lt;pep440&gt;) for single-purpose repos, for both
+`kanon add` resolution and a manifest `&lt;project revision&gt;` (kanon#82).
+
+- Add version.select_entry_namespace, the shared namespaced-if-present-
+  else-bare rule. Scope `kanon add` default/explicit resolution
+  (commands/add._resolve_spec) and `kanon search`
+  (commands/search._list_namespaced_version_tags) to the entry tag
+  namespace, so `kanon add history` resolves refs/tags/history/&lt;pep440&gt;
+  rather than an unrelated legacy tag and cross-entry versions never collide.
+- Accept a bare refs/tags/&lt;pep440&gt; `&lt;project revision&gt;`
+  (core/marketplace_validator._is_pinnable_revision, constants.REFS_TAGS_RE)
+  and update the invalid-revision hints. Resolves kanon#82.
+- Replace Path.read_text/write_text(newline=...) (3.13+) with
+  Path.open(newline=...) in core/kanonenv_writer so requires-python &gt;=3.11 holds.
+- Write the .kanon dependency block NAME-first with a blank line after the
+  CLAUDE_MARKETPLACES_DIR header.
+- Tests, docs, and the kanon-add help snapshot updated. ([`7ed332c`](https://github.com/caylent-solutions/kanon/commit/7ed332c859e69cfd6635035a05c15c03339fdcd1))
+
+
 ## v3.0.0 (2026-06-26)
 
 ### Breaking
@@ -39,6 +96,10 @@ runs unit + integration + functional + scenario + `make test` as independent ste
 `make validate` to lint + unit tests preserves full regression coverage at CI while cutting
 per-unit validation time substantially. pytest-xdist parallelism was evaluated and reverted:
 the suite&#39;s test collection is non-deterministic across xdist workers (gw collection mismatch). ([`a8b3441`](https://github.com/caylent-solutions/kanon/commit/a8b344134cb2eba39ed3f48aee812e27ce7167e1))
+
+### Chore
+
+* chore(release): 3.0.0 ([`a76fa87`](https://github.com/caylent-solutions/kanon/commit/a76fa8742ff8634d3e3ddbcdb797d230139ec5d2))
 
 ### Ci
 
@@ -416,6 +477,10 @@ fixtures, so the functional `test_help_snapshot[kanon-add]` / `[kanon-remove]` b
 (NO_COLOR=1, COLUMNS=80, no KANON_CATALOG_SOURCES); both snapshot tests pass. No code change. ([`c8d8f61`](https://github.com/caylent-solutions/kanon/commit/c8d8f614d18543083ec0b3bdc72b495d30d71d51))
 
 ### Unknown
+
+* Merge pull request #81 from caylent-solutions/release-3.0.0
+
+Release 3.0.0 ([`145232a`](https://github.com/caylent-solutions/kanon/commit/145232aae70aab56a8715fa195f09633798ff2fa))
 
 * P3: triple test coverage + --home/--store-dir flag + LockfileSchemaError fail-fast; ruff 0.11.13 format parity
 

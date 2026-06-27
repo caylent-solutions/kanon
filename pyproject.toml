@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kanon-cli"
-version = "3.1.0"
+version = "3.1.1"
 description = "Kanon (Kanon Package Manager) CLI tool"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.11"
@@ -36,6 +36,7 @@ kanon = "kanon_cli.cli:main"
 [project.urls]
 Homepage = "https://github.com/caylent-solutions/kanon"
 Issues = "https://github.com/caylent-solutions/kanon/issues"
+
 
 
 
@@ -134,6 +135,7 @@ enabled = false
 
 [tool.pymarkdown.plugins.md024]
 siblings_only = true
+
 
 
 [dependency-groups]

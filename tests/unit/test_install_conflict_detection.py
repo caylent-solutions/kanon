@@ -1,10 +1,18 @@
-"""Unit tests for canonical-URL conflict detection in kanon install.
+"""Unit tests for package-destination conflict detection in kanon install.
+
+The install conflict check is keyed on the package DESTINATION PATH
+(``.packages/<name>``), not the repository URL.  The genuine invariant is that
+no two installed ``<project>`` entries may occupy the same destination slot with
+different content; the SAME repository installed at DIFFERENT commits for
+DIFFERENT paths (independent packages from a mono-repo catalog) is allowed.
 
 Covers:
-  AC-FUNC-001: benign diamond -- same canonical URL, same SHA -> no error
-  AC-FUNC-002: two-row conflict -- same canonical URL, different SHA -> error
-  AC-FUNC-003: three-plus-row conflict -- same canonical URL, multiple SHAs -> single error
-  AC-FUNC-006: empty input -> empty list (consistent return type)
+  - benign diamond -- same path, same SHA -> no error
+  - same repo, different paths, different SHAs -> no error (the mono-repo case)
+  - two-row conflict -- same path, different SHA -> error
+  - three-plus-row conflict -- same path, multiple SHAs -> single error
+  - empty input -> empty list (consistent return type)
+  - source manifests are excluded (never occupy a .packages/ slot)
 """
 
 from __future__ import annotations
@@ -12,345 +20,299 @@ from __future__ import annotations
 import pytest
 
 from kanon_cli.core.install import (
-    CanonicalUrlConflictError,
-    CanonicalUrlConflictReport,
-    ResolvedProject,
-    _detect_canonical_url_conflicts,
+    PackagePathConflictError,
+    PackagePathConflictReport,
+    PackagePin,
+    _detect_package_path_conflicts,
+    _gather_package_pins,
 )
+from kanon_cli.core.lockfile import ContentPinEntry, SourceEntry
 
 
-_CANONICAL = "https://gitserver/org/example-package"
+_PATH = ".packages/example-package"
 _SHA_A = "a" * 40
 _SHA_B = "b" * 40
 _SHA_C = "c" * 40
 
 
-def _project(
-    source_path: str,
-    raw_url: str,
-    canonical_url: str,
-    resolved_sha: str,
-) -> ResolvedProject:
-    return ResolvedProject(
-        source_path=source_path,
-        raw_url=raw_url,
-        canonical_url=canonical_url,
-        resolved_sha=resolved_sha,
-    )
+def _pin(source_alias: str, name: str, path: str, resolved_sha: str) -> PackagePin:
+    return PackagePin(source_alias=source_alias, name=name, path=path, resolved_sha=resolved_sha)
 
 
 @pytest.mark.unit
-class TestDetectCanonicalUrlConflictsEmpty:
+class TestDetectPackagePathConflictsEmpty:
     def test_empty_input_returns_empty_list(self) -> None:
-        result = _detect_canonical_url_conflicts([])
+        result = _detect_package_path_conflicts([])
         assert result == []
 
     def test_returns_list_not_none(self) -> None:
-        result = _detect_canonical_url_conflicts([])
+        result = _detect_package_path_conflicts([])
         assert result is not None
         assert isinstance(result, list)
 
-    def test_single_project_no_conflict(self) -> None:
-        projects = [
-            _project("src-a/path/manifest.xml", "git@gitserver:org/example-package.git", _CANONICAL, _SHA_A),
-        ]
-        result = _detect_canonical_url_conflicts(projects)
+    def test_single_pin_no_conflict(self) -> None:
+        pins = [_pin("src_a", "example-package", _PATH, _SHA_A)]
+        result = _detect_package_path_conflicts(pins)
         assert result == []
 
 
 @pytest.mark.unit
-class TestDetectCanonicalUrlConflictsBenignDiamond:
-    def test_two_rows_same_canonical_same_sha_no_conflict(self) -> None:
-        """Two sources with different raw URLs but same canonical URL and same SHA -- allowed."""
-        projects = [
-            _project(
-                "src-a/path/manifest.xml",
-                "git@gitserver:org/example-package.git",
-                _CANONICAL,
-                _SHA_A,
-            ),
-            _project(
-                "src-b/path/manifest.xml",
-                "https://gitserver/org/example-package.git",
-                _CANONICAL,
-                _SHA_A,
-            ),
+class TestDetectPackagePathConflictsAllowed:
+    def test_same_path_same_sha_no_conflict(self) -> None:
+        """Two sources placing the same package at the same commit -- benign diamond."""
+        pins = [
+            _pin("src_a", "example-package", _PATH, _SHA_A),
+            _pin("src_b", "example-package", _PATH, _SHA_A),
         ]
-        result = _detect_canonical_url_conflicts(projects)
+        result = _detect_package_path_conflicts(pins)
         assert result == []
 
-    def test_three_rows_same_canonical_same_sha_no_conflict(self) -> None:
-        """Three sources with the same canonical URL and same SHA -- allowed."""
-        projects = [
-            _project("src-a/manifest.xml", "git@gitserver:org/pkg.git", _CANONICAL, _SHA_A),
-            _project("src-b/manifest.xml", "https://gitserver/org/pkg.git", _CANONICAL, _SHA_A),
-            _project("src-c/manifest.xml", "ssh://gitserver/org/pkg.git", _CANONICAL, _SHA_A),
+    def test_same_repo_different_paths_different_sha_no_conflict(self) -> None:
+        """The mono-repo case: one repo, two packages at different paths, different commits."""
+        pins = [
+            _pin("src_a", "control-tower", ".packages/control-tower", _SHA_A),
+            _pin("src_b", "review-terraform", ".packages/review-terraform", _SHA_B),
         ]
-        result = _detect_canonical_url_conflicts(projects)
+        result = _detect_package_path_conflicts(pins)
         assert result == []
 
-    def test_distinct_canonical_urls_no_conflict(self) -> None:
-        """Two rows with entirely different canonical URLs -- no conflict."""
-        projects = [
-            _project(
-                "src-a/manifest.xml",
-                "git@gitserver:org/pkg-a.git",
-                "https://gitserver/org/pkg-a",
-                _SHA_A,
-            ),
-            _project(
-                "src-b/manifest.xml",
-                "https://gitserver/org/pkg-b.git",
-                "https://gitserver/org/pkg-b",
-                _SHA_B,
-            ),
+    def test_many_distinct_paths_distinct_shas_no_conflict(self) -> None:
+        """Several packages from one mono-repo, each at its own path and commit."""
+        pins = [
+            _pin("s", "a", ".packages/a", _SHA_A),
+            _pin("s", "b", ".packages/b", _SHA_B),
+            _pin("s", "c", ".packages/c", _SHA_C),
         ]
-        result = _detect_canonical_url_conflicts(projects)
+        result = _detect_package_path_conflicts(pins)
         assert result == []
 
 
 @pytest.mark.unit
-class TestDetectCanonicalUrlConflictsTwoRow:
-    def test_two_rows_same_canonical_different_sha_is_conflict(self) -> None:
-        """Two rows with same canonical URL but different SHAs produce one conflict report."""
-        projects = [
-            _project(
-                "src-a/path/manifest.xml",
-                "git@gitserver:org/example-package.git",
-                _CANONICAL,
-                _SHA_A,
-            ),
-            _project(
-                "src-b/path/manifest.xml",
-                "https://gitserver/org/example-package.git",
-                _CANONICAL,
-                _SHA_B,
-            ),
+class TestDetectPackagePathConflictsTwoRow:
+    def test_same_path_different_sha_is_conflict(self) -> None:
+        pins = [
+            _pin("src_a", "example-package", _PATH, _SHA_A),
+            _pin("src_b", "example-package", _PATH, _SHA_B),
         ]
-        result = _detect_canonical_url_conflicts(projects)
+        result = _detect_package_path_conflicts(pins)
         assert len(result) == 1
 
-    def test_conflict_report_has_correct_canonical_url(self) -> None:
-        projects = [
-            _project("src-a/manifest.xml", "git@gitserver:org/pkg.git", _CANONICAL, _SHA_A),
-            _project("src-b/manifest.xml", "https://gitserver/org/pkg.git", _CANONICAL, _SHA_B),
+    def test_conflict_report_has_correct_path(self) -> None:
+        pins = [
+            _pin("src_a", "pkg", _PATH, _SHA_A),
+            _pin("src_b", "pkg", _PATH, _SHA_B),
         ]
-        reports = _detect_canonical_url_conflicts(projects)
-        assert reports[0].canonical_url == _CANONICAL
+        reports = _detect_package_path_conflicts(pins)
+        assert reports[0].path == _PATH
 
     def test_conflict_report_entries_contain_both_rows(self) -> None:
-        p_a = _project("src-a/manifest.xml", "git@gitserver:org/pkg.git", _CANONICAL, _SHA_A)
-        p_b = _project("src-b/manifest.xml", "https://gitserver/org/pkg.git", _CANONICAL, _SHA_B)
-        reports = _detect_canonical_url_conflicts([p_a, p_b])
-        assert len(reports[0].entries) == 2
-        entry_source_paths = {e.source_path for e in reports[0].entries}
-        assert "src-a/manifest.xml" in entry_source_paths
-        assert "src-b/manifest.xml" in entry_source_paths
-
-    def test_conflict_report_entries_contain_raw_urls(self) -> None:
-        projects = [
-            _project("src-a/manifest.xml", "git@gitserver:org/pkg.git", _CANONICAL, _SHA_A),
-            _project("src-b/manifest.xml", "https://gitserver/org/pkg.git", _CANONICAL, _SHA_B),
+        pins = [
+            _pin("src_a", "pkg", _PATH, _SHA_A),
+            _pin("src_b", "pkg", _PATH, _SHA_B),
         ]
-        reports = _detect_canonical_url_conflicts(projects)
-        raw_urls = {e.raw_url for e in reports[0].entries}
-        assert "git@gitserver:org/pkg.git" in raw_urls
-        assert "https://gitserver/org/pkg.git" in raw_urls
+        reports = _detect_package_path_conflicts(pins)
+        assert len(reports[0].entries) == 2
+        aliases = {e.source_alias for e in reports[0].entries}
+        assert aliases == {"src_a", "src_b"}
 
     def test_conflict_report_entries_contain_shas(self) -> None:
-        projects = [
-            _project("src-a/manifest.xml", "git@gitserver:org/pkg.git", _CANONICAL, _SHA_A),
-            _project("src-b/manifest.xml", "https://gitserver/org/pkg.git", _CANONICAL, _SHA_B),
+        pins = [
+            _pin("src_a", "pkg", _PATH, _SHA_A),
+            _pin("src_b", "pkg", _PATH, _SHA_B),
         ]
-        reports = _detect_canonical_url_conflicts(projects)
+        reports = _detect_package_path_conflicts(pins)
         shas = {e.resolved_sha for e in reports[0].entries}
-        assert _SHA_A in shas
-        assert _SHA_B in shas
+        assert shas == {_SHA_A, _SHA_B}
+
+    def test_entries_sorted_deterministically(self) -> None:
+        """Entries are sorted by (source_alias, sha) regardless of input order."""
+        pins = [
+            _pin("src_b", "pkg", _PATH, _SHA_B),
+            _pin("src_a", "pkg", _PATH, _SHA_A),
+        ]
+        reports = _detect_package_path_conflicts(pins)
+        assert [e.source_alias for e in reports[0].entries] == ["src_a", "src_b"]
 
 
 @pytest.mark.unit
-class TestDetectCanonicalUrlConflictsMultiRow:
+class TestDetectPackagePathConflictsMultiRow:
     def test_three_rows_two_distinct_shas_is_single_conflict(self) -> None:
-        """Three rows with same canonical URL, two distinct SHAs -> one conflict report."""
-        projects = [
-            _project("src-a/manifest.xml", "git@gitserver:org/pkg.git", _CANONICAL, _SHA_A),
-            _project("src-b/manifest.xml", "https://gitserver/org/pkg.git", _CANONICAL, _SHA_B),
-            _project("src-c/manifest.xml", "ssh://git@gitserver/org/pkg.git", _CANONICAL, _SHA_A),
+        pins = [
+            _pin("src_a", "pkg", _PATH, _SHA_A),
+            _pin("src_b", "pkg", _PATH, _SHA_B),
+            _pin("src_c", "pkg", _PATH, _SHA_A),
         ]
-        reports = _detect_canonical_url_conflicts(projects)
+        reports = _detect_package_path_conflicts(pins)
         assert len(reports) == 1
 
     def test_three_row_conflict_report_lists_all_three_entries(self) -> None:
-        projects = [
-            _project("src-a/manifest.xml", "git@gitserver:org/pkg.git", _CANONICAL, _SHA_A),
-            _project("src-b/manifest.xml", "https://gitserver/org/pkg.git", _CANONICAL, _SHA_B),
-            _project("src-c/manifest.xml", "ssh://gitserver/org/pkg.git", _CANONICAL, _SHA_C),
+        pins = [
+            _pin("src_a", "pkg", _PATH, _SHA_A),
+            _pin("src_b", "pkg", _PATH, _SHA_B),
+            _pin("src_c", "pkg", _PATH, _SHA_C),
         ]
-        reports = _detect_canonical_url_conflicts(projects)
+        reports = _detect_package_path_conflicts(pins)
         assert len(reports[0].entries) == 3
 
-    def test_two_canonical_groups_only_conflicting_group_reported(self) -> None:
-        """Two canonical-URL groups: only the one with differing SHAs produces a report."""
-        projects = [
-            _project("src-a/m.xml", "git@gitserver:org/pkg-a.git", "https://gitserver/org/pkg-a", _SHA_A),
-            _project("src-b/m.xml", "https://gitserver/org/pkg-a.git", "https://gitserver/org/pkg-a", _SHA_A),
-            _project("src-c/m.xml", "git@gitserver:org/pkg-b.git", "https://gitserver/org/pkg-b", _SHA_A),
-            _project("src-d/m.xml", "https://gitserver/org/pkg-b.git", "https://gitserver/org/pkg-b", _SHA_B),
+    def test_two_path_groups_only_conflicting_group_reported(self) -> None:
+        pins = [
+            _pin("src_a", "pkg-a", ".packages/pkg-a", _SHA_A),
+            _pin("src_b", "pkg-a", ".packages/pkg-a", _SHA_A),
+            _pin("src_c", "pkg-b", ".packages/pkg-b", _SHA_A),
+            _pin("src_d", "pkg-b", ".packages/pkg-b", _SHA_B),
         ]
-        reports = _detect_canonical_url_conflicts(projects)
+        reports = _detect_package_path_conflicts(pins)
         assert len(reports) == 1
-        assert reports[0].canonical_url == "https://gitserver/org/pkg-b"
+        assert reports[0].path == ".packages/pkg-b"
 
-    def test_multiple_conflicting_groups_all_reported(self) -> None:
-        """Two canonical-URL groups both with conflicting SHAs -- both reported."""
-        projects = [
-            _project("src-a/m.xml", "git@gitserver:org/pkg-a.git", "https://gitserver/org/pkg-a", _SHA_A),
-            _project("src-b/m.xml", "https://gitserver/org/pkg-a.git", "https://gitserver/org/pkg-a", _SHA_B),
-            _project("src-c/m.xml", "git@gitserver:org/pkg-b.git", "https://gitserver/org/pkg-b", _SHA_A),
-            _project("src-d/m.xml", "https://gitserver/org/pkg-b.git", "https://gitserver/org/pkg-b", _SHA_C),
+    def test_multiple_conflicting_groups_all_reported_sorted_by_path(self) -> None:
+        pins = [
+            _pin("src_c", "pkg-b", ".packages/pkg-b", _SHA_A),
+            _pin("src_d", "pkg-b", ".packages/pkg-b", _SHA_C),
+            _pin("src_a", "pkg-a", ".packages/pkg-a", _SHA_A),
+            _pin("src_b", "pkg-a", ".packages/pkg-a", _SHA_B),
         ]
-        reports = _detect_canonical_url_conflicts(projects)
-        assert len(reports) == 2
-        reported_canonicals = {r.canonical_url for r in reports}
-        assert "https://gitserver/org/pkg-a" in reported_canonicals
-        assert "https://gitserver/org/pkg-b" in reported_canonicals
+        reports = _detect_package_path_conflicts(pins)
+        assert [r.path for r in reports] == [".packages/pkg-a", ".packages/pkg-b"]
 
 
 @pytest.mark.unit
-class TestCanonicalUrlConflictError:
-    def _build_two_row_conflict(self) -> CanonicalUrlConflictReport:
-        return CanonicalUrlConflictReport(
-            canonical_url=_CANONICAL,
+class TestGatherPackagePins:
+    def _source(self, alias: str, sha: str, pins: list[ContentPinEntry]) -> SourceEntry:
+        return SourceEntry(
+            alias=alias,
+            name=alias,
+            url="https://gitserver/org/mono-repo.git",
+            ref_spec="main",
+            resolved_ref="refs/heads/main",
+            resolved_sha=sha,
+            path="repo-specs/entry-marketplace.xml",
+            content_pins=pins,
+        )
+
+    def test_flattens_content_pins_across_sources(self) -> None:
+        entries = [
+            self._source("src_a", _SHA_A, [ContentPinEntry(name="a", path=".packages/a", resolved_sha=_SHA_A)]),
+            self._source("src_b", _SHA_B, [ContentPinEntry(name="b", path=".packages/b", resolved_sha=_SHA_B)]),
+        ]
+        pins = _gather_package_pins(entries)
+        assert {(p.source_alias, p.path, p.resolved_sha) for p in pins} == {
+            ("src_a", ".packages/a", _SHA_A),
+            ("src_b", ".packages/b", _SHA_B),
+        }
+
+    def test_excludes_source_manifest_itself(self) -> None:
+        """A source's own manifest repo SHA is never a package pin (no .packages/ slot)."""
+        entries = [self._source("src_a", _SHA_A, [])]
+        pins = _gather_package_pins(entries)
+        assert pins == []
+
+    def test_same_repo_two_sources_different_sha_yields_no_conflict(self) -> None:
+        """End-to-end gather+detect: same mono-repo under two aliases, different paths/commits."""
+        entries = [
+            self._source(
+                "control_tower", _SHA_A, [ContentPinEntry("control-tower", ".packages/control-tower", _SHA_A)]
+            ),
+            self._source(
+                "review_tf", _SHA_B, [ContentPinEntry("review-terraform", ".packages/review-terraform", _SHA_B)]
+            ),
+        ]
+        reports = _detect_package_path_conflicts(_gather_package_pins(entries))
+        assert reports == []
+
+
+@pytest.mark.unit
+class TestPackagePathConflictError:
+    def _build_two_row_conflict(self) -> PackagePathConflictReport:
+        return PackagePathConflictReport(
+            path=_PATH,
             entries=[
-                ResolvedProject(
-                    source_path="src-a/path/manifest.xml",
-                    raw_url="git@gitserver:org/example-package.git",
-                    canonical_url=_CANONICAL,
-                    resolved_sha=_SHA_A,
-                ),
-                ResolvedProject(
-                    source_path="src-b/path/manifest.xml",
-                    raw_url="https://gitserver/org/example-package.git",
-                    canonical_url=_CANONICAL,
-                    resolved_sha=_SHA_B,
-                ),
+                PackagePin(source_alias="src_a", name="example-package", path=_PATH, resolved_sha=_SHA_A),
+                PackagePin(source_alias="src_b", name="example-package", path=_PATH, resolved_sha=_SHA_B),
             ],
         )
 
     def test_is_install_error_subclass(self) -> None:
         from kanon_cli.core.install import InstallError
 
-        report = self._build_two_row_conflict()
-        err = CanonicalUrlConflictError(reports=[report])
+        err = PackagePathConflictError(reports=[self._build_two_row_conflict()])
         assert isinstance(err, InstallError)
 
-    def test_error_message_contains_source_paths(self) -> None:
-        report = self._build_two_row_conflict()
-        err = CanonicalUrlConflictError(reports=[report])
+    def test_error_message_contains_source_aliases(self) -> None:
+        err = PackagePathConflictError(reports=[self._build_two_row_conflict()])
         msg = str(err)
-        assert "src-a/path/manifest.xml" in msg
-        assert "src-b/path/manifest.xml" in msg
+        assert "src_a" in msg
+        assert "src_b" in msg
 
-    def test_error_message_contains_raw_urls(self) -> None:
-        report = self._build_two_row_conflict()
-        err = CanonicalUrlConflictError(reports=[report])
+    def test_error_message_contains_path(self) -> None:
+        err = PackagePathConflictError(reports=[self._build_two_row_conflict()])
         msg = str(err)
-        assert "git@gitserver:org/example-package.git" in msg
-        assert "https://gitserver/org/example-package.git" in msg
-
-    def test_error_message_contains_canonical_url(self) -> None:
-        report = self._build_two_row_conflict()
-        err = CanonicalUrlConflictError(reports=[report])
-        msg = str(err)
-        assert _CANONICAL in msg
-        assert "both URLs canonicalize to:" in msg
+        assert _PATH in msg
+        assert "Conflict for package path:" in msg
 
     def test_error_message_contains_shas(self) -> None:
-        report = self._build_two_row_conflict()
-        err = CanonicalUrlConflictError(reports=[report])
+        err = PackagePathConflictError(reports=[self._build_two_row_conflict()])
         msg = str(err)
         assert _SHA_A in msg
         assert _SHA_B in msg
 
     def test_error_message_contains_remediation(self) -> None:
-        report = self._build_two_row_conflict()
-        err = CanonicalUrlConflictError(reports=[report])
+        err = PackagePathConflictError(reports=[self._build_two_row_conflict()])
         msg = str(err)
-        assert "kanon why" in msg
-        assert "resolve by removing one source" in msg.lower() or "removing one source" in msg
+        assert "remove one source" in msg
+        assert "align the project revisions" in msg
 
     def test_error_message_row_format(self) -> None:
-        """Each conflicting row must appear as '  <source-path>: <raw-url> @ <sha>'."""
-        report = self._build_two_row_conflict()
-        err = CanonicalUrlConflictError(reports=[report])
+        """Each conflicting row appears as '  <alias> (<name>): <path> @ <sha>'."""
+        err = PackagePathConflictError(reports=[self._build_two_row_conflict()])
         msg = str(err)
-        assert f"  src-a/path/manifest.xml: git@gitserver:org/example-package.git @ {_SHA_A}" in msg
-        assert f"  src-b/path/manifest.xml: https://gitserver/org/example-package.git @ {_SHA_B}" in msg
+        assert f"  src_a (example-package): {_PATH} @ {_SHA_A}" in msg
+        assert f"  src_b (example-package): {_PATH} @ {_SHA_B}" in msg
 
     def test_error_message_starts_with_error(self) -> None:
-        report = self._build_two_row_conflict()
-        err = CanonicalUrlConflictError(reports=[report])
-        msg = str(err)
-        assert msg.startswith("ERROR:")
+        err = PackagePathConflictError(reports=[self._build_two_row_conflict()])
+        assert str(err).startswith("ERROR:")
 
     def test_multiple_reports_all_rendered(self) -> None:
-        """Two conflict reports in one error -- both canonical URLs rendered."""
-        report1 = CanonicalUrlConflictReport(
-            canonical_url="https://gitserver/org/pkg-a",
+        report1 = PackagePathConflictReport(
+            path=".packages/pkg-a",
             entries=[
-                ResolvedProject("src-a/m.xml", "git@gitserver:org/pkg-a.git", "https://gitserver/org/pkg-a", _SHA_A),
-                ResolvedProject(
-                    "src-b/m.xml", "https://gitserver/org/pkg-a.git", "https://gitserver/org/pkg-a", _SHA_B
-                ),
+                PackagePin("src_a", "pkg-a", ".packages/pkg-a", _SHA_A),
+                PackagePin("src_b", "pkg-a", ".packages/pkg-a", _SHA_B),
             ],
         )
-        report2 = CanonicalUrlConflictReport(
-            canonical_url="https://gitserver/org/pkg-b",
+        report2 = PackagePathConflictReport(
+            path=".packages/pkg-b",
             entries=[
-                ResolvedProject("src-c/m.xml", "git@gitserver:org/pkg-b.git", "https://gitserver/org/pkg-b", _SHA_A),
-                ResolvedProject(
-                    "src-d/m.xml", "https://gitserver/org/pkg-b.git", "https://gitserver/org/pkg-b", _SHA_C
-                ),
+                PackagePin("src_c", "pkg-b", ".packages/pkg-b", _SHA_A),
+                PackagePin("src_d", "pkg-b", ".packages/pkg-b", _SHA_C),
             ],
         )
-        err = CanonicalUrlConflictError(reports=[report1, report2])
+        err = PackagePathConflictError(reports=[report1, report2])
         msg = str(err)
-        assert "https://gitserver/org/pkg-a" in msg
-        assert "https://gitserver/org/pkg-b" in msg
+        assert ".packages/pkg-a" in msg
+        assert ".packages/pkg-b" in msg
 
 
 @pytest.mark.unit
-class TestCanonicalUrlConflictReport:
+class TestPackagePathConflictReport:
     def test_fields_accessible_by_name(self) -> None:
-        report = CanonicalUrlConflictReport(
-            canonical_url=_CANONICAL,
-            entries=[],
-        )
-        assert report.canonical_url == _CANONICAL
+        report = PackagePathConflictReport(path=_PATH, entries=[])
+        assert report.path == _PATH
         assert report.entries == []
 
-    def test_entries_is_list_of_resolved_projects(self) -> None:
-        entry = ResolvedProject(
-            source_path="src/manifest.xml",
-            raw_url="git@gitserver:org/pkg.git",
-            canonical_url=_CANONICAL,
-            resolved_sha=_SHA_A,
-        )
-        report = CanonicalUrlConflictReport(canonical_url=_CANONICAL, entries=[entry])
+    def test_entries_is_list_of_package_pins(self) -> None:
+        entry = PackagePin(source_alias="src_a", name="pkg", path=_PATH, resolved_sha=_SHA_A)
+        report = PackagePathConflictReport(path=_PATH, entries=[entry])
         assert len(report.entries) == 1
-        assert report.entries[0].source_path == "src/manifest.xml"
+        assert report.entries[0].source_alias == "src_a"
 
 
 @pytest.mark.unit
-class TestResolvedProject:
+class TestPackagePin:
     def test_fields_accessible_by_name(self) -> None:
-        p = ResolvedProject(
-            source_path="src-a/manifest.xml",
-            raw_url="git@gitserver:org/pkg.git",
-            canonical_url=_CANONICAL,
-            resolved_sha=_SHA_A,
-        )
-        assert p.source_path == "src-a/manifest.xml"
-        assert p.raw_url == "git@gitserver:org/pkg.git"
-        assert p.canonical_url == _CANONICAL
+        p = PackagePin(source_alias="src_a", name="pkg", path=_PATH, resolved_sha=_SHA_A)
+        assert p.source_alias == "src_a"
+        assert p.name == "pkg"
+        assert p.path == _PATH
         assert p.resolved_sha == _SHA_A

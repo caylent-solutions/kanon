@@ -568,41 +568,42 @@ The following documents provide broader context:
 
 ---
 
-## 12. Canonical-URL Conflict
+## 12. Package Destination Conflict
 
 ### Symptom
 
 `kanon install` exits non-zero with:
 
 ```text
-ERROR: Canonical-URL conflict -- two or more sources declare the same
-repository URL with different SHAs.
-  Conflict for canonical URL:
-    https://gitserver/org/example-package
-  source-a/manifest.xml:
-    git@gitserver:org/example-package.git @ aaaa...aaaa
-  source-b/manifest.xml:
-    https://gitserver/org/example-package.git @ bbbb...bbbb
-  both URLs canonicalize to:
-    https://gitserver/org/example-package
-  Remediation: Use 'kanon why https://gitserver/org/example-package'
-  to investigate; resolve by removing one source or aligning REVISION
-  values across sources.
+ERROR: Package destination conflict -- two or more sources resolve the
+same package path to different content.
+  Conflict for package path: .packages/shared-lib
+  source_a (shared-lib): .packages/shared-lib @ aaaa...aaaa
+  source_b (shared-lib): .packages/shared-lib @ bbbb...bbbb
+  Remediation: remove one source or align the project revisions so
+  '.packages/shared-lib' resolves to a single content SHA.
 ```
+
+This fires only when two sources resolve the **same** `.packages/<name>`
+slot to **different** content. Fetching the **same repository at different
+commits** is fine when the `<project>` entries land at **different**
+destination paths (the mono-repo case -- install any version of package A and
+any version of package B from one repo).
 
 ### Reproducer
 
 ```bash
-# Two sources pointing to the same repo with different SHAs:
+# Two sources whose <project path> both resolve to .packages/shared-lib
+# at different commits:
 kanon install
 ```
 
 ### Fix
 
-**Option 1: Align the revision specs.**
+**Option 1: Align the revisions.**
 
-Edit `.kanon` so that all declarations use the same `REVISION`
-value (e.g., `==1.2.0`) for the conflicting repository.
+Edit `.kanon` (or the catalog manifests) so both declarations resolve the
+shared `.packages/<name>` path to the same commit.
 
 **Option 2: Remove one conflicting source.**
 
@@ -611,11 +612,11 @@ kanon remove <source-name>
 kanon install
 ```
 
-**Option 3: Investigate with `kanon why`.**
+**Option 3: Give the packages distinct destination paths.**
 
-```bash
-kanon why https://gitserver/org/example-package
-```
+If the two `<project>` entries are genuinely different packages, set a
+distinct `<project path>` for each so they no longer share a `.packages/`
+slot.
 
 ### See also
 

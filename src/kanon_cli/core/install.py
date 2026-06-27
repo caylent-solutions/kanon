@@ -46,7 +46,7 @@ Exception hierarchy:
   UnknownSourceError          -- --refresh-lock-source name does not match any source.
   OrphanedLockEntryError      -- --strict-lock: lockfile source absent from .kanon.
   BranchDriftError            -- --strict-drift: branch tip differs from locked SHA.
-  CanonicalUrlConflictError   -- two+ sources declare the same canonical URL with different SHAs.
+  PackagePathConflictError    -- two+ sources resolve the same package path to different content SHAs.
   IncludeCycleError           -- <include> chain contains a cycle (re-exported from include_walker).
 
 Include-tree resolution:
@@ -407,74 +407,80 @@ class BranchDriftError(InstallError):
         return "\n".join(lines)
 
 
-class ResolvedProject(NamedTuple):
-    """A single project entry with the context needed for canonical-URL conflict detection.
+class PackagePin(NamedTuple):
+    """A resolved package destination: which source put which content where.
+
+    A ``<project>`` checks out to a ``.packages/<name>`` slot.  Two projects
+    that resolve to the SAME slot with different content are a destination
+    collision; the same repository resolved to DIFFERENT slots is not
+    (independent packages from a mono-repo).  Source manifests themselves are
+    never package pins -- they are cloned into ``sources/<alias>/`` and occupy
+    no ``.packages/`` slot.
 
     Fields:
-        source_path: The source path in the form ``<source-name>/<xml-path>``,
-            identifying which top-level source and which XML manifest file
-            declared this project.
-        raw_url: The raw project URL as declared in the manifest (may be
-            SSH, HTTPS, or SCP shorthand).
-        canonical_url: The canonical form of ``raw_url`` produced by
-            ``canonicalize_repo_url``.
-        resolved_sha: The commit SHA resolved for this project.
+        source_alias: The alias of the source whose manifest declares the
+            project (for diagnostics; names the ``.kanon`` source to adjust).
+        name: The manifest ``<project name>``.
+        path: The project destination path (``<project path>``, e.g.
+            ``.packages/foo``) -- the slot the project occupies.
+        resolved_sha: The resolved content commit SHA at that path.
     """
 
-    source_path: str
-    raw_url: str
-    canonical_url: str
+    source_alias: str
+    name: str
+    path: str
     resolved_sha: str
 
 
-class CanonicalUrlConflictReport(NamedTuple):
-    """A single canonical-URL conflict: multiple projects sharing the same
-    canonical URL but resolving to different SHAs.
+class PackagePathConflictReport(NamedTuple):
+    """A single package-destination conflict: one ``.packages/<path>`` slot
+    resolved to two or more different content SHAs across sources.
 
     Fields:
-        canonical_url: The shared canonical URL that triggered the conflict.
-        entries: Every ``ResolvedProject`` whose ``canonical_url`` matches,
-            including all sources (even those that happen to share a SHA).
-            The caller is responsible for ensuring at least two distinct SHAs
-            are present before constructing a report.
+        path: The shared project destination path (``<project path>``) that two
+            or more sources resolve to different content.
+        entries: The ``PackagePin`` rows claiming this path.  The caller ensures
+            at least two distinct SHAs are present before constructing a report.
     """
 
-    canonical_url: str
-    entries: list[ResolvedProject]
+    path: str
+    entries: list[PackagePin]
 
 
-class CanonicalUrlConflictError(InstallError):
-    """Raised when two or more sources declare the same canonical URL with different SHAs.
+class PackagePathConflictError(InstallError):
+    """Raised when two or more sources resolve the same package destination path
+    to different content SHAs.
 
-    Spec Section 4.7 "Transitive conflict" row: two ``<project>`` entries
-    pointing at the same canonicalized repo URL but pinning different SHAs
-    is a hard error. The operator must either remove one source or align the
-    REVISION values so all sources pin the same SHA.
+    The destination invariant: no two installed ``<project>`` entries may occupy
+    the same ``.packages/<path>`` slot with different content.  The SAME
+    repository may be installed at DIFFERENT commits for DIFFERENT paths
+    (independent packages from a mono-repo catalog) -- that is allowed; only a
+    true same-path / different-content clash is a hard error.  The operator must
+    remove one source or align the project revisions so the shared path resolves
+    to a single content SHA.
 
     Canonical error text: ``tests/fixtures/errors/conflict-detected.txt``.
-    Spec section: ``spec/kanon-list-add-lock-features-spec.md`` Section 6.
 
     Args:
-        reports: One or more ``CanonicalUrlConflictReport`` instances.
-            Each report represents a single canonical URL with conflicting SHAs.
+        reports: One or more ``PackagePathConflictReport`` instances, one per
+            conflicting destination path.
     """
 
-    def __init__(self, reports: list[CanonicalUrlConflictReport]) -> None:
+    def __init__(self, reports: list[PackagePathConflictReport]) -> None:
         self.reports = reports
         super().__init__(str(self))
 
     def __str__(self) -> str:
         lines: list[str] = [
-            "ERROR: Canonical-URL conflict -- two or more sources declare the same repository URL with different SHAs.",
+            "ERROR: Package destination conflict -- two or more sources resolve the same package path to different content.",
         ]
         for report in self.reports:
-            lines.append(f"  Conflict for canonical URL: {report.canonical_url}")
+            lines.append(f"  Conflict for package path: {report.path}")
             for entry in report.entries:
-                lines.append(f"  {entry.source_path}: {entry.raw_url} @ {entry.resolved_sha}")
-            lines.append(f"  both URLs canonicalize to: {report.canonical_url}")
+                lines.append(f"  {entry.source_alias} ({entry.name}): {entry.path} @ {entry.resolved_sha}")
             lines.append(
-                f"  Remediation: Use `kanon why {report.canonical_url}` to investigate; "
-                f"resolve by removing one source or aligning REVISION values across sources."
+                "  Remediation: remove one source or align the project revisions so "
+                f"'{report.path}' resolves to a single content SHA."
             )
         return "\n".join(lines)
 
@@ -649,39 +655,42 @@ def _reset_manifests_working_tree(source_dir: pathlib.Path) -> None:
         bak_file.unlink()
 
 
-def _detect_canonical_url_conflicts(
-    all_projects: list[ResolvedProject],
-) -> list[CanonicalUrlConflictReport]:
-    """Detect canonical-URL conflicts across a list of resolved projects.
+def _detect_package_path_conflicts(
+    all_pins: list[PackagePin],
+) -> list[PackagePathConflictReport]:
+    """Detect package-destination conflicts across resolved sources.
 
-    Groups projects by their ``canonical_url`` field.  A conflict exists when
-    a group contains two or more entries with differing ``resolved_sha`` values
-    (same SHA across multiple sources is a benign diamond and is allowed).
+    Groups package pins by their destination ``path`` (the ``.packages/<name>``
+    slot a ``<project>`` checks out to).  A conflict exists when one path is
+    claimed with two or more differing ``resolved_sha`` values -- two sources
+    would write different content to the same slot.  The same repository
+    resolved at different commits to DIFFERENT paths is NOT a conflict
+    (independent packages from a mono-repo), and the same path at the same SHA
+    is a benign diamond (allowed).  ``aggregate_symlinks`` is the on-disk
+    backstop that rejects any duplicate ``.packages/`` slot at link time; this
+    pre-flight is the content-aware check that fails early with a clear message.
 
     Args:
-        all_projects: Every resolved project to inspect.  Each entry carries the
-            source path, raw URL, canonical URL, and resolved SHA.
+        all_pins: Every resolved package pin to inspect, across all sources.
 
     Returns:
-        A list of ``CanonicalUrlConflictReport`` instances -- one per canonical URL
-        that has at least two entries with different SHAs.  Returns ``[]`` when no
-        conflicts exist; never returns ``None``.
+        A list of ``PackagePathConflictReport`` instances -- one per destination
+        path claimed with more than one SHA, sorted by path with each report's
+        entries sorted by ``(source_alias, resolved_sha)`` for deterministic
+        output.  Returns ``[]`` when no conflicts exist; never returns ``None``.
     """
 
-    groups: dict[str, list[ResolvedProject]] = {}
-    for project in all_projects:
-        groups.setdefault(project.canonical_url, []).append(project)
+    groups: dict[str, list[PackagePin]] = {}
+    for pin in all_pins:
+        groups.setdefault(pin.path, []).append(pin)
 
-    reports: list[CanonicalUrlConflictReport] = []
-    for canonical_url, entries in groups.items():
+    reports: list[PackagePathConflictReport] = []
+    for path in sorted(groups):
+        entries = groups[path]
         shas = {e.resolved_sha for e in entries}
         if len(shas) > 1:
-            reports.append(
-                CanonicalUrlConflictReport(
-                    canonical_url=canonical_url,
-                    entries=entries,
-                )
-            )
+            ordered = sorted(entries, key=lambda e: (e.source_alias, e.resolved_sha))
+            reports.append(PackagePathConflictReport(path=path, entries=ordered))
     return reports
 
 
@@ -731,48 +740,37 @@ def _include_tree_to_entries(
     return entries
 
 
-def _gather_resolved_projects(resolved_entries: list[SourceEntry]) -> list[ResolvedProject]:
-    """Build a ``ResolvedProject`` list from resolved ``SourceEntry`` objects.
+def _gather_package_pins(resolved_entries: list[SourceEntry]) -> list[PackagePin]:
+    """Flatten every source's content pins into ``PackagePin`` rows.
 
-    Constructs the canonical URL for each source's raw URL via
-    ``canonicalize_repo_url``, then also walks each source's ``projects``
-    list (``ProjectEntry`` rows populated from lockfile XML parsing) to
-    include project-level entries.
-
-    The ``source_path`` for each entry is formed as
-    ``<source-name>/<manifest-path>`` so operators can trace each entry
-    back to its declaring manifest.
+    Each source's checked-out ``<project>`` contributes one pin carrying the
+    source alias (for diagnostics), the project name, its destination path
+    (``<project path>`` -- the ``.packages/<name>`` slot it occupies), and the
+    resolved content SHA.  Source manifests themselves are deliberately NOT
+    included: a source's manifest repo is cloned into ``sources/<alias>/`` and
+    never occupies a ``.packages/`` slot, so two sources sharing a repo at
+    different commits is not a destination conflict.  Shared ``<include>``
+    files likewise produce no package pin.
 
     Args:
-        resolved_entries: Resolved top-level source entries from the
-            current install run or lockfile replay.
+        resolved_entries: Resolved top-level source entries (from the current
+            install run or a lockfile replay), each carrying its ``content_pins``.
 
     Returns:
-        A flat list of ``ResolvedProject`` instances covering every source
-        entry and every project within each source.
+        A flat list of ``PackagePin`` instances across all sources.
     """
-    result: list[ResolvedProject] = []
+    pins: list[PackagePin] = []
     for entry in resolved_entries:
-        source_path = f"{entry.name}/{entry.path}"
-        canonical = canonicalize_repo_url(entry.url)
-        result.append(
-            ResolvedProject(
-                source_path=source_path,
-                raw_url=entry.url,
-                canonical_url=canonical,
-                resolved_sha=entry.resolved_sha,
-            )
-        )
-        for proj in entry.projects:
-            result.append(
-                ResolvedProject(
-                    source_path=source_path,
-                    raw_url=proj.url,
-                    canonical_url=proj.canonical_url,
-                    resolved_sha=proj.resolved_sha,
+        for pin in entry.content_pins:
+            pins.append(
+                PackagePin(
+                    source_alias=entry.alias,
+                    name=pin.name,
+                    path=pin.path,
+                    resolved_sha=pin.resolved_sha,
                 )
             )
-    return result
+    return pins
 
 
 def read_lockfile_if_present(path: pathlib.Path) -> Lockfile | None:
@@ -2314,10 +2312,10 @@ def _run_install(
             sources absent from the current ``.kanon`` source declarations.
         BranchDriftError: If ``strict_drift=True`` and a branch-shaped source's
             remote tip differs from the locked SHA.
-        CanonicalUrlConflictError: If two or more sources declare the same
-            canonical URL with different resolved SHAs.  Raised on both the
-            absent-lockfile path (after fresh resolution) and the consistent
-            path (against the existing lockfile contents).
+        PackagePathConflictError: If two or more sources resolve the same package
+            destination path (``.packages/<name>``) to different content SHAs.
+            Raised on both the absent-lockfile path (after fresh resolution) and
+            the consistent path (against the existing lockfile content pins).
         ValueError: If the catalog source is not in ``url@ref`` form, if
             git ls-remote fails or a ref is not found, if marketplace install
             is requested but CLAUDE_MARKETPLACES_DIR is not configured, or on
@@ -2443,10 +2441,10 @@ def _run_install(
                     f"reusing locked SHA"
                 )
 
-        lockfile_projects = _gather_resolved_projects(existing_lockfile.sources)
-        canonical_conflict_reports = _detect_canonical_url_conflicts(lockfile_projects)
-        if canonical_conflict_reports:
-            raise CanonicalUrlConflictError(reports=canonical_conflict_reports)
+        lockfile_pins = _gather_package_pins(existing_lockfile.sources)
+        path_conflict_reports = _detect_package_path_conflicts(lockfile_pins)
+        if path_conflict_reports:
+            raise PackagePathConflictError(reports=path_conflict_reports)
 
     resolved_entries: list[SourceEntry] = []
 
@@ -2667,10 +2665,10 @@ def _run_install(
         )
 
     if install_state is not InstallState.LOCKFILE_CONSISTENT:
-        fresh_projects = _gather_resolved_projects(resolved_entries)
-        canonical_conflict_reports = _detect_canonical_url_conflicts(fresh_projects)
-        if canonical_conflict_reports:
-            raise CanonicalUrlConflictError(reports=canonical_conflict_reports)
+        fresh_pins = _gather_package_pins(resolved_entries)
+        path_conflict_reports = _detect_package_path_conflicts(fresh_pins)
+        if path_conflict_reports:
+            raise PackagePathConflictError(reports=path_conflict_reports)
 
     print("kanon install: aggregating packages into .packages/...")
     package_owners = aggregate_symlinks(source_names, base_dir)

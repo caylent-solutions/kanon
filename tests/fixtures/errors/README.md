@@ -24,7 +24,7 @@ All files in this directory conform to the following invariants:
 | `lockfile-sha-unreachable.txt` | spec Section 4.7 state table (R128) | Error when `.kanon.lock` records a resolved SHA that the remote no longer exposes. |
 | `entry-not-found.txt` | spec Section 4.2 step 3 / Section 4.3 (R128) | Error when the requested catalog entry name is not found in the manifest repo. |
 | `source-collision.txt` | spec Section 4.2 pre-flight (R128) | Error when `kanon add` detects that the derived source name already has a block in the destination `.kanon` file and `--force` was not supplied. |
-| `conflict-detected.txt` | spec Section 4.7 state table -- Transitive conflict (R128) | Error when two sources resolve to the same canonical repository URL but pin different SHAs. |
+| `conflict-detected.txt` | package destination invariant (R128) | Error when two sources resolve the same package destination path (`.packages/<name>`) to different content SHAs. The same repo at different commits for different paths is allowed; only a same-path/different-content clash is an error. |
 | `missing-required-metadata-field.txt` | spec Section 3.5 soft-spot 1 (R128) | Error when a `*-marketplace.xml` is missing a required `<catalog-metadata>` field. Emitted by `kanon add` (and any command that builds the entry catalog) when the manifest repo has integrity issues. |
 | `zero-pep440-tags-under-prefix.txt` | spec Section 0.4 / Section 4.2 step 4 (R190) | Error when `kanon add <name>` (no explicit `@<spec>`) finds that the manifest repo has no PEP 440-valid release tags. |
 

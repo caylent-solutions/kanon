@@ -213,9 +213,9 @@ include.
 **`url`** (string) -- Raw project URL as declared in the catalog XML.
 
 **`canonical_url`** (string) -- Canonical form of `url` (output of
-`canonicalize_repo_url`). Used for conflict detection: two entries
-sharing a canonical URL but pinning different SHAs trigger a
-`CanonicalUrlConflictError`.
+`canonicalize_repo_url`). Used by `kanon why` for URL matching. (Install
+conflict detection is keyed on the package destination path, not the URL --
+see "Package destination conflict" below.)
 
 **`ref_spec`** (string) -- Version / ref constraint for this project (the
 v4 rename of the former `revision_spec`). Written at lock time.
@@ -692,12 +692,15 @@ If a `resolved_sha` recorded in the lockfile is no longer reachable on
 the remote, `kanon install` exits with `LockfileUnreachableShaError`.
 This is a hard error.
 
-### Transitive canonical-URL conflict
+### Package destination conflict
 
-When two or more `[[sources.projects]]` entries resolve to the same
-canonical URL but pin different commit SHAs, `kanon install` exits with
-`CanonicalUrlConflictError`. This check runs both during fresh resolution
-and during `LOCKFILE_CONSISTENT` replay.
+When two or more sources resolve the same package destination path
+(`.packages/<name>`, recorded in `[[sources.content_pins]]`) to different
+content SHAs, `kanon install` exits with `PackagePathConflictError`. The same
+repository fetched at different commits for **different** destination paths is
+allowed (independent packages from a mono-repo); only a same-path /
+different-content clash is an error. This check runs both during fresh
+resolution and during `LOCKFILE_CONSISTENT` replay.
 
 ---
 

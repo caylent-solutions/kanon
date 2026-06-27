@@ -1,6 +1,5 @@
-ERROR: Canonical-URL conflict -- two or more sources declare the same repository URL with different SHAs.
-  Conflict for canonical URL: https://example.com/vendor/shared-lib
-  source_a/repo-specs/shared-lib-marketplace.xml: https://example.com/vendor/shared-lib.git @ aabbccdd1122334455667788990011223344556677889900aabbccdd11223344
-  source_b/repo-specs/shared-lib-marketplace.xml: https://example.com/vendor/shared-lib.git @ 1122334455667788990011223344556677889900aabbccdd11223344aabbccdd
-  both URLs canonicalize to: https://example.com/vendor/shared-lib
-  Remediation: Use `kanon why https://example.com/vendor/shared-lib` to investigate; resolve by removing one source or aligning REVISION values across sources.
+ERROR: Package destination conflict -- two or more sources resolve the same package path to different content.
+  Conflict for package path: .packages/shared-lib
+  source_a (shared-lib): .packages/shared-lib @ aabbccdd1122334455667788990011223344556677889900aabbccdd11223344
+  source_b (shared-lib): .packages/shared-lib @ 1122334455667788990011223344556677889900aabbccdd11223344aabbccdd
+  Remediation: remove one source or align the project revisions so '.packages/shared-lib' resolves to a single content SHA.

@@ -308,15 +308,27 @@ which source provided them.
 
 ## Collision Detection
 
-When two sources produce a package with the same name, Kanon detects the
-collision and fails immediately with an actionable error message.
+Kanon's install conflict check is keyed on the package **destination path**
+(`.packages/<name>`), not on the repository URL. Two sources may fetch the
+**same repository at different commits** as long as their `<project>` entries
+land at **different** destination paths -- this is the mono-repo case: install
+any version of package A and any version of package B even when both live in the
+same repo under different per-package tags. The only hard error is two sources
+resolving the **same** `.packages/<name>` slot to **different content**.
+
+When two sources produce a package at the same destination with different
+content, Kanon detects the collision and fails immediately with an actionable
+error message.
 
 ### How It Works
 
-During symlink aggregation, Kanon tracks which source provided each
-package name. If a package name already exists from a previous source,
-aggregation aborts with an error identifying both the conflicting
-sources and the duplicate package name.
+A pre-flight check (`kanon install`) groups every source's resolved content pins
+by destination path; a path claimed with more than one content SHA is a
+`PackagePathConflictError` (the same path at the same SHA is a benign duplicate).
+During symlink aggregation, Kanon additionally tracks which source provided each
+package name as an on-disk backstop: if a package name already exists from a
+previous source, aggregation aborts with an error identifying both the
+conflicting sources and the duplicate package name.
 
 ### Example Error
 

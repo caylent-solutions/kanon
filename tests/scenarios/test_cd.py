@@ -1,8 +1,10 @@
 """CD (Collision Detection) scenarios from `docs/integration-testing.md` §7.
 
 Scenarios automated:
-- CD-01: Two sources producing the same package name -- exit 1, collision error
-- CD-02: Three sources, collision between two -- exit 1, alphabetical processing order
+- CD-01: Two sources resolving the same package destination path to different
+  content -- exit 1, package destination conflict
+- CD-02: Three sources where two resolve the same destination path to different
+  content -- exit 1, package destination conflict
 """
 
 from __future__ import annotations
@@ -114,7 +116,7 @@ def _build_fixtures(
 @pytest.mark.scenario
 class TestCD:
     def test_cd_01_two_sources_collision(self, tmp_path: pathlib.Path) -> None:
-        """CD-01: Two sources producing the same package path exits 1 with collision error."""
+        """CD-01: Two sources resolving the same destination path to different content exits 1."""
         manifest_primary_bare, manifest_collision_bare = _build_fixtures(tmp_path / "fixtures")
 
         work_dir = tmp_path / "test-cd01"
@@ -142,11 +144,13 @@ class TestCD:
             f"kanon install should exit 1 on collision, got {result.returncode}\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert "Package collision" in result.stderr, f"'Package collision' not in stderr: {result.stderr!r}"
-        assert "pkg-alpha" in result.stderr, f"'pkg-alpha' not in stderr: {result.stderr!r}"
+        assert "Package destination conflict" in result.stderr, (
+            f"'Package destination conflict' not in stderr: {result.stderr!r}"
+        )
+        assert ".packages/pkg-alpha" in result.stderr, f"'.packages/pkg-alpha' not in stderr: {result.stderr!r}"
 
     def test_cd_02_three_sources_collision_between_two(self, tmp_path: pathlib.Path) -> None:
-        """CD-02: Three sources where two collide; alphabetical processing means aaa vs bbb collide."""
+        """CD-02: Three sources where two resolve the same destination path to different content, exits 1."""
         manifest_primary_bare, manifest_collision_bare = _build_fixtures(tmp_path / "fixtures")
 
         work_dir = tmp_path / "test-cd02"
@@ -175,5 +179,7 @@ class TestCD:
             f"kanon install should exit 1 on collision, got {result.returncode}\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert "Package collision" in result.stderr, f"'Package collision' not in stderr: {result.stderr!r}"
-        assert "pkg-alpha" in result.stderr, f"'pkg-alpha' not in stderr: {result.stderr!r}"
+        assert "Package destination conflict" in result.stderr, (
+            f"'Package destination conflict' not in stderr: {result.stderr!r}"
+        )
+        assert ".packages/pkg-alpha" in result.stderr, f"'.packages/pkg-alpha' not in stderr: {result.stderr!r}"

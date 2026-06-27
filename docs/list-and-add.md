@@ -301,15 +301,17 @@ Those checks belong to `kanon catalog audit`. A successful
 - `<name>` must match a `<catalog-metadata><name>` value in
   the resolved manifest repo.
 - `@<spec>` is optional. Default: the highest PEP 440-valid git
-  tag on the manifest repo (see "Default spec resolution").
+  tag in the entry's tag namespace (see "Default spec resolution").
 - Multiple `<name>[@<spec>]` arguments may be supplied in one
   invocation.
 
 ### add -- Default spec resolution
 
 When `@<spec>` is omitted, `kanon add` queries the manifest
-repo for its highest PEP 440-valid git tag via
-`git ls-remote --tags`. If zero PEP 440-valid tags exist:
+repo via `git ls-remote --tags` for the highest PEP 440-valid
+git tag in the entry's `refs/tags/<name>/` namespace, falling
+back to the bare `refs/tags/<pep440>` namespace when the entry
+has no namespaced tags. If zero PEP 440-valid tags exist:
 
 ```text
 ERROR: manifest repo has no PEP 440-valid tags; pin to a

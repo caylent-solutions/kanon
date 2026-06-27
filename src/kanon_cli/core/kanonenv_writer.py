@@ -86,7 +86,8 @@ def _read_lines(kanon_file: pathlib.Path) -> list[str]:
     """
     if not kanon_file.exists():
         return []
-    return kanon_file.read_text(encoding="utf-8", newline="").splitlines(keepends=True)
+    with kanon_file.open(encoding="utf-8", newline="") as handle:
+        return handle.read().splitlines(keepends=True)
 
 
 def _has_header(lines: list[str]) -> bool:
@@ -202,7 +203,11 @@ def _ensure_unlocked(kanon_file: pathlib.Path) -> bool:
     header_line = KANON_HEADER_CLAUDE_MARKETPLACES_DIR + newline
     insert_at = _first_content_index(lines)
     lines.insert(insert_at, header_line)
-    kanon_file.write_text("".join(lines), encoding="utf-8", newline="")
+    separator_at = insert_at + 1
+    if separator_at < len(lines) and lines[separator_at].strip():
+        lines.insert(separator_at, newline)
+    with kanon_file.open("w", encoding="utf-8", newline="") as handle:
+        handle.write("".join(lines))
     return True
 
 
@@ -249,5 +254,6 @@ def _prune_unlocked(kanon_file: pathlib.Path) -> bool:
         return False
 
     kept = [line for line in lines if _key_of(line) != MARKETPLACE_DIR_GLOBAL_KEY]
-    kanon_file.write_text("".join(kept), encoding="utf-8", newline="")
+    with kanon_file.open("w", encoding="utf-8", newline="") as handle:
+        handle.write("".join(kept))
     return True

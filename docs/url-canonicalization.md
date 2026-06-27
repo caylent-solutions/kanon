@@ -90,8 +90,6 @@ The following kanon features use `canonicalize_repo_url` for URL matching:
 
 - **Lockfile `canonical_url` field** (spec Section 5) -- every entry in the
   lockfile stores the canonical form of the dependency URL.
-- **Conflict detection** (spec Section 4.7) -- two sources conflict when their
-  canonical URLs are equal.
 - **`kanon why` URL matching** (spec Section 4.5) -- the query URL is
   canonicalized before comparison against lockfile entries.
 - **`kanon outdated` URL matching** -- canonical URLs are used to correlate

@@ -213,9 +213,9 @@ include.
 **`url`** (string) -- Raw project URL as declared in the catalog XML.
 
 **`canonical_url`** (string) -- Canonical form of `url` (output of
-`canonicalize_repo_url`). Used for conflict detection: two entries
-sharing a canonical URL but pinning different SHAs trigger a
-`CanonicalUrlConflictError`.
+`canonicalize_repo_url`). Used by `kanon why` for URL matching. (Install
+conflict detection is keyed on the package destination path, not the URL --
+see "Package destination conflict" below.)
 
 **`ref_spec`** (string) -- Version / ref constraint for this project (the
 v4 rename of the former `revision_spec`). Written at lock time.
@@ -276,9 +276,10 @@ Exception: `LockfileValidationError`.
 
 This `ref_spec` is the source / catalog ref-spec. It is distinct from a
 manifest `<project revision>` (the content revision validated by
-`kanon validate marketplace`), which accepts an exact deep-path tag
-(`refs/tags/<path>/<pep440>`), a branch ref (`refs/heads/<name>`), or a
-40-hex commit SHA, and rejects the `*` wildcard, a bare branch name, and
+`kanon validate marketplace`), which accepts an exact tag
+(`refs/tags/<path>/<pep440>` namespaced or `refs/tags/<pep440>` bare), a
+branch ref (`refs/heads/<name>`), or a 40-hex commit SHA, and rejects the
+`*` wildcard, a bare branch name, and
 version-range constraints. On install a tag or branch `<project revision>`
 resolves to a content SHA pinned in `[[sources.content_pins]]`, so a
 branch revision does not pin a moving target.
@@ -391,9 +392,10 @@ source's resolved manifest tree, captured after `repo sync`:
   lock time.
 
 A reinstall replays each locked content SHA byte-for-byte (npm-style
-content-SHA locking). A manifest `<project revision>` may be an exact
-deep-path tag (`refs/tags/<path>/<pep440>`), a branch ref
-(`refs/heads/<name>`), or a 40-hex commit SHA. On install a tag or branch
+content-SHA locking). A manifest `<project revision>` may be an exact tag
+(`refs/tags/<path>/<pep440>` namespaced or `refs/tags/<pep440>` bare), a
+branch ref (`refs/heads/<name>`), or a 40-hex commit SHA. On install a tag
+or branch
 revision resolves to a content SHA that is pinned here, so a branch
 revision does NOT pin a moving target: the locked SHA is replayed until an
 explicit `kanon install --refresh-lock` re-resolves it.
@@ -690,12 +692,15 @@ If a `resolved_sha` recorded in the lockfile is no longer reachable on
 the remote, `kanon install` exits with `LockfileUnreachableShaError`.
 This is a hard error.
 
-### Transitive canonical-URL conflict
+### Package destination conflict
 
-When two or more `[[sources.projects]]` entries resolve to the same
-canonical URL but pin different commit SHAs, `kanon install` exits with
-`CanonicalUrlConflictError`. This check runs both during fresh resolution
-and during `LOCKFILE_CONSISTENT` replay.
+When two or more sources resolve the same package destination path
+(`.packages/<name>`, recorded in `[[sources.content_pins]]`) to different
+content SHAs, `kanon install` exits with `PackagePathConflictError`. The same
+repository fetched at different commits for **different** destination paths is
+allowed (independent packages from a mono-repo); only a same-path /
+different-content clash is an error. This check runs both during fresh
+resolution and during `LOCKFILE_CONSISTENT` replay.
 
 ---
 

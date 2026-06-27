@@ -819,7 +819,7 @@ rm -rf "${MS01_DIR}"
 
 ## 7. Category 6: Collision Detection (2 tests)
 
-### CD-01: Two sources producing the same package name
+### CD-01: Two sources resolving the same destination path to different content
 
 ```bash
 export CD01_DIR="${KANON_TEST_ROOT}/test-cd01"
@@ -845,7 +845,7 @@ kanon install .kanon
 **Pass criteria:**
 
 - Exit code 1
-- stderr contains `Package collision` and `pkg-alpha`
+- stderr contains `Package destination conflict` and `.packages/pkg-alpha`
 
 **Cleanup:**
 
@@ -853,7 +853,7 @@ kanon install .kanon
 rm -rf "${CD01_DIR}"
 ```
 
-### CD-02: Three sources, collision between two
+### CD-02: Three sources, two resolving the same destination path to different content
 
 ```bash
 export CD02_DIR="${KANON_TEST_ROOT}/test-cd02"
@@ -884,8 +884,8 @@ kanon install .kanon
 **Pass criteria:**
 
 - Exit code 1
-- stderr contains `Package collision` and `pkg-alpha`
-- Sources are processed alphabetically: `aaa` processes first, then `bbb` collides on `pkg-alpha`
+- stderr contains `Package destination conflict` and `.packages/pkg-alpha`
+- The conflict names the sources resolving `.packages/pkg-alpha` to different content (`aaa`/`ccc` pin one commit, `bbb` pins another)
 
 **Cleanup:**
 
@@ -6194,8 +6194,8 @@ After running every scenario from §2 through §28, populate this spreadsheet-st
 | 018 | IC-03         | install-clean                      | Comments and blank lines                               |        |      |         |       |
 | 019 | IC-04         | install-clean                      | Marketplace install false                              |        |      |         |       |
 | 020 | MS-01         | multi-source                       | Two sources aggregate                                  |        |      |         |       |
-| 021 | CD-01         | collision                          | Same-name collision two sources                        |        |      |         |       |
-| 022 | CD-02         | collision                          | Three-source alphabetical collision                    |        |      |         |       |
+| 021 | CD-01         | collision                          | Two sources, same destination path, different content  |        |      |         |       |
+| 022 | CD-02         | collision                          | Three sources, two share a destination path            |        |      |         |       |
 | 023 | LF-01         | linkfile                           | linkfile creates symlinks                              |        |      |         |       |
 | 024 | EC-01         | error-cases                        | Missing .kanon                                         |        |      |         |       |
 | 025 | EC-02         | error-cases                        | Empty .kanon                                           |        |      |         |       |

@@ -148,7 +148,7 @@ class TestBuildSourceBlockLines:
             env_var_lines=[],
             marketplace=False,
         )
-        assert lines[0] == "KANON_SOURCE_my_entry_URL=https://example.com/repo.git"
+        assert lines[2] == "KANON_SOURCE_my_entry_URL=https://example.com/repo.git"
 
     def test_ref_line_format(self) -> None:
         """REF line is KANON_SOURCE_<alias>_REF=<ref> (no _REVISION)."""
@@ -178,7 +178,7 @@ class TestBuildSourceBlockLines:
             env_var_lines=[],
             marketplace=False,
         )
-        assert lines[2] == "KANON_SOURCE_foo_bar_PATH=repo-specs/entry-marketplace.xml"
+        assert lines[3] == "KANON_SOURCE_foo_bar_PATH=repo-specs/entry-marketplace.xml"
 
     def test_name_line_format(self) -> None:
         """NAME line is KANON_SOURCE_<alias>_NAME=<original manifest name>."""
@@ -193,7 +193,7 @@ class TestBuildSourceBlockLines:
             env_var_lines=[],
             marketplace=False,
         )
-        assert lines[3] == "KANON_SOURCE_foo_bar_NAME=Foo-Bar"
+        assert lines[0] == "KANON_SOURCE_foo_bar_NAME=Foo-Bar"
 
     def test_no_revision_key_emitted(self) -> None:
         """The block never emits a _REVISION key (renamed to _REF)."""
@@ -866,7 +866,7 @@ class TestResolveSpec:
 
         fake_tags = ["refs/tags/1.0.0", "refs/tags/1.1.0", "refs/tags/1.2.0"]
         with patch("kanon_cli.commands.add._list_tags", return_value=fake_tags):
-            result = _resolve_spec("https://example.com/repo.git", None)
+            result = _resolve_spec("my-entry", "https://example.com/repo.git", None)
         assert result == "refs/tags/1.2.0"
 
     def test_no_spec_with_empty_tags_exits_nonzero(self, capsys: pytest.CaptureFixture[str]) -> None:
@@ -877,24 +877,74 @@ class TestResolveSpec:
 
         with patch("kanon_cli.commands.add._list_tags", return_value=[]):
             with pytest.raises(SystemExit) as exc_info:
-                _resolve_spec("https://example.com/repo.git", None)
+                _resolve_spec("my-entry", "https://example.com/repo.git", None)
         assert exc_info.value.code != 0
         captured = capsys.readouterr()
         assert "manifest repo has no PEP 440-valid tags" in captured.err
 
     def test_explicit_spec_delegates_to_resolve_version(self) -> None:
-        """When spec is given, resolve_version() is called and result is returned."""
+        """When spec is given, resolve_version() is called with the entry-namespaced spec.
+
+        With no namespaced tags for the entry the spec is passed through unscoped
+        (a single-purpose, poly repo), so the call mirrors the bare spec.
+        """
         from unittest.mock import patch
 
         from kanon_cli.commands.add import _resolve_spec
 
-        with patch(
-            "kanon_cli.commands.add.resolve_version",
-            return_value="refs/tags/1.0.0",
-        ) as mock_rv:
-            result = _resolve_spec("https://example.com/repo.git", "==1.0.0")
+        with (
+            patch("kanon_cli.commands.add._list_tags", return_value=[]),
+            patch("kanon_cli.commands.add.resolve_version", return_value="refs/tags/1.0.0") as mock_rv,
+        ):
+            result = _resolve_spec("my-entry", "https://example.com/repo.git", "==1.0.0")
         mock_rv.assert_called_once_with("https://example.com/repo.git", "==1.0.0")
         assert result == "refs/tags/1.0.0"
+
+    def test_default_spec_scopes_to_entry_namespace(self) -> None:
+        """A catalog with per-entry tags resolves the entry's namespaced tag, not the legacy bare."""
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import _resolve_spec
+
+        fake_tags = [
+            "refs/tags/3.6.0",
+            "refs/tags/history/0.1.0",
+            "refs/tags/history/0.1.1",
+            "refs/tags/builders-plugins/0.1.1",
+        ]
+        with patch("kanon_cli.commands.add._list_tags", return_value=fake_tags):
+            result = _resolve_spec("history", "https://example.com/catalog.git", None)
+        assert result == "refs/tags/history/0.1.1"
+
+    def test_default_spec_falls_back_to_bare_for_poly_repo(self) -> None:
+        """An entry with no namespaced tags resolves the highest bare tag."""
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import _resolve_spec
+
+        fake_tags = ["refs/tags/1.0.0", "refs/tags/1.1.0", "refs/tags/1.2.0"]
+        with patch("kanon_cli.commands.add._list_tags", return_value=fake_tags):
+            result = _resolve_spec("solo", "https://example.com/poly.git", None)
+        assert result == "refs/tags/1.2.0"
+
+    def test_explicit_spec_namespaced_when_entry_has_namespaced_tags(self) -> None:
+        """An explicit constraint is resolved within the entry's namespace."""
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import _resolve_spec
+
+        fake_tags = [
+            "refs/tags/history/0.1.0",
+            "refs/tags/history/0.1.1",
+            "refs/tags/builders-plugins/0.1.1",
+        ]
+        with (
+            patch("kanon_cli.commands.add._list_tags", return_value=fake_tags),
+            patch("kanon_cli.commands.add.resolve_version", return_value="refs/tags/history/0.1.1") as mock_rv,
+        ):
+            result = _resolve_spec("history", "https://example.com/catalog.git", "==0.1.1")
+        mock_rv.assert_called_once_with("https://example.com/catalog.git", "refs/tags/history/==0.1.1")
+        assert result == "refs/tags/history/0.1.1"
 
 
 @pytest.mark.unit
@@ -1409,7 +1459,7 @@ class TestResolveSpecNoPep440Tags:
         non_pep440_tags = ["refs/tags/v-alpha", "refs/tags/nightly-build", "refs/tags/dev"]
         with patch("kanon_cli.commands.add._list_tags", return_value=non_pep440_tags):
             with pytest.raises(SystemExit) as exc_info:
-                _resolve_spec("https://example.com/repo.git", None)
+                _resolve_spec("my-entry", "https://example.com/repo.git", None)
         assert exc_info.value.code != 0
 
     def test_non_pep440_tags_error_message_mentions_pep440(self, capsys: pytest.CaptureFixture[str]) -> None:
@@ -1421,7 +1471,7 @@ class TestResolveSpecNoPep440Tags:
         non_pep440_tags = ["refs/tags/nightly", "refs/tags/dev-branch"]
         with patch("kanon_cli.commands.add._list_tags", return_value=non_pep440_tags):
             with pytest.raises(SystemExit):
-                _resolve_spec("https://example.com/repo.git", None)
+                _resolve_spec("my-entry", "https://example.com/repo.git", None)
         captured = capsys.readouterr()
         assert "PEP 440" in captured.err
         assert "Skipped non-PEP-440 tags:" in captured.err
@@ -1435,7 +1485,7 @@ class TestResolveSpecNoPep440Tags:
         non_pep440_tags = ["refs/tags/foo-alpha", "refs/tags/bar-beta"]
         with patch("kanon_cli.commands.add._list_tags", return_value=non_pep440_tags):
             with pytest.raises(SystemExit):
-                _resolve_spec("https://example.com/repo.git", None)
+                _resolve_spec("my-entry", "https://example.com/repo.git", None)
         captured = capsys.readouterr()
         assert "foo-alpha" in captured.err or "bar-beta" in captured.err
 
@@ -1467,7 +1517,7 @@ class TestResolveSpecNoPep440Tags:
 
         with patch("kanon_cli.commands.add._list_tags", return_value=tags):
             with pytest.raises(SystemExit):
-                _resolve_spec("https://example.com/repo.git", None)
+                _resolve_spec("my-entry", "https://example.com/repo.git", None)
         captured = capsys.readouterr()
         cap_phrase = f"showing first {TAG_ERROR_DISPLAY_CAP} of"
         if expected_cap_message:

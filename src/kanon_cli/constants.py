@@ -35,7 +35,7 @@ MARKETPLACE_DIR_PREFIX = "${CLAUDE_MARKETPLACES_DIR}/"
 REVISION_EXISTENCE_REQUIRED_ENV_VAR = "KANON_VALIDATE_REQUIRE_EXISTENCE"
 
 
-REFS_TAGS_RE = re.compile(r"^refs/tags/.+/\d+\.\d+\.\d+$")
+REFS_TAGS_RE = re.compile(r"^refs/tags/(?:.+/)?\d+\.\d+\.\d+$")
 CONSTRAINT_RE = re.compile(r"^(~=|>=|<=|>|<)\d+\.\d+\.\d+$")
 
 

@@ -427,11 +427,13 @@ def _build_source_collision(tmp_path: pathlib.Path) -> pathlib.Path:
 def _build_conflict_detected(tmp_path: pathlib.Path) -> pathlib.Path:
     """Workspace for conflict-detected.
 
-    Writes a .kanon file with two sources (source_a and source_b) that
-    both point at the same canonical URL (after canonicalization:
-    https://example.com/vendor/shared-lib) but with different SHAs.
-    A matching .kanon.lock is written with those SHAs so that install
-    reaches the conflict-detection stage without making any network calls.
+    Writes a .kanon file with two sources (source_a and source_b) and a
+    matching .kanon.lock in which BOTH sources record a content pin for the
+    same package destination path (.packages/shared-lib) at DIFFERENT content
+    SHAs.  On the lockfile-consistent replay path install re-runs the
+    destination-conflict detector against the lockfile content pins and raises,
+    without making any network calls.  (Two sources merely sharing a repo URL is
+    no longer a conflict; the clash must be at the same .packages/ slot.)
     """
     from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
 
@@ -473,6 +475,11 @@ def _build_conflict_detected(tmp_path: pathlib.Path) -> pathlib.Path:
         f'resolved_sha = "{sha_a}"\n'
         'path = "repo-specs/shared-lib-marketplace.xml"\n'
         "\n"
+        "[[sources.content_pins]]\n"
+        'name = "shared-lib"\n'
+        'path = ".packages/shared-lib"\n'
+        f'resolved_sha = "{sha_a}"\n'
+        "\n"
         "[[sources]]\n"
         'alias = "source_b"\n'
         'name = "source_b"\n'
@@ -480,7 +487,12 @@ def _build_conflict_detected(tmp_path: pathlib.Path) -> pathlib.Path:
         'ref_spec = "main"\n'
         'resolved_ref = "refs/heads/main"\n'
         f'resolved_sha = "{sha_b}"\n'
-        'path = "repo-specs/shared-lib-marketplace.xml"\n',
+        'path = "repo-specs/shared-lib-marketplace.xml"\n'
+        "\n"
+        "[[sources.content_pins]]\n"
+        'name = "shared-lib"\n'
+        'path = ".packages/shared-lib"\n'
+        f'resolved_sha = "{sha_b}"\n',
         encoding="utf-8",
     )
     return ws

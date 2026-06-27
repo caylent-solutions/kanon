@@ -359,6 +359,32 @@ def _resolve_constraint_from_tags(revision: str, available_tags: list[str]) -> s
     return max(matching, key=lambda pair: pair[1])[0]
 
 
+def select_entry_namespace(tags: list[str], entry_name: str) -> str | None:
+    """Return the tag namespace to scope resolution to for a catalog entry.
+
+    A catalog may tag an entry under a per-entry namespace
+    (``refs/tags/<entry_name>/<pep440>``) or with bare ``refs/tags/<pep440>``
+    tags (a single-purpose, poly repo). This returns ``entry_name`` when any
+    ``refs/tags/<entry_name>/`` tag is present, so resolution scopes to that
+    entry's own versions and never picks another entry's tag; otherwise it
+    returns ``None`` so resolution falls back to the bare namespace (all
+    ``refs/tags/<pep440>`` tags). The same rule is shared by ``kanon add``
+    (resolving one version) and ``kanon search`` (listing versions) so the two
+    never disagree.
+
+    Args:
+        tags: Full tag ref strings (e.g. as returned by :func:`_list_tags`).
+        entry_name: The catalog entry name (its per-entry tag namespace).
+
+    Returns:
+        ``entry_name`` when namespaced tags exist, else ``None``.
+    """
+    prefix = f"refs/tags/{entry_name}/"
+    if any(tag.startswith(prefix) for tag in tags):
+        return entry_name
+    return None
+
+
 class RevisionShape(enum.Enum):
     """Classification of a REVISION string for 'kanon outdated' column dispatch.
 

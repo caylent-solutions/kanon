@@ -18,6 +18,7 @@ from kanon_cli.version import (
     is_pep440_version,
     is_version_constraint,
     resolve_version,
+    select_entry_namespace,
 )
 
 
@@ -25,6 +26,35 @@ def _mock_ls_remote(tags: list[str]) -> MagicMock:
     """Build a mock subprocess.run result for git ls-remote with full refs."""
     output = "\n".join(f"abc123\t{t}" for t in tags)
     return MagicMock(returncode=0, stdout=output, stderr="")
+
+
+@pytest.mark.unit
+class TestSelectEntryNamespace:
+    """select_entry_namespace prefers the entry's namespace, else the bare namespace."""
+
+    def test_returns_entry_name_when_namespaced_tags_exist(self) -> None:
+        """An entry with refs/tags/<entry>/* tags resolves to that namespace."""
+        tags = [
+            "refs/tags/3.6.0",
+            "refs/tags/history/0.1.0",
+            "refs/tags/history/0.1.1",
+            "refs/tags/builders-plugins/0.1.1",
+        ]
+        assert select_entry_namespace(tags, "history") == "history"
+
+    def test_returns_none_when_only_bare_tags_exist(self) -> None:
+        """An entry with no namespaced tags falls back to the bare namespace."""
+        tags = ["refs/tags/0.1.0", "refs/tags/1.0.0", "refs/tags/2.0.0"]
+        assert select_entry_namespace(tags, "history") is None
+
+    def test_returns_none_when_only_other_entries_namespaced(self) -> None:
+        """Another entry's namespaced tags do not count as this entry's."""
+        tags = ["refs/tags/builders-plugins/0.1.1", "refs/tags/3.6.0"]
+        assert select_entry_namespace(tags, "history") is None
+
+    def test_returns_none_for_empty_tags(self) -> None:
+        """No tags at all yields the bare namespace."""
+        assert select_entry_namespace([], "history") is None
 
 
 @pytest.mark.unit

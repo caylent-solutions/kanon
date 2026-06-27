@@ -21,7 +21,7 @@ _SPEC_ERROR_MSG = (
 
 
 def _call_resolve_spec(tags: list[str], url: str = "https://example.com/repo.git") -> None:
-    """Call _resolve_spec(url, spec=None) with a patched _list_tags result.
+    """Call _resolve_spec(entry_name, url, spec=None) with a patched _list_tags result.
 
     Args:
         tags: The list of tag refs returned by the mocked _list_tags.
@@ -33,7 +33,7 @@ def _call_resolve_spec(tags: list[str], url: str = "https://example.com/repo.git
     from kanon_cli.commands import add as add_mod
 
     with patch.object(add_mod, "_list_tags", return_value=tags):
-        add_mod._resolve_spec(url, spec=None)
+        add_mod._resolve_spec("my-entry", url, spec=None)
 
 
 @pytest.mark.unit
@@ -119,14 +119,19 @@ class TestResolveSpecExplicitSpecBypassesDefaultError:
     AC-FUNC-005.
     """
 
-    def test_explicit_spec_does_not_call_list_tags(self) -> None:
-        """_resolve_spec with a non-None spec calls resolve_version, not _list_tags."""
+    def test_explicit_spec_skips_the_default_zero_tags_error(self) -> None:
+        """_resolve_spec with a non-None spec delegates to resolve_version.
+
+        The entry namespace is selected from the listed tags, but the default-spec
+        zero-tags error (the add-specific _ZERO_PEP440_TAGS_ERROR) only fires on
+        the spec-None path, so it never fires here.
+        """
         from kanon_cli.commands import add as add_mod
 
         with (
-            patch.object(add_mod, "_list_tags") as mock_list_tags,
-            patch.object(add_mod, "resolve_version", return_value="refs/tags/1.0.0"),
+            patch.object(add_mod, "_list_tags", return_value=[]),
+            patch.object(add_mod, "resolve_version", return_value="refs/tags/1.0.0") as mock_rv,
         ):
-            result = add_mod._resolve_spec("https://example.com/repo.git", spec="==1.0.0")
-        mock_list_tags.assert_not_called()
+            result = add_mod._resolve_spec("my-entry", "https://example.com/repo.git", spec="==1.0.0")
+        mock_rv.assert_called_once_with("https://example.com/repo.git", "==1.0.0")
         assert result == "refs/tags/1.0.0"

@@ -131,7 +131,8 @@ class TestEnsureClaudeMarketplacesDir:
         assert _header_count(text) == 1
 
     def test_inserted_after_leading_comments_and_blanks(self, tmp_path: pathlib.Path) -> None:
-        """The header lands after a leading comment/blank preamble.
+        """The header lands after a leading comment/blank preamble, with a blank
+        line separating it from the dependency block.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -148,7 +149,8 @@ class TestEnsureClaudeMarketplacesDir:
         assert lines[0] == "# preamble comment"
         assert lines[1] == ""
         assert lines[2] == KANON_HEADER_CLAUDE_MARKETPLACES_DIR
-        assert lines[3] == "KANON_SOURCE_FOO_URL=https://example.com/foo.git"
+        assert lines[3] == ""
+        assert lines[4] == "KANON_SOURCE_FOO_URL=https://example.com/foo.git"
 
     def test_preserves_lf_newline(self, tmp_path: pathlib.Path) -> None:
         """The inserted header uses LF when the file uses LF.

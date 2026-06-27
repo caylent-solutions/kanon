@@ -704,6 +704,35 @@ class TestListNamespacedVersionTags:
             versions = _list_namespaced_version_tags("https://h/a.git", "alpha")
         assert versions == ["1.2.0", "1.1.0", "1.0.0"]
 
+    def test_falls_back_to_bare_tags_when_no_namespace(self) -> None:
+        from kanon_cli.commands.search import _list_namespaced_version_tags
+
+        output = self._ls_remote(
+            "refs/tags/1.0.0",
+            "refs/tags/1.2.0",
+            "refs/tags/1.1.0",
+            "refs/tags/1.2.0^{}",
+            "refs/tags/not-a-version",
+        )
+        result = type("R", (), {"returncode": 0, "stdout": output, "stderr": ""})()
+        with patch("kanon_cli.commands.search.subprocess.run", return_value=result):
+            versions = _list_namespaced_version_tags("https://h/a.git", "alpha")
+        assert versions == ["1.2.0", "1.1.0", "1.0.0"]
+
+    def test_namespaced_preferred_over_bare_and_other_entries(self) -> None:
+        from kanon_cli.commands.search import _list_namespaced_version_tags
+
+        output = self._ls_remote(
+            "refs/tags/3.6.0",
+            "refs/tags/alpha/0.1.0",
+            "refs/tags/alpha/0.2.0",
+            "refs/tags/beta/9.9.9",
+        )
+        result = type("R", (), {"returncode": 0, "stdout": output, "stderr": ""})()
+        with patch("kanon_cli.commands.search.subprocess.run", return_value=result):
+            versions = _list_namespaced_version_tags("https://h/a.git", "alpha")
+        assert versions == ["0.2.0", "0.1.0"]
+
     def test_empty_when_no_namespaced_tags(self) -> None:
         from kanon_cli.commands.search import _list_namespaced_version_tags
 

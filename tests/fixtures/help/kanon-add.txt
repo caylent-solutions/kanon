@@ -17,7 +17,8 @@ Each ENTRY is '<name>' or '<name>@<spec>' where <spec> is a PEP 440
 constraint (e.g. ==1.0.0, ~=1.2, >=1.0.0,<2.0.0). The last '@' in
 each argument is the delimiter -- see spec Section 4.0 resolver rules.
 When <spec> is omitted the highest PEP 440-valid git tag in the
-manifest repo is selected automatically.
+entry's refs/tags/<name>/ namespace is selected, or the highest
+bare refs/tags/<pep440> tag when the entry has no namespaced tags.
 
 positional arguments:
   <name>[@<spec>]       One or more catalog entry names, optionally suffixed

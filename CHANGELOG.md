@@ -2,7 +2,41 @@
 
 
 
+## v3.1.1 (2026-06-27)
+
+### Fix
+
+* fix: outdated handles namespaced/bare exact tags; why disambiguates same-URL sources (#87)
+
+Two defects found during QA of 3.1.0 against the namespaced/bare catalog.
+
+outdated (closes #85): _normalize_tag_revision_to_constraint only normalised a
+bare refs/tags/&lt;pep440&gt; to ==&lt;pep440&gt;; for a namespaced refs/tags/&lt;path&gt;/&lt;pep440&gt;
+it tried to parse the whole remainder as a Version, failed, and left the ref
+unchanged, so _resolve_constraint_from_tags raised &#34;invalid version constraint&#34;.
+It now rewrites only the terminal version component while preserving the
+namespace path, so kanon outdated works for the default exact-tag add of both
+namespaced and bare entries.
+
+why (closes #86): when several sources resolve from the same repo URL at
+different commits (now a supported config), the ambiguity message printed N
+identical &#34;source URL: &lt;url&gt;&#34; tokens, so the operator could not disambiguate.
+_identity_token now returns the source alias (its derive_source_name identity)
+for a URL match on a source node, labelled &#34;source name&#34; -- the tokens are
+distinct and round-trip through the existing source-name grammar
+(kanon why &lt;alias&gt;). Project URL matches are unchanged.
+
+Adds unit + integration coverage for both (namespaced/bare exact-tag outdated;
+distinct alias tokens + alias round-trip for why).
+
+Co-authored-by: t &lt;t@e.x&gt; ([`0d45f67`](https://github.com/caylent-solutions/kanon/commit/0d45f673243861b0aaef823f6d95e0a548c447d4))
+
+
 ## v3.1.0 (2026-06-27)
+
+### Chore
+
+* chore(release): 3.1.0 ([`e62453e`](https://github.com/caylent-solutions/kanon/commit/e62453e4afa86dca403eef43f71b5ceb5e0a115b))
 
 ### Feature
 
@@ -57,6 +91,12 @@ PEP 440 tag (refs/tags/&lt;pep440&gt;) for single-purpose repos, for both
 - Write the .kanon dependency block NAME-first with a blank line after the
   CLAUDE_MARKETPLACES_DIR header.
 - Tests, docs, and the kanon-add help snapshot updated. ([`7ed332c`](https://github.com/caylent-solutions/kanon/commit/7ed332c859e69cfd6635035a05c15c03339fdcd1))
+
+### Unknown
+
+* Merge pull request #84 from caylent-solutions/release-3.1.0
+
+Release 3.1.0 ([`fddb0aa`](https://github.com/caylent-solutions/kanon/commit/fddb0aa2ab847ffcf4857384d7e8b40504d1bf91))
 
 
 ## v3.0.0 (2026-06-26)

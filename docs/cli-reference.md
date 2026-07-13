@@ -14,7 +14,7 @@ are registered once via `kanon_cli.core.cli_args` so every parser exposes them.
 | `--quiet` / `--verbose` | -- | normal | Logging verbosity. Mutually exclusive. |
 | `--no-color` | `NO_COLOR` | auto | Disable ANSI color. Any non-empty `NO_COLOR` also disables color. |
 | `--no-update-check` | `KANON_SKIP_UPDATE_CHECK` | off | Skip the best-effort PyPI "update available" check. The flag is equivalent to setting `KANON_SKIP_UPDATE_CHECK=1`. |
-| `--home` / `--store-dir <path>` | `KANON_HOME` | `~/.kanon` | Shared kanon home root (content-addressed store plus caches). `--store-dir` is an accepted alias of `--home`. Precedence: flag > `KANON_HOME` env > `~/.kanon`. |
+| `--home` / `--store-dir <path>` | `KANON_HOME` | `~/.kanon-home` | Shared kanon home root (content-addressed store plus caches). `--store-dir` is an accepted alias of `--home`. Precedence: flag > `KANON_HOME` env > `~/.kanon-home`. |
 
 ## Shared Argument Factories
 
@@ -66,7 +66,7 @@ completion variables), see [docs/configuration.md](configuration.md).
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `KANON_CATALOG_SOURCES` | Remote catalog source(s) as `<git_url>@<ref>`, one entry per line. Sets the default for every command that accepts `--catalog-source`; the resolving commands require exactly one entry unless `--catalog-source` is passed. | (none) |
-| `KANON_HOME` | Shared kanon home root (store plus caches). Overridden by the `--home` / `--store-dir` flag. | `~/.kanon` |
+| `KANON_HOME` | Shared kanon home root (store plus caches). Overridden by the `--home` / `--store-dir` flag. | `~/.kanon-home` |
 | `KANON_SKIP_UPDATE_CHECK` | Set to `1` to skip the PyPI update-available check (same effect as `--no-update-check`). | (unset) |
 | `KANON_OUTDATED_FORMAT` | Default output format for `kanon outdated` (`table` or `json`). Overridden by `--format`. | `table` |
 | `KANON_OUTDATED_JSON_INDENT` | JSON indentation (number of spaces) used by `kanon outdated --format json`. | `2` |

@@ -1171,7 +1171,7 @@ def resolve_workspace_base_dir() -> pathlib.Path:
     The base directory is the artifact store under the shared ``KANON_HOME``
     root (spec Section 7.1 / Section 8 / FR-15): ``<KANON_HOME>/store``, where
     ``KANON_HOME`` resolves with precedence ``KANON_HOME`` env > default
-    ``~/.kanon`` (the default is derived from the real user home directory, never
+    ``~/.kanon-home`` (the default is derived from the real user home directory, never
     a hard-coded absolute path). All fetched data is content-addressed under this
     shared store and deduped across projects, replacing the removed per-project
     ``.packages/`` / ``.kanon-data/`` location and the two location env vars it

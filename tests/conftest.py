@@ -85,7 +85,7 @@ def _isolation_env() -> dict[str, str]:
 
     A caller that passes a full replacement environment to a subprocess would
     otherwise drop ``TMPDIR``/``KANON_HOME``/``CLAUDE_CONFIG_DIR`` and let the
-    child's ``tempfile.mkdtemp``, the real ``~/.kanon`` store, and the real
+    child's ``tempfile.mkdtemp``, the real ``~/.kanon-home`` store, and the real
     ``~/.claude`` config escape the per-test isolation. Subprocess helpers overlay
     this floor so the isolation cannot be bypassed.
     """
@@ -608,16 +608,16 @@ def _scrub_catalog_source_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None
 
 @pytest.fixture(autouse=True)
 def _isolate_kanon_home(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Point KANON_HOME at a per-test temp dir so tests never touch the real ~/.kanon.
+    """Point KANON_HOME at a per-test temp dir so tests never touch the real ~/.kanon-home.
 
     The shared KANON_HOME store (spec Section 7.1 / Section 8 / FR-15) defaults to
-    ``~/.kanon`` when KANON_HOME is unset. ``resolve_workspace_base_dir()`` (the
+    ``~/.kanon-home`` when KANON_HOME is unset. ``resolve_workspace_base_dir()`` (the
     artifact store, ``<KANON_HOME>/store``) and ``cache_dir()`` (the completion /
     catalog-audit cache, ``<KANON_HOME>/cache``) both resolve under it. Without
     isolation, every test that drives ``install`` / ``clean`` / completion caching
     would share a single real-home store and leak state between tests -- e.g. an
     end-to-end scenario reusing a prior test's repo checkout under
-    ``~/.kanon/store/.kanon-data/sources/...``.
+    ``~/.kanon-home/store/.kanon-data/sources/...``.
 
     This autouse fixture sets KANON_HOME to a fresh per-test temporary directory
     via ``monkeypatch.setenv`` (so it is reverted on teardown AND is inherited by

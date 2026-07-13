@@ -129,7 +129,7 @@ mkdir -p "${KANON_TEST_ROOT}"
 In kanon 3.0.0 the install artifacts no longer live next to `.kanon`. All
 fetched data is content-addressed under a **shared store** rooted at
 `KANON_HOME` (precedence: `--home`/`--store-dir` flag > `KANON_HOME` env >
-`~/.kanon` default). A successful `kanon install` writes only `.kanon.lock`
+`~/.kanon-home` default). A successful `kanon install` writes only `.kanon.lock`
 into the project directory; the `.packages/`, `.kanon-data/sources/<name>/`,
 and store-level `.gitignore` artifacts are created under `<KANON_HOME>/store/`.
 The removed per-project location variables (`KANON_WORKSPACE_DIR`,
@@ -6011,7 +6011,7 @@ kanon --home "${NS05_HOME}" clean .kanon
 ```
 
 **Pass criteria:** Exit code 0. The store is created under the explicit `--home`
-path (flag precedence: `--home`/`--store-dir` > `KANON_HOME` > `~/.kanon`), not
+path (flag precedence: `--home`/`--store-dir` > `KANON_HOME` > `~/.kanon-home`), not
 under the exported `KANON_HOME`. `--store-dir` is an accepted alias for `--home`.
 
 ### NS-06: `--no-update-check` suppresses the PyPI update check

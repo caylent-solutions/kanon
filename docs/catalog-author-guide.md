@@ -100,7 +100,7 @@ To audit a remote manifest repo, set `KANON_HOME` and supply the
 source in `<git_url>@<ref>` form:
 
 ```bash
-export KANON_HOME=~/.kanon
+export KANON_HOME=~/.kanon-home
 kanon catalog audit https://example.com/org/manifest-repo.git@main
 ```
 
@@ -409,7 +409,7 @@ before publishing a release. The steps assume a scratch clone at
 6. **List catalog entries via scratch source:**
 
    ```bash
-   export KANON_HOME=~/.kanon
+   export KANON_HOME=~/.kanon-home
    kanon search --catalog-source ./scratch@main
    ```
 

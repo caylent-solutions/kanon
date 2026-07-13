@@ -22,6 +22,7 @@ test would falsely treat the header itself as a marketplace dependency.
 from __future__ import annotations
 
 import pathlib
+import sys
 
 from kanon_cli.constants import (
     KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
@@ -32,6 +33,39 @@ from kanon_cli.constants import (
 )
 from kanon_cli.core.install import resolve_kanon_lock_root
 from kanon_cli.utils.concurrency import kanon_workspace_lock
+
+
+def guard_kanon_file_not_dir(kanon_file: pathlib.Path) -> None:
+    """Fail fast with an actionable message when the ``.kanon`` path is a directory.
+
+    The project config file is named ``.kanon``. When a DIRECTORY named ``.kanon``
+    occupies the path where a writer (``add`` / ``remove`` / ``marketplace``) must
+    read or write the ``.kanon`` config FILE, the bare filesystem failure
+    (``IsADirectoryError``) surfaces as the cryptic ``ERROR: [Errno 21] Is a
+    directory``. This guard detects the collision up front and prints the exact
+    ``rm`` command that removes the blocking folder, then exits non-zero so the
+    user can clear it and re-run. A leftover ``~/.kanon`` home store (the default
+    moved to ``~/.kanon-home``) is the most common cause.
+
+    Args:
+        kanon_file: The path the command will read or write as the ``.kanon`` file.
+
+    Raises:
+        SystemExit: With exit code 1 when ``kanon_file`` is an existing directory.
+    """
+    if not kanon_file.is_dir():
+        return
+    resolved = kanon_file.resolve()
+    print(
+        f"ERROR: found a .kanon folder at {resolved}, but kanon must write a "
+        ".kanon file there.\n"
+        "  A directory named .kanon is blocking the .kanon config file (often a "
+        "leftover kanon home store).\n"
+        "  Remediation: remove the folder, then re-run your kanon command:\n"
+        f"    rm -rf {resolved}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 def _key_of(raw_line: str) -> str | None:

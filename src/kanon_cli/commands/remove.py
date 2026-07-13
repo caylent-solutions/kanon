@@ -45,7 +45,10 @@ from kanon_cli.constants import (
     SOURCE_SUFFIXES,
 )
 from kanon_cli.core.install import resolve_kanon_lock_root
-from kanon_cli.core.kanonenv_writer import prune_claude_marketplaces_dir_if_unused
+from kanon_cli.core.kanonenv_writer import (
+    guard_kanon_file_not_dir,
+    prune_claude_marketplaces_dir_if_unused,
+)
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.utils.concurrency import kanon_workspace_lock
 
@@ -404,6 +407,7 @@ def run_remove(args: argparse.Namespace) -> int:
         0 on success; exits non-zero on any validation failure.
     """
     kanon_file = pathlib.Path(getattr(args, "kanon_file", KANON_KANON_FILE_DEFAULT))
+    guard_kanon_file_not_dir(kanon_file)
     dry_run: bool = getattr(args, "dry_run", False)
     force: bool = getattr(args, "force", False)
 

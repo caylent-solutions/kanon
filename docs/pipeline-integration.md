@@ -31,7 +31,7 @@ jobs:
       - uses: actions/cache/save@v4
         with:
           path: |
-            ~/.kanon
+            ~/.kanon-home
           key: kanon-store-${{ hashFiles('.kanon.lock') }}
 
   build:
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/cache/restore@v4
         with:
           path: |
-            ~/.kanon
+            ~/.kanon-home
           key: kanon-store-${{ hashFiles('.kanon.lock') }}
       - name: Run tests
         shell: bash
@@ -65,9 +65,9 @@ jobs:
 ## Where install artifacts live
 
 `kanon install` writes its fetched data into the shared `KANON_HOME` store
-(`$KANON_HOME`, default `~/.kanon`), content-addressed and deduped across
+(`$KANON_HOME`, default `~/.kanon-home`), content-addressed and deduped across
 projects. Cache that directory between runs (keyed on `.kanon.lock`) to
-avoid re-cloning; the example above caches `~/.kanon`. Set `KANON_HOME`
+avoid re-cloning; the example above caches `~/.kanon-home`. Set `KANON_HOME`
 (or the `--home` / `--store-dir` flag) to relocate the store, for example
 to a path that your CI runner caches by default.
 

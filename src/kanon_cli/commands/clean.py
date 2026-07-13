@@ -25,13 +25,18 @@ def register(subparsers) -> None:
             "content-addressed entries from the shared KANON_HOME store.\n\n"
             "With --orphans, before the normal teardown kanon also unregisters\n"
             "any kanon-owned marketplaces recorded in .kanon.lock that are no\n"
-            "longer referenced by .kanon (pruning them from ~/.claude)."
+            "longer referenced by .kanon (pruning them from ~/.claude).\n\n"
+            "With --purge, kanon also deletes this project's .kanon and\n"
+            ".kanon.lock files. With --purge-all, it additionally removes the\n"
+            "shared KANON_HOME store directory (default ~/.kanon-home)."
         ),
         epilog=(
             "Example:\n"
             "  kanon clean             # auto-discovers .kanon\n"
             "  kanon clean .kanon      # explicit path\n"
-            "  kanon clean --orphans   # also unregister orphaned marketplaces"
+            "  kanon clean --orphans   # also unregister orphaned marketplaces\n"
+            "  kanon clean --purge     # also delete .kanon and .kanon.lock\n"
+            "  kanon clean --purge-all # also remove the KANON_HOME store dir"
         ),
         formatter_class=__import__("argparse").RawDescriptionHelpFormatter,
     )
@@ -49,6 +54,24 @@ def register(subparsers) -> None:
         help=(
             "Also unregister kanon-owned marketplaces no longer referenced by "
             ".kanon/.kanon.lock (prunes them from ~/.claude)."
+        ),
+    )
+    parser.add_argument(
+        "--purge",
+        action="store_true",
+        default=False,
+        help=(
+            "Also delete this project's .kanon and .kanon.lock files after the "
+            "normal teardown (full removal of the project's kanon config)."
+        ),
+    )
+    parser.add_argument(
+        "--purge-all",
+        action="store_true",
+        default=False,
+        help=(
+            "Everything --purge does, and also remove the shared kanon home store "
+            "directory (KANON_HOME, default ~/.kanon-home) used by all projects."
         ),
     )
     parser.set_defaults(func=_run)
@@ -74,7 +97,12 @@ def _run(args) -> None:
         sys.exit(1)
 
     try:
-        clean(args.kanonenv_path, orphans=args.orphans)
+        clean(
+            args.kanonenv_path,
+            orphans=args.orphans,
+            purge=(args.purge or args.purge_all),
+            purge_home=args.purge_all,
+        )
     except (FileNotFoundError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)

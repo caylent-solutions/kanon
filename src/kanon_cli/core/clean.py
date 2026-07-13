@@ -7,7 +7,7 @@ Performs full Kanon teardown in the following order:
      KANON_SOURCE_<alias>_MARKETPLACE flags (registered when ANY dependency opts
      in) for old lockfiles or when no lockfile exists (back-compat, AC-8).
   3. Resolve the artifact base directory via resolve_workspace_base_dir: the
-     shared KANON_HOME store (<KANON_HOME>/store, default ~/.kanon/store), from
+     shared KANON_HOME store (<KANON_HOME>/store, default ~/.kanon-home/store), from
      which .packages/ and .kanon-data/ are removed.
   4. If marketplace was registered: uninstall marketplace plugins via claude CLI,
      then remove CLAUDE_MARKETPLACES_DIR.
@@ -20,7 +20,12 @@ import pathlib
 import shutil
 import sys
 
-from kanon_cli.constants import SOURCE_MARKETPLACE_KEY
+from kanon_cli.constants import (
+    KANON_HOME_CACHE_SUBDIR,
+    KANON_HOME_STORE_SUBDIR,
+    SOURCE_MARKETPLACE_KEY,
+    resolve_kanon_home,
+)
 from kanon_cli.core.install import prune_store, resolve_workspace_base_dir
 from kanon_cli.core.marketplace import (
     locate_claude_binary,
@@ -72,6 +77,66 @@ def remove_store_entries(base_dir: pathlib.Path) -> None:
         base_dir: The resolved store base directory (``<KANON_HOME>/store``).
     """
     prune_store(base_dir)
+
+
+def remove_project_config(kanonenv_path: pathlib.Path, lockfile_path: pathlib.Path) -> None:
+    """Delete the project ``.kanon`` config file and its ``.kanon.lock`` (``--purge``).
+
+    Both deletes are no-ops when the file is already absent. Removing the
+    ``.kanon`` (the project's declared kanon configuration and source of truth)
+    plus its lockfile is a full teardown of kanon for the project, invoked only by
+    ``kanon clean --purge`` / ``--purge-all``.
+
+    Args:
+        kanonenv_path: Resolved path to the project ``.kanon`` file.
+        lockfile_path: Path to the sibling ``.kanon.lock``.
+    """
+    if kanonenv_path.exists():
+        print(f"kanon clean: removing .kanon config file {kanonenv_path}...")
+    kanonenv_path.unlink(missing_ok=True)
+    if lockfile_path.exists():
+        print(f"kanon clean: removing {lockfile_path}...")
+    lockfile_path.unlink(missing_ok=True)
+
+
+def remove_kanon_home_store() -> None:
+    """Remove the shared kanon home store directory (``kanon clean --purge-all``).
+
+    Removes ONLY kanon-owned content, never arbitrary user data behind a
+    misconfigured ``KANON_HOME``. Fails fast (exit 1) when the resolved home is the
+    filesystem root, the user home directory, or an ancestor of the user home or
+    the current directory. Otherwise it removes only the known kanon-owned subdirs
+    (``store/`` and ``cache/``) and then the home root itself, and only when that
+    root is left empty; any non-kanon entries are kept with a warning.
+
+    Raises:
+        SystemExit: Exit code 1 when the resolved ``KANON_HOME`` is an unsafe path.
+    """
+    home = resolve_kanon_home().resolve()
+    user_home = pathlib.Path.home().resolve()
+    cwd = pathlib.Path.cwd().resolve()
+    if home == pathlib.Path(home.anchor) or home == user_home or home in user_home.parents or home in cwd.parents:
+        print(
+            f"Error: refusing to remove the kanon home store at {home}: it resolves to the "
+            "filesystem root, your home directory, or a parent of your home or current "
+            "directory. Check the KANON_HOME environment variable.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if not home.exists():
+        print(f"kanon clean: kanon home store {home} already absent; skipping.")
+        return
+    print(f"kanon clean: removing kanon home store {home}...")
+    for subdir_name in (KANON_HOME_STORE_SUBDIR, KANON_HOME_CACHE_SUBDIR):
+        shutil.rmtree(home / subdir_name, ignore_errors=True)
+    remaining = sorted(entry.name for entry in home.iterdir())
+    if remaining:
+        print(
+            f"kanon clean: keeping {home}: it holds non-kanon entries: {', '.join(remaining)}",
+            file=sys.stderr,
+        )
+        return
+    home.rmdir()
 
 
 def _print_remove_summary(packages_dir: pathlib.Path) -> None:
@@ -175,7 +240,12 @@ def _prune_orphaned_marketplaces(lockfile: Lockfile | None, current_source_names
         remove_marketplace(claude_bin, name)
 
 
-def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
+def clean(
+    kanonenv_path: pathlib.Path,
+    orphans: bool = False,
+    purge: bool = False,
+    purge_home: bool = False,
+) -> None:
     """Execute the full Kanon clean lifecycle.
 
     Steps:
@@ -184,7 +254,7 @@ def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
       2. Parse .kanon.
       3. Resolve the artifact base directory via ``resolve_workspace_base_dir``:
          the shared ``KANON_HOME`` store (``<KANON_HOME>/store``, default
-         ``~/.kanon/store``).  This mirrors the resolution used by install so
+         ``~/.kanon-home/store``).  This mirrors the resolution used by install so
          clean removes exactly what install wrote.
       4. Determine marketplace state from .kanon.lock (marketplace_registered) when
          present; fall back to the .kanon per-dependency
@@ -209,6 +279,13 @@ def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
             ``~/.claude``).  A marketplace also provided by a still-referenced
             source is retained.  The default (False) leaves the teardown path
             byte-for-byte unchanged.
+        purge: When True (``kanon clean --purge`` / ``--purge-all``), also delete
+            this project's ``.kanon`` file and ``.kanon.lock`` after the artifact
+            teardown. No-op for files that are already absent.
+        purge_home: When True (``kanon clean --purge-all``), also remove the shared
+            kanon home store directory (``KANON_HOME``): only its kanon-owned
+            subdirs (``store/``, ``cache/``) plus the emptied root, refusing unsafe
+            paths. Implies ``purge``.
 
     Raises:
         SystemExit: On any failure during the clean process.
@@ -264,4 +341,8 @@ def clean(kanonenv_path: pathlib.Path, orphans: bool = False) -> None:
     remove_kanon_dir(base_dir)
     print("kanon clean: pruning content-addressed store entries...")
     remove_store_entries(base_dir)
+    if purge:
+        remove_project_config(kanonenv_path, lockfile_path)
+    if purge_home:
+        remove_kanon_home_store()
     print("kanon clean: done.")

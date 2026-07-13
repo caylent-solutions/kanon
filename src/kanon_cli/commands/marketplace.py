@@ -48,6 +48,7 @@ from kanon_cli.constants import (
 from kanon_cli.core.install import resolve_kanon_lock_root
 from kanon_cli.core.kanonenv_writer import (
     ensure_claude_marketplaces_dir,
+    guard_kanon_file_not_dir,
     prune_claude_marketplaces_dir_if_unused,
 )
 from kanon_cli.core.metadata import derive_source_name
@@ -474,6 +475,7 @@ def run_enable(args: argparse.Namespace) -> int:
         0 on success; exits non-zero on any validation failure.
     """
     kanon_file = pathlib.Path(args.kanon_file)
+    guard_kanon_file_not_dir(kanon_file)
     alias = _normalise_alias(args.alias)
 
     try:
@@ -519,6 +521,7 @@ def run_disable(args: argparse.Namespace) -> int:
         0 on success; exits non-zero on any validation failure.
     """
     kanon_file = pathlib.Path(args.kanon_file)
+    guard_kanon_file_not_dir(kanon_file)
     alias = _normalise_alias(args.alias)
 
     try:

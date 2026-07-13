@@ -104,7 +104,7 @@ def cache_dir() -> Path:
 
     The cache lives under the shared ``KANON_HOME`` root as
     ``<KANON_HOME>/cache`` (spec Section 4.1 / Section 7.3), where ``KANON_HOME``
-    resolves with precedence ``KANON_HOME`` env > default ``~/.kanon`` (the
+    resolves with precedence ``KANON_HOME`` env > default ``~/.kanon-home`` (the
     default is derived from the real user home directory, never a hard-coded
     absolute path). This replaces the removed per-user cache-dir override and its
     XDG fallback; the cache now shares the single ``KANON_HOME`` store root with

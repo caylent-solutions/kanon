@@ -161,7 +161,7 @@ git commit -m "feat: add my-package 1.2.3"
 
 Committing both files ensures the entire team installs the same resolved
 package versions. The synced artifacts live in the shared `KANON_HOME`
-store (`~/.kanon` by default), never in your project, so there is nothing
+store (`~/.kanon-home` by default), never in your project, so there is nothing
 package-related to commit beyond `.kanon` and `.kanon.lock`.
 
 ---
@@ -194,7 +194,7 @@ persistent installation and advanced options, see
 | `kanon validate xml` | Validate XML manifests under `repo-specs/` | [docs/repo/manifest-format.md](docs/repo/manifest-format.md) |
 | `kanon validate marketplace` | Validate marketplace XML manifests under `repo-specs/` | [docs/repo/manifest-format.md](docs/repo/manifest-format.md) |
 | `kanon validate metadata` | Validate catalog entry metadata | [docs/catalog-author-guide.md](docs/catalog-author-guide.md) |
-| `kanon clean` | Remove synced packages and Kanon state (`--orphans` also prunes unreferenced marketplaces) | [docs/lifecycle.md](docs/lifecycle.md) |
+| `kanon clean` | Remove synced packages and Kanon state (`--orphans` prunes unreferenced marketplaces; `--purge` also deletes `.kanon`/`.kanon.lock`; `--purge-all` also removes the `KANON_HOME` store) | [docs/lifecycle.md](docs/lifecycle.md) |
 | `kanon repo` | Low-level manifest-driven repo sync subsystem | [docs/repo/README.md](docs/repo/README.md) |
 | `kanon marketplace` | Manage the per-dependency Claude marketplace install flag in `.kanon` (`enable` / `disable` / `status`) | [docs/configuration.md](docs/configuration.md) |
 | `kanon completion` | Emit a shell completion script for bash, zsh, or powershell | [docs/shell-completion.md](docs/shell-completion.md) |
@@ -550,6 +550,8 @@ Executes the full teardown lifecycle.
 kanon clean                       # auto-discover .kanon by walking up from cwd
 kanon clean .kanon                # explicit path to .kanon file
 kanon clean --orphans             # also unregister orphaned marketplaces
+kanon clean --purge               # also delete .kanon and .kanon.lock
+kanon clean --purge-all           # also remove the KANON_HOME store directory
 ```
 
 **Behavior:**
@@ -562,6 +564,12 @@ kanon clean --orphans             # also unregister orphaned marketplaces
 With `--orphans`, before the normal teardown kanon also unregisters any
 kanon-owned marketplaces recorded in `.kanon.lock` that are no longer
 referenced by `.kanon`, pruning them from `~/.claude`.
+
+With `--purge`, kanon also deletes this project's `.kanon` and `.kanon.lock`
+files. With `--purge-all`, it additionally removes the shared `KANON_HOME`
+store directory (default `~/.kanon-home`), removing only kanon-owned content
+(`store/`, `cache/`, and the emptied root) and refusing unsafe `KANON_HOME`
+paths such as your home directory or the filesystem root.
 
 ### kanon outdated
 
@@ -773,9 +781,9 @@ and `kanon catalog audit`. `kanon install` is hermetic: it reads only
 `.kanon` and `.kanon.lock` and does not consult a catalog source.
 
 **`KANON_HOME`**
-Root of the shared kanon store and caches (default `~/.kanon`). The
+Root of the shared kanon store and caches (default `~/.kanon-home`). The
 `--home` / `--store-dir <path>` global flag overrides it for a single
-invocation; precedence is flag > `KANON_HOME` > `~/.kanon`. Replaces the
+invocation; precedence is flag > `KANON_HOME` > `~/.kanon-home`. Replaces the
 removed `KANON_WORKSPACE_DIR` / `KANON_CACHE_DIR` variables. Synced artifacts
 and the per-`.kanon` workspace lock both live under `${KANON_HOME}/store/`,
 so the project directory holds only `.kanon` (plus `.kanon.lock` after the
@@ -878,7 +886,7 @@ regardless of which source provided each package.
 ### Directory Structure After Install
 
 Fetched artifacts live in the shared `KANON_HOME` store
-(`$KANON_HOME`, default `~/.kanon`), content-addressed and deduped across
+(`$KANON_HOME`, default `~/.kanon-home`), content-addressed and deduped across
 projects. Only `.kanon` and `.kanon.lock` live in (and are committed to)
 the project itself:
 
@@ -887,7 +895,7 @@ project/
   .kanon                            # Configuration (committed)
   .kanon.lock                       # Resolved SHAs (committed)
 
-$KANON_HOME/                        # Shared store (default ~/.kanon; not in the repo)
+$KANON_HOME/                        # Shared store (default ~/.kanon-home; not in the repo)
   store/
     .kanon-data/
       sources/

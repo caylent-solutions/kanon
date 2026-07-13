@@ -55,7 +55,7 @@ class TestCacheDirPrecedence:
     """cache_dir() resolves under the shared KANON_HOME root (<KANON_HOME>/cache).
 
     The old per-user KANON_CACHE_DIR override and its XDG_CACHE_HOME fallback are
-    removed; the cache now always lives under KANON_HOME (env > default ~/.kanon).
+    removed; the cache now always lives under KANON_HOME (env > default ~/.kanon-home).
     """
 
     def test_cache_dir_is_kanon_home_cache_subdir_when_env_set(
@@ -72,13 +72,13 @@ class TestCacheDirPrecedence:
         assert cache_dir() == tmp_path / KANON_HOME_CACHE_SUBDIR
 
     def test_cache_dir_default_is_under_home_kanon_cache(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """With KANON_HOME unset, the cache defaults to $HOME/.kanon/cache (env-derived)."""
+        """With KANON_HOME unset, the cache defaults to $HOME/.kanon-home/cache (env-derived)."""
         monkeypatch.delenv("KANON_HOME", raising=False)
         expected = Path.home() / KANON_HOME_DIR_NAME / KANON_HOME_CACHE_SUBDIR
         assert cache_dir() == expected
 
     def test_cache_dir_empty_home_env_falls_back_to_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """An empty KANON_HOME value resolves to the default $HOME/.kanon/cache."""
+        """An empty KANON_HOME value resolves to the default $HOME/.kanon-home/cache."""
         monkeypatch.setenv("KANON_HOME", "")
         expected = Path.home() / KANON_HOME_DIR_NAME / KANON_HOME_CACHE_SUBDIR
         assert cache_dir() == expected
@@ -299,7 +299,7 @@ class TestCacheConstants:
         assert KANON_HOME_ENV_VAR == "KANON_HOME"
 
     def test_kanon_home_dir_name_default(self) -> None:
-        assert KANON_HOME_DIR_NAME == ".kanon"
+        assert KANON_HOME_DIR_NAME == ".kanon-home"
 
     def test_kanon_home_cache_subdir_value(self) -> None:
         assert KANON_HOME_CACHE_SUBDIR == "cache"

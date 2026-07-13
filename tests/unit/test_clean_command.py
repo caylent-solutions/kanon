@@ -17,10 +17,10 @@ class TestCleanCommand:
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com\nKANON_SOURCE_build_REVISION=main\nKANON_SOURCE_build_PATH=meta.xml\n"
         )
-        args = types.SimpleNamespace(kanonenv_path=kanonenv, orphans=False)
+        args = types.SimpleNamespace(kanonenv_path=kanonenv, orphans=False, purge=False, purge_all=False)
         with patch("kanon_cli.commands.clean.clean") as mock_clean:
             _run(args)
-            mock_clean.assert_called_once_with(kanonenv, orphans=False)
+            mock_clean.assert_called_once_with(kanonenv, orphans=False, purge=False, purge_home=False)
 
     def test_delegates_orphans_flag_to_core(self, tmp_path: pathlib.Path) -> None:
         """``_run`` must forward ``args.orphans`` into ``clean(..., orphans=...)``."""
@@ -28,10 +28,32 @@ class TestCleanCommand:
         kanonenv.write_text(
             "KANON_SOURCE_build_URL=https://example.com\nKANON_SOURCE_build_REVISION=main\nKANON_SOURCE_build_PATH=meta.xml\n"
         )
-        args = types.SimpleNamespace(kanonenv_path=kanonenv, orphans=True)
+        args = types.SimpleNamespace(kanonenv_path=kanonenv, orphans=True, purge=False, purge_all=False)
         with patch("kanon_cli.commands.clean.clean") as mock_clean:
             _run(args)
-            mock_clean.assert_called_once_with(kanonenv, orphans=True)
+            mock_clean.assert_called_once_with(kanonenv, orphans=True, purge=False, purge_home=False)
+
+    def test_delegates_purge_flag_to_core(self, tmp_path: pathlib.Path) -> None:
+        """``--purge`` forwards ``purge=True`` (and ``purge_home=False``) to clean()."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com\nKANON_SOURCE_build_REF=main\nKANON_SOURCE_build_PATH=meta.xml\n"
+        )
+        args = types.SimpleNamespace(kanonenv_path=kanonenv, orphans=False, purge=True, purge_all=False)
+        with patch("kanon_cli.commands.clean.clean") as mock_clean:
+            _run(args)
+            mock_clean.assert_called_once_with(kanonenv, orphans=False, purge=True, purge_home=False)
+
+    def test_purge_all_implies_purge_and_forwards_purge_home(self, tmp_path: pathlib.Path) -> None:
+        """``--purge-all`` implies purge and forwards ``purge_home=True`` to clean()."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(
+            "KANON_SOURCE_build_URL=https://example.com\nKANON_SOURCE_build_REF=main\nKANON_SOURCE_build_PATH=meta.xml\n"
+        )
+        args = types.SimpleNamespace(kanonenv_path=kanonenv, orphans=False, purge=False, purge_all=True)
+        with patch("kanon_cli.commands.clean.clean") as mock_clean:
+            _run(args)
+            mock_clean.assert_called_once_with(kanonenv, orphans=False, purge=True, purge_home=True)
 
 
 @pytest.mark.unit
@@ -69,6 +91,35 @@ class TestCleanRegister:
 
         parsed = parser.parse_args(["clean", "--orphans"])
         assert parsed.orphans is True
+
+    def test_purge_flags_default_false(self) -> None:
+        """``--purge`` / ``--purge-all`` are opt-in: absent from argv => both False."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        parsed = parser.parse_args(["clean"])
+        assert parsed.purge is False
+        assert parsed.purge_all is False
+
+    def test_purge_flag_parses_true(self) -> None:
+        """``kanon clean --purge`` sets ``args.purge`` True (purge_all stays False)."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        parsed = parser.parse_args(["clean", "--purge"])
+        assert parsed.purge is True
+        assert parsed.purge_all is False
+
+    def test_purge_all_flag_parses_true(self) -> None:
+        """``kanon clean --purge-all`` sets ``args.purge_all`` True."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers()
+        register(subparsers)
+
+        parsed = parser.parse_args(["clean", "--purge-all"])
+        assert parsed.purge_all is True
 
     def test_description_documents_store_prune(self) -> None:
         """The clean subparser description documents that it prunes the KANON_HOME store.
@@ -168,7 +219,7 @@ class TestCleanResolvesExplicitPath:
 
         received: list[pathlib.Path] = []
 
-        def _capture_clean(path, orphans=False):
+        def _capture_clean(path, orphans=False, purge=False, purge_home=False):
             received.append(path)
 
         with patch("kanon_cli.commands.clean.clean", side_effect=_capture_clean):
@@ -191,7 +242,7 @@ class TestCleanResolvesExplicitPath:
 
         received: list[pathlib.Path] = []
 
-        def _capture_clean(path, orphans=False):
+        def _capture_clean(path, orphans=False, purge=False, purge_home=False):
             received.append(path)
 
         with patch("kanon_cli.commands.clean.clean", side_effect=_capture_clean):

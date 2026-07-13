@@ -323,7 +323,7 @@ variable reference table.
 
 **`KANON_HOME`** -- Root kanon home directory; cache lives under
 `${KANON_HOME}/cache`. Controls where completion index files, version
-lists, and error logs are written. Defaults to `~/.kanon`.
+lists, and error logs are written. Defaults to `~/.kanon-home`.
 Override to place the home directory on a faster or larger volume.
 
 **`KANON_COMPLETION_CACHE_TTL`** (default `300`) -- Cache
@@ -416,7 +416,7 @@ present):
 cd ~
 kanon doctor --refresh-completion-cache
 # exit 0; output similar to:
-# [ok] Completion cache refreshed (KANON_HOME=~/.kanon)
+# [ok] Completion cache refreshed (KANON_HOME=~/.kanon-home)
 ```
 
 Example: prune the entire cache from any directory:
@@ -424,7 +424,7 @@ Example: prune the entire cache from any directory:
 ```bash
 kanon doctor --prune-cache
 # exit 0; output similar to:
-# [ok] Cache pruned (KANON_HOME=~/.kanon)
+# [ok] Cache pruned (KANON_HOME=~/.kanon-home)
 ```
 
 Override the home directory via `KANON_HOME` to target a

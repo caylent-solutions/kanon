@@ -196,7 +196,7 @@ def add_global_flags(parser: argparse.ArgumentParser) -> None:
         help=(
             "Use <path> as the shared kanon home root (the content-addressed store and "
             "caches live under it). Takes precedence over the KANON_HOME environment variable "
-            "and the ~/.kanon default. --store-dir is an accepted alias."
+            "and the ~/.kanon-home default. --store-dir is an accepted alias."
         ),
     )
 
@@ -214,7 +214,7 @@ def _apply_global_flags(args: argparse.Namespace) -> None:
       ``KANON_HOME`` in the process environment so every downstream
       ``constants.resolve_kanon_home()`` reader (the store base dir, the
       completion / catalog-audit caches, the update-check cache) honors it
-      with precedence ``--home`` flag > ``KANON_HOME`` env > ``~/.kanon``
+      with precedence ``--home`` flag > ``KANON_HOME`` env > ``~/.kanon-home``
       default. The flag value fully replaces any inherited ``KANON_HOME``
       for the invocation.
 

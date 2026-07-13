@@ -52,6 +52,8 @@ touched. See
    b. rm -rf CLAUDE_MARKETPLACES_DIR
 5. rm -rf .packages/ (ignore_errors)
 6. rm -rf .kanon-data/ (ignore_errors)
+7. If --purge or --purge-all: delete this project's .kanon and .kanon.lock
+8. If --purge-all: remove the KANON_HOME store dir (store/, cache/, empty root)
 ```
 
 Steps execute in this specific order: uninstalling plugins first ensures
@@ -72,6 +74,24 @@ keep-set and user-managed marketplaces are never touched. Plain
 `kanon clean` (without `--orphans`) leaves this teardown path unchanged.
 See
 [docs/lockfile.md -- Marketplace ownership and pruning](lockfile.md#marketplace-ownership-and-pruning).
+
+### `kanon clean --purge`
+
+With `--purge`, after the normal teardown kanon also deletes this project's
+`.kanon` and `.kanon.lock` files -- a full removal of the project's kanon
+configuration. Both deletions are no-ops when the file is already absent.
+
+### `kanon clean --purge-all`
+
+With `--purge-all`, kanon does everything `--purge` does and additionally
+removes the shared `KANON_HOME` store directory (default `~/.kanon-home`)
+used by every project. To avoid destroying unrelated data behind a
+misconfigured `KANON_HOME`, `--purge-all` removes only kanon-owned content:
+it refuses (fail-fast) when `KANON_HOME` resolves to the filesystem root,
+your home directory, or a parent of your home or current directory, and
+otherwise removes only the `store/` and `cache/` subdirectories and then the
+home root itself, and only when that root is left empty. Any non-kanon
+entries in the home root are kept, with a warning.
 
 ## Directory Structure After Install
 

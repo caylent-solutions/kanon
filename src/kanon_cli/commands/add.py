@@ -65,6 +65,7 @@ from kanon_cli.core.kanon_hash import kanon_hash
 from kanon_cli.core.install import _resolve_ref_to_sha, read_lockfile_if_present, resolve_kanon_lock_root
 from kanon_cli.core.kanonenv_writer import (
     ensure_claude_marketplaces_dir,
+    guard_kanon_file_not_dir,
     has_claude_marketplaces_dir_header,
 )
 from kanon_cli.core.lockfile import write_lockfile
@@ -1439,6 +1440,7 @@ def run_add(args: argparse.Namespace) -> int:
         sys.exit(1)
 
     kanon_file = pathlib.Path(getattr(args, "kanon_file", KANON_KANON_FILE_DEFAULT))
+    guard_kanon_file_not_dir(kanon_file)
     force: bool = getattr(args, "force", False)
     dry_run: bool = getattr(args, "dry_run", False)
     alias_override: str | None = getattr(args, "alias_override", None)

@@ -1120,7 +1120,7 @@ class TestKanonHomeConstants:
         """KANON_HOME_DIR_NAME is the relative default '.kanon' (joined onto $HOME)."""
         from kanon_cli.constants import KANON_HOME_DIR_NAME
 
-        assert KANON_HOME_DIR_NAME == ".kanon"
+        assert KANON_HOME_DIR_NAME == ".kanon-home"
 
     def test_store_and_cache_subdir_names(self) -> None:
         """The store and cache live in distinct, non-empty subdirs of the home root."""
@@ -1160,7 +1160,7 @@ class TestKanonHomeConstants:
         assert KANON_HOME_STORE_GITIGNORE_ENTRY == "*", "the store .gitignore safety net must ignore everything"
 
     def test_resolve_kanon_home_default_is_under_real_home(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """With KANON_HOME unset, the home resolves to $HOME/.kanon (env-derived, not hard-coded)."""
+        """With KANON_HOME unset, the home resolves to $HOME/.kanon-home (env-derived, not hard-coded)."""
         import pathlib
 
         from kanon_cli.constants import KANON_HOME_DIR_NAME, resolve_kanon_home

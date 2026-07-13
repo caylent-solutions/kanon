@@ -4,7 +4,7 @@ Covers item 12 (shared ``KANON_HOME`` store) precedence at the resolution and
 CLI-plumbing layers:
 
 - ``constants.resolve_kanon_home(override=...)`` honors precedence
-  override (flag) > ``KANON_HOME`` env > ``~/.kanon`` default.
+  override (flag) > ``KANON_HOME`` env > ``~/.kanon-home`` default.
 - ``cli_args.add_global_flags`` registers ``--home`` with the ``--store-dir``
   alias, both mapping to ``dest='home'`` as a ``pathlib.Path``.
 - ``cli_args._apply_global_flags`` threads the parsed flag into the process
@@ -52,7 +52,7 @@ class TestResolveKanonHomePrecedence:
         assert resolved != env_home
 
     def test_override_wins_over_default(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """An explicit override beats the ~/.kanon default when no env var is set."""
+        """An explicit override beats the ~/.kanon-home default when no env var is set."""
         monkeypatch.delenv(KANON_HOME_ENV_VAR, raising=False)
         flag_home = tmp_path / "flag_home"
 
@@ -69,7 +69,7 @@ class TestResolveKanonHomePrecedence:
         assert resolve_kanon_home(override=None) == env_home
 
     def test_default_used_when_no_override_no_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """With no override and no env value, the ~/.kanon default is returned (step 2)."""
+        """With no override and no env value, the ~/.kanon-home default is returned (step 2)."""
         monkeypatch.delenv(KANON_HOME_ENV_VAR, raising=False)
 
         assert resolve_kanon_home(override=None) == pathlib.Path.home() / KANON_HOME_DIR_NAME

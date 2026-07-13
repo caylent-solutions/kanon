@@ -18,8 +18,8 @@ from kanon_cli.core.install import install
 def _store_base() -> Path:
     """Return the shared artifact store base (``<KANON_HOME>/store``).
 
-    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
-    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
+    install()/clean() create and remove ``.packages/`` and ``.kanon-data/``
+    under the shared store, not beside the project ``.kanon``.
     The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
     per-test temporary directory.
     """

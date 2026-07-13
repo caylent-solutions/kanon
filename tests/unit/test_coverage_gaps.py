@@ -50,7 +50,7 @@ class TestUpdateGitignoreNoTrailingNewline:
         """Line 187: f.write('\\n') when existing content does not end with '\\n'."""
         gitignore = tmp_path / ".gitignore"
         gitignore.write_text("some-existing-entry")
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, [".packages/", ".kanon-data/"])
         content = gitignore.read_text()
         lines = content.splitlines()
         assert "some-existing-entry" in lines
@@ -61,7 +61,7 @@ class TestUpdateGitignoreNoTrailingNewline:
         """Each entry must be on its own line when preceded by no-newline content."""
         gitignore = tmp_path / ".gitignore"
         gitignore.write_text("custom-entry")
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, [".packages/", ".kanon-data/"])
         content = gitignore.read_text()
         assert content.startswith("custom-entry")
         assert ".packages/" in content

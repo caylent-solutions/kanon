@@ -192,15 +192,17 @@ class TestSymlinkAggregation:
 
 @pytest.mark.unit
 class TestGitignore:
+    """Mechanics of the ``update_gitignore`` append helper (explicit entries)."""
+
     def test_creates_gitignore(self, tmp_path: pathlib.Path) -> None:
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, [".packages/", ".kanon-data/"])
         content = (tmp_path / ".gitignore").read_text()
         assert ".packages/" in content
         assert ".kanon-data/" in content
 
     def test_idempotent(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / ".gitignore").write_text(".packages/\n.kanon-data/\n")
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, [".packages/", ".kanon-data/"])
         content = (tmp_path / ".gitignore").read_text()
         assert content.count(".packages/") == 1
 

@@ -115,8 +115,13 @@ class TestTCClean:
         assert not (store_base / ".packages").exists(), ".packages still present in store after clean"
         assert not (store_base / ".kanon-data").exists(), ".kanon-data still present in store after clean"
 
-    def test_tc_clean_02_gitignore_lines_retained(self, tmp_path: pathlib.Path) -> None:
-        """TC-clean-02: .gitignore entries written by install remain after clean."""
+    def test_tc_clean_02_no_gitignore_for_nongit_store(self, tmp_path: pathlib.Path) -> None:
+        """TC-clean-02: install writes no store .gitignore outside a git tree; clean creates none.
+
+        KANON_HOME points at an isolated temp dir that is not inside a git working
+        tree, so install must not write ``<store>/.gitignore`` and clean must not
+        create one either.
+        """
         manifest_bare = _build_manifest_fixture(tmp_path / "fixtures")
 
         work_dir = tmp_path / "tc-cln-02"
@@ -147,22 +152,12 @@ class TestTCClean:
 
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         gitignore_path = store_base / ".gitignore"
-        assert gitignore_path.exists(), ".gitignore not created by install in store"
-        install_gitignore = gitignore_path.read_text()
-        assert ".packages/" in install_gitignore, (
-            f".packages/ not found in .gitignore after install: {install_gitignore!r}"
-        )
+        assert not gitignore_path.exists(), f".gitignore must not be created by install: {gitignore_path}"
 
         clean_result = kanon_clean(work_dir)
         assert clean_result.returncode == 0, f"clean exited {clean_result.returncode}\nstdout={clean_result.stdout!r}"
 
-        post_clean_gitignore = gitignore_path.read_text()
-        assert ".packages/" in post_clean_gitignore, (
-            f".packages/ line removed from .gitignore after clean: {post_clean_gitignore!r}"
-        )
-        assert ".kanon-data/" in post_clean_gitignore, (
-            f".kanon-data/ line removed from .gitignore after clean: {post_clean_gitignore!r}"
-        )
+        assert not gitignore_path.exists(), f".gitignore must not be created by clean: {gitignore_path}"
 
     def _build_marketplace_plugin(self, plugins: pathlib.Path, name: str) -> None:
         """Seed a bare plugin repo named ``name`` carrying a claude-schema marketplace.json.

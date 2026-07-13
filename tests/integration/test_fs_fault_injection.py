@@ -401,7 +401,7 @@ class TestPathsWithSpaces:
         self,
         spaced_project: pathlib.Path,
     ) -> None:
-        """install writes .gitignore with correct entries to the store when the path has spaces."""
+        """install writes no .gitignore under a non-git store when the path has spaces."""
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
         with (
@@ -415,11 +415,9 @@ class TestPathsWithSpaces:
                 lock_file_path=spaced_project.parent / ".kanon.lock",
             )
 
-        gitignore = store_base / ".gitignore"
-        assert gitignore.is_file(), f".gitignore must be created under the shared store: {store_base}"
-        content = gitignore.read_text()
-        assert ".packages/" in content
-        assert ".kanon-data/" in content
+        assert not (store_base / ".gitignore").exists(), (
+            f"install() must not write .gitignore under a non-git store: {store_base}"
+        )
 
     def test_clean_removes_dirs_with_space_in_path(
         self,

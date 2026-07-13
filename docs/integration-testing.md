@@ -130,8 +130,9 @@ In kanon 3.0.0 the install artifacts no longer live next to `.kanon`. All
 fetched data is content-addressed under a **shared store** rooted at
 `KANON_HOME` (precedence: `--home`/`--store-dir` flag > `KANON_HOME` env >
 `~/.kanon-home` default). A successful `kanon install` writes only `.kanon.lock`
-into the project directory; the `.packages/`, `.kanon-data/sources/<name>/`,
-and store-level `.gitignore` artifacts are created under `<KANON_HOME>/store/`.
+into the project directory; the `.packages/` and `.kanon-data/sources/<name>/`
+artifacts are created under `<KANON_HOME>/store/` (a store-level `.gitignore`
+containing `*` is written there only when the store sits inside a git repo).
 The removed per-project location variables (`KANON_WORKSPACE_DIR`,
 `KANON_CACHE_DIR`) are subsumed by this single store.
 
@@ -633,7 +634,7 @@ kanon install .kanon
 - Directory `${KANON_HOME}/store/.packages/` exists
 - `${KANON_HOME}/store/.packages/pkg-alpha` is a symlink
 - Symlink target path contains `${KANON_HOME}/store/.kanon-data/sources/primary/.packages/pkg-alpha`
-- `${KANON_HOME}/store/.gitignore` exists and contains both the `.packages/` and `.kanon-data/` lines
+- `${KANON_HOME}/store/.gitignore` is NOT created (the throwaway store is not inside a git repo; the safety-net `.gitignore` containing `*` is written only when the store sits inside a git working tree)
 
 **Clean:**
 
@@ -3519,16 +3520,16 @@ set -e
 
 **Pass criteria:** Exit code non-zero; stderr names the colliding package and both source names.
 
-### PK-13: store `.gitignore` promise -- `.packages/` and `.kanon-data/` lines added
+### PK-13: no store `.gitignore` for a non-git store
 
 ```bash
 pk_run pk13 "main"
-grep -q "^.packages/$" ${KANON_HOME}/store/.gitignore && grep -q "^.kanon-data/$" ${KANON_HOME}/store/.gitignore && echo "PASS: both lines present"
+test ! -e ${KANON_HOME}/store/.gitignore && echo "PASS: no .gitignore for non-git store"
 kanon clean .kanon
-grep -q "^.packages/$" ${KANON_HOME}/store/.gitignore && echo "PASS: clean preserved .gitignore lines"
+test ! -e ${KANON_HOME}/store/.gitignore && echo "PASS: still no .gitignore after clean"
 ```
 
-**Pass criteria:** Both `.packages/` and `.kanon-data/` lines added to `${KANON_HOME}/store/.gitignore` by install; lines remain after clean.
+**Pass criteria:** No `.gitignore` is written under `${KANON_HOME}/store/` (the throwaway store is not inside a git repo); none appears after clean. The safety-net `.gitignore` containing `*` is written only when the store sits inside a git working tree.
 
 ### Cleanup
 
@@ -5474,12 +5475,12 @@ KANON_SOURCE_a_NAME=a
 KANON_SOURCE_a_GITBASE=https://example.com
 KANONEOF
 kanon install
-grep -q "^.packages/$" ${KANON_HOME}/store/.gitignore || (echo "FAIL: install did not add"; exit 1)
+test ! -e ${KANON_HOME}/store/.gitignore && echo "PASS: no .gitignore for non-git store"
 kanon clean
-grep -q "^.packages/$" ${KANON_HOME}/store/.gitignore && grep -q "^.kanon-data/$" ${KANON_HOME}/store/.gitignore && echo "PASS: clean preserved both lines"
+test ! -e ${KANON_HOME}/store/.gitignore && echo "PASS: still no .gitignore after clean"
 ```
 
-**Pass criteria:** Both `.gitignore` lines added by install remain after clean.
+**Pass criteria:** No `.gitignore` is written under `${KANON_HOME}/store/` (non-git store); none appears after clean.
 
 ### TC-clean-03: `clean --orphans` prunes a removed source's marketplace
 
@@ -5649,11 +5650,11 @@ KANON_SOURCE_bravo_GITBASE=https://example.com
 KANONEOF
 kanon install .kanon
 test -L ${KANON_HOME}/store/.packages/pkg-alpha && test -L ${KANON_HOME}/store/.packages/pkg-bravo && echo "PASS: both"
-grep -q "^.packages/$" ${KANON_HOME}/store/.gitignore && grep -q "^.kanon-data/$" ${KANON_HOME}/store/.gitignore && echo "PASS: gitignore"
+test ! -e ${KANON_HOME}/store/.gitignore && echo "PASS: no .gitignore for non-git store"
 kanon clean .kanon
 ```
 
-**Pass criteria:** Both packages aggregated; `.gitignore` updated.
+**Pass criteria:** Both packages aggregated; no `.gitignore` is written (non-git store).
 
 ### UJ-04: `GITBASE` env override (`docs/pipeline-integration.md`)
 
@@ -6050,11 +6051,10 @@ directory, so the checks below operate from the store base:
 cd "${KANON_HOME}/store"
 ```
 
-### 16.1 .gitignore contents
+### 16.1 no store .gitignore for a non-git store
 
 ```bash
-grep -q "^\.packages/$" ${KANON_HOME}/store/.gitignore && echo "PASS: .packages/ in .gitignore" || echo "FAIL"
-grep -q "^\.kanon-data/$" ${KANON_HOME}/store/.gitignore && echo "PASS: .kanon-data/ in .gitignore" || echo "FAIL"
+test ! -e ${KANON_HOME}/store/.gitignore && echo "PASS: no .gitignore for non-git store" || echo "FAIL: unexpected .gitignore"
 ```
 
 ### 16.2 .packages/ contains symlinks
@@ -6338,7 +6338,7 @@ After running every scenario from §2 through §28, populate this spreadsheet-st
 | 162 | PK-10         | non-marketplace                    | linkfile + PEP 440                                     |        |      |         |       |
 | 163 | PK-11         | non-marketplace                    | multi-source PEP 440 mix                               |        |      |         |       |
 | 164 | PK-12         | non-marketplace                    | collision PEP 440                                      |        |      |         |       |
-| 165 | PK-13         | non-marketplace                    | .gitignore promise                                     |        |      |         |       |
+| 165 | PK-13         | non-marketplace                    | no store .gitignore (non-git store)                    |        |      |         |       |
 | 166 | RP-init-01    | repo-init                          | bare init                                              |        |      |         |       |
 | 167 | RP-init-02    | repo-init                          | --manifest-url long form                               |        |      |         |       |
 | 168 | RP-init-03    | repo-init                          | --manifest-name=alt.xml                                |        |      |         |       |

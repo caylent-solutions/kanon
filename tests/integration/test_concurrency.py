@@ -426,13 +426,11 @@ class TestParallelInstallsDeterministic:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """Two concurrent install processes result in a .gitignore with no duplicate entries.
+        """Two concurrent install processes write no .gitignore under a non-git store.
 
-        Both required entries (.packages/ and .kanon-data/) must be present
-        exactly once in the store .gitignore, regardless of concurrent writes.
-        Because the two installs serialise on the cross-process workspace lock,
-        the second writer observes the first writer's entries and must not
-        duplicate them.
+        The isolated temp store is not inside a git working tree, so no install
+        writes a store .gitignore. After both serialised installs, no .gitignore
+        must exist under the store regardless of concurrency.
         """
         kanonenv = _write_kanonenv(tmp_path, "src1")
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
@@ -440,17 +438,8 @@ class TestParallelInstallsDeterministic:
         errors = self._run_two_parallel_installs(kanonenv)
         assert not errors, f"Parallel installs raised errors instead of serialising cleanly: {errors}"
 
-        gitignore = store_base / ".gitignore"
-        assert gitignore.exists(), ".gitignore must be written by install under the store"
-        lines = gitignore.read_text(encoding="utf-8").splitlines()
-        packages_count = lines.count(".packages/")
-        kanon_data_count = lines.count(".kanon-data/")
-
-        assert packages_count == 1, (
-            f".packages/ must appear exactly once in .gitignore after serialised parallel installs; found {packages_count}"
-        )
-        assert kanon_data_count == 1, (
-            f".kanon-data/ must appear exactly once in .gitignore after serialised parallel installs; found {kanon_data_count}"
+        assert not (store_base / ".gitignore").exists(), (
+            "install() must not write .gitignore under a non-git store, even under concurrent installs"
         )
 
 
@@ -743,24 +732,19 @@ class TestInstallOverInstallIdempotent:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """Repeated installs do not duplicate .gitignore entries.
+        """Repeated installs write no .gitignore under a non-git store.
 
-        After two installs, .packages/ and .kanon-data/ must each appear
-        exactly once in the store .gitignore.
+        A non-git store writes no .gitignore, so repeated installs must leave
+        no .gitignore under the store.
         """
         kanonenv = _write_kanonenv(tmp_path, "primary")
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
+        assert not (store_base / ".gitignore").exists(), "install() must not write .gitignore under a non-git store"
         _patched_install(kanonenv)
 
-        gitignore = store_base / ".gitignore"
-        assert gitignore.exists(), ".gitignore must exist in the store after two installs"
-        lines = gitignore.read_text(encoding="utf-8").splitlines()
-        assert lines.count(".packages/") == 1, (
-            f".packages/ must appear exactly once in .gitignore; found {lines.count('.packages/')} times"
-        )
-        assert lines.count(".kanon-data/") == 1, (
-            f".kanon-data/ must appear exactly once in .gitignore; found {lines.count('.kanon-data/')} times"
+        assert not (store_base / ".gitignore").exists(), (
+            "a second install must not write .gitignore under a non-git store"
         )
 
     def test_packages_not_duplicated_on_repeated_install(

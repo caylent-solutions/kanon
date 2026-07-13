@@ -25,8 +25,10 @@ from kanon_cli.repo import RepoCommandError
 def _store_base() -> Path:
     """Return the shared artifact store base (``<KANON_HOME>/store``).
 
-    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
-    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
+    install()/clean() create and remove ``.packages/`` and ``.kanon-data/``
+    under the shared store, not beside the project ``.kanon``. install() writes
+    a ``.gitignore`` under the store only when the store is inside a git working
+    tree; the isolated per-test store here is not, so no ``.gitignore`` appears.
     The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
     per-test temporary directory.
     """
@@ -154,7 +156,9 @@ class TestInstallCrashCleanReinstall:
         assert (store_base / ".packages" / "recovered-tool").is_symlink(), (
             "Reinstall after crash recovery must create .packages/recovered-tool symlink"
         )
-        assert (store_base / ".gitignore").is_file(), "Reinstall after crash recovery must create .gitignore"
+        assert not (store_base / ".gitignore").exists(), (
+            "reinstall after crash recovery must not write .gitignore under a non-git store"
+        )
 
     def test_manually_corrupted_packages_dir_is_recovered_by_reinstall(self, tmp_path: Path) -> None:
         """Orphaned .packages/ dir without matching source data is recovered by reinstall.
@@ -240,10 +244,10 @@ class TestInstallIdempotency:
         )
 
     def test_install_twice_does_not_duplicate_gitignore_entries(self, tmp_path: Path) -> None:
-        """Running install twice must not duplicate .gitignore managed entries.
+        """Running install twice writes no .gitignore under a non-git store.
 
-        Each managed entry (.packages/, .kanon-data/) must appear exactly once
-        in .gitignore regardless of how many times install is run.
+        A non-git store writes no .gitignore, so repeated installs must leave
+        no .gitignore under the store.
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content("idem2"))
 
@@ -253,14 +257,13 @@ class TestInstallIdempotency:
             patch("kanon_cli.repo.repo_sync"),
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+            assert not (_store_base() / ".gitignore").exists(), (
+                "install() must not write .gitignore under a non-git store"
+            )
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        gitignore_content = (_store_base() / ".gitignore").read_text()
-        assert gitignore_content.count(".packages/") == 1, (
-            ".packages/ must appear exactly once in .gitignore after two installs"
-        )
-        assert gitignore_content.count(".kanon-data/") == 1, (
-            ".kanon-data/ must appear exactly once in .gitignore after two installs"
+        assert not (_store_base() / ".gitignore").exists(), (
+            "a second install must not write .gitignore under a non-git store"
         )
 
     def test_install_twice_all_symlinks_remain_valid(self, tmp_path: Path) -> None:

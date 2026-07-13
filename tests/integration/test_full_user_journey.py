@@ -41,8 +41,6 @@ _CONTENT_FILE_TEXT = "hello from journey content repo"
 _MARKETPLACE_NAME = "test-marketplace"
 _PLUGIN_NAME = "test-plugin"
 _MARKETPLACE_DIR_REL = ".claude-marketplaces"
-_GITIGNORE_PACKAGES = ".packages/"
-_GITIGNORE_KANON_DATA = ".kanon-data/"
 
 
 _EMPTY_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
@@ -277,8 +275,8 @@ class TestFullJourneyBootstrapInstallClean:
         3. Create a local catalog repo with a .kanon pointing at the manifest repo.
         4. Create a project directory and write .kanon directly from the catalog template.
         5. Run: kanon install (with mocked repo operations so no network needed).
-        6. Verify the shared store has .packages/ populated, .kanon-data/ created,
-           and .gitignore updated.
+        6. Verify the shared store has .packages/ populated and .kanon-data/
+           created, and no .gitignore under the non-git store.
         7. Run: kanon clean.
         8. Verify the store .packages/ gone, .kanon-data/ gone.
         """
@@ -332,9 +330,7 @@ class TestFullJourneyBootstrapInstallClean:
             ".packages/synced-pkg must be a symlink in the store after install"
         )
         assert (store_base / ".kanon-data").is_dir(), ".kanon-data/ must exist in the store after install"
-        gitignore = (store_base / ".gitignore").read_text(encoding="utf-8")
-        assert _GITIGNORE_PACKAGES in gitignore, "store .gitignore must contain .packages/"
-        assert _GITIGNORE_KANON_DATA in gitignore, "store .gitignore must contain .kanon-data/"
+        assert not (store_base / ".gitignore").exists(), "install() must not write .gitignore under a non-git store"
 
         clean(kanonenv_path)
 
@@ -907,8 +903,9 @@ class TestFullJourneyInstallTwiceThenClean:
 
         Steps:
         1. Create .kanon with one source.
-        2. Run install (first time) -- verify .gitignore and .packages/ created.
-        3. Run install (second time) -- verify no duplicates in .gitignore.
+        2. Run install (first time) -- verify .packages/ created and no store
+           .gitignore under the non-git store.
+        3. Run install (second time) -- verify still no store .gitignore.
         4. Run clean -- verify .packages/ and .kanon-data/ gone.
         """
         project_dir = tmp_path / "project"
@@ -942,10 +939,10 @@ class TestFullJourneyInstallTwiceThenClean:
             )
 
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
-        first_gitignore = (store_base / ".gitignore").read_text(encoding="utf-8")
-        assert first_gitignore.count(_GITIGNORE_PACKAGES) == 1, (
-            ".packages/ must appear exactly once in the store .gitignore after first install"
+        assert (store_base / ".packages" / "idempotent-pkg").is_symlink(), (
+            ".packages/idempotent-pkg must be a symlink in the store after first install"
         )
+        assert not (store_base / ".gitignore").exists(), "install() must not write .gitignore under a non-git store"
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -957,12 +954,8 @@ class TestFullJourneyInstallTwiceThenClean:
                 lock_file_path=kanonenv_path.parent / ".kanon.lock",
             )
 
-        second_gitignore = (store_base / ".gitignore").read_text(encoding="utf-8")
-        assert second_gitignore.count(_GITIGNORE_PACKAGES) == 1, (
-            ".packages/ must appear exactly once in the store .gitignore after second install (idempotency)"
-        )
-        assert second_gitignore.count(_GITIGNORE_KANON_DATA) == 1, (
-            ".kanon-data/ must appear exactly once in the store .gitignore after second install (idempotency)"
+        assert not (store_base / ".gitignore").exists(), (
+            "a second install must not write .gitignore under a non-git store"
         )
         assert (store_base / ".packages" / "idempotent-pkg").is_symlink(), (
             ".packages/idempotent-pkg must still be a symlink in the store after second install"

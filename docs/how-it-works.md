@@ -64,7 +64,7 @@ The command performs these steps:
    - Calls `kanon_cli.repo.repo_sync(source_dir)` -- aborts immediately on `RepoCommandError`
 5. **Aggregate symlinks** -- For each `.kanon-data/sources/<name>/.packages/*`, creates a symlink in `.packages/`
 6. **Collision detection** -- If two sources produce the same package name, fails fast with error identifying both sources
-7. **Update `.gitignore`** -- Ensures `.packages/` and `.kanon-data/` entries are present
+7. **Conditional store `.gitignore` safety net** -- Only when the shared `KANON_HOME` store sits inside a git working tree, writes `<KANON_HOME>/store/.gitignore` containing `*` so the fetched-artifact cache is never committed. When the store is not inside a git repo (the default `~/.kanon-home`), no `.gitignore` is written
 8. **Post-sync marketplace install** -- If any source sets `KANON_SOURCE_<alias>_MARKETPLACE=true`: locates the `claude` binary, discovers marketplace entries and plugins, registers marketplaces, and installs plugins via the Claude Code CLI
 
 ## Clean Lifecycle

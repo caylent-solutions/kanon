@@ -74,7 +74,6 @@ the source of truth for which clones exist.
 <project-root>/
   .kanon                        # operator-authored config file
   .kanon.lock                   # generated lockfile (commit this)
-  .gitignore                    # auto-updated by kanon install (idempotent)
   .kanon-data/
     .kanon-install.lock         # flock-managed concurrency lock
     sources/
@@ -97,8 +96,11 @@ Key paths:
 - **`.packages/`** -- aggregated symlinks pointing into the per-source
   `.packages/*` entries. This is the only directory operators need to
   reference in downstream tooling.
-- **`.gitignore`** -- `kanon install` appends `.packages/` and
-  `.kanon-data/` (idempotent; no duplicate entries are written).
+- **`<KANON_HOME>/store/.gitignore`** -- `kanon install` writes this
+  safety net (containing `*`) ONLY when the shared `KANON_HOME` store sits
+  inside a git working tree, so the fetched-artifact cache is never committed.
+  With the default `~/.kanon-home` (not a git repo), `kanon install` writes no
+  `.gitignore` at all.
 
 If the `.kanon-data/` directory layout becomes inconsistent (for example after
 a SIGTERM mid-clone), run `kanon clean` to prune and recover.

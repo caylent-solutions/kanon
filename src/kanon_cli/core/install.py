@@ -1318,9 +1318,9 @@ def write_store_gitignore_if_in_git_repo(store_base: pathlib.Path) -> bool:
     conditional, spec Section 3.5).
 
     The write is idempotent and additive: the entry is appended only when absent,
-    reusing ``update_gitignore`` so existing entries (e.g. the per-project
-    ``.packages/`` / ``.kanon-data/`` lines) are preserved. ``store_base`` is
-    created if absent so the safety net can always be ensured when required.
+    reusing ``update_gitignore`` so any pre-existing entries in the file are
+    preserved. ``store_base`` is created if absent so the safety net can always be
+    ensured when required.
 
     Args:
         store_base: The resolved store base directory (``<KANON_HOME>/store``).
@@ -1851,27 +1851,27 @@ def aggregate_symlinks(
 
 def update_gitignore(
     base_dir: pathlib.Path,
-    entries: list[str] | None = None,
+    entries: list[str],
 ) -> None:
-    """Ensure ``.gitignore`` contains the required entries.
+    """Ensure ``base_dir/.gitignore`` contains the given entries.
 
-    Creates ``.gitignore`` if it does not exist. Appends missing entries
-    without duplicating existing ones.
+    Creates ``.gitignore`` if it does not exist. Appends missing entries without
+    duplicating existing ones. ``entries`` is always supplied by the caller; the
+    sole caller is the in-git-repo store safety net, which passes the whole-store
+    ignore entry (``KANON_HOME_STORE_GITIGNORE_ENTRY``).
 
     Args:
-        base_dir: Project root directory.
-        entries: List of gitignore entries to ensure. Defaults to
-            ``.packages/`` and ``.kanon-data/``.
+        base_dir: Directory whose ``.gitignore`` is ensured.
+        entries: List of gitignore entries to ensure are present.
     """
     gitignore = base_dir / ".gitignore"
-    required_entries = entries if entries is not None else [".packages/", ".kanon-data/"]
 
     existing_content = ""
     if gitignore.exists():
         existing_content = gitignore.read_text(encoding="utf-8")
 
     existing_lines = existing_content.splitlines()
-    missing = [entry for entry in required_entries if entry not in existing_lines]
+    missing = [entry for entry in entries if entry not in existing_lines]
 
     if missing:
         with gitignore.open("a") as f:
@@ -2672,7 +2672,6 @@ def _run_install(
 
     print("kanon install: aggregating packages into .packages/...")
     package_owners = aggregate_symlinks(source_names, base_dir)
-    update_gitignore(base_dir)
 
     write_store_gitignore_if_in_git_repo(base_dir)
 

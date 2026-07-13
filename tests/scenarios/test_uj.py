@@ -290,9 +290,9 @@ class TestUJ:
         assert (store / ".packages" / "pkg-alpha").is_symlink(), "store .packages/pkg-alpha is not a symlink"
         assert (store / ".packages" / "pkg-bravo").is_symlink(), "store .packages/pkg-bravo is not a symlink"
 
-        gitignore_text = (store / ".gitignore").read_text()
-        assert ".packages/" in gitignore_text, "store .gitignore missing '.packages/'"
-        assert ".kanon-data/" in gitignore_text, "store .gitignore missing '.kanon-data/'"
+        assert not (store / ".gitignore").exists(), (
+            "store .gitignore must not be written for a store outside a git working tree"
+        )
 
         clean_result = kanon_clean(work_dir, extra_env={"KANON_HOME": str(kanon_home)})
         assert clean_result.returncode == 0, f"clean exited {clean_result.returncode}"

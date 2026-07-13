@@ -578,8 +578,13 @@ class TestPK:
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
 
-    def test_pk_13_gitignore_entries_added_and_preserved(self, tmp_path: pathlib.Path) -> None:
-        """PK-13: .gitignore gets .packages/ and .kanon-data/ entries; clean preserves them."""
+    def test_pk_13_no_gitignore_for_nongit_store(self, tmp_path: pathlib.Path) -> None:
+        """PK-13: install writes no store .gitignore outside a git tree; clean creates none.
+
+        KANON_HOME points at an isolated temp dir that is not inside a git working
+        tree, so install must not write ``<store>/.gitignore`` and clean must not
+        create one either.
+        """
         pkg_dir = tmp_path / "repos"
         pkg_dir.mkdir()
         mfst_repos = tmp_path / "mfst-repos"
@@ -600,15 +605,9 @@ class TestPK:
         _assert_install_ok(result, work_dir)
 
         gitignore = store_base / ".gitignore"
-        assert gitignore.exists(), ".gitignore not created by kanon install"
-        text = gitignore.read_text()
-        assert ".packages/" in text, f".gitignore missing '.packages/' entry:\n{text!r}"
-        assert ".kanon-data/" in text, f".gitignore missing '.kanon-data/' entry:\n{text!r}"
+        assert not gitignore.exists(), f".gitignore must not be created by kanon install: {gitignore}"
 
         result = kanon_clean(work_dir)
         _assert_clean_ok(result, work_dir)
 
-        assert gitignore.exists(), ".gitignore removed by kanon clean"
-        text_after = gitignore.read_text()
-        assert ".packages/" in text_after, f".gitignore missing '.packages/' after clean:\n{text_after!r}"
-        assert ".kanon-data/" in text_after, f".gitignore missing '.kanon-data/' after clean:\n{text_after!r}"
+        assert not gitignore.exists(), f".gitignore must not be created by kanon clean: {gitignore}"

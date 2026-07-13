@@ -1,9 +1,10 @@
 """Full install lifecycle with mocked repo Python API.
 
 3.0.0 store model (spec Section 7.1 / FR-15): the install artifacts
-(``.kanon-data/sources/<name>/``, the aggregated ``.packages/`` symlinks, and
-the artifact ``.gitignore``) live under the shared ``KANON_HOME`` store at
-``<KANON_HOME>/store``, not under the project directory. Each test sets
+(``.kanon-data/sources/<name>/`` and the aggregated ``.packages/`` symlinks)
+live under the shared ``KANON_HOME`` store at ``<KANON_HOME>/store``, not under
+the project directory. A store ``.gitignore`` is written only when the store
+sits inside a git working tree. Each test sets
 ``KANON_HOME`` to an isolated temp dir and resolves the store base via
 ``resolve_workspace_base_dir`` so the assertions point at the real artifact
 location.
@@ -28,9 +29,8 @@ def _isolated_store(monkeypatch: pytest.MonkeyPatch, kanon_home: Path) -> Path:
     """Point KANON_HOME at ``kanon_home`` and return the resolved store base.
 
     The store base is ``<KANON_HOME>/store`` (the single location shared by
-    install and clean), where the ``.kanon-data/`` source workspaces, the
-    aggregated ``.packages/`` symlinks, and the artifact ``.gitignore`` are
-    written.
+    install and clean), where the ``.kanon-data/`` source workspaces and the
+    aggregated ``.packages/`` symlinks are written.
     """
     kanon_home.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("KANON_HOME", str(kanon_home))
@@ -69,9 +69,7 @@ class TestInstallLifecycle:
 
         assert (store / ".kanon-data" / "sources" / "build").is_dir()
         assert (store / ".packages" / "pkg-a").is_symlink()
-        gitignore = (store / ".gitignore").read_text()
-        assert ".packages/" in gitignore
-        assert ".kanon-data/" in gitignore
+        assert not (store / ".gitignore").exists()
 
     def test_two_sources_aggregate_without_collision(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         store = _isolated_store(monkeypatch, tmp_path / "home")
@@ -147,10 +145,17 @@ class TestInstallLifecycle:
                 _install_run(args)
         assert exc_info.value.code == 1
 
-    def test_gitignore_appended_not_duplicated(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_gitignore_preexisting_left_unchanged(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Install leaves a pre-existing store ``.gitignore`` untouched for a non-git store.
+
+        The store here is an isolated temp dir that is not inside a git working
+        tree, so install writes no ``.gitignore`` and must not append to, rewrite,
+        or otherwise modify one a caller placed there beforehand.
+        """
         store = _isolated_store(monkeypatch, tmp_path / "home")
 
-        (store / ".gitignore").write_text(".packages/\n")
+        preexisting = ".packages/\n"
+        (store / ".gitignore").write_text(preexisting)
         kanonenv = _write_kanonenv(
             tmp_path / ".kanon",
             (
@@ -169,6 +174,4 @@ class TestInstallLifecycle:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        content = (store / ".gitignore").read_text()
-        assert content.count(".packages/") == 1
-        assert ".kanon-data/" in content
+        assert (store / ".gitignore").read_text() == preexisting

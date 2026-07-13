@@ -172,6 +172,7 @@ class TestCleanAutoDiscovery:
     def test_auto_discover_not_found_exits(self) -> None:
         args = MagicMock()
         args.kanonenv_path = None
+        args.purge_all = False
 
         with (
             patch(
@@ -181,6 +182,65 @@ class TestCleanAutoDiscovery:
             pytest.raises(SystemExit),
         ):
             _run(args)
+
+    def test_purge_all_without_kanon_removes_home_store(self) -> None:
+        """``--purge-all`` with no discoverable ``.kanon`` removes the shared store, no exit.
+
+        The home-store teardown is machine-global, so ``kanon clean --purge-all``
+        must still run ``remove_kanon_home_store`` when auto-discovery finds no
+        ``.kanon`` (e.g. right after ``--purge`` deleted it), rather than failing.
+        """
+        args = MagicMock()
+        args.kanonenv_path = None
+        args.purge_all = True
+
+        with (
+            patch(
+                "kanon_cli.commands.clean.find_kanonenv",
+                side_effect=FileNotFoundError("No .kanon file found"),
+            ),
+            patch("kanon_cli.commands.clean.remove_kanon_home_store") as mock_remove,
+            patch("kanon_cli.commands.clean.clean") as mock_clean,
+        ):
+            _run(args)
+
+        mock_remove.assert_called_once_with()
+        mock_clean.assert_not_called()
+
+    def test_purge_all_explicit_missing_path_removes_home_store(self, tmp_path: pathlib.Path) -> None:
+        """``--purge-all`` with an explicit but missing ``.kanon`` path removes the shared store."""
+        args = MagicMock()
+        args.kanonenv_path = tmp_path / "nope" / ".kanon"
+        args.purge_all = True
+
+        with (
+            patch("kanon_cli.commands.clean.remove_kanon_home_store") as mock_remove,
+            patch("kanon_cli.commands.clean.clean") as mock_clean,
+        ):
+            _run(args)
+
+        mock_remove.assert_called_once_with()
+        mock_clean.assert_not_called()
+
+    def test_purge_only_without_kanon_still_exits(self) -> None:
+        """``--purge`` alone (not ``--purge-all``) with no ``.kanon`` still fails fast (exit 1)."""
+        args = MagicMock()
+        args.kanonenv_path = None
+        args.purge = True
+        args.purge_all = False
+
+        with (
+            patch(
+                "kanon_cli.commands.clean.find_kanonenv",
+                side_effect=FileNotFoundError("No .kanon file found"),
+            ),
+            patch("kanon_cli.commands.clean.remove_kanon_home_store") as mock_remove,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            _run(args)
+
+        assert exc_info.value.code == 1
+        mock_remove.assert_not_called()
 
     def test_clean_error_exits(self, tmp_path: pathlib.Path) -> None:
         kanonenv = tmp_path / ".kanon"
@@ -257,6 +317,7 @@ class TestCleanResolvesExplicitPath:
         monkeypatch.chdir(tmp_path)
         args = MagicMock()
         args.kanonenv_path = pathlib.Path(".kanon")
+        args.purge_all = False
 
         with patch("kanon_cli.commands.clean.clean") as mock_clean:
             with pytest.raises(SystemExit) as exc_info:

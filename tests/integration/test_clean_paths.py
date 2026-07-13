@@ -207,3 +207,48 @@ class TestCleanMissingKanonenv:
         mock_clean.assert_called_once()
         called_path: pathlib.Path = mock_clean.call_args[0][0]
         assert called_path == find_kanonenv(start_dir=child)
+
+
+@pytest.mark.integration
+class TestCleanPurgeAllWithoutKanon:
+    """``kanon clean --purge-all`` removes the shared home store even with no ``.kanon``."""
+
+    def test_purge_all_removes_home_store_when_no_kanon(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With no discoverable ``.kanon`` but an existing KANON_HOME store, --purge-all removes it."""
+        home_store = tmp_path / "kanonhome"
+        (home_store / "store").mkdir(parents=True)
+        (home_store / "cache").mkdir(parents=True)
+        monkeypatch.setenv("KANON_HOME", str(home_store))
+
+        workdir = tmp_path / "elsewhere"
+        workdir.mkdir()
+        monkeypatch.chdir(workdir)
+
+        main(["clean", "--purge-all"])
+
+        assert not home_store.exists(), "--purge-all must remove the KANON_HOME store even with no .kanon"
+
+    def test_purge_all_without_kanon_refuses_when_home_store_is_user_home(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The standalone path preserves the safety refusal: KANON_HOME == $HOME exits 1, nothing removed."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+        monkeypatch.setenv("KANON_HOME", str(fake_home))
+
+        workdir = tmp_path / "work"
+        workdir.mkdir()
+        monkeypatch.chdir(workdir)
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["clean", "--purge-all"])
+
+        assert exc_info.value.code == 1
+        assert fake_home.exists(), "the refusal must leave $HOME intact"

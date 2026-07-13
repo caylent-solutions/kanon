@@ -13,7 +13,8 @@ longer referenced by .kanon (pruning them from ~/.claude).
 
 With --purge, kanon also deletes this project's .kanon and
 .kanon.lock files. With --purge-all, it additionally removes the
-shared KANON_HOME store directory (default ~/.kanon-home).
+shared KANON_HOME store directory (default ~/.kanon-home); this
+runs even when no .kanon project is present.
 
 positional arguments:
   kanonenv_path  Path to the .kanon configuration file (default: auto-discover
@@ -28,7 +29,8 @@ options:
                  config).
   --purge-all    Everything --purge does, and also remove the shared kanon
                  home store directory (KANON_HOME, default ~/.kanon-home) used
-                 by all projects.
+                 by all projects. Runs even when no .kanon project is present
+                 (removes only the shared store).
 
 Example:
   kanon clean             # auto-discovers .kanon

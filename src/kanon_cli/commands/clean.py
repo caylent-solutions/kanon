@@ -3,7 +3,7 @@
 import pathlib
 import sys
 
-from kanon_cli.core.clean import clean
+from kanon_cli.core.clean import clean, remove_kanon_home_store
 from kanon_cli.core.discover import find_kanonenv
 
 
@@ -28,7 +28,8 @@ def register(subparsers) -> None:
             "longer referenced by .kanon (pruning them from ~/.claude).\n\n"
             "With --purge, kanon also deletes this project's .kanon and\n"
             ".kanon.lock files. With --purge-all, it additionally removes the\n"
-            "shared KANON_HOME store directory (default ~/.kanon-home)."
+            "shared KANON_HOME store directory (default ~/.kanon-home); this\n"
+            "runs even when no .kanon project is present."
         ),
         epilog=(
             "Example:\n"
@@ -71,10 +72,25 @@ def register(subparsers) -> None:
         default=False,
         help=(
             "Everything --purge does, and also remove the shared kanon home store "
-            "directory (KANON_HOME, default ~/.kanon-home) used by all projects."
+            "directory (KANON_HOME, default ~/.kanon-home) used by all projects. "
+            "Runs even when no .kanon project is present (removes only the shared store)."
         ),
     )
     parser.set_defaults(func=_run)
+
+
+def _purge_home_only() -> None:
+    """Remove only the shared kanon home store when no project ``.kanon`` is present.
+
+    ``kanon clean --purge-all`` is machine-global: it must still tear down the
+    shared ``KANON_HOME`` store even when there is no discoverable project
+    ``.kanon`` (e.g. right after ``kanon clean --purge`` deleted it). Delegates to
+    ``remove_kanon_home_store`` so all safety refusals (the filesystem root, the
+    user home directory, an ancestor of the home or current directory) are
+    preserved exactly as in the in-``clean()`` path.
+    """
+    print("kanon clean --purge-all: no .kanon project found; removing only the shared kanon home store...")
+    remove_kanon_home_store()
 
 
 def _run(args) -> None:
@@ -87,12 +103,18 @@ def _run(args) -> None:
         try:
             args.kanonenv_path = find_kanonenv()
         except FileNotFoundError as exc:
+            if args.purge_all:
+                _purge_home_only()
+                return
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
         print(f"kanon clean: found {args.kanonenv_path}")
 
     args.kanonenv_path = args.kanonenv_path.resolve()
     if not args.kanonenv_path.is_file():
+        if args.purge_all:
+            _purge_home_only()
+            return
         print(f"Error: .kanon file not found: {args.kanonenv_path}", file=sys.stderr)
         sys.exit(1)
 

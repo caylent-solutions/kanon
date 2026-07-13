@@ -186,7 +186,7 @@ _shtab_kanon_clean_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
   "--orphans[Also unregister kanon-owned marketplaces no longer referenced by .kanon\/.kanon.lock (prunes them from \~\/.claude).]"
   "--purge[Also delete this project\'s .kanon and .kanon.lock files after the normal teardown (full removal of the project\'s kanon config).]"
-  "--purge-all[Everything --purge does, and also remove the shared kanon home store directory (KANON_HOME, default \~\/.kanon-home) used by all projects.]"
+  "--purge-all[Everything --purge does, and also remove the shared kanon home store directory (KANON_HOME, default \~\/.kanon-home) used by all projects. Runs even when no .kanon project is present (removes only the shared store).]"
   ":Path to the .kanon configuration file (default\: auto-discover from current directory):"
 )
 

@@ -1,13 +1,13 @@
 """Integration tests for the kanon install step-by-step lifecycle.
 
 Covers the install lifecycle in sequential order:
-  init -> envsubst -> sync -> aggregate -> gitignore-update
+  init -> envsubst -> sync -> aggregate
 
 AC-TEST-001: install creates .packages/ and .kanon-data/ directories
-AC-TEST-002: install writes .gitignore entries idempotently
+AC-TEST-002: a non-git store gets no .gitignore from install
 AC-TEST-003: install performs repo init + envsubst + sync in the correct order
 AC-TEST-004: install aggregates multiple sources without collision (MS-01 class)
-AC-FUNC-001: Lifecycle order is init -> envsubst -> sync -> aggregate -> gitignore-update
+AC-FUNC-001: Lifecycle order is init -> envsubst -> sync -> aggregate
 AC-CHANNEL-001: stdout vs stderr discipline (no cross-channel leakage)
 """
 
@@ -25,10 +25,13 @@ from tests.conftest import write_manifest_for_sync
 def _store_base() -> pathlib.Path:
     """Return the shared artifact store base (``<KANON_HOME>/store``).
 
-    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
-    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
-    The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
-    per-test temporary directory, so this resolves to a writable, isolated path.
+    install()/clean() create and remove ``.packages/`` and ``.kanon-data/``
+    under the shared store, not beside the project ``.kanon``. A store
+    ``.gitignore`` safety net is written only when the store is inside a git
+    working tree; the isolated per-test store is not a git repo, so install()
+    writes no ``.gitignore`` here. The ``_isolate_kanon_home`` autouse fixture
+    points KANON_HOME at a fresh per-test temporary directory, so this resolves
+    to a writable, isolated path.
     """
     return pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
@@ -233,26 +236,31 @@ class TestInstallCreatesDirectories:
 
 @pytest.mark.integration
 class TestInstallGitignoreIdempotency:
-    """AC-TEST-002: install writes .gitignore entries idempotently.
+    """AC-TEST-002: a non-git store gets no .gitignore from install.
 
-    Verifies that the lifecycle step that writes .gitignore never duplicates
-    entries regardless of how many times install() is called, and correctly
-    handles pre-existing .gitignore files.
+    The store safety-net .gitignore is written only when the store is inside a
+    git working tree. The isolated per-test store (KANON_HOME) is NOT a git
+    repo, so install() must never create a .gitignore there. These tests guard
+    that no-git-store behavior across single and repeated install() runs and
+    across pre-existing .gitignore content.
     """
 
     _REQUIRED_ENTRIES = [".packages/", ".kanon-data/"]
 
     def test_install_creates_gitignore_when_absent(self, tmp_path: pathlib.Path) -> None:
-        """.gitignore is created if it does not exist before install runs.
+        """install writes no .gitignore into a non-git store.
 
-        After install(), .gitignore must exist with the kanon-managed entries.
+        The store starts without a .gitignore and must still have none after
+        install(), because the store is not inside a git working tree.
         """
         kanonenv = _write_single_source_kanonenv(tmp_path)
         assert not (_store_base() / ".gitignore").exists(), "Precondition: .gitignore must not exist"
 
         _install_with_patched_repo(kanonenv)
 
-        assert (_store_base() / ".gitignore").is_file(), ".gitignore must be created by install"
+        assert not (_store_base() / ".gitignore").exists(), (
+            "install must not create a .gitignore in a store that is not inside a git repo"
+        )
 
     @pytest.mark.parametrize("entry", _REQUIRED_ENTRIES)
     def test_install_writes_required_gitignore_entry(
@@ -260,17 +268,17 @@ class TestInstallGitignoreIdempotency:
         tmp_path: pathlib.Path,
         entry: str,
     ) -> None:
-        """Each required kanon entry appears in .gitignore after install.
+        """No .gitignore is written for a non-git store, so no entry is added.
 
-        Both .packages/ and .kanon-data/ must be present in the .gitignore
-        after install() completes.
+        Because the store is not inside a git working tree, install() writes no
+        .gitignore at all; there is therefore nothing containing the previously
+        managed entries.
         """
         kanonenv = _write_single_source_kanonenv(tmp_path)
         _install_with_patched_repo(kanonenv)
 
-        content = (_store_base() / ".gitignore").read_text()
-        assert entry in content, (
-            f"Required gitignore entry {entry!r} must be present after install; got content: {content!r}"
+        assert not (_store_base() / ".gitignore").exists(), (
+            f"install must not create a .gitignore (and thus not add {entry!r}) for a non-git store"
         )
 
     @pytest.mark.parametrize("entry", _REQUIRED_ENTRIES)
@@ -279,20 +287,18 @@ class TestInstallGitignoreIdempotency:
         tmp_path: pathlib.Path,
         entry: str,
     ) -> None:
-        """Running install twice does not duplicate .gitignore entries.
+        """Repeated installs never create a .gitignore in a non-git store.
 
-        Each managed entry must appear exactly once even after two installs.
+        Two install() runs against a non-git store must still leave no
+        .gitignore behind, so no entry can be duplicated.
         """
         kanonenv = _write_single_source_kanonenv(tmp_path)
 
         _install_with_patched_repo(kanonenv)
         _install_with_patched_repo(kanonenv)
 
-        content = (_store_base() / ".gitignore").read_text()
-        count = content.count(entry)
-        assert count == 1, (
-            f"{entry!r} must appear exactly once in .gitignore after two installs, "
-            f"found {count} occurrences; content: {content!r}"
+        assert not (_store_base() / ".gitignore").exists(), (
+            f"two installs against a non-git store must not create a .gitignore (and thus not duplicate {entry!r})"
         )
 
     def test_install_preserves_preexisting_gitignore_content(self, tmp_path: pathlib.Path) -> None:
@@ -336,18 +342,17 @@ class TestInstallGitignoreIdempotency:
         )
 
     def test_install_entries_each_on_own_line(self, tmp_path: pathlib.Path) -> None:
-        """Each kanon .gitignore entry occupies its own standalone line.
+        """No .gitignore is written for a non-git store, so no entry lines exist.
 
-        Neither entry may be concatenated with other content on the same line.
+        Because the store is not inside a git working tree, install() writes no
+        .gitignore, so none of the previously managed entries appear on any line.
         """
         kanonenv = _write_single_source_kanonenv(tmp_path)
         _install_with_patched_repo(kanonenv)
 
-        lines = (_store_base() / ".gitignore").read_text().splitlines()
-        for entry in self._REQUIRED_ENTRIES:
-            assert entry in lines, (
-                f"{entry!r} must be a standalone line in .gitignore, not embedded in another line; lines: {lines!r}"
-            )
+        assert not (_store_base() / ".gitignore").exists(), (
+            "install must not create a .gitignore for a non-git store, so no managed entry lines are written"
+        )
 
 
 @pytest.mark.integration
@@ -708,18 +713,20 @@ class TestInstallMultiSourceAggregation:
 
 @pytest.mark.integration
 class TestInstallLifecycleOrder:
-    """AC-FUNC-001: Full lifecycle order: init -> envsubst -> sync -> aggregate -> gitignore.
+    """AC-FUNC-001: Full lifecycle order: init -> envsubst -> sync -> aggregate.
 
-    Verifies that the aggregate step (create .packages/) and the gitignore-update
-    step both happen AFTER all sources have been synced -- not interleaved.
+    Verifies that the aggregate step (create .packages/) happens AFTER all
+    sources have been synced -- not interleaved. For a non-git store install()
+    does not write a .gitignore, so the store safety net is a no-op here.
     """
 
     def test_gitignore_written_after_sync_completes(self, tmp_path: pathlib.Path) -> None:
-        """.gitignore is created after repo_sync, not before.
+        """A non-git store never gets a .gitignore, during or after install.
 
-        Before repo_sync runs, .gitignore must not yet exist. After install
-        completes, .gitignore must exist. This verifies update_gitignore runs
-        after the per-source sync loop.
+        The store-safety-net .gitignore is written only when the store is inside
+        a git working tree. The isolated per-test store is not a git repo, so
+        .gitignore must not exist when repo_sync runs and must still not exist
+        after install() completes.
         """
         store_base = _store_base()
         gitignore_existed_during_sync: list[bool] = []
@@ -737,10 +744,10 @@ class TestInstallLifecycleOrder:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert len(gitignore_existed_during_sync) == 1, "repo_sync side-effect must run exactly once"
-        assert not gitignore_existed_during_sync[0], (
-            ".gitignore must NOT exist when repo_sync runs -- update_gitignore must run after sync"
+        assert not gitignore_existed_during_sync[0], ".gitignore must NOT exist when repo_sync runs for a non-git store"
+        assert not (store_base / ".gitignore").exists(), (
+            ".gitignore must NOT exist after install() completes for a store that is not inside a git repo"
         )
-        assert (store_base / ".gitignore").is_file(), ".gitignore must exist after install() completes"
 
     def test_packages_dir_created_after_sync_and_before_gitignore(self, tmp_path: pathlib.Path) -> None:
         """.packages/ is created (aggregate step) after sync and before gitignore-update.
@@ -769,10 +776,12 @@ class TestInstallLifecycleOrder:
         assert (store_base / ".packages").is_dir(), ".packages/ must exist after install() completes"
 
     def test_full_lifecycle_stages_complete_in_order(self, tmp_path: pathlib.Path) -> None:
-        """Full lifecycle stages run in order: init -> envsubst -> sync -> aggregate -> gitignore.
+        """Full lifecycle stages run in order: init -> envsubst -> sync -> aggregate.
 
         Tracks filesystem state at each stage checkpoint to verify the order
-        of side effects in the install() implementation.
+        of side effects in the install() implementation. For a non-git store,
+        install() does not invoke update_gitignore (the store safety net is a
+        no-op outside a git working tree), so the gitignore stage is absent.
         """
         stage_log: list[str] = []
 
@@ -793,7 +802,7 @@ class TestInstallLifecycleOrder:
 
         original_update_gitignore = __import__("kanon_cli.core.install", fromlist=["update_gitignore"]).update_gitignore
 
-        def record_update_gitignore(base_dir: pathlib.Path, entries: list[str] | None = None) -> None:
+        def record_update_gitignore(base_dir: pathlib.Path, entries: list[str]) -> None:
             stage_log.append("gitignore")
             original_update_gitignore(base_dir, entries)
 
@@ -808,7 +817,7 @@ class TestInstallLifecycleOrder:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        expected_order = ["init", "envsubst", "sync", "aggregate", "gitignore"]
+        expected_order = ["init", "envsubst", "sync", "aggregate"]
         for step in expected_order:
             assert step in stage_log, f"Lifecycle stage '{step}' must appear in the stage log"
 
@@ -816,12 +825,10 @@ class TestInstallLifecycleOrder:
         envsubst_pos = stage_log.index("envsubst")
         sync_pos = stage_log.index("sync")
         aggregate_pos = stage_log.index("aggregate")
-        gitignore_pos = stage_log.index("gitignore")
 
         assert init_pos < envsubst_pos, f"init must precede envsubst; stage_log={stage_log!r}"
         assert envsubst_pos < sync_pos, f"envsubst must precede sync; stage_log={stage_log!r}"
         assert sync_pos < aggregate_pos, f"sync must precede aggregate; stage_log={stage_log!r}"
-        assert aggregate_pos < gitignore_pos, f"aggregate must precede gitignore-update; stage_log={stage_log!r}"
 
 
 @pytest.mark.integration

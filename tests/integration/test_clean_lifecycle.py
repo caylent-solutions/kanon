@@ -27,8 +27,8 @@ from tests.integration.test_add_core import _create_manifest_repo_with_tags
 def _store_base() -> pathlib.Path:
     """Return the shared artifact store base (``<KANON_HOME>/store``).
 
-    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
-    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
+    install()/clean() create and remove ``.packages/`` and ``.kanon-data/``
+    under the shared store, not beside the project ``.kanon``.
     The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
     per-test temporary directory.
     """

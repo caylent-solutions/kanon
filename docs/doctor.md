@@ -340,7 +340,7 @@ callback failures. These errors are non-blocking at the shell but are surfaced
 here so operators can diagnose completion failures.
 
 This check always runs. The cache directory resolves from `KANON_HOME` (the
-`--home` / `--store-dir` flag, then the env var, then the `~/.kanon` default).
+`--home` / `--store-dir` flag, then the env var, then the `~/.kanon-home` default).
 This subcheck emits only the stderr finding below; it does not print an `[ok]`
 summary line.
 

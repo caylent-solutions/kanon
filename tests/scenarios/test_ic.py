@@ -97,8 +97,9 @@ def _assert_install_pass_criteria(work_dir: pathlib.Path, store_base: pathlib.Pa
     """Assert the standard install pass criteria documented for IC-01..IC-04.
 
     The committed ``.kanon`` stays in ``work_dir``; the install artifacts
-    (``.packages/``, ``.kanon-data/``, ``.gitignore``) live under the shared
-    store (``<KANON_HOME>/store``), passed in as ``store_base``.
+    (``.packages/`` and ``.kanon-data/``) live under the shared store
+    (``<KANON_HOME>/store``), passed in as ``store_base``. The store here is a
+    temp dir outside any git working tree, so install writes no ``.gitignore``.
     """
     assert result.returncode == 0, (
         f"kanon install exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
@@ -116,11 +117,9 @@ def _assert_install_pass_criteria(work_dir: pathlib.Path, store_base: pathlib.Pa
     ).as_posix() in os.path.realpath(str(pkg_alpha_link)), (
         f"symlink target does not reference .kanon-data/sources/primary: {link_target!r}"
     )
-    gitignore = store_base / ".gitignore"
-    assert gitignore.exists(), ".gitignore does not exist"
-    gitignore_text = gitignore.read_text()
-    assert ".packages/" in gitignore_text, ".gitignore missing '.packages/'"
-    assert ".kanon-data/" in gitignore_text, ".gitignore missing '.kanon-data/'"
+    assert not (store_base / ".gitignore").exists(), (
+        ".gitignore must not be written for a store outside a git working tree"
+    )
 
 
 def _assert_clean_pass_criteria(store_base: pathlib.Path, result) -> None:

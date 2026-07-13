@@ -17,7 +17,7 @@ Covers the PyPI update-available alert end to end at the unit level:
 
 Every test injects the network seam, the editable-install probe, the "now" clock,
 the environment mapping, and the output stream, so no test touches the live PyPI
-endpoint or the operator's real ~/.kanon store. All assertions are real and can
+endpoint or the operator's real ~/.kanon-home store. All assertions are real and can
 fail if the code is wrong.
 """
 

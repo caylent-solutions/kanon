@@ -66,13 +66,17 @@ one top-level source while preserving every other lockfile entry, pass
 store, content-addressed and deduped across projects:
 
 - The store root resolves with precedence `--home` / `--store-dir`
-  flag > `KANON_HOME` environment variable > the default `~/.kanon`.
+  flag > `KANON_HOME` environment variable > the default `~/.kanon-home`.
 - The store directory is created if absent. If it cannot be created or is
   not writable, `kanon install` exits non-zero with an actionable
   message naming the path and the `KANON_HOME` variable -- there is no
   silent fallback.
 - `kanon clean` resolves the same store root, so it removes exactly what
   `kanon install` wrote.
+- The default store root is `~/.kanon-home`. Earlier versions defaulted to
+  `~/.kanon`, which collided with a project `.kanon` file when running kanon
+  from your home directory. A leftover `~/.kanon` directory from an older
+  install is unused and safe to delete (`rm -rf ~/.kanon`).
 
 The legacy per-project `.packages/` / `.kanon-data/` locations and their
 `KANON_WORKSPACE_DIR` / `KANON_CACHE_DIR` environment variables were

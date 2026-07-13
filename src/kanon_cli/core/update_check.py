@@ -42,7 +42,7 @@ The module is structured around small, single-responsibility helpers with the
 network fetch, the installed-version probe, the editable-install probe, the
 "now" clock, and the stderr stream all injectable so every branch is covered by
 real, falsifiable unit tests without touching the live network or the operator's
-real ``~/.kanon`` store.
+real ``~/.kanon-home`` store.
 """
 
 from __future__ import annotations

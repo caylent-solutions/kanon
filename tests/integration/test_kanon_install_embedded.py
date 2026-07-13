@@ -20,8 +20,10 @@ from kanon_cli.core.install import install
 def _store_base() -> Path:
     """Return the shared artifact store base (``<KANON_HOME>/store``).
 
-    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
-    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
+    install()/clean() create and remove ``.packages/`` and ``.kanon-data/``
+    under the shared store, not beside the project ``.kanon``. install() writes
+    a ``.gitignore`` under the store only when the store is inside a git working
+    tree; the isolated per-test store here is not, so no ``.gitignore`` appears.
     The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
     per-test temporary directory.
     """
@@ -130,10 +132,8 @@ class TestInstallWithoutRepoOnPath:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         store_base = _store_base()
-        assert (store_base / ".gitignore").is_file()
-        gitignore_content = (store_base / ".gitignore").read_text()
-        assert ".packages/" in gitignore_content
-        assert ".kanon-data/" in gitignore_content
+        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir()
+        assert not (store_base / ".gitignore").exists(), "install() must not write .gitignore under a non-git store"
 
 
 @pytest.mark.integration
@@ -185,8 +185,8 @@ class TestInstallSubdirectoryAutoDiscovery:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Verify that running install from a subdirectory finds the .kanon in
-        a parent directory and writes managed artifacts (e.g. .gitignore) under
-        the shared store -- independent of the subdirectory the command runs in.
+        a parent directory and writes managed artifacts under the shared store
+        -- independent of the subdirectory the command runs in.
         """
         _write_kanonenv(tmp_path, _minimal_kanonenv_content())
         store_base = _store_base()
@@ -209,10 +209,10 @@ class TestInstallSubdirectoryAutoDiscovery:
         ):
             install(discovered, lock_file_path=discovered.parent / ".kanon.lock")
 
-        assert (store_base / ".gitignore").is_file(), "install() should write .gitignore under the shared store"
         assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
             "install() should create .kanon-data/ under the shared store"
         )
+        assert not (store_base / ".gitignore").exists(), "install() must not write .gitignore under a non-git store"
 
 
 @pytest.mark.integration

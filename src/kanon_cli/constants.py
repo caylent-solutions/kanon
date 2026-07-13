@@ -83,7 +83,7 @@ SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 KANON_HOME_ENV_VAR = "KANON_HOME"
 
 
-KANON_HOME_DIR_NAME = ".kanon"
+KANON_HOME_DIR_NAME = ".kanon-home"
 
 
 KANON_HOME_STORE_SUBDIR = "store"
@@ -111,7 +111,7 @@ def resolve_kanon_home(override: "pathlib.Path | None" = None) -> pathlib.Path:
     0. The ``--home`` / ``--store-dir`` CLI flag, passed here as *override*,
        when it is not ``None``.
     1. The ``KANON_HOME`` environment variable, when set to a non-empty value.
-    2. The default ``Path.home() / KANON_HOME_DIR_NAME`` (i.e. ``~/.kanon``).
+    2. The default ``Path.home() / KANON_HOME_DIR_NAME`` (i.e. ``~/.kanon-home``).
 
     The default is derived from the real user home directory at call time; no
     absolute path is hard-coded. The returned path is NOT created here -- the

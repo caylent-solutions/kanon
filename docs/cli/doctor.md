@@ -57,7 +57,7 @@ emitted). Exit code is 1 when any error-level finding is detected.
   recreating the directory empty with mode `0700`. Reports an info finding
   with the count of files removed. This flag is independent of the health
   checks. `KANON_HOME` resolves from the `--home` / `--store-dir` flag, the
-  `KANON_HOME` env var, then the `~/.kanon` default, so the cache directory is
+  `KANON_HOME` env var, then the `~/.kanon-home` default, so the cache directory is
   always resolved.
 
 `--prune-cache`
@@ -67,7 +67,7 @@ emitted). Exit code is 1 when any error-level finding is detected.
   stale `.kanon-data/.kanon-install.lock` files (mtime older than
   `KANON_DOCTOR_STALE_LOCK_AGE_HOURS` hours) as advisory findings -- doctor
   does NOT delete them. The cache directory is resolved from `KANON_HOME`
-  (flag, env var, or `~/.kanon` default); the stale-lock scan always runs from
+  (flag, env var, or `~/.kanon-home` default); the stale-lock scan always runs from
   the current working directory.
 
 ## Subchecks
@@ -258,7 +258,7 @@ INFO: Completion cache refreshed: 3 file(s) removed from /home/user/.kanon/cache
 ```
 
 `KANON_HOME` resolves from the `--home` / `--store-dir` flag, the `KANON_HOME`
-env var, then the `~/.kanon` default, so the completion-cache directory is
+env var, then the `~/.kanon-home` default, so the completion-cache directory is
 always resolved.
 
 ### Subcheck 7: Completion errors report
@@ -268,7 +268,7 @@ from `${KANON_HOME}/cache/completion-errors.log`. This log is written by shell
 completion callback failures (see E7 / `docs/shell-completion.md`).
 
 `kanon doctor` only reads this log -- it does NOT modify, truncate, or rotate it.
-The cache directory is resolved from `KANON_HOME` (flag, env var, or `~/.kanon`
+The cache directory is resolved from `KANON_HOME` (flag, env var, or `~/.kanon-home`
 default); when the log file does not exist this subcheck reports the info notice
 below.
 
@@ -417,7 +417,7 @@ INFO: Advisory: stale install lock found at /path/to/.kanon-data/.kanon-install.
 ```
 
 `KANON_HOME` resolves from the `--home` / `--store-dir` flag, the `KANON_HOME`
-env var, then the `~/.kanon` default, so the cache prune always runs against
+env var, then the `~/.kanon-home` default, so the cache prune always runs against
 the resolved cache directory; the stale-lock scan runs independently from the
 current working directory.
 
@@ -440,7 +440,7 @@ are emitted. Health checks (subchecks 1-5, 6, 7, 9, 11) always run after.
 | `KANON_RESOLVE_TIMEOUT` | `30` | Timeout in seconds for each `git ls-remote` call |
 | `KANON_GIT_RETRY_COUNT` | `3` | Maximum number of `git ls-remote` attempts |
 | `KANON_GIT_RETRY_DELAY` | `1` | Inter-attempt delay in seconds (read by doctor; not applied to the `git ls-remote` retry path, which delegates to `git_runner.run_git_ls_remote` and uses immediate retries with no time-based delay) |
-| `KANON_HOME` | `~/.kanon` | Shared kanon home (store + caches); cache lives under `${KANON_HOME}/cache`. Resolves from the `--home` / `--store-dir` flag, then this env var, then the `~/.kanon` default |
+| `KANON_HOME` | `~/.kanon-home` | Shared kanon home (store + caches); cache lives under `${KANON_HOME}/cache`. Resolves from the `--home` / `--store-dir` flag, then this env var, then the `~/.kanon-home` default |
 | `KANON_COMPLETION_ERRORS_REPORT_LIMIT` | `5` | Maximum number of recent completion-error log lines to display in subcheck 7 |
 | `KANON_CACHE_PRUNE_AGE_DAYS` | `30` | Files older than this many days (by atime) are removed by `--prune-cache` (subcheck 10) |
 | `KANON_DOCTOR_STALE_LOCK_SCAN_MAX_DEPTH` | `4` | Maximum directory depth for the stale install-lock scan in `--prune-cache` (subcheck 10) |

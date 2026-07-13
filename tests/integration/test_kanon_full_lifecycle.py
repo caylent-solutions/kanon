@@ -24,8 +24,10 @@ from kanon_cli.core.install import install
 def _store_base() -> Path:
     """Return the shared artifact store base (``<KANON_HOME>/store``).
 
-    install()/clean() create and remove ``.packages/``, ``.kanon-data/`` and
-    ``.gitignore`` under the shared store, not beside the project ``.kanon``.
+    install()/clean() create and remove ``.packages/`` and ``.kanon-data/``
+    under the shared store, not beside the project ``.kanon``. install() writes
+    a ``.gitignore`` under the store only when the store is inside a git working
+    tree; the isolated per-test store here is not, so no ``.gitignore`` appears.
     The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
     per-test temporary directory.
     """
@@ -121,9 +123,11 @@ class TestInstallCleanRoundtripLifecycle:
         assert kanonenv.is_file(), ".kanon config file must survive the full roundtrip"
 
     def test_roundtrip_gitignore_survives_clean(self, tmp_path: Path) -> None:
-        """The .gitignore written by install is preserved through clean.
+        """A non-git store writes no .gitignore, and clean does not create one.
 
-        install() creates .gitignore with managed entries; clean() must not remove it.
+        install() only writes <store>/.gitignore when the store is inside a git
+        working tree. The isolated temp store here is not in a git repo, so no
+        .gitignore is written by install, and clean must not create one either.
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content())
         store_base = _store_base()
@@ -135,14 +139,11 @@ class TestInstallCleanRoundtripLifecycle:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (store_base / ".gitignore").is_file(), ".gitignore must exist after install"
+        assert not (store_base / ".gitignore").exists(), "install() must not write .gitignore under a non-git store"
 
         clean(kanonenv)
 
-        assert (store_base / ".gitignore").is_file(), ".gitignore must survive clean"
-        gitignore_content = (store_base / ".gitignore").read_text()
-        assert ".packages/" in gitignore_content
-        assert ".kanon-data/" in gitignore_content
+        assert not (store_base / ".gitignore").exists(), "clean must not create a .gitignore under the store"
 
 
 @pytest.mark.integration
@@ -248,7 +249,7 @@ class TestAutoDiscoveryWorkflow:
           1. Write .kanon in tmp_path
           2. Set cwd to a subdirectory
           3. find_kanonenv() resolves to the parent's .kanon
-          4. install() creates .kanon-data/ and .gitignore under the shared store
+          4. install() creates .kanon-data/ under the shared store
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content())
         store_base = _store_base()
@@ -272,7 +273,7 @@ class TestAutoDiscoveryWorkflow:
         assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
             "install() must create .kanon-data/sources/primary/ under the shared store"
         )
-        assert (store_base / ".gitignore").is_file(), "install() must create .gitignore under the shared store"
+        assert not (store_base / ".gitignore").exists(), "install() must not write .gitignore under a non-git store"
 
 
 @pytest.mark.integration
@@ -352,10 +353,10 @@ class TestReinstallIdempotency:
         )
 
     def test_reinstall_gitignore_not_duplicated(self, tmp_path: Path) -> None:
-        """Running install twice must not duplicate .gitignore entries.
+        """Running install twice writes no .gitignore under a non-git store.
 
-        The .gitignore file must contain each managed entry exactly once,
-        regardless of how many times install is run.
+        A non-git store writes no .gitignore, so repeated installs must leave
+        no .gitignore under the store to duplicate entries into.
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content())
 
@@ -365,14 +366,13 @@ class TestReinstallIdempotency:
             patch("kanon_cli.repo.repo_sync"),
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+            assert not (_store_base() / ".gitignore").exists(), (
+                "install() must not write .gitignore under a non-git store"
+            )
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        gitignore_content = (_store_base() / ".gitignore").read_text()
-        assert gitignore_content.count(".packages/") == 1, (
-            ".packages/ must appear exactly once in .gitignore after two installs"
-        )
-        assert gitignore_content.count(".kanon-data/") == 1, (
-            ".kanon-data/ must appear exactly once in .gitignore after two installs"
+        assert not (_store_base() / ".gitignore").exists(), (
+            "a second install must not write .gitignore under a non-git store"
         )
 
 
@@ -387,7 +387,7 @@ class TestFilesystemStateAtLifecycleStages:
           - .kanon: config file (pre-existing, untouched)
           - .kanon-data/sources/<name>/: source workspace directories
           - .packages/: aggregated package symlinks directory
-          - .gitignore: contains .packages/ and .kanon-data/ entries
+          - .gitignore: absent under a non-git store
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content())
         store_base = _store_base()
@@ -398,7 +398,7 @@ class TestFilesystemStateAtLifecycleStages:
         source_dir = store_base / ".kanon-data" / "sources" / "primary"
         assert source_dir.is_dir(), ".kanon-data/sources/primary/ must exist after install"
         assert (store_base / ".packages").is_dir(), ".packages/ must exist after install"
-        assert (store_base / ".gitignore").is_file(), ".gitignore must exist after install"
+        assert not (store_base / ".gitignore").exists(), "install() must not write .gitignore under a non-git store"
         assert (store_base / ".packages" / "some-tool").is_symlink(), (
             ".packages/some-tool must be a symlink after install"
         )
@@ -432,7 +432,7 @@ class TestFilesystemStateAtLifecycleStages:
           - .kanon: present
           - .packages/: absent
           - .kanon-data/: absent
-          - .gitignore: present (written by install, not managed by clean)
+          - .gitignore: absent (never written under a non-git store)
           - user-created files: present and unmodified
         """
         kanonenv = _write_kanonenv(tmp_path, _single_source_content())
@@ -446,6 +446,8 @@ class TestFilesystemStateAtLifecycleStages:
         assert kanonenv.is_file(), ".kanon must survive clean"
         assert not (store_base / ".packages").exists(), ".packages/ must be absent after clean"
         assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
-        assert (store_base / ".gitignore").is_file(), ".gitignore must survive clean"
+        assert not (store_base / ".gitignore").exists(), (
+            "no .gitignore is written under a non-git store, and clean must not create one"
+        )
         assert user_script.is_file(), "user files must survive clean unmodified"
         assert user_script.read_text() == "#!/bin/sh\necho build\n"

@@ -17,7 +17,10 @@
       -- direct Python API call, fail-fast on RepoCommandError
 5. Aggregate: symlink .kanon-data/sources/<name>/.packages/* -> .packages/
 6. Collision check: fail-fast if duplicate package names
-7. Update .gitignore with .packages/ and .kanon-data/
+7. Conditional store .gitignore safety net: only when the shared KANON_HOME
+   store sits inside a git working tree, write <KANON_HOME>/store/.gitignore
+   containing "*". Outside a git repo (the default ~/.kanon-home) no
+   .gitignore is written.
 8. If any source sets KANON_SOURCE_<alias>_MARKETPLACE=true:
    locate claude binary, discover marketplace entries and plugins,
    register marketplaces, install plugins via claude CLI
@@ -52,6 +55,8 @@ touched. See
    b. rm -rf CLAUDE_MARKETPLACES_DIR
 5. rm -rf .packages/ (ignore_errors)
 6. rm -rf .kanon-data/ (ignore_errors)
+7. If --purge or --purge-all: delete this project's .kanon and .kanon.lock
+8. If --purge-all: remove the KANON_HOME store dir (store/, cache/, empty root)
 ```
 
 Steps execute in this specific order: uninstalling plugins first ensures
@@ -73,13 +78,37 @@ keep-set and user-managed marketplaces are never touched. Plain
 See
 [docs/lockfile.md -- Marketplace ownership and pruning](lockfile.md#marketplace-ownership-and-pruning).
 
+### `kanon clean --purge`
+
+With `--purge`, after the normal teardown kanon also deletes this project's
+`.kanon` and `.kanon.lock` files -- a full removal of the project's kanon
+configuration. Both deletions are no-ops when the file is already absent.
+
+### `kanon clean --purge-all`
+
+With `--purge-all`, kanon does everything `--purge` does and additionally
+removes the shared `KANON_HOME` store directory (default `~/.kanon-home`)
+used by every project. To avoid destroying unrelated data behind a
+misconfigured `KANON_HOME`, `--purge-all` removes only kanon-owned content:
+it refuses (fail-fast) when `KANON_HOME` resolves to the filesystem root,
+your home directory, or a parent of your home or current directory, and
+otherwise removes only the `store/` and `cache/` subdirectories and then the
+home root itself, and only when that root is left empty. Any non-kanon
+entries in the home root are kept, with a warning.
+
+Because removing the shared store is machine-global, `--purge-all` runs even
+when no `.kanon` project is present (for example right after `--purge` deleted
+it): kanon skips the project teardown, removes only the shared store, and
+applies the same safety refusals. Plain `kanon clean` and `--purge` without
+`--purge-all` still require a discoverable `.kanon`.
+
 ## Directory Structure After Install
 
 ```text
 project/
   .kanon                                # Configuration (committed)
   Makefile                              # Catalog entry file (committed)
-  .kanon-data/                          # Kanon state (gitignored)
+  .kanon-data/                          # Kanon state (do not commit)
     sources/
       build/                            # Source workspace
         .packages/
@@ -87,7 +116,7 @@ project/
       marketplaces/                     # Source workspace
         .packages/
           kanon-claude-marketplaces-example-dev-lint/
-  .packages/                            # Aggregated symlinks (gitignored)
+  .packages/                            # Aggregated symlinks (do not commit)
     kanon-python-lint -> ../.kanon-data/sources/build/.packages/kanon-python-lint
     kanon-claude-marketplaces-example-dev-lint -> ../.kanon-data/sources/marketplaces/.packages/...
 ```

@@ -53,6 +53,47 @@ class TestCleanLifecycle:
 
         assert not (store / ".packages").exists()
 
+    def test_clean_purge_removes_config_files(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """kanon clean --purge deletes the project .kanon and .kanon.lock after the normal teardown."""
+        store = _isolated_store(monkeypatch, tmp_path / "home")
+        kanonenv = _write_kanonenv(
+            tmp_path / ".kanon",
+            (
+                "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
+                "KANON_SOURCE_build_REF=main\n"
+                "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
+            ),
+        )
+        (store / ".packages" / "pkg").mkdir(parents=True)
+
+        clean(kanonenv, purge=True)
+
+        assert not (store / ".packages").exists()
+        assert not kanonenv.exists(), "--purge must delete the .kanon file"
+
+    def test_clean_purge_all_removes_home_store(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """kanon clean --purge-all deletes the config files and removes the whole KANON_HOME store dir."""
+        home = tmp_path / "home"
+        store = _isolated_store(monkeypatch, home)
+        kanonenv = _write_kanonenv(
+            tmp_path / ".kanon",
+            (
+                "KANON_SOURCE_build_URL=https://example.com/repo.git\n"
+                "KANON_SOURCE_build_REF=main\n"
+                "KANON_SOURCE_build_PATH=meta.xml\n"
+                "KANON_SOURCE_build_NAME=build\n"
+                "KANON_SOURCE_build_GITBASE=https://example.com\n"
+            ),
+        )
+        assert store.exists()
+
+        clean(kanonenv, purge=True, purge_home=True)
+
+        assert not kanonenv.exists(), "--purge-all must delete the .kanon file"
+        assert not home.exists(), "--purge-all must remove the entire KANON_HOME store directory"
+
     def test_clean_with_marketplace_runs_uninstall(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         store = _isolated_store(monkeypatch, tmp_path / "home")
         mp_dir = tmp_path / "marketplaces"

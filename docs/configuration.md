@@ -380,7 +380,7 @@ chain.
 3. Default derived from `--kanon-file`: `./.kanon` becomes
    `./.kanon.lock`; `./alt.kanon` becomes `./alt.kanon.lock`.
 
-**`KANON_HOME`** (default: `~/.kanon`) -- Single root directory that
+**`KANON_HOME`** (default: `~/.kanon-home`) -- Single root directory that
 subsumes the former per-user cache-dir override and the former
 per-workspace artifact-dir override. The cache subtree lives at
 `${KANON_HOME}/cache/` and the store subtree at `${KANON_HOME}/store/`.
@@ -393,7 +393,7 @@ to cache files. See
 
 1. `--home` / `--store-dir <path>` global CLI flag (when supplied).
 2. `KANON_HOME` environment variable (when non-empty).
-3. `~/.kanon` -- default when the env var is unset and no flag is given.
+3. `~/.kanon-home` -- default when the env var is unset and no flag is given.
 
 The `--home` (alias `--store-dir`) flag is a global option accepted on
 every command; when supplied it overrides `KANON_HOME` for that

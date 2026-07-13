@@ -1,9 +1,12 @@
-"""Integration tests for .gitignore idempotency in the kanon install workflow.
+"""Integration tests for the ``update_gitignore`` append-helper idempotency.
 
-Verifies that update_gitignore correctly handles all edge cases:
+``update_gitignore`` is the idempotent .gitignore append helper used by the
+in-git-repo store safety net (``write_store_gitignore_if_in_git_repo``). These
+tests exercise its edge cases directly with explicit entries (``_KANON_ENTRIES``
+here is arbitrary test input, not a production default):
 
-AC-TEST-001: preexisting .gitignore with kanon entries is not double-written
-AC-TEST-002: missing .gitignore is created on first install
+AC-TEST-001: preexisting .gitignore with the given entries is not double-written
+AC-TEST-002: missing .gitignore is created on first call
 AC-TEST-003: malformed .gitignore is handled gracefully
 AC-TEST-004: .gitignore without trailing newline is appended cleanly
 """
@@ -26,10 +29,10 @@ class TestGitignoreIdempotency:
         gitignore = tmp_path / ".gitignore"
         gitignore.write_text(".packages/\n.kanon-data/\n")
 
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, _KANON_ENTRIES)
         content_after_first = gitignore.read_text()
 
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, _KANON_ENTRIES)
         content_after_second = gitignore.read_text()
 
         assert content_after_first == content_after_second, (
@@ -50,7 +53,7 @@ class TestGitignoreIdempotency:
         gitignore.write_text(initial_content)
 
         for _ in range(3):
-            update_gitignore(tmp_path)
+            update_gitignore(tmp_path, _KANON_ENTRIES)
 
         content = gitignore.read_text()
         assert content.count(entry) == 1, (
@@ -62,7 +65,7 @@ class TestGitignoreIdempotency:
         gitignore = tmp_path / ".gitignore"
         assert not gitignore.exists(), "Precondition: .gitignore must not exist before test"
 
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, _KANON_ENTRIES)
 
         assert gitignore.exists(), ".gitignore must be created by update_gitignore"
         content = gitignore.read_text()
@@ -71,7 +74,7 @@ class TestGitignoreIdempotency:
 
     def test_missing_gitignore_contains_all_required_entries(self, tmp_path: pathlib.Path) -> None:
         """AC-TEST-002: newly created .gitignore contains all required kanon entries."""
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, _KANON_ENTRIES)
         content = (tmp_path / ".gitignore").read_text()
 
         lines = content.splitlines()
@@ -85,7 +88,7 @@ class TestGitignoreIdempotency:
         malformed_content = "# Project ignores\r\n\r\nbuild/\r\ndist/\n\t\nnode_modules/"
         gitignore.write_text(malformed_content, encoding="utf-8")
 
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, _KANON_ENTRIES)
 
         content = gitignore.read_text(encoding="utf-8")
         for entry in _KANON_ENTRIES:
@@ -97,7 +100,7 @@ class TestGitignoreIdempotency:
         original_lines = ["build/", "dist/", "node_modules/"]
         gitignore.write_text("\n".join(original_lines) + "\n")
 
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, _KANON_ENTRIES)
 
         content = gitignore.read_text()
         for line in original_lines:
@@ -109,7 +112,7 @@ class TestGitignoreIdempotency:
 
         gitignore.write_text("build/")
 
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, _KANON_ENTRIES)
 
         content = gitignore.read_text()
         lines = content.splitlines()
@@ -124,7 +127,7 @@ class TestGitignoreIdempotency:
         gitignore = tmp_path / ".gitignore"
         gitignore.write_text("build/")
 
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, _KANON_ENTRIES)
 
         content = gitignore.read_text()
 
@@ -140,7 +143,7 @@ class TestGitignoreIdempotency:
         gitignore = tmp_path / ".gitignore"
         gitignore.write_text("build/")
 
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, _KANON_ENTRIES)
 
         lines = gitignore.read_text().splitlines()
         for entry in _KANON_ENTRIES:

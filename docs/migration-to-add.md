@@ -73,9 +73,9 @@ lives in `core/cli_args.py`; `kanon search`, `kanon add`, and the other
 catalog-aware commands import it from there.
 
 `kanon install` writes its artifacts into the shared `KANON_HOME` store
-(`$KANON_HOME`, default `~/.kanon`); the `--home` / `--store-dir` flag
+(`$KANON_HOME`, default `~/.kanon-home`); the `--home` / `--store-dir` flag
 relocates the store and caches for a single invocation (precedence:
-flag > `KANON_HOME` > `~/.kanon`). The store directory is created if
+flag > `KANON_HOME` > `~/.kanon-home`). The store directory is created if
 absent; an unwritable value causes a non-zero exit with an actionable
 message and no silent fallback. `kanon clean` resolves the same
 directory so it removes exactly what `kanon install` wrote.

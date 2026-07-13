@@ -24,6 +24,7 @@ from kanon_cli.constants import (
 )
 from kanon_cli.core.kanonenv_writer import (
     ensure_claude_marketplaces_dir,
+    guard_kanon_file_not_dir,
     has_claude_marketplaces_dir_header,
     prune_claude_marketplaces_dir_if_unused,
 )
@@ -372,3 +373,38 @@ class TestHasClaudeMarketplacesDirHeader:
 
         assert has_claude_marketplaces_dir_header(present) is False
         assert has_claude_marketplaces_dir_header(absent) is False
+
+
+@pytest.mark.unit
+class TestGuardKanonFileNotDir:
+    """guard_kanon_file_not_dir fails fast with an actionable message on a .kanon directory."""
+
+    def test_directory_raises_clean_error_and_exits_one(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A .kanon directory yields the clean error naming the exact rm command, exit 1."""
+        kanon_dir = tmp_path / ".kanon"
+        kanon_dir.mkdir()
+
+        with pytest.raises(SystemExit) as exc_info:
+            guard_kanon_file_not_dir(kanon_dir)
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        resolved = str(kanon_dir.resolve())
+        assert "found a .kanon folder" in err
+        assert resolved in err
+        assert f"rm -rf {resolved}" in err
+        assert "re-run your kanon command" in err
+        assert "Is a directory" not in err
+
+    def test_missing_path_is_noop(self, tmp_path: pathlib.Path) -> None:
+        """A non-existent .kanon path is not a directory, so the guard returns without exiting."""
+        guard_kanon_file_not_dir(tmp_path / ".kanon")
+
+    def test_regular_file_is_noop(self, tmp_path: pathlib.Path) -> None:
+        """An existing .kanon FILE is allowed; the guard only rejects a directory."""
+        kanon_file = tmp_path / ".kanon"
+        kanon_file.write_text("KANON_SOURCE_foo_URL=https://example.com/foo.git\n", encoding="utf-8")
+
+        guard_kanon_file_not_dir(kanon_file)

@@ -143,14 +143,14 @@ class TestInstallCoreLogic:
             aggregate_symlinks(["a", "b"], tmp_path)
 
     def test_update_gitignore_creates_file(self, tmp_path: pathlib.Path) -> None:
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, [".packages/", ".kanon-data/"])
         content = (tmp_path / ".gitignore").read_text()
         assert ".packages/" in content
         assert ".kanon-data/" in content
 
     def test_update_gitignore_idempotent(self, tmp_path: pathlib.Path) -> None:
         (tmp_path / ".gitignore").write_text(".packages/\n.kanon-data/\n")
-        update_gitignore(tmp_path)
+        update_gitignore(tmp_path, [".packages/", ".kanon-data/"])
         content = (tmp_path / ".gitignore").read_text()
         assert content.count(".packages/") == 1
 
@@ -262,4 +262,6 @@ class TestKanonenvEdgeCases:
 
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         assert (store_base / ".kanon-data" / "sources" / "s").is_dir()
-        assert (store_base / ".gitignore").is_file()
+        assert not (store_base / ".gitignore").exists(), (
+            "install must not create a .gitignore in a store that is not inside a git repo"
+        )

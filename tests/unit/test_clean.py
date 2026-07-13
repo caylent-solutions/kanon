@@ -9,8 +9,10 @@ import pytest
 from kanon_cli.core.clean import (
     clean,
     remove_kanon_dir,
+    remove_kanon_home_store,
     remove_marketplace_dir,
     remove_packages_dir,
+    remove_project_config,
 )
 from kanon_cli.core.lockfile import (
     CURRENT_SCHEMA_VERSION,
@@ -78,6 +80,92 @@ class TestDirectoryRemoval:
         store.mkdir()
         remove_store_entries(store)
         assert store.exists()
+
+
+@pytest.mark.unit
+class TestRemoveProjectConfig:
+    """remove_project_config (kanon clean --purge) deletes .kanon + .kanon.lock; no-op when absent."""
+
+    def test_removes_kanon_and_lock(self, tmp_path: pathlib.Path) -> None:
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(_MINIMAL_KANONENV)
+        lock = tmp_path / ".kanon.lock"
+        lock.write_text("schema_version = 5\n")
+
+        remove_project_config(kanonenv, lock)
+
+        assert not kanonenv.exists()
+        assert not lock.exists()
+
+    def test_missing_files_ok(self, tmp_path: pathlib.Path) -> None:
+        remove_project_config(tmp_path / ".kanon", tmp_path / ".kanon.lock")
+
+    def test_removes_kanon_when_lock_absent(self, tmp_path: pathlib.Path) -> None:
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(_MINIMAL_KANONENV)
+
+        remove_project_config(kanonenv, tmp_path / ".kanon.lock")
+
+        assert not kanonenv.exists()
+
+
+@pytest.mark.unit
+class TestRemoveKanonHomeStore:
+    """remove_kanon_home_store (kanon clean --purge-all) removes ONLY kanon-owned folders."""
+
+    def _make_home(self, tmp_path: pathlib.Path) -> pathlib.Path:
+        home = tmp_path / "kanon-home"
+        (home / "store").mkdir(parents=True)
+        (home / "cache").mkdir()
+        return home
+
+    def test_removes_store_cache_and_empty_root(self, tmp_path: pathlib.Path) -> None:
+        home = self._make_home(tmp_path)
+        with patch("kanon_cli.core.clean.resolve_kanon_home", return_value=home):
+            remove_kanon_home_store()
+        assert not home.exists()
+
+    def test_absent_home_is_noop(self, tmp_path: pathlib.Path) -> None:
+        home = tmp_path / "kanon-home"
+        with patch("kanon_cli.core.clean.resolve_kanon_home", return_value=home):
+            remove_kanon_home_store()
+
+    def test_keeps_root_with_non_kanon_content(self, tmp_path: pathlib.Path) -> None:
+        """A non-kanon entry under the home makes purge-all KEEP the root (only store/cache removed)."""
+        home = self._make_home(tmp_path)
+        keep = home / "important.txt"
+        keep.write_text("do not delete")
+
+        with patch("kanon_cli.core.clean.resolve_kanon_home", return_value=home):
+            remove_kanon_home_store()
+
+        assert not (home / "store").exists()
+        assert not (home / "cache").exists()
+        assert home.exists(), "root holding non-kanon content must be kept"
+        assert keep.exists(), "a non-kanon file under KANON_HOME must survive --purge-all"
+
+    @pytest.mark.parametrize("kind", ["home", "root"])
+    def test_refuses_home_and_root(self, kind: str) -> None:
+        """purge-all fails fast (exit 1) and deletes nothing when KANON_HOME is $HOME or /."""
+        target = pathlib.Path.home() if kind == "home" else pathlib.Path(pathlib.Path.cwd().anchor)
+        with patch("kanon_cli.core.clean.resolve_kanon_home", return_value=target):
+            with pytest.raises(SystemExit) as exc_info:
+                remove_kanon_home_store()
+        assert exc_info.value.code == 1
+
+    def test_refuses_ancestor_of_cwd(self, tmp_path: pathlib.Path, monkeypatch) -> None:
+        """purge-all refuses (deleting nothing) when the cwd is inside the resolved home."""
+        home = self._make_home(tmp_path)
+        deep = home / "a" / "b"
+        deep.mkdir(parents=True)
+        monkeypatch.chdir(deep)
+
+        with patch("kanon_cli.core.clean.resolve_kanon_home", return_value=home):
+            with pytest.raises(SystemExit) as exc_info:
+                remove_kanon_home_store()
+
+        assert exc_info.value.code == 1
+        assert (home / "store").exists(), "must not delete anything when cwd is inside the home"
 
 
 @pytest.mark.unit
@@ -257,17 +345,17 @@ class TestCleanKanonHomeStore:
     def test_clean_default_home_resolves_to_home_kanon_store(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """With KANON_HOME unset, clean resolves the store under $HOME/.kanon/store (env-derived).
+        """With KANON_HOME unset, clean resolves the store under $HOME/.kanon-home/store (env-derived).
 
         The clean removal targets the resolved store; this test points $HOME at a
-        temp dir so the default ~/.kanon/store resolves inside the sandbox and no
+        temp dir so the default ~/.kanon-home/store resolves inside the sandbox and no
         real home directory is touched.
         """
         import os
 
         fake_home = tmp_path / "fakehome"
         fake_home.mkdir()
-        store = fake_home / ".kanon" / "store"
+        store = fake_home / ".kanon-home" / "store"
         monkeypatch.delenv("KANON_HOME", raising=False)
 
         monkeypatch.setenv("HOME", str(fake_home))
@@ -286,10 +374,10 @@ class TestCleanKanonHomeStore:
             clean(kanonenv)
 
         assert not (store / ".packages").exists(), (
-            "Without KANON_HOME, .packages/ must be removed from $HOME/.kanon/store"
+            "Without KANON_HOME, .packages/ must be removed from $HOME/.kanon-home/store"
         )
         assert not (store / ".kanon-data").exists(), (
-            "Without KANON_HOME, .kanon-data/ must be removed from $HOME/.kanon/store"
+            "Without KANON_HOME, .kanon-data/ must be removed from $HOME/.kanon-home/store"
         )
 
     def test_clean_prunes_content_addressed_store_entries(

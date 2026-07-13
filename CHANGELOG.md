@@ -2,7 +2,95 @@
 
 
 
+## v3.2.0 (2026-07-13)
+
+### Feature
+
+* feat(clean): ~/.kanon-home store rename, .kanon-dir guard, --purge/--purge-all (store-only teardown with no .kanon), no unconditional .gitignore (#89)
+
+* feat(clean): add --purge/--purge-all; default home store to ~/.kanon-home; clean error when .kanon is a directory
+
+Three related changes so kanon works cleanly from any directory (including
+$HOME) and can be fully torn down with the tool:
+
+- Rename the default home store directory from ~/.kanon to ~/.kanon-home so it
+  no longer collides with the project .kanon config file. Running kanon from
+  $HOME previously crashed with a cryptic &#34;Is a directory&#34;. Only the default
+  changes; the --home/--store-dir flag and KANON_HOME env are unchanged. No
+  auto-migration: a leftover ~/.kanon store is an orphaned cache, safe to delete.
+
+- When a writer (add / remove / marketplace enable|disable) must read or write
+  the .kanon config FILE but finds a .kanon DIRECTORY there, fail fast with a
+  clean, actionable error naming the exact rm -rf &lt;path&gt; command and telling the
+  user to re-run, instead of the cryptic IsADirectoryError.
+
+- Add kanon clean --purge (also delete this project&#39;s .kanon and .kanon.lock)
+  and kanon clean --purge-all (also remove the shared KANON_HOME store dir).
+  --purge-all validates it removes ONLY kanon-owned content: it refuses unsafe
+  KANON_HOME paths (filesystem root, your home, or a parent of home/cwd), removes
+  only the store/ and cache/ subdirs, and removes the home root only when empty;
+  any non-kanon entries are kept with a warning.
+
+Tests: unit + integration + functional for all three changes (the
+directory-collision guard for all writers and the --purge-all safety refusals
+included). Docs and the clean/toplevel --help snapshots updated.
+
+* test(clean): sync completion goldens and stub signature for --purge flags
+
+The new kanon clean --purge / --purge-all flags changed the bash and zsh
+shell-completion output, so regenerate the committed golden fixtures. Also
+extend the clean() side-effect stub in the path-resolution integration test
+to accept the new purge / purge_home keyword arguments, matching the updated
+core clean() signature.
+
+* fix(clean): remove the shared home store on --purge-all even when no .kanon is present
+
+kanon clean --purge-all is machine-global: it must tear down the shared
+KANON_HOME store even when there is no discoverable project .kanon (for example
+right after kanon clean --purge deleted it). Previously it failed with
+&#34;No .kanon file found ...&#34; and left ~/.kanon-home in place.
+
+_run now detects the no-usable-.kanon case (auto-discovery FileNotFoundError, or
+an explicit path that is not a file) and, when --purge-all is set, removes only
+the shared home store via remove_kanon_home_store(), preserving every safety
+refusal (filesystem root, the user home directory, an ancestor of the home or
+current directory). Plain clean and --purge without --purge-all still require a
+discoverable .kanon.
+
+Regenerates the clean help snapshot and the zsh completion golden for the
+updated --purge-all help text.
+
+* fix(install): stop writing an unconditional .gitignore; keep only the in-git-repo store safety net
+
+In the 3.x store model both gitignore writes targeted &lt;KANON_HOME&gt;/store/.gitignore.
+kanon install wrote .packages/ and .kanon-data/ into that file unconditionally,
+littering a .gitignore even for the default ~/.kanon-home (which is not a git
+repo). Remove the unconditional write.
+
+The store safety net (write_store_gitignore_if_in_git_repo) is retained: kanon
+still writes &lt;KANON_HOME&gt;/store/.gitignore containing &#34;*&#34; ONLY when the store
+sits inside a git working tree, so a KANON_HOME inside a repo never commits the
+fetched-artifact cache (spec Section 3.5). With the default ~/.kanon-home, kanon
+writes no .gitignore at all.
+
+update_gitignore now requires its entries argument (the removed default was the
+only unconditional caller). Tests that asserted the removed unconditional write
+now assert the new behavior (no .gitignore for a non-git store); the append-helper
+mechanics tests pass explicit entries; the safety-net tests are unchanged.
+
+Docs (how-it-works, architecture, lifecycle, integration-testing) updated;
+lifecycle also documents clean --purge-all running without a .kanon.
+
+---------
+
+Co-authored-by: t &lt;t@e.x&gt; ([`d9b0ad1`](https://github.com/caylent-solutions/kanon/commit/d9b0ad1856ab58487b7ed3efdc3ff9d87b60b193))
+
+
 ## v3.1.1 (2026-06-27)
+
+### Chore
+
+* chore(release): 3.1.1 ([`890b026`](https://github.com/caylent-solutions/kanon/commit/890b026b47ca8820b41ca8d218658e50691254a2))
 
 ### Fix
 
@@ -30,6 +118,12 @@ Adds unit + integration coverage for both (namespaced/bare exact-tag outdated;
 distinct alias tokens + alias round-trip for why).
 
 Co-authored-by: t &lt;t@e.x&gt; ([`0d45f67`](https://github.com/caylent-solutions/kanon/commit/0d45f673243861b0aaef823f6d95e0a548c447d4))
+
+### Unknown
+
+* Merge pull request #88 from caylent-solutions/release-3.1.1
+
+Release 3.1.1 ([`cec7213`](https://github.com/caylent-solutions/kanon/commit/cec7213109c0e307e80751e728c6a59751e20794))
 
 
 ## v3.1.0 (2026-06-27)

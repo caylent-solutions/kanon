@@ -36,20 +36,20 @@ from kanon_cli.core.url import canonicalize_repo_url
 _ROOT_XML = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     "<manifest>\n"
-    '  <remote name="gh" fetch="https://github.com/caylent/" />\n'
-    '  <default remote="gh" revision="main" />\n'
+    '  <remote name="origin" fetch="https://github.com/caylent/" />\n'
+    '  <default remote="origin" revision="main" />\n'
     '  <include name="inc.xml" />\n'
-    '  <project name="p-explicit" path="pp1" remote="gh" revision="refs/tags/1.0.0" />\n'
+    '  <project name="p-explicit" path="pp1" remote="origin" revision="refs/tags/1.0.0" />\n'
     '  <project name="p-default" path="pp2" />\n'
     '  <project name="p-noremote-nomap" path="pp5" remote="missing" />\n'
-    '  <project name="p-nopin" path="pp6" remote="gh" />\n'
+    '  <project name="p-nopin" path="pp6" remote="origin" />\n'
     "</manifest>\n"
 )
 
 _INC_XML = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     "<manifest>\n"
-    '  <project name="p-inc" path="pp3" remote="gh" revision="develop" />\n'
+    '  <project name="p-inc" path="pp3" remote="origin" revision="develop" />\n'
     "</manifest>\n"
 )
 

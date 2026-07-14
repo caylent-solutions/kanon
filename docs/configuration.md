@@ -570,7 +570,11 @@ number of completion error lines surfaced by `kanon doctor` (subcheck
 
 kanon performs a best-effort PyPI check for a newer `kanon-cli` release
 and prints an upgrade hint when one is available. The check is cached and
-never blocks a command on failure.
+never blocks a command on failure. When an upgrade is available the banner
+is yellow with the current (installed) version in red and the latest
+version in green. When a check is attempted but the network is unreachable,
+a red `no internet access -- could not check for updates` notice is printed
+to stderr at most once per cache window.
 
 **`KANON_SKIP_UPDATE_CHECK`** (default: unset) -- When set to exactly `1`,
 the PyPI update-available check is skipped entirely. The global
@@ -584,9 +588,9 @@ kanon --no-update-check install .kanon
 export KANON_SKIP_UPDATE_CHECK=1
 ```
 
-**`KANON_UPDATE_CHECK_TTL`** (default: `86400`) -- Seconds the cached
+**`KANON_UPDATE_CHECK_TTL`** (default: `10800`) -- Seconds the cached
 "latest version" result is considered fresh before the next check refetches
-it. Must be a positive integer.
+it (default 3 hours). Must be a positive integer.
 
 **`KANON_UPDATE_CONNECT_TIMEOUT`** (default: `2`) -- Connect timeout in
 seconds for the PyPI request. Must be a positive integer.
@@ -597,6 +601,62 @@ for the PyPI request. Must be a positive integer.
 **`KANON_UPDATE_BODY_SIZE_CAP`** (default: `204800`) -- Maximum number of
 response bytes read from the PyPI JSON endpoint. Must be a positive
 integer.
+
+---
+
+### Usage telemetry
+
+kanon emits one anonymised-by-design usage event per command to the Caylent
+telemetry collector so the maintainers can understand which commands and
+package sources are used. Telemetry is **on by default**, runs **silently**
+and **non-blocking** in a detached background process, and **never** blocks,
+delays, or fails your command. It serialises only an explicit allowlist of
+kanon-computed fields and never raw argv, credentials, keys, tokens, env-var
+values, or file contents; every URL is credential-stripped before it is sent.
+See [docs/privacy.md](privacy.md) for the exact fields collected, the reason
+for each, and the transit/at-rest encryption.
+
+**`KANON_TELEMETRY_DISABLED`** (default: unset) -- The single opt-out. Set to
+a truthy value (`1`, `true`, `yes`, or `on`) to disable telemetry entirely.
+There is no disable flag; this env var is the only off switch.
+
+```bash
+# Turn telemetry off for the whole session
+export KANON_TELEMETRY_DISABLED=1
+```
+
+**`KANON_TELEMETRY_ENDPOINT`** (default:
+`https://collector.platform.solutions.caylent.com/v1/logs`) -- The collector
+endpoint. Must be an `https://` URL. The global `--telemetry-endpoint <url>`
+flag overrides this for a single invocation.
+
+**`KANON_TELEMETRY_DEBUG`** (default: unset) -- When truthy, prints the exact
+JSON that would be sent to stderr (still non-blocking). Equivalent to the
+global `--telemetry-debug` flag. Use it to inspect precisely what an event
+contains.
+
+```bash
+# See exactly what an event contains without changing send behaviour
+kanon --telemetry-debug install .kanon
+```
+
+**`KANON_TELEMETRY_CONNECT_TIMEOUT`** (default: `2`) /
+**`KANON_TELEMETRY_READ_TIMEOUT`** (default: `3`) -- Connect / read timeouts
+in seconds for the background POST. Must be positive integers.
+
+**`KANON_TELEMETRY_MAX_BODY_BYTES`** (default: `4194304`) /
+**`KANON_TELEMETRY_GRAPH_SIZE_CAP`** (default: `3145728`) -- The maximum
+serialised body size and the install-graph size cap. When an install graph
+exceeds the cap it is dropped in favour of the flattened installed-packages
+summary with `install_graph_truncated: true`, so the fact that packages were
+installed is never lost. Must be positive integers.
+
+**`KANON_TELEMETRY_GIT_TIMEOUT`** (default: `3`) -- Per-command timeout in
+seconds for the read-only `git` probes used to collect credential-stripped
+repository provenance. Must be a positive integer.
+
+**`KANON_TELEMETRY_LOG`** (default: `${KANON_HOME}/cache/telemetry-errors.log`)
+-- Path to the append-only background telemetry error log.
 
 ---
 

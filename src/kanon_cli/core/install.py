@@ -100,11 +100,13 @@ from kanon_cli.core.lockfile import (
     IncludeEntry,
     Lockfile,
     LockfileConsistencyError,
+    ProjectEntry,
     SourceEntry,
     check_lockfile_consistency,
     read_lockfile,
     write_lockfile,
 )
+from kanon_cli.core.manifest import join_project_repo_url, walk_includes_collecting_remotes
 from kanon_cli.core.include_walker import (
     IncludeCycleError,
     IncludeTree,
@@ -1704,6 +1706,107 @@ def capture_content_pins(
     return sorted(pins, key=lambda p: (p.name, p.path))
 
 
+def build_project_entries(
+    manifest_xml_path: pathlib.Path,
+    manifest_repo_root: pathlib.Path,
+    manifest_paths: list[pathlib.Path],
+    content_pins: list[ContentPinEntry],
+) -> list[ProjectEntry]:
+    """Resolve every synced repo package to a fully-provenanced ``ProjectEntry``.
+
+    Populates the previously-empty ``SourceEntry.projects`` layer of the lockfile
+    so the complete resolved graph -- every transitive repo package with its
+    name, source URL, canonical URL, and resolved content SHA -- is recorded
+    first-class. This also fixes ``kanon why`` showing an empty project layer on
+    install-written lockfiles.
+
+    URLs are resolved from the already-synced local manifests (no extra network)
+    with the same helpers the live ``why`` resolver uses:
+    ``walk_includes_collecting_remotes`` builds the ``<remote name> -> fetch``
+    map, ``join_project_repo_url`` joins the remote base to the ``<project name>``
+    repo path, and ``canonicalize_repo_url`` canonicalizes the result. The
+    resolved content SHA of each project is taken from the ``content_pins`` the
+    caller captured after ``repo sync`` (keyed by project name), so a project only
+    yields a ``ProjectEntry`` when its checkout SHA was captured. Projects whose
+    ``remote`` cannot be resolved to a concrete fetch URL, or whose joined URL is
+    not canonicalizable, are skipped -- matching the live ``why`` resolver, which
+    also skips unresolvable remotes (a separate audit concern).
+
+    The per-project ``ref_spec`` is recorded as the wildcard ``*`` (a transitively
+    pulled project carries no ``.kanon`` version constraint of its own); the
+    manifest-declared ``revision`` (or the resolved SHA when no revision is
+    declared) is recorded as ``resolved_ref`` for provenance.
+
+    Args:
+        manifest_xml_path: Absolute path to the source's root manifest XML.
+        manifest_repo_root: Absolute path to the synced ``.repo/manifests`` dir;
+            ``<include>`` paths and the ``<remote>`` map resolve against it.
+        manifest_paths: Absolute paths to the source's resolved manifest files
+            (the root manifest plus its ``<include>`` chain).
+        content_pins: The ``ContentPinEntry`` rows captured after ``repo sync``;
+            supplies each project's resolved content SHA.
+
+    Returns:
+        A list of ``ProjectEntry`` rows -- one per resolvable synced project --
+        sorted by project name for deterministic, byte-stable lockfile output.
+    """
+    sha_by_name = {pin.name: pin.resolved_sha for pin in content_pins}
+    if not sha_by_name:
+        return []
+
+    try:
+        remote_map = walk_includes_collecting_remotes(manifest_xml_path, manifest_repo_root)
+    except (ET.ParseError, FileNotFoundError, OSError):
+        remote_map = {}
+
+    entries: list[ProjectEntry] = []
+    seen: set[str] = set()
+    for manifest_path in manifest_paths:
+        if not manifest_path.is_file():
+            continue
+        try:
+            tree = ET.parse(str(manifest_path))
+        except ET.ParseError:
+            continue
+        root = tree.getroot()
+        default_el = root.find("default")
+        default_remote = default_el.get("remote") if default_el is not None else None
+        default_revision = default_el.get("revision") if default_el is not None else None
+
+        for project_el in root.findall("project"):
+            name = project_el.get("name", "")
+            if not name or name in seen:
+                continue
+            resolved_sha = sha_by_name.get(name)
+            if resolved_sha is None:
+                continue
+            remote_name = project_el.get("remote") or default_remote
+            if not remote_name:
+                continue
+            fetch_url = remote_map.get(remote_name)
+            if not fetch_url:
+                continue
+            raw_url = join_project_repo_url(fetch_url, name)
+            try:
+                canonical_url = canonicalize_repo_url(raw_url)
+            except ValueError:
+                continue
+            revision = project_el.get("revision") or default_revision or ""
+            entries.append(
+                ProjectEntry(
+                    name=name,
+                    url=raw_url,
+                    canonical_url=canonical_url,
+                    ref_spec="*",
+                    resolved_ref=revision or resolved_sha,
+                    resolved_sha=resolved_sha,
+                )
+            )
+            seen.add(name)
+
+    return sorted(entries, key=lambda p: p.name)
+
+
 def apply_content_pins_to_manifests(
     manifest_paths: list[pathlib.Path],
     content_pins: list[ContentPinEntry],
@@ -2640,6 +2743,12 @@ def _run_install(
 
         if not _replay_locked_pins:
             resolved_entries[-1].content_pins = capture_content_pins(source_dir, _manifest_tree_paths)
+            resolved_entries[-1].projects = build_project_entries(
+                manifest_xml_path,
+                manifest_repo_root,
+                _manifest_tree_paths,
+                resolved_entries[-1].content_pins,
+            )
 
         if source_marketplace[name]:
             marketplace_dir = pathlib.Path(marketplace_dir_str)

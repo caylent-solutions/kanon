@@ -1461,6 +1461,23 @@ version bumps.
   supported; see [Platform support](#platform-support) and use WSL2)
 - [Contributing](CONTRIBUTING.md) -- How to create and maintain Kanon
   packages and marketplaces
+- [Privacy & Telemetry](docs/privacy.md) -- What usage telemetry kanon
+  collects, why, how it is encrypted, and how to turn it off
+
+---
+
+## Usage telemetry
+
+kanon emits one anonymised-by-design usage event per command to help the
+maintainers understand which commands and package sources are used. Telemetry
+is **on by default**, runs **silently** and **non-blocking**, never blocks or
+fails your command, and serialises only an explicit allowlist of kanon-computed
+fields -- never raw argv, credentials, keys, tokens, env-var values, or file
+contents (every URL is credential-stripped before it is sent).
+
+Disable it entirely by setting `KANON_TELEMETRY_DISABLED=1`. See
+[docs/privacy.md](docs/privacy.md) for the full list of collected fields and the
+transit/at-rest encryption.
 
 ---
 

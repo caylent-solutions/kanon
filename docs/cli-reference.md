@@ -15,6 +15,12 @@ are registered once via `kanon_cli.core.cli_args` so every parser exposes them.
 | `--no-color` | `NO_COLOR` | auto | Disable ANSI color. Any non-empty `NO_COLOR` also disables color. |
 | `--no-update-check` | `KANON_SKIP_UPDATE_CHECK` | off | Skip the best-effort PyPI "update available" check. The flag is equivalent to setting `KANON_SKIP_UPDATE_CHECK=1`. |
 | `--home` / `--store-dir <path>` | `KANON_HOME` | `~/.kanon-home` | Shared kanon home root (content-addressed store plus caches). `--store-dir` is an accepted alias of `--home`. Precedence: flag > `KANON_HOME` env > `~/.kanon-home`. |
+| `--telemetry-debug` | `KANON_TELEMETRY_DEBUG` | off | Print the exact usage-telemetry JSON that would be sent to stderr for this invocation (still non-blocking). |
+| `--telemetry-endpoint <url>` | `KANON_TELEMETRY_ENDPOINT` | `https://collector.platform.solutions.caylent.com/v1/logs` | Override the usage-telemetry collector endpoint (`https://` only). Flag wins over the env var. |
+
+Usage telemetry is on by default and can be disabled entirely by setting
+`KANON_TELEMETRY_DISABLED` to a truthy value (there is no disable flag). See
+[docs/privacy.md](privacy.md) for exactly what is collected and why.
 
 ## Shared Argument Factories
 
@@ -68,6 +74,9 @@ completion variables), see [docs/configuration.md](configuration.md).
 | `KANON_CATALOG_SOURCES` | Remote catalog source(s) as `<git_url>@<ref>`, one entry per line. Sets the default for every command that accepts `--catalog-source`; the resolving commands require exactly one entry unless `--catalog-source` is passed. | (none) |
 | `KANON_HOME` | Shared kanon home root (store plus caches). Overridden by the `--home` / `--store-dir` flag. | `~/.kanon-home` |
 | `KANON_SKIP_UPDATE_CHECK` | Set to `1` to skip the PyPI update-available check (same effect as `--no-update-check`). | (unset) |
+| `KANON_TELEMETRY_DISABLED` | Set to a truthy value (`1`/`true`/`yes`/`on`) to disable usage telemetry entirely. The only opt-out; there is no disable flag. See [docs/privacy.md](privacy.md). | (unset) |
+| `KANON_TELEMETRY_ENDPOINT` | Usage-telemetry collector endpoint (`https://` only). Overridden by `--telemetry-endpoint`. | `https://collector.platform.solutions.caylent.com/v1/logs` |
+| `KANON_TELEMETRY_DEBUG` | Set to a truthy value to print the would-send telemetry JSON to stderr (same effect as `--telemetry-debug`). | (unset) |
 | `KANON_OUTDATED_FORMAT` | Default output format for `kanon outdated` (`table` or `json`). Overridden by `--format`. | `table` |
 | `KANON_OUTDATED_JSON_INDENT` | JSON indentation (number of spaces) used by `kanon outdated --format json`. | `2` |
 | `KANON_WHY_FORMAT` | Default output format for `kanon why` (`text` or `json`). Overridden by `--format`. | `text` |

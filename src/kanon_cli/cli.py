@@ -16,6 +16,7 @@ import json
 import os
 import signal
 import sys
+import time
 from collections.abc import Callable, Sequence
 from typing import Any
 from types import FrameType
@@ -44,6 +45,7 @@ from kanon_cli.completions.source_names import register as register_complete_sou
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
 from kanon_cli.core.include_walker import InstallError
 from kanon_cli.core.lockfile import LockfileSchemaError
+from kanon_cli.core.telemetry import maybe_emit_telemetry
 from kanon_cli.core.update_check import maybe_alert_update
 from kanon_cli.repo import RepoCommandError
 
@@ -122,6 +124,8 @@ Global options (always available):
   --no-color                     Disable ANSI color (also respects NO_COLOR env var).
   --no-update-check              Skip the PyPI update-available check (or set KANON_SKIP_UPDATE_CHECK=1).
   --home / --store-dir <path>    Shared kanon home root (store + caches). Precedence: flag > KANON_HOME env > ~/.kanon-home.
+  --telemetry-debug              Print the usage-telemetry JSON that would be sent to stderr (still non-blocking).
+  --telemetry-endpoint <url>     Override the telemetry collector endpoint (or set KANON_TELEMETRY_ENDPOINT).
 
 Catalog source (required by commands that resolve a manifest repo; see each subcommand's --help):
   --catalog-source <url>@<ref>   Override the KANON_CATALOG_SOURCES env var. No default;
@@ -286,13 +290,37 @@ def main(argv: list[str] | None = None) -> None:
 
     args.parser = parser
 
+    telemetry_start = time.monotonic()
+    telemetry_exit_code = 0
+    telemetry_error_type: str | None = None
     try:
-        exit_code = args.func(args)
-    except (InstallError, LockfileSchemaError) as exc:
-        print(str(exc), file=sys.stderr)
-        sys.exit(1)
-    except (FileNotFoundError, ValueError, OSError, RepoCommandError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        sys.exit(1)
+        try:
+            exit_code = args.func(args)
+        except (InstallError, LockfileSchemaError) as exc:
+            telemetry_error_type = type(exc).__name__
+            telemetry_exit_code = 1
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+        except (FileNotFoundError, ValueError, OSError, RepoCommandError) as exc:
+            telemetry_error_type = type(exc).__name__
+            telemetry_exit_code = 1
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
+        except Exception as exc:
+            telemetry_error_type = type(exc).__name__
+            telemetry_exit_code = 1
+            raise
+        if exit_code:
+            telemetry_exit_code = exit_code
+    finally:
+        maybe_emit_telemetry(
+            args,
+            args.command,
+            exit_code=telemetry_exit_code,
+            error_type=telemetry_error_type,
+            duration_ms=int((time.monotonic() - telemetry_start) * 1000),
+            environ=os.environ,
+        )
+
     if exit_code:
         sys.exit(exit_code)

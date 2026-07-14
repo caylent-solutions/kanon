@@ -206,3 +206,103 @@ def test_debug_body_has_no_planted_secret(_project: tuple[pathlib.Path, pathlib.
     serialized = json.dumps(otlp)
     for forbidden in (_UNREACHABLE_ENDPOINT.split("//")[1], "PRIVATE KEY", "ssh-rsa", "BEGIN"):
         assert forbidden not in serialized
+
+
+def _run_kanon(cwd: pathlib.Path, env: dict[str, str], *args: str) -> subprocess.CompletedProcess:
+    """Invoke ``python -m kanon_cli [args...]`` from ``cwd`` with the given environment."""
+    return subprocess.run(
+        [sys.executable, "-m", "kanon_cli", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(cwd),
+        env=env,
+    )
+
+
+def _debug_payload(stderr: str) -> dict:
+    """Return the inner telemetry payload dict parsed from a --telemetry-debug stderr stream."""
+    return json.loads(_record_body(_extract_otlp(stderr))["payload"])
+
+
+def _forced_env(home: pathlib.Path) -> dict[str, str]:
+    """Return an isolated env with telemetry forced on and pointed at an unreachable collector."""
+    env = _base_env(home)
+    env["KANON_TELEMETRY_FORCE"] = "1"
+    env["KANON_TELEMETRY_ENDPOINT"] = _UNREACHABLE_ENDPOINT
+    return env
+
+
+@pytest.mark.functional
+def test_failing_command_records_error_outcome(tmp_path: pathlib.Path) -> None:
+    """A dispatched command that fails via sys.exit records a non-zero exit code and error status (F2).
+
+    Reproduces the QA defect end to end: ``kanon install`` on a missing .kanon
+    exits via ``SystemExit`` (a BaseException), which must now be recorded as an
+    error rather than logged as a success with exit_code 0.
+    """
+    env = _forced_env(tmp_path / "home")
+    missing = tmp_path / "missing" / ".kanon"
+
+    result = _run_kanon(tmp_path, env, "--telemetry-debug", "install", str(missing))
+
+    assert result.returncode == 1, result.stderr
+    payload = _debug_payload(result.stderr)
+    assert payload["invocation"]["command"] == "install"
+    assert payload["outcome"]["exit_code"] == 1
+    assert payload["outcome"]["status"] == "error"
+    assert payload["outcome"]["error_type"] == "SystemExit"
+
+
+@pytest.mark.functional
+def test_successful_command_records_ok_outcome(tmp_path: pathlib.Path) -> None:
+    """A dispatched command that succeeds records exit code 0 and ok status (F2 success)."""
+    env = _forced_env(tmp_path / "home")
+
+    result = _run_kanon(tmp_path, env, "--telemetry-debug", "completion", "bash")
+
+    assert result.returncode == 0, result.stderr
+    payload = _debug_payload(result.stderr)
+    assert payload["invocation"]["command"] == "completion"
+    assert payload["outcome"]["exit_code"] == 0
+    assert payload["outcome"]["status"] == "ok"
+    assert payload["outcome"]["error_type"] is None
+
+
+@pytest.mark.functional
+@pytest.mark.parametrize(
+    "argv,expected_command,expected_code",
+    [
+        (["--version"], "--version", 0),
+        (["--help"], "--help", 0),
+        ([], "<none>", 2),
+    ],
+    ids=["version", "help", "bare"],
+)
+def test_early_exit_invocations_emit_usage_event(
+    tmp_path: pathlib.Path,
+    argv: list[str],
+    expected_command: str,
+    expected_code: int,
+) -> None:
+    """--version, --help, and bare kanon each emit a usage event with the right command + exit code (F1)."""
+    env = _forced_env(tmp_path / "home")
+
+    result = _run_kanon(tmp_path, env, *argv, "--telemetry-debug")
+
+    assert result.returncode == expected_code, result.stderr
+    payload = _debug_payload(result.stderr)
+    assert payload["invocation"]["command"] == expected_command
+    assert payload["outcome"]["exit_code"] == expected_code
+
+
+@pytest.mark.functional
+@pytest.mark.parametrize("argv", [["--version"], ["--help"], []], ids=["version", "help", "bare"])
+def test_disabled_suppresses_early_exit_events(tmp_path: pathlib.Path, argv: list[str]) -> None:
+    """KANON_TELEMETRY_DISABLED=1 emits no early-exit usage event even with --telemetry-debug (F1 opt-out)."""
+    env = _forced_env(tmp_path / "home")
+    env["KANON_TELEMETRY_DISABLED"] = "1"
+
+    result = _run_kanon(tmp_path, env, *argv, "--telemetry-debug")
+
+    assert "resourceLogs" not in result.stderr

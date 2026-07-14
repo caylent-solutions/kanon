@@ -957,6 +957,137 @@ def maybe_emit_telemetry(
         _record_foreground_error(environ)
 
 
+def early_exit_command(argv: list[str]) -> str:
+    """Derive the telemetry command label for a parse-time early exit.
+
+    Argparse resolves ``--version`` and ``--help`` (and its ``-h`` alias) by
+    raising ``SystemExit`` from inside ``parse_args`` before the dispatch hook can
+    run, and a bare ``kanon`` invocation (no subcommand) exits before dispatch as
+    well. This maps the raw argument vector to the closed-set command label
+    recorded for those early exits: the first ``--version`` or ``--help`` / ``-h``
+    token encountered (mirroring argparse's left-to-right action resolution), or
+    :data:`constants.KANON_TELEMETRY_EARLY_EXIT_COMMAND` when neither is present
+    (a bare or usage-error invocation).
+
+    Args:
+        argv: The raw argument vector (``sys.argv[1:]`` in production).
+
+    Returns:
+        ``"--version"``, ``"--help"``, or the bare/no-subcommand sentinel.
+    """
+    for token in argv:
+        if token == constants.KANON_TELEMETRY_VERSION_COMMAND:
+            return constants.KANON_TELEMETRY_VERSION_COMMAND
+        if token in constants.KANON_TELEMETRY_HELP_TOKENS:
+            return constants.KANON_TELEMETRY_HELP_COMMAND
+    return constants.KANON_TELEMETRY_EARLY_EXIT_COMMAND
+
+
+def _argv_option_value(argv: list[str], option: str) -> str | None:
+    """Return the value of an ``--option value`` / ``--option=value`` flag in argv.
+
+    Scans the raw argument vector for ``option`` in either the space-separated or
+    ``=``-joined form and returns the last occurrence's value (argparse's
+    last-wins semantics for a single-valued option), or ``None`` when the option
+    is absent. Used to recover the ``--telemetry-endpoint`` override on a
+    parse-time early exit, where ``parse_args`` aborted before populating a
+    namespace.
+
+    Args:
+        argv: The raw argument vector.
+        option: The long-form option string to search for.
+
+    Returns:
+        The recovered value, or ``None`` when the option is not present.
+    """
+    prefix = f"{option}="
+    value: str | None = None
+    for index, token in enumerate(argv):
+        if token == option and index + 1 < len(argv):
+            value = argv[index + 1]
+        elif token.startswith(prefix):
+            value = token[len(prefix) :]
+    return value
+
+
+def build_early_exit_args(argv: list[str], command: str) -> argparse.Namespace:
+    """Build the minimal parsed-args stand-in for a parse-time early-exit event.
+
+    ``parse_args`` raises before returning a namespace for ``--version`` /
+    ``--help`` / a usage error, so the telemetry-relevant global flags are
+    recovered directly from the raw argument vector: ``--telemetry-debug`` (so the
+    would-send JSON still prints under the debug flag) and ``--telemetry-endpoint``
+    (so an explicit collector override is still honoured, preserving the prod-safe
+    flag precedence). No other flag is read and no free-form value is captured.
+
+    Args:
+        argv: The raw argument vector (``sys.argv[1:]`` in production).
+        command: The resolved early-exit command label.
+
+    Returns:
+        An ``argparse.Namespace`` carrying ``command`` plus any recovered
+        telemetry flags.
+    """
+    namespace = argparse.Namespace(command=command)
+    if constants.KANON_TELEMETRY_DEBUG_FLAG in argv:
+        namespace.telemetry_debug = True
+    endpoint = _argv_option_value(argv, constants.KANON_TELEMETRY_ENDPOINT_FLAG)
+    if endpoint is not None:
+        namespace.telemetry_endpoint = endpoint
+    return namespace
+
+
+def maybe_emit_early_exit_telemetry(
+    argv: list[str],
+    exit_code: int,
+    *,
+    environ: "dict[str, str]",
+    now: float | None = None,
+    cwd: Path | None = None,
+    stream: TextIO | None = None,
+    spawn: Callable[..., None] | None = None,
+) -> None:
+    """Emit a usage event for a parse-time early exit, reusing the main hook.
+
+    Handles the invocations that terminate before subcommand dispatch -- ``kanon
+    --version``, ``kanon --help`` / ``-h``, and a bare ``kanon`` (or an argparse
+    usage error) -- whose ``SystemExit`` propagates out of ``parse_args`` (or the
+    no-subcommand guard) before :func:`maybe_emit_telemetry` would otherwise run.
+    The command label is derived from ``argv``, the telemetry flags are recovered
+    from ``argv``, the outcome is taken from the early ``SystemExit`` code (a
+    non-zero code records a ``SystemExit`` error type and, via
+    :func:`build_payload`, an ``error`` status), and the event is dispatched
+    through the same silent, non-blocking, never-fail :func:`maybe_emit_telemetry`
+    path -- so every skip condition (the opt-out env var, completer subcommands,
+    editable/dev installs) is still honoured and nothing is ever written to stderr
+    outside debug mode.
+
+    Args:
+        argv: The raw argument vector (``sys.argv[1:]`` in production).
+        exit_code: The early ``SystemExit`` code (0 for ``--version`` / ``--help``).
+        environ: The environment mapping (production passes ``os.environ``).
+        now: Current epoch seconds (defaults to ``time.time()``; injectable).
+        cwd: The working directory for git provenance (defaults to ``Path.cwd()``).
+        stream: The stream for debug output (defaults to ``sys.stderr``).
+        spawn: The detached-spawn seam (defaults to ``spawn_detached``).
+    """
+    command = early_exit_command(argv)
+    args = build_early_exit_args(argv, command)
+    error_type = None if exit_code == 0 else SystemExit.__name__
+    maybe_emit_telemetry(
+        args,
+        command,
+        exit_code=exit_code,
+        error_type=error_type,
+        duration_ms=0,
+        environ=environ,
+        now=now,
+        cwd=cwd,
+        stream=stream,
+        spawn=spawn,
+    )
+
+
 def _record_foreground_error(environ: "dict[str, str]") -> None:
     """Append the active foreground telemetry traceback to the error log.
 

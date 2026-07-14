@@ -494,6 +494,44 @@ def test_alert_colored_on_tty_without_no_color(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.unit
+def test_render_alert_wraps_current_red_and_latest_green() -> None:
+    """The colorized banner wraps the CURRENT version in red and the LATEST in green (U1).
+
+    Guards the exact colour-to-version mapping (not merely the presence of the
+    codes) so a future swap of red/green would fail loudly.
+    """
+    rendered = update_check._render_alert(latest="9.9.9", current="1.0.0", colorize=True)
+    assert f"{constants.ANSI_RED}1.0.0{constants.ANSI_RESET}" in rendered
+    assert f"{constants.ANSI_GREEN}9.9.9{constants.ANSI_RESET}" in rendered
+    assert rendered.startswith(constants.ANSI_YELLOW)
+    assert rendered.endswith(constants.ANSI_RESET)
+
+
+@pytest.mark.unit
+def test_render_alert_plain_has_no_ansi_when_not_colorized() -> None:
+    """A non-colorized alert carries the versions verbatim with zero ANSI escape codes (U1)."""
+    rendered = update_check._render_alert(latest="9.9.9", current="1.0.0", colorize=False)
+    for code in (constants.ANSI_RED, constants.ANSI_GREEN, constants.ANSI_YELLOW, constants.ANSI_RESET):
+        assert code not in rendered
+    assert "1.0.0" in rendered
+    assert "9.9.9" in rendered
+
+
+@pytest.mark.unit
+def test_render_no_internet_notice_red_when_colorized_plain_otherwise() -> None:
+    """The offline notice is wrapped in red when colorized and has zero ANSI when not (U2)."""
+    colored = update_check._render_no_internet_notice(colorize=True)
+    assert colored.startswith(constants.ANSI_RED)
+    assert colored.endswith(constants.ANSI_RESET)
+    assert constants.KANON_UPDATE_NO_INTERNET_NOTICE in colored
+
+    plain = update_check._render_no_internet_notice(colorize=False)
+    assert plain == constants.KANON_UPDATE_NO_INTERNET_NOTICE
+    for code in (constants.ANSI_RED, constants.ANSI_RESET):
+        assert code not in plain
+
+
+@pytest.mark.unit
 def test_alert_not_colored_when_no_color_env_set() -> None:
     """NO_COLOR set suppresses color even on a TTY."""
     update_check.write_cached_version("99.0.0", now=1000)

@@ -45,7 +45,7 @@ from kanon_cli.completions.source_names import register as register_complete_sou
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
 from kanon_cli.core.include_walker import InstallError
 from kanon_cli.core.lockfile import LockfileSchemaError
-from kanon_cli.core.telemetry import maybe_emit_telemetry
+from kanon_cli.core.telemetry import maybe_emit_early_exit_telemetry, maybe_emit_telemetry
 from kanon_cli.core.update_check import maybe_alert_update
 from kanon_cli.repo import RepoCommandError
 
@@ -258,6 +258,30 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _systemexit_exit_code(code: object) -> int:
+    """Map a ``SystemExit.code`` object to the numeric process exit code.
+
+    ``sys.exit()`` accepts three code shapes and the interpreter translates each
+    into a process exit status: ``None`` is a clean exit (0); an integer is used
+    verbatim; any non-integer object (typically a string message the interpreter
+    prints to stderr) conventionally maps to 1. Telemetry must record the same
+    effective status the process terminates with, so a handler that fails via
+    ``sys.exit()`` -- whose ``SystemExit`` is a ``BaseException`` the broad
+    ``except Exception`` handlers never catch -- is no longer logged as a success.
+
+    Args:
+        code: The ``SystemExit.code`` raised by a dispatched handler or argparse.
+
+    Returns:
+        The effective numeric exit code the process will terminate with.
+    """
+    if code is None:
+        return 0
+    if isinstance(code, int):
+        return int(code)
+    return 1
+
+
 def main(argv: list[str] | None = None) -> None:
     """Parse arguments and dispatch to the appropriate subcommand.
 
@@ -278,7 +302,13 @@ def main(argv: list[str] | None = None) -> None:
     signal.signal(signal.SIGINT, _make_signal_handler(signal.SIGINT))
 
     parser = build_parser()
-    args = parser.parse_args(argv)
+
+    raw_argv = sys.argv[1:] if argv is None else list(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        maybe_emit_early_exit_telemetry(raw_argv, _systemexit_exit_code(exc.code), environ=os.environ)
+        raise
 
     _apply_global_flags(args)
 
@@ -286,6 +316,7 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command is None:
         parser.print_help()
+        maybe_emit_early_exit_telemetry(raw_argv, 2, environ=os.environ)
         sys.exit(2)
 
     args.parser = parser
@@ -306,6 +337,11 @@ def main(argv: list[str] | None = None) -> None:
             telemetry_exit_code = 1
             print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
+        except SystemExit as exc:
+            telemetry_exit_code = _systemexit_exit_code(exc.code)
+            if telemetry_exit_code != 0:
+                telemetry_error_type = type(exc).__name__
+            raise
         except Exception as exc:
             telemetry_error_type = type(exc).__name__
             telemetry_exit_code = 1

@@ -40,6 +40,7 @@ from unittest.mock import patch
 import pytest
 
 import kanon_cli.constants as constants
+from kanon_cli.cli import build_parser
 from kanon_cli.core import telemetry
 from kanon_cli.core.lockfile import (
     CURRENT_SCHEMA_VERSION,
@@ -608,6 +609,154 @@ def test_maybe_emit_never_raises_on_build_error(tmp_path: Path) -> None:
     assert calls == []
 
 
+def _record_only_spawn() -> tuple[list[Path], Any]:
+    """Return (log_paths, spawn_fn) where spawn_fn records the call without POSTing."""
+    log_paths: list[Path] = []
+
+    def _spawn(fn: Any, *, log_path: Path) -> None:
+        log_paths.append(log_path)
+
+    return log_paths, _spawn
+
+
+def _payload_from_debug_stream(stream: io.StringIO) -> dict[str, Any]:
+    """Parse the debug OTLP JSON printed to the stream and return the inner payload dict."""
+    otlp = json.loads(stream.getvalue())
+    body_str = otlp["resourceLogs"][0]["scopeLogs"][0]["logRecords"][0]["body"]["stringValue"]
+    return json.loads(json.loads(body_str)["payload"])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "argv,expected",
+    [
+        (["--version"], "--version"),
+        (["--version", "--telemetry-debug"], "--version"),
+        (["--help"], "--help"),
+        (["-h"], "--help"),
+        (["install", "--help"], "--help"),
+        (["--help", "--version"], "--help"),
+        (["--version", "--help"], "--version"),
+        ([], "<none>"),
+        (["--telemetry-debug"], "<none>"),
+    ],
+)
+def test_early_exit_command_derivation(argv: list[str], expected: str) -> None:
+    """The early-exit command label is the first version/help token, else the bare sentinel."""
+    assert telemetry.early_exit_command(argv) == expected
+
+
+@pytest.mark.unit
+def test_build_early_exit_args_recovers_debug_and_endpoint_space_form() -> None:
+    """The recovered namespace carries the debug flag and the space-form endpoint value."""
+    args = telemetry.build_early_exit_args(
+        ["--version", "--telemetry-debug", "--telemetry-endpoint", "https://sandbox/v1/logs"],
+        "--version",
+    )
+    assert args.command == "--version"
+    assert args.telemetry_debug is True
+    assert args.telemetry_endpoint == "https://sandbox/v1/logs"
+
+
+@pytest.mark.unit
+def test_build_early_exit_args_recovers_equals_form_endpoint() -> None:
+    """The ``--telemetry-endpoint=<url>`` joined form is recovered and debug stays unset."""
+    args = telemetry.build_early_exit_args(["--telemetry-endpoint=https://x/v1/logs"], "<none>")
+    assert args.telemetry_endpoint == "https://x/v1/logs"
+    assert not hasattr(args, "telemetry_debug")
+
+
+@pytest.mark.unit
+def test_build_early_exit_args_bare_has_no_recovered_flags() -> None:
+    """A bare argv yields a namespace with only the command and no recovered telemetry flags."""
+    args = telemetry.build_early_exit_args([], "<none>")
+    assert args.command == "<none>"
+    assert not hasattr(args, "telemetry_debug")
+    assert not hasattr(args, "telemetry_endpoint")
+
+
+@pytest.mark.unit
+def test_maybe_emit_early_exit_version_records_ok(tmp_path: Path) -> None:
+    """A --version early exit emits command '--version' with a zero exit code and ok status."""
+    log_paths, spawn = _record_only_spawn()
+    stream = io.StringIO()
+    with patch.object(telemetry, "is_editable_install", return_value=False):
+        telemetry.maybe_emit_early_exit_telemetry(
+            ["--version", "--telemetry-debug"],
+            0,
+            environ={},
+            cwd=tmp_path,
+            stream=stream,
+            spawn=spawn,
+        )
+
+    payload = _payload_from_debug_stream(stream)
+    assert payload["invocation"]["command"] == "--version"
+    assert payload["outcome"]["exit_code"] == 0
+    assert payload["outcome"]["status"] == constants.KANON_TELEMETRY_STATUS_OK
+    assert payload["outcome"]["error_type"] is None
+    assert len(log_paths) == 1
+
+
+@pytest.mark.unit
+def test_maybe_emit_early_exit_bare_records_error(tmp_path: Path) -> None:
+    """A bare invocation (exit 2) emits the '<none>' sentinel with an error status + SystemExit type."""
+    log_paths, spawn = _record_only_spawn()
+    stream = io.StringIO()
+    with patch.object(telemetry, "is_editable_install", return_value=False):
+        telemetry.maybe_emit_early_exit_telemetry(
+            ["--telemetry-debug"],
+            2,
+            environ={},
+            cwd=tmp_path,
+            stream=stream,
+            spawn=spawn,
+        )
+
+    payload = _payload_from_debug_stream(stream)
+    assert payload["invocation"]["command"] == constants.KANON_TELEMETRY_EARLY_EXIT_COMMAND
+    assert payload["outcome"]["exit_code"] == 2
+    assert payload["outcome"]["status"] == constants.KANON_TELEMETRY_STATUS_ERROR
+    assert payload["outcome"]["error_type"] == "SystemExit"
+    assert len(log_paths) == 1
+
+
+@pytest.mark.unit
+def test_maybe_emit_early_exit_disabled_env_skips(tmp_path: Path) -> None:
+    """The opt-out env var suppresses the early-exit event even with the debug flag present."""
+    log_paths, spawn = _record_only_spawn()
+    stream = io.StringIO()
+    telemetry.maybe_emit_early_exit_telemetry(
+        ["--version", "--telemetry-debug"],
+        0,
+        environ={constants.KANON_TELEMETRY_DISABLED_ENV: "1"},
+        cwd=tmp_path,
+        stream=stream,
+        spawn=spawn,
+    )
+    assert log_paths == []
+    assert stream.getvalue() == ""
+
+
+@pytest.mark.unit
+def test_maybe_emit_early_exit_help_emits_via_short_flag(tmp_path: Path) -> None:
+    """The -h alias emits the '--help' command label, proving the alias reaches telemetry."""
+    log_paths, spawn = _record_only_spawn()
+    stream = io.StringIO()
+    with patch.object(telemetry, "is_editable_install", return_value=False):
+        telemetry.maybe_emit_early_exit_telemetry(
+            ["-h", "--telemetry-debug"],
+            0,
+            environ={},
+            cwd=tmp_path,
+            stream=stream,
+            spawn=spawn,
+        )
+    payload = _payload_from_debug_stream(stream)
+    assert payload["invocation"]["command"] == "--help"
+    assert len(log_paths) == 1
+
+
 @pytest.mark.unit
 def test_no_secret_scan_over_command_matrix(tmp_path: Path) -> None:
     """No planted credential ever appears in any serialized event body across a command matrix."""
@@ -647,3 +796,292 @@ def test_no_secret_scan_over_command_matrix(tmp_path: Path) -> None:
             body_str = telemetry._cap_body(payload, "2026-07-14T00:00:00Z")
             for secret in secrets:
                 assert secret not in body_str, f"secret {secret!r} leaked in {args.command} body"
+
+
+_SECRET_TOKEN = "ghp_FAKE0000000000000000000000000000000000"
+_SECRET_URL_PW = "SUPERSECRET"
+_SECRET_FLAG_PW = "FLAGSECRET"
+_SECRET_GIT_USER = "baduser"
+
+
+def _no_op_git(git_args: list[str], *, cwd: Path, timeout: int) -> str | None:
+    """A git seam that reports no provenance (a non-git working directory)."""
+    return None
+
+
+def _serialize_emitted_otlp(
+    args: argparse.Namespace,
+    command: str,
+    cwd: Path,
+    *,
+    git: Any = _no_op_git,
+) -> str:
+    """Serialize the full OTLP request exactly as the emitter would, for secret scanning."""
+    with patch.object(telemetry, "_run_git", side_effect=git):
+        payload = telemetry.build_payload(
+            args,
+            command,
+            exit_code=0,
+            error_type=None,
+            duration_ms=1,
+            environ={},
+            run_id="rid",
+            cwd=cwd,
+            editable_probe=lambda: False,
+        )
+    body_str = telemetry._cap_body(payload, "2026-07-14T00:00:00Z")
+    otlp = telemetry.build_otlp_request(body_str, timestamp_ns=1, resource_version="9.9.9")
+    return json.dumps(otlp, separators=(",", ":"), sort_keys=True)
+
+
+def _cred_remote_git(git_args: list[str], *, cwd: Path, timeout: int) -> str | None:
+    """A git seam whose origin URL and committer carry credential-shaped secrets."""
+    joined = " ".join(git_args)
+    if joined == "config --get user.email":
+        return "dev@example.com"
+    if joined == "config --get remote.origin.url":
+        return f"https://{_SECRET_GIT_USER}:PW@github.com/secretorg/secretrepo.git"
+    if joined == "rev-parse --abbrev-ref HEAD":
+        return "main"
+    return None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "args_factory",
+    [
+        lambda: _args(
+            command="add",
+            names=[_SECRET_TOKEN],
+            catalog_source=f"https://user:{_SECRET_URL_PW}@github.com/secretorg/secretrepo@main",
+            telemetry_endpoint=f"https://tok:{_SECRET_FLAG_PW}@host/v1/logs",
+        ),
+        lambda: _args(
+            command="why",
+            target=f"https://user:{_SECRET_URL_PW}@github.com/secretorg/secretrepo",
+            telemetry_endpoint=f"https://tok:{_SECRET_FLAG_PW}@host/v1/logs",
+        ),
+        lambda: _args(command="install", kanonenv_path=f"/{_SECRET_TOKEN}/.kanon", lock_file=None),
+    ],
+    ids=["add-token-and-cred-source", "why-cred-target", "install-secret-path"],
+)
+def test_zero_secret_no_leak_in_serialized_otlp(args_factory: Any, tmp_path: Path) -> None:
+    """No secret-shaped input (token, URL password, endpoint password, git userinfo) survives serialization.
+
+    Security-critical guard (T8): builds the full OTLP request the emitter would
+    POST -- for a fake token positional, a credentialed source URL, a credentialed
+    ``--telemetry-endpoint``, and a credentialed git remote -- and asserts none of
+    those secret substrings appear anywhere in the serialized bytes. It fails
+    loudly if the allowlist is ever widened to serialize a free-form value.
+    """
+    args = args_factory()
+    serialized = _serialize_emitted_otlp(args, args.command, tmp_path, git=_cred_remote_git)
+    for secret in (_SECRET_TOKEN, _SECRET_URL_PW, _SECRET_FLAG_PW, _SECRET_GIT_USER, "user:", "tok:", ":PW@"):
+        assert secret not in serialized, f"secret {secret!r} leaked in {args.command} OTLP body"
+
+
+@pytest.mark.unit
+def test_serialized_otlp_credential_stripped_git_to_host_org_repo(tmp_path: Path) -> None:
+    """A credentialed git remote is reduced to host+org+repo only inside the serialized OTLP (T8)."""
+    args = _args(command="doctor")
+    serialized = _serialize_emitted_otlp(args, "doctor", tmp_path, git=_cred_remote_git)
+    payload = json.loads(
+        json.loads(serialized)["resourceLogs"][0]["scopeLogs"][0]["logRecords"][0]["body"]["stringValue"]
+    )
+    git = json.loads(payload["payload"])["git"]
+    assert git["remote_host"] == "github.com"
+    assert git["org"] == "secretorg"
+    assert git["repo"] == "secretrepo"
+    assert _SECRET_GIT_USER not in serialized
+
+
+@pytest.mark.unit
+def test_invocation_serializes_only_allowlist_no_raw_argv() -> None:
+    """The invocation carries exactly the allowlist keys; no positional/path/URL value leaks (T8)."""
+    args = _args(
+        command="add",
+        names=[_SECRET_TOKEN],
+        catalog_source=f"https://u:{_SECRET_URL_PW}@example.com/m@main",
+        kanon_file="/home/secret-user/.kanon",
+        format="json",
+        refresh_lock=True,
+    )
+    inv = telemetry.collect_invocation(args, "add")
+    assert set(inv) == {"command", "subcommand", "flags", "flag_values"}
+    assert inv["flag_values"] == {"format": "json"}
+    assert "refresh_lock" in inv["flags"]
+    serialized = json.dumps(inv)
+    for secret in (_SECRET_TOKEN, _SECRET_URL_PW, "secret-user", "/home/"):
+        assert secret not in serialized
+
+
+def _registered_top_level_commands() -> list[str]:
+    """Return every top-level command name registered on the real kanon parser."""
+    parser = build_parser()
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return list(action.choices.keys())
+    return []
+
+
+@pytest.mark.unit
+def test_every_real_subcommand_emits_and_completers_skip() -> None:
+    """Every real subcommand is emit-eligible while every ``__complete*`` completer is skipped (T1).
+
+    Derives the command set from the live parser so a newly registered subcommand
+    is covered automatically: a real command on a wheel install must NOT skip
+    (it would emit) and every completer subcommand MUST skip.
+    """
+    commands = _registered_top_level_commands()
+    real = [c for c in commands if not c.startswith(constants.KANON_COMPLETER_COMMAND_PREFIX)]
+    completers = [c for c in commands if c.startswith(constants.KANON_COMPLETER_COMMAND_PREFIX)]
+    assert real, "expected at least one real subcommand registered"
+    assert completers, "expected at least one completer subcommand registered"
+
+    for command in real:
+        assert (
+            telemetry.should_skip(_args(command=command), command, environ={}, editable_probe=lambda: False) is False
+        ), f"real command {command!r} must be emit-eligible"
+    for command in completers:
+        assert (
+            telemetry.should_skip(_args(command=command), command, environ={}, editable_probe=lambda: False) is True
+        ), f"completer {command!r} must be skipped"
+
+
+@pytest.mark.unit
+def test_maybe_emit_default_dispatch_uses_detached_spawn(tmp_path: Path) -> None:
+    """With no injected seam the emitter dispatches the POST via the detached spawn_detached (T6, non-blocking)."""
+    with (
+        patch.object(telemetry, "is_editable_install", return_value=False),
+        patch.object(telemetry, "spawn_detached") as detached,
+    ):
+        telemetry.maybe_emit_telemetry(
+            _args(command="why"),
+            "why",
+            exit_code=0,
+            error_type=None,
+            duration_ms=1,
+            environ={constants.KANON_TELEMETRY_ENDPOINT_ENV: "https://collector.example/v1/logs"},
+            cwd=tmp_path,
+        )
+    detached.assert_called_once()
+
+
+@pytest.mark.unit
+def test_maybe_emit_foreground_does_not_perform_the_post(tmp_path: Path) -> None:
+    """The foreground hands the POST to the spawn seam and never calls urlopen itself (T6, non-blocking)."""
+    log_paths, spawn = _record_only_spawn()
+    with (
+        patch.object(telemetry, "is_editable_install", return_value=False),
+        patch.object(telemetry.urllib.request, "urlopen") as urlopen,
+    ):
+        telemetry.maybe_emit_telemetry(
+            _args(command="why"),
+            "why",
+            exit_code=0,
+            error_type=None,
+            duration_ms=1,
+            environ={constants.KANON_TELEMETRY_ENDPOINT_ENV: "https://collector.example/v1/logs"},
+            cwd=tmp_path,
+            spawn=spawn,
+        )
+    urlopen.assert_not_called()
+    assert len(log_paths) == 1
+
+
+@pytest.mark.unit
+def test_maybe_emit_never_raises_when_post_fails(tmp_path: Path) -> None:
+    """A transport failure raised inside the dispatched POST is swallowed; emit never raises (T6, never-fail)."""
+    calls, spawn = _inline_spawn_capture()
+    with (
+        patch.object(telemetry, "is_editable_install", return_value=False),
+        patch.object(telemetry.urllib.request, "urlopen", side_effect=OSError("network unreachable")),
+    ):
+        telemetry.maybe_emit_telemetry(
+            _args(command="why"),
+            "why",
+            exit_code=0,
+            error_type=None,
+            duration_ms=1,
+            environ={constants.KANON_TELEMETRY_ENDPOINT_ENV: "https://collector.example/v1/logs"},
+            cwd=tmp_path,
+            spawn=spawn,
+        )
+    assert len(calls) == 1
+
+
+@pytest.mark.unit
+def test_maybe_emit_debug_writes_nothing_to_stdout(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Debug telemetry goes to the debug stream only; stdout stays clean so a --format json document stays valid (T5)."""
+    _log_paths, spawn = _record_only_spawn()
+    stream = io.StringIO()
+    with patch.object(telemetry, "is_editable_install", return_value=False):
+        telemetry.maybe_emit_telemetry(
+            _args(command="search", format="json", telemetry_debug=True),
+            "search",
+            exit_code=0,
+            error_type=None,
+            duration_ms=1,
+            environ={},
+            cwd=tmp_path,
+            stream=stream,
+            spawn=spawn,
+        )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    payload = _payload_from_debug_stream(stream)
+    assert payload["invocation"]["flag_values"] == {"format": "json"}
+
+
+@pytest.mark.unit
+def test_install_type_classifies_source_editable_and_wheel() -> None:
+    """_install_type maps a missing distribution to source, an editable dist to editable, else wheel (T9)."""
+    with patch.object(telemetry.metadata, "distribution", side_effect=telemetry.metadata.PackageNotFoundError):
+        assert telemetry._install_type(lambda: True) == constants.KANON_TELEMETRY_INSTALL_TYPE_SOURCE
+
+    with patch.object(telemetry.metadata, "distribution", return_value=object()):
+        assert telemetry._install_type(lambda: True) == constants.KANON_TELEMETRY_INSTALL_TYPE_EDITABLE
+        assert telemetry._install_type(lambda: False) == constants.KANON_TELEMETRY_INSTALL_TYPE_WHEEL
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "environ,expected",
+    [
+        ({constants.KANON_CI_ENV: "true"}, True),
+        ({constants.KANON_CI_ENV: "1"}, True),
+        ({constants.KANON_CI_ENV: "false"}, False),
+        ({}, False),
+    ],
+)
+def test_collect_environment_is_ci_detection(environ: dict[str, str], expected: bool) -> None:
+    """is_ci is True only for a truthy CI env var and False when unset or falsey (T10)."""
+    env = telemetry.collect_environment(environ, editable_probe=lambda: False)
+    assert env["is_ci"] is expected
+
+
+@pytest.mark.unit
+def test_install_graph_exposes_transitive_project_layer(tmp_path: Path) -> None:
+    """The install graph and installed_packages expose the transitive project layer of the lockfile (W1)."""
+    kanon_path = tmp_path / ".kanon"
+    kanon_path.write_text("KANON_SOURCES=FOO\n", encoding="utf-8")
+    write_lockfile(_sample_lockfile(), tmp_path / ".kanon.lock")
+
+    args = _args(command="install", kanonenv_path=kanon_path, lock_file=None)
+    payload = telemetry.build_payload(
+        args,
+        "install",
+        exit_code=0,
+        error_type=None,
+        duration_ms=1,
+        environ={},
+        run_id="rid",
+        cwd=tmp_path,
+        editable_probe=lambda: False,
+    )
+    transitive = [p for p in payload["installed_packages"] if p["scope"] == constants.KANON_TELEMETRY_SCOPE_TRANSITIVE]
+    transitive_names = {p["name"] for p in transitive}
+    assert {"p1", "p2"} <= transitive_names
+    graph_projects = payload["install_graph"]["sources"][0]["projects"]
+    assert any(project["scope"] == constants.KANON_TELEMETRY_SCOPE_TRANSITIVE for project in graph_projects)
+    assert graph_projects[0]["name"] == "p1"

@@ -650,6 +650,16 @@ KANON_TELEMETRY_FLAG_VALUE_ALLOWLIST: frozenset[str] = frozenset({"format"})
 KANON_TELEMETRY_INTERNAL_ARG_KEYS: frozenset[str] = frozenset({"func", "parser", "command"})
 
 
+KANON_TELEMETRY_VERSION_COMMAND = "--version"
+KANON_TELEMETRY_HELP_COMMAND = "--help"
+KANON_TELEMETRY_HELP_TOKENS: frozenset[str] = frozenset({KANON_TELEMETRY_HELP_COMMAND, "-h"})
+KANON_TELEMETRY_EARLY_EXIT_COMMAND = "<none>"
+
+
+KANON_TELEMETRY_DEBUG_FLAG = "--telemetry-debug"
+KANON_TELEMETRY_ENDPOINT_FLAG = "--telemetry-endpoint"
+
+
 KANON_CI_ENV = "CI"
 
 

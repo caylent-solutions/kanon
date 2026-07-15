@@ -85,7 +85,7 @@ import pytest
 
 from kanon_cli.core.include_walker import _walk_includes as _real_walk_includes
 from kanon_cli.core.install import _RefResolution
-from tests.conftest import _isolation_env, managed_repo_dir
+from tests.conftest import _isolation_env, managed_repo_dir, strip_subprocess_coverage_env
 
 _MINIMAL_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
 
@@ -398,7 +398,7 @@ def _run_kanon(
     if env is not None and extra_env is not None:
         raise ValueError("Provide either 'env' or 'extra_env', not both.")
 
-    resolved_env: "dict[str, str] | None"
+    resolved_env: "dict[str, str]"
     if env is not None:
         resolved_env = dict(env)
         for key, value in _isolation_env().items():
@@ -407,7 +407,9 @@ def _run_kanon(
         resolved_env = dict(os.environ)
         resolved_env.update(extra_env)
     else:
-        resolved_env = None
+        resolved_env = dict(os.environ)
+
+    resolved_env = strip_subprocess_coverage_env(resolved_env)
 
     resolved_cwd: "str | None" = str(cwd) if cwd is not None else None
 

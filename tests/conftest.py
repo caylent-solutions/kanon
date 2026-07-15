@@ -97,6 +97,44 @@ def _isolation_env() -> dict[str, str]:
     return floor
 
 
+_SUBPROCESS_COVERAGE_ENV_VARS: tuple[str, ...] = (
+    "COV_CORE_SOURCE",
+    "COV_CORE_CONFIG",
+    "COV_CORE_DATAFILE",
+    "COV_CORE_CONTEXT",
+    "COVERAGE_PROCESS_START",
+    "COVERAGE_PROCESS_CONFIG",
+)
+
+
+def strip_subprocess_coverage_env(env: dict[str, str]) -> dict[str, str]:
+    """Return a copy of *env* with coverage subprocess-measurement triggers removed.
+
+    Under ``pytest --cov`` (e.g. ``make test``) pytest-cov and coverage export
+    ``COV_CORE_*`` / ``COVERAGE_PROCESS_*`` so that spawned subprocesses auto-start
+    coverage. A measured ``kanon`` subprocess then writes a ``.coverage-data``
+    directory into its working directory -- resolved relative to the child's CWD
+    on some filesystems -- which behavioural tests that inspect the child's
+    filesystem (``kanon repo status --orphans``) or parse its stderr
+    (``--telemetry-debug`` JSON) then trip over, non-deterministically across
+    OS / filesystem. These behavioural subprocess tests do not need coverage of
+    the child (the coverage gate is measured in-process on the unit tier), so the
+    functional and scenario subprocess runners overlay this on the child's
+    environment to keep the child deterministic without disturbing the parent
+    worker's already-started in-process coverage.
+
+    Args:
+        env: The environment mapping destined for ``subprocess.run``.
+
+    Returns:
+        A shallow copy of *env* with the coverage subprocess variables removed.
+    """
+    cleaned = dict(env)
+    for name in _SUBPROCESS_COVERAGE_ENV_VARS:
+        cleaned.pop(name, None)
+    return cleaned
+
+
 @contextlib.contextmanager
 def managed_repo_dir(tmp_path_factory: pytest.TempPathFactory, name: str) -> Generator[pathlib.Path, None, None]:
     """Yield a fresh ``tmp_path_factory`` dir and remove it on teardown.

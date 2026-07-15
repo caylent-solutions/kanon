@@ -32,6 +32,7 @@ import sys
 
 import pytest
 
+from tests.conftest import strip_subprocess_coverage_env
 from tests.scenarios.conftest import make_plain_repo, write_kanonenv
 
 
@@ -90,7 +91,7 @@ def _base_env(home: pathlib.Path) -> dict[str, str]:
     env["KANON_ALLOW_INSECURE_REMOTES"] = "1"
     env["KANON_SKIP_UPDATE_CHECK"] = "1"
     env["NO_COLOR"] = "1"
-    return env
+    return strip_subprocess_coverage_env(env)
 
 
 def _run_install(project_root: pathlib.Path, env: dict[str, str], *args: str) -> subprocess.CompletedProcess:

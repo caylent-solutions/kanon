@@ -445,6 +445,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "doctor": [],
             "validate": ["xml"],
             "search": [],
+            "list": [],
             "outdated": ["--catalog-source", "file:///fake@HEAD"],
             "remove": ["foo_bar"],
             "repo": ["init", "-u", "https://example.com/repo", "-b", "main", "-m", "manifest.xml"],
@@ -677,11 +678,17 @@ class TestSearchSubcommandRegistration:
         args = parser.parse_args(["search"])
         assert args.command == "search"
 
-    def test_list_subcommand_removed_exits_2(self) -> None:
-        """AC-16: the removed list subcommand -> argparse unknown-command exit 2."""
-        with pytest.raises(SystemExit) as exc_info:
-            main(["list"])
-        assert exc_info.value.code == 2
+    def test_list_token_is_the_inventory_command_not_search(self) -> None:
+        """The 'list' token is now a distinct declared-vs-installed inventory command.
+
+        The 3.0.0 rename moved catalog discovery from 'list' to 'search'; 'list'
+        was later reintroduced as a SEPARATE command that reconciles .kanon
+        against .kanon.lock (positive coverage lives in tests/unit/test_list.py).
+        This asserts the two commands are distinct and both registered.
+        """
+        parser = build_parser()
+        assert parser.parse_args(["list"]).command == "list"
+        assert parser.parse_args(["search"]).command == "search"
 
     def test_search_subcommand_has_catalog_source_flag(self) -> None:
         """The 'search' --catalog-source flag is repeatable (append) -> a list.

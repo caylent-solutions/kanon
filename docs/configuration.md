@@ -294,6 +294,16 @@ filter, `kanon search --tree` exits with an error suggesting `--regex`,
 `<substring>`, or `--max-depth 0`. Override with
 `--no-filter-required`.
 
+**`KANON_LIST_OUTPUT_FORMAT`** (default: `table`) -- Default output
+format for `kanon list` (the declared-vs-installed inventory command).
+Supported values: `table`, `json`. Overridden by the `--format` CLI
+flag. Distinct from `KANON_LIST_FORMAT` above, which configures
+`kanon search`'s output.
+
+**`KANON_LIST_JSON_INDENT`** (default: `2`) -- Number of spaces per
+indentation level in JSON output from `kanon list --format json`. Must
+be a non-negative integer parseable by Python `int()`.
+
 **`KANON_OUTDATED_FORMAT`** (default: `table`) -- Default output
 format for `kanon outdated`. Currently only `table` is supported.
 Overridden by `--format` CLI flag.

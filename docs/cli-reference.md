@@ -138,6 +138,76 @@ and operating systems.
 
 ---
 
+### `kanon list`
+
+List the sources declared in `.kanon` against the sources installed in
+`.kanon.lock`, tagging each with its status. This is the flat inventory
+command -- the kanon analogue of `pip list` / `npm ls` / `poetry show`. It
+complements [`kanon why`](#kanon-why) (the dependency graph),
+[`kanon outdated`](#kanon-outdated) (version staleness), and `kanon validate
+lockfile` (which *fails* on the same declared-vs-installed drift this command
+merely reports).
+
+**Status tags:**
+
+| Status | Meaning |
+|---|---|
+| `installed` | declared in `.kanon` **and** present in `.kanon.lock` |
+| `not-installed` | declared in `.kanon` but not yet in the lock -- run `kanon install` |
+| `orphan` | present in `.kanon.lock` but no longer declared in `.kanon` |
+
+The status is computed from the same alias comparison that `kanon install` and
+`kanon validate lockfile` enforce (`core/lockfile.py:reconcile_declared_installed`);
+`list` presents the divergence read-only instead of failing on it. The tags
+apply to the direct source aliases (transitive packages are only ever shown as
+installed, under `--tree`).
+
+**Flags:**
+
+| Flag | Effect |
+|---|---|
+| _(none)_ | Show every source (the declared ∪ installed union), one row each. |
+| `--declared` | Show only sources declared in `.kanon` (omit `orphan` sources). |
+| `--tree` | Expand each installed source to its transitive packages (from the lock). |
+| `--status <installed\|not-installed\|orphan>` | Show only sources with the given status. |
+| `--format <table\|json>` | Output format (default `table`). `KANON_LIST_OUTPUT_FORMAT` sets the default; the flag wins. |
+| `--kanon-file <path>` | Path to `.kanon` (default: auto-discovery walking up from the cwd; `KANON_KANON_FILE` overrides). |
+| `--lock-file <path>` | Path to `.kanon.lock` (default `<kanon-file>.lock`; `KANON_LOCK_FILE` overrides). |
+
+**Behaviour:**
+
+1. **`.kanon` required** -- resolved via `--kanon-file`, the `KANON_KANON_FILE`
+   env var, or auto-discovery. When none is found the command exits `1` with a
+   clean `ERROR:` message.
+2. **Lockfile optional** -- when `.kanon.lock` is absent every declared source is
+   reported `not-installed` and a note is written to stderr; the command still
+   exits `0`. An explicit `--lock-file` / `KANON_LOCK_FILE` that does not exist
+   is an error.
+3. **Exit code** -- `0` for any successful inventory (including the empty and
+   not-yet-installed states); `1` for an unresolvable `.kanon`, an
+   unreadable/malformed lock, or an unrecognised `KANON_LIST_OUTPUT_FORMAT`.
+
+**Examples:**
+
+```console
+$ kanon list
+SOURCE | REF                  | STATUS
+-------+----------------------+--------------
+bar    | 2.0.0                | not-installed
+baz    | 0.9.0 (cccccccccccc) | orphan
+foo    | 1.0.0 (aaaaaaaaaaaa) | installed
+
+$ kanon list --status orphan
+SOURCE | REF                  | STATUS
+-------+----------------------+-------
+baz    | 0.9.0 (cccccccccccc) | orphan
+
+$ kanon list --format json
+{"sources":[{"alias":"foo","status":"installed","name":"foo", ...}]}
+```
+
+---
+
 ### `kanon outdated`
 
 Compare installed sources against the catalog and report which are behind.

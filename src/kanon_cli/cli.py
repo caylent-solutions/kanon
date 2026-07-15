@@ -28,6 +28,7 @@ from kanon_cli.commands.clean import register as register_clean
 from kanon_cli.commands.completion import register as register_completion
 from kanon_cli.commands.doctor import register as register_doctor
 from kanon_cli.commands.install import register as register_install
+from kanon_cli.commands.list import register as register_list
 from kanon_cli.commands.marketplace import register as register_marketplace
 from kanon_cli.commands.outdated import register as register_outdated
 from kanon_cli.commands.remove import register as register_remove
@@ -101,6 +102,7 @@ Discovery & management:
   search           Discover catalog entries (grouped by source)
   add              Add catalog entries to .kanon
   remove           Remove sources from .kanon
+  list             List declared vs installed sources and their status
   outdated         Report installable upgrades
   why              Explain why a transitive dep is in the tree
 
@@ -242,6 +244,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_install(subparsers)
     register_marketplace(subparsers)
     register_search(subparsers)
+    register_list(subparsers)
     register_outdated(subparsers)
     register_remove(subparsers)
     register_validate(subparsers)

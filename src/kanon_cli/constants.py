@@ -489,6 +489,72 @@ if KANON_WHY_JSON_INDENT < 0:
     raise SystemExit(f"ERROR: KANON_WHY_JSON_INDENT must be a non-negative integer; got {KANON_WHY_JSON_INDENT}")
 
 
+KANON_LIST_OUTPUT_FORMAT = "KANON_LIST_OUTPUT_FORMAT"
+
+
+KANON_LIST_OUTPUT_FORMAT_TABLE = "table"
+
+
+KANON_LIST_OUTPUT_FORMAT_JSON = "json"
+
+
+KANON_LIST_OUTPUT_FORMAT_DEFAULT = KANON_LIST_OUTPUT_FORMAT_TABLE
+
+
+KANON_LIST_OUTPUT_FORMAT_CHOICES: tuple[str, ...] = (
+    KANON_LIST_OUTPUT_FORMAT_TABLE,
+    KANON_LIST_OUTPUT_FORMAT_JSON,
+)
+
+
+KANON_LIST_JSON_INDENT: int = _env_int("KANON_LIST_JSON_INDENT", 2)
+if KANON_LIST_JSON_INDENT < 0:
+    raise SystemExit(f"ERROR: KANON_LIST_JSON_INDENT must be a non-negative integer; got {KANON_LIST_JSON_INDENT}")
+
+
+KANON_LIST_STATUS_INSTALLED = "installed"
+
+
+KANON_LIST_STATUS_NOT_INSTALLED = "not-installed"
+
+
+KANON_LIST_STATUS_ORPHAN = "orphan"
+
+
+KANON_LIST_STATUS_CHOICES: tuple[str, ...] = (
+    KANON_LIST_STATUS_INSTALLED,
+    KANON_LIST_STATUS_NOT_INSTALLED,
+    KANON_LIST_STATUS_ORPHAN,
+)
+
+
+KANON_LIST_SCOPE_DIRECT = "direct"
+
+
+KANON_LIST_SCOPE_TRANSITIVE = "transitive"
+
+
+KANON_LIST_COLUMN_SOURCE = "SOURCE"
+
+
+KANON_LIST_COLUMN_REF = "REF"
+
+
+KANON_LIST_COLUMN_STATUS = "STATUS"
+
+
+KANON_LIST_REF_UNRESOLVED = "-"
+
+
+KANON_LIST_TREE_INDENT = "  "
+
+
+KANON_LIST_NO_SOURCES_NOTE = "no dependencies declared in .kanon (add one with 'kanon add')"
+
+
+KANON_LIST_NO_LOCKFILE_NOTE = "no .kanon.lock found -- declared sources are not installed yet (run 'kanon install')"
+
+
 KANON_CATALOG_AUDIT_VALID_CHECKS: frozenset[str] = frozenset(
     {
         "metadata",
@@ -644,7 +710,7 @@ KANON_TELEMETRY_INSTALL_TYPE_WHEEL = "wheel"
 KANON_TELEMETRY_INSTALL_COMMANDS: frozenset[str] = frozenset({"install"})
 
 
-KANON_TELEMETRY_FLAG_VALUE_ALLOWLIST: frozenset[str] = frozenset({"format"})
+KANON_TELEMETRY_FLAG_VALUE_ALLOWLIST: frozenset[str] = frozenset({"format", "status"})
 
 
 KANON_TELEMETRY_INTERNAL_ARG_KEYS: frozenset[str] = frozenset({"func", "parser", "command"})

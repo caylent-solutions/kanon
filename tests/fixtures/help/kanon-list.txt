@@ -1,0 +1,35 @@
+usage: kanon list [-h] [--declared] [--tree] [--status <status>]
+                  [--format <format>] [--kanon-file <path>]
+                  [--lock-file <path>]
+
+Reconcile the sources declared in .kanon against the sources recorded in
+.kanon.lock and print one row per source with a status tag:
+
+  installed      declared in .kanon AND present in .kanon.lock
+  not-installed  declared in .kanon but not yet installed (run 'kanon install')
+  orphan         present in .kanon.lock but no longer declared in .kanon
+
+By default every source is shown (the declared/installed union). Use
+--declared to show only declared sources, --status to filter to one tag,
+and --tree to expand each installed source to its transitive packages.
+
+options:
+  -h, --help           show this help message and exit
+  --declared           Show only sources declared in .kanon (installed and
+                       not-installed); omit orphan sources that are in
+                       .kanon.lock but no longer declared.
+  --tree               Expand each installed source to its transitive packages
+                       (from .kanon.lock).
+  --status <status>    Filter to sources with the given status: installed,
+                       not-installed, orphan.
+  --format <format>    Output format: 'table' (default) or 'json'. Overridden
+                       by the KANON_LIST_OUTPUT_FORMAT environment variable;
+                       the CLI flag takes precedence when both are set.
+  --kanon-file <path>  Path to the .kanon file. Defaults to auto-discovery
+                       (walk up from the current directory). Overridden by the
+                       KANON_KANON_FILE environment variable; the CLI flag
+                       takes precedence when both are set.
+  --lock-file <path>   Path to the .kanon.lock file. Defaults to <kanon-
+                       file>.lock. Overridden by the KANON_LOCK_FILE
+                       environment variable; the CLI flag takes precedence
+                       when both are set.

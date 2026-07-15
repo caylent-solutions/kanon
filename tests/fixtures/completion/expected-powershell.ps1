@@ -2,7 +2,7 @@
 # Evaluate in your session or PowerShell $PROFILE:
 #   kanon completion powershell | Out-String | Invoke-Expression
 
-$_kanon_subcommands = @('add', 'catalog', 'clean', 'completion', 'doctor', 'install', 'marketplace', 'search', 'outdated', 'remove', 'validate', 'repo', 'why')
+$_kanon_subcommands = @('add', 'catalog', 'clean', 'completion', 'doctor', 'install', 'marketplace', 'search', 'list', 'outdated', 'remove', 'validate', 'repo', 'why')
 
 Register-ArgumentCompleter -Native -CommandName 'kanon' -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)

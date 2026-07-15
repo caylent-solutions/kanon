@@ -6,6 +6,7 @@ Discovery & management:
   search           Discover catalog entries (grouped by source)
   add              Add catalog entries to .kanon
   remove           Remove sources from .kanon
+  list             List declared vs installed sources and their status
   outdated         Report installable upgrades
   why              Explain why a transitive dep is in the tree
 

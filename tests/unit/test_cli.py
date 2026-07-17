@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kanon_cli.cli import _TopLevelHelpAction, _make_signal_handler, build_parser, main
+from kanon_cli.cli import _TopLevelHelpAction, _make_signal_handler, _systemexit_exit_code, build_parser, main
 
 
 _FAKE_KANON_PATH = "test-kanon-file"
@@ -445,6 +445,7 @@ class TestGlobalFlagsSubcommandPropagation:
             "doctor": [],
             "validate": ["xml"],
             "search": [],
+            "list": [],
             "outdated": ["--catalog-source", "file:///fake@HEAD"],
             "remove": ["foo_bar"],
             "repo": ["init", "-u", "https://example.com/repo", "-b", "main", "-m", "manifest.xml"],
@@ -677,11 +678,17 @@ class TestSearchSubcommandRegistration:
         args = parser.parse_args(["search"])
         assert args.command == "search"
 
-    def test_list_subcommand_removed_exits_2(self) -> None:
-        """AC-16: the removed list subcommand -> argparse unknown-command exit 2."""
-        with pytest.raises(SystemExit) as exc_info:
-            main(["list"])
-        assert exc_info.value.code == 2
+    def test_list_token_is_the_inventory_command_not_search(self) -> None:
+        """The 'list' token is now a distinct declared-vs-installed inventory command.
+
+        The 3.0.0 rename moved catalog discovery from 'list' to 'search'; 'list'
+        was later reintroduced as a SEPARATE command that reconciles .kanon
+        against .kanon.lock (positive coverage lives in tests/unit/test_list.py).
+        This asserts the two commands are distinct and both registered.
+        """
+        parser = build_parser()
+        assert parser.parse_args(["list"]).command == "list"
+        assert parser.parse_args(["search"]).command == "search"
 
     def test_search_subcommand_has_catalog_source_flag(self) -> None:
         """The 'search' --catalog-source flag is repeatable (append) -> a list.
@@ -1772,3 +1779,146 @@ class TestMainUserErrorHandler:
             mock_build.return_value = mock_parser
             with pytest.raises(KeyError):
                 main([])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "code,expected",
+    [(None, 0), (0, 0), (1, 1), (2, 2), (3, 3), ("fatal", 1), ([1], 1)],
+)
+def test_systemexit_exit_code_mapping(code: object, expected: int) -> None:
+    """SystemExit code maps to a numeric exit status: None->0, int verbatim, non-int->1."""
+    assert _systemexit_exit_code(code) == expected
+
+
+@pytest.mark.unit
+class TestTelemetryOutcomeRecording:
+    """The telemetry finally-hook records the real dispatch outcome (defect F2)."""
+
+    def _namespace_with_func(self, func: object) -> argparse.Namespace:
+        """Build a minimal dispatch namespace whose func is ``func``."""
+        return argparse.Namespace(
+            command="doctor",
+            quiet=False,
+            verbose=False,
+            no_color=False,
+            telemetry_debug=False,
+            telemetry_endpoint=None,
+            func=func,
+        )
+
+    def _run_capturing_emit(self, ns: argparse.Namespace) -> tuple[dict, "SystemExit | None"]:
+        """Run main() with a mocked parser yielding ``ns`` and capture the emit-hook arguments."""
+        captured: dict = {}
+
+        def _capture(
+            args: argparse.Namespace,
+            command: object,
+            *,
+            exit_code: int,
+            error_type: object,
+            duration_ms: int,
+            environ: object,
+        ) -> None:
+            captured["command"] = command
+            captured["exit_code"] = exit_code
+            captured["error_type"] = error_type
+
+        raised: SystemExit | None = None
+        with patch("kanon_cli.cli.build_parser") as mock_build:
+            mock_parser = MagicMock()
+            mock_parser.parse_args.return_value = ns
+            mock_build.return_value = mock_parser
+            with patch("kanon_cli.cli.maybe_emit_telemetry", side_effect=_capture):
+                try:
+                    main([])
+                except SystemExit as exc:
+                    raised = exc
+        return captured, raised
+
+    def test_dispatched_sys_exit_records_error_outcome(self) -> None:
+        """A handler that sys.exit(1)s records exit_code=1 + a SystemExit error_type and still exits 1."""
+
+        def _boom(_args: argparse.Namespace) -> int:
+            sys.exit(1)
+
+        captured, raised = self._run_capturing_emit(self._namespace_with_func(_boom))
+        assert raised is not None
+        assert raised.code == 1
+        assert captured["command"] == "doctor"
+        assert captured["exit_code"] == 1
+        assert captured["error_type"] == "SystemExit"
+
+    def test_dispatched_success_records_ok_outcome(self) -> None:
+        """A handler returning 0 records exit_code=0 with no error_type and does not exit non-zero."""
+
+        def _ok(_args: argparse.Namespace) -> int:
+            return 0
+
+        captured, raised = self._run_capturing_emit(self._namespace_with_func(_ok))
+        assert raised is None
+        assert captured["exit_code"] == 0
+        assert captured["error_type"] is None
+
+    def test_dispatched_sys_exit_string_records_exit_one(self) -> None:
+        """A handler that sys.exit('msg')s records exit_code=1 (the non-int convention)."""
+
+        def _boom(_args: argparse.Namespace) -> int:
+            sys.exit("fatal")
+
+        captured, raised = self._run_capturing_emit(self._namespace_with_func(_boom))
+        assert raised is not None
+        assert raised.code == "fatal"
+        assert captured["exit_code"] == 1
+        assert captured["error_type"] == "SystemExit"
+
+    def test_dispatched_sys_exit_zero_records_ok_outcome(self) -> None:
+        """A handler that sys.exit(0)s records exit_code=0 with no error_type."""
+
+        def _clean(_args: argparse.Namespace) -> int:
+            sys.exit(0)
+
+        captured, raised = self._run_capturing_emit(self._namespace_with_func(_clean))
+        assert raised is not None
+        assert raised.code == 0
+        assert captured["exit_code"] == 0
+        assert captured["error_type"] is None
+
+
+@pytest.mark.unit
+class TestEarlyExitTelemetryWiring:
+    """main() fires the early-exit telemetry hook for --version/--help/bare (defect F1)."""
+
+    def _capture_early_exit(self, argv: list[str]) -> tuple[dict, SystemExit]:
+        """Run main(argv) with the early-exit hook patched to capture its arguments."""
+        captured: dict = {}
+
+        def _capture(raw_argv: list[str], exit_code: int, *, environ: object, **kwargs: object) -> None:
+            captured["argv"] = list(raw_argv)
+            captured["exit_code"] = exit_code
+
+        with patch("kanon_cli.cli.maybe_emit_early_exit_telemetry", side_effect=_capture):
+            with pytest.raises(SystemExit) as exc_info:
+                main(argv)
+        return captured, exc_info.value
+
+    def test_version_fires_early_exit_hook(self) -> None:
+        """kanon --version fires the early-exit hook with the raw argv and exit code 0."""
+        captured, sysexit = self._capture_early_exit(["--version"])
+        assert sysexit.code == 0
+        assert captured["argv"] == ["--version"]
+        assert captured["exit_code"] == 0
+
+    def test_help_fires_early_exit_hook(self) -> None:
+        """kanon --help fires the early-exit hook with the raw argv and exit code 0."""
+        captured, sysexit = self._capture_early_exit(["--help"])
+        assert sysexit.code == 0
+        assert captured["argv"] == ["--help"]
+        assert captured["exit_code"] == 0
+
+    def test_bare_invocation_fires_early_exit_hook(self) -> None:
+        """A bare kanon fires the early-exit hook with an empty argv and exit code 2."""
+        captured, sysexit = self._capture_early_exit([])
+        assert sysexit.code == 2
+        assert captured["argv"] == []
+        assert captured["exit_code"] == 2

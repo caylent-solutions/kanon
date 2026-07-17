@@ -33,6 +33,7 @@ via declarative manifests.
   - [kanon remove](#kanon-remove)
   - [kanon install](#kanon-install)
   - [kanon clean](#kanon-clean)
+  - [kanon list](#kanon-list)
   - [kanon outdated](#kanon-outdated)
   - [kanon why](#kanon-why)
   - [kanon doctor](#kanon-doctor)
@@ -186,6 +187,7 @@ persistent installation and advanced options, see
 | `kanon search` | List packages available in a catalog or show detail for one | [docs/list-and-add.md](docs/list-and-add.md) |
 | `kanon add` | Add a package (with optional version constraint) to `.kanon` | [docs/list-and-add.md](docs/list-and-add.md) |
 | `kanon remove` | Remove a package from `.kanon` | [docs/list-and-add.md](docs/list-and-add.md) |
+| `kanon list` | List sources declared in `.kanon` vs installed in `.kanon.lock` (installed / not-installed / orphan) | [docs/cli-reference.md](docs/cli-reference.md#kanon-list) |
 | `kanon outdated` | Show packages in `.kanon` that have newer versions available | [docs/outdated-and-why.md](docs/outdated-and-why.md) |
 | `kanon why` | Explain why a specific package version was resolved | [docs/outdated-and-why.md](docs/outdated-and-why.md) |
 | `kanon install` | Resolve, clone, and symlink all packages; writes `.kanon.lock` | [docs/lockfile.md](docs/lockfile.md) |
@@ -570,6 +572,26 @@ files. With `--purge-all`, it additionally removes the shared `KANON_HOME`
 store directory (default `~/.kanon-home`), removing only kanon-owned content
 (`store/`, `cache/`, and the emptied root) and refusing unsafe `KANON_HOME`
 paths such as your home directory or the filesystem root.
+
+### kanon list
+
+Lists the sources declared in `.kanon` against those installed in `.kanon.lock`,
+tagging each `installed`, `not-installed`, or `orphan` -- the kanon analogue of
+`pip list` / `npm ls`.
+
+```bash
+kanon list                        # every source, declared vs installed, tagged
+kanon list --declared             # only sources declared in .kanon (no orphans)
+kanon list --status orphan        # only sources in the lock no longer declared
+kanon list --tree                 # expand installed sources to transitive packages
+kanon list --format json          # machine-readable JSON
+```
+
+A source is `installed` when it is in both files, `not-installed` when declared
+but not yet locked (run `kanon install`), and `orphan` when locked but no longer
+declared. Key options: `--declared`, `--tree`, `--status {installed,not-installed,orphan}`,
+`--format {table,json}`, `--kanon-file`, `--lock-file`. See
+[docs/cli-reference.md](docs/cli-reference.md#kanon-list).
 
 ### kanon outdated
 
@@ -1461,6 +1483,23 @@ version bumps.
   supported; see [Platform support](#platform-support) and use WSL2)
 - [Contributing](CONTRIBUTING.md) -- How to create and maintain Kanon
   packages and marketplaces
+- [Privacy & Telemetry](docs/privacy.md) -- What usage telemetry kanon
+  collects, why, how it is encrypted, and how to turn it off
+
+---
+
+## Usage telemetry
+
+kanon emits one anonymised-by-design usage event per command to help the
+maintainers understand which commands and package sources are used. Telemetry
+is **on by default**, runs **silently** and **non-blocking**, never blocks or
+fails your command, and serialises only an explicit allowlist of kanon-computed
+fields -- never raw argv, credentials, keys, tokens, env-var values, or file
+contents (every URL is credential-stripped before it is sent).
+
+Disable it entirely by setting `KANON_TELEMETRY_DISABLED=1`. See
+[docs/privacy.md](docs/privacy.md) for the full list of collected fields and the
+transit/at-rest encryption.
 
 ---
 

@@ -16,6 +16,7 @@ import json
 import os
 import signal
 import sys
+import time
 from collections.abc import Callable, Sequence
 from typing import Any
 from types import FrameType
@@ -27,6 +28,7 @@ from kanon_cli.commands.clean import register as register_clean
 from kanon_cli.commands.completion import register as register_completion
 from kanon_cli.commands.doctor import register as register_doctor
 from kanon_cli.commands.install import register as register_install
+from kanon_cli.commands.list import register as register_list
 from kanon_cli.commands.marketplace import register as register_marketplace
 from kanon_cli.commands.outdated import register as register_outdated
 from kanon_cli.commands.remove import register as register_remove
@@ -44,6 +46,7 @@ from kanon_cli.completions.source_names import register as register_complete_sou
 from kanon_cli.core.cli_args import _apply_global_flags, add_global_flags
 from kanon_cli.core.include_walker import InstallError
 from kanon_cli.core.lockfile import LockfileSchemaError
+from kanon_cli.core.telemetry import maybe_emit_early_exit_telemetry, maybe_emit_telemetry
 from kanon_cli.core.update_check import maybe_alert_update
 from kanon_cli.repo import RepoCommandError
 
@@ -99,6 +102,7 @@ Discovery & management:
   search           Discover catalog entries (grouped by source)
   add              Add catalog entries to .kanon
   remove           Remove sources from .kanon
+  list             List declared vs installed sources and their status
   outdated         Report installable upgrades
   why              Explain why a transitive dep is in the tree
 
@@ -122,6 +126,8 @@ Global options (always available):
   --no-color                     Disable ANSI color (also respects NO_COLOR env var).
   --no-update-check              Skip the PyPI update-available check (or set KANON_SKIP_UPDATE_CHECK=1).
   --home / --store-dir <path>    Shared kanon home root (store + caches). Precedence: flag > KANON_HOME env > ~/.kanon-home.
+  --telemetry-debug              Print the usage-telemetry JSON that would be sent to stderr (still non-blocking).
+  --telemetry-endpoint <url>     Override the telemetry collector endpoint (or set KANON_TELEMETRY_ENDPOINT).
 
 Catalog source (required by commands that resolve a manifest repo; see each subcommand's --help):
   --catalog-source <url>@<ref>   Override the KANON_CATALOG_SOURCES env var. No default;
@@ -238,6 +244,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_install(subparsers)
     register_marketplace(subparsers)
     register_search(subparsers)
+    register_list(subparsers)
     register_outdated(subparsers)
     register_remove(subparsers)
     register_validate(subparsers)
@@ -252,6 +259,30 @@ def build_parser() -> argparse.ArgumentParser:
     register_resolve_entry_to_repo_url(subparsers)
 
     return parser
+
+
+def _systemexit_exit_code(code: object) -> int:
+    """Map a ``SystemExit.code`` object to the numeric process exit code.
+
+    ``sys.exit()`` accepts three code shapes and the interpreter translates each
+    into a process exit status: ``None`` is a clean exit (0); an integer is used
+    verbatim; any non-integer object (typically a string message the interpreter
+    prints to stderr) conventionally maps to 1. Telemetry must record the same
+    effective status the process terminates with, so a handler that fails via
+    ``sys.exit()`` -- whose ``SystemExit`` is a ``BaseException`` the broad
+    ``except Exception`` handlers never catch -- is no longer logged as a success.
+
+    Args:
+        code: The ``SystemExit.code`` raised by a dispatched handler or argparse.
+
+    Returns:
+        The effective numeric exit code the process will terminate with.
+    """
+    if code is None:
+        return 0
+    if isinstance(code, int):
+        return int(code)
+    return 1
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -274,7 +305,13 @@ def main(argv: list[str] | None = None) -> None:
     signal.signal(signal.SIGINT, _make_signal_handler(signal.SIGINT))
 
     parser = build_parser()
-    args = parser.parse_args(argv)
+
+    raw_argv = sys.argv[1:] if argv is None else list(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        maybe_emit_early_exit_telemetry(raw_argv, _systemexit_exit_code(exc.code), environ=os.environ)
+        raise
 
     _apply_global_flags(args)
 
@@ -282,17 +319,47 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command is None:
         parser.print_help()
+        maybe_emit_early_exit_telemetry(raw_argv, 2, environ=os.environ)
         sys.exit(2)
 
     args.parser = parser
 
+    telemetry_start = time.monotonic()
+    telemetry_exit_code = 0
+    telemetry_error_type: str | None = None
     try:
-        exit_code = args.func(args)
-    except (InstallError, LockfileSchemaError) as exc:
-        print(str(exc), file=sys.stderr)
-        sys.exit(1)
-    except (FileNotFoundError, ValueError, OSError, RepoCommandError) as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        sys.exit(1)
+        try:
+            exit_code = args.func(args)
+        except (InstallError, LockfileSchemaError) as exc:
+            telemetry_error_type = type(exc).__name__
+            telemetry_exit_code = 1
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+        except (FileNotFoundError, ValueError, OSError, RepoCommandError) as exc:
+            telemetry_error_type = type(exc).__name__
+            telemetry_exit_code = 1
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
+        except SystemExit as exc:
+            telemetry_exit_code = _systemexit_exit_code(exc.code)
+            if telemetry_exit_code != 0:
+                telemetry_error_type = type(exc).__name__
+            raise
+        except Exception as exc:
+            telemetry_error_type = type(exc).__name__
+            telemetry_exit_code = 1
+            raise
+        if exit_code:
+            telemetry_exit_code = exit_code
+    finally:
+        maybe_emit_telemetry(
+            args,
+            args.command,
+            exit_code=telemetry_exit_code,
+            error_type=telemetry_error_type,
+            duration_ms=int((time.monotonic() - telemetry_start) * 1000),
+            environ=os.environ,
+        )
+
     if exit_code:
         sys.exit(exit_code)

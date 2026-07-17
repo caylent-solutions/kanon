@@ -2513,8 +2513,8 @@ class TestUpdateCheckConstants:
         assert KANON_PYPI_JSON_URL == "https://pypi.org/pypi/kanon-cli/json"
         assert KANON_UPDATE_UPGRADE_COMMAND == "pipx upgrade kanon-cli"
 
-    def test_default_ttl_is_86400(self) -> None:
-        """KANON_UPDATE_CHECK_TTL default is 86400 (24h)."""
+    def test_default_ttl_is_10800(self) -> None:
+        """KANON_UPDATE_CHECK_TTL default is 10800 (3h)."""
         import importlib
         import os
 
@@ -2523,7 +2523,7 @@ class TestUpdateCheckConstants:
         saved = os.environ.pop("KANON_UPDATE_CHECK_TTL", None)
         importlib.reload(constants)
         try:
-            assert constants.KANON_UPDATE_CHECK_TTL == 86400
+            assert constants.KANON_UPDATE_CHECK_TTL == 10800
         finally:
             if saved is not None:
                 os.environ["KANON_UPDATE_CHECK_TTL"] = saved

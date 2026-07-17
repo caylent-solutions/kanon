@@ -24,6 +24,7 @@ This guide is for engineers who are comfortable with one or more of:
 | Search | pip search | npm search | cargo search | kanon search |
 | Add | pip install x==1.0 | npm i x@1.0 | cargo add x@1.0 | kanon add x@1.0 |
 | Outdated | pip list -o | npm outdated | cargo outdated | kanon outdated |
+| List installed | pip list | npm ls | cargo tree | kanon list |
 
 ## Where the model differs
 

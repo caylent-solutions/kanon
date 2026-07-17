@@ -2,8 +2,9 @@
 
 Covers the walker, sorted-index builder, empty-catalog stderr note, the
 missing-catalog-source canonical error, the per-source group header, the
--A/--all version-history flag, and AC-16 (the removed list subcommand yields
-the argparse unknown-command exit 2) per AC-TEST-001 / FR-10.
+-A/--all version-history flag, and the 'list' -> 'search' rename (search's
+register adds only 'search'; the reintroduced 'kanon list' inventory command is
+a distinct command covered by tests/unit/test_list.py) per AC-TEST-001 / FR-10.
 """
 
 import argparse
@@ -449,11 +450,13 @@ class TestRegister:
         search_parser = subparsers.choices["search"]
         assert search_parser.add_help is True, "search subparser must have add_help=True so '-h' is accepted"
 
-    def test_list_command_is_gone(self) -> None:
-        """AC-16: 'list' is no longer a registered subcommand (hard rename, no alias).
+    def test_search_register_adds_only_search_not_list(self) -> None:
+        """search's register() adds the 'search' key only, never a 'list' alias.
 
-        register() registers only 'search'; the old 'list' key must be absent so
-        the removed list subcommand resolves to the argparse unknown-command path.
+        Catalog discovery is a hard rename from 'list' to 'search' (no alias). The
+        separately-registered inventory command 'kanon list' is a DIFFERENT command
+        wired by build_parser (see tests/unit/test_list.py); search's own register()
+        must not add it.
         """
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers(dest="command")
@@ -463,16 +466,13 @@ class TestRegister:
 
 
 @pytest.mark.unit
-class TestListUnknownCommand:
-    """AC-16: invoking the removed list subcommand yields the argparse exit code 2."""
+class TestSearchRenamedFromList:
+    """Catalog discovery was renamed from 'list' to 'search' in 3.0.0.
 
-    def test_kanon_list_exits_2(self) -> None:
-        """`kanon` with the removed list token exits with code 2 (argparse invalid-choice)."""
-        from kanon_cli.cli import main
-
-        with pytest.raises(SystemExit) as exc_info:
-            main(["list"])
-        assert exc_info.value.code == 2
+    The 'list' token was later reintroduced as a SEPARATE declared-vs-installed
+    inventory command (covered by tests/unit/test_list.py), so it is no longer an
+    unknown command; only the search-rename target is asserted here.
+    """
 
     def test_kanon_search_help_exits_0(self) -> None:
         """`kanon search --help` exits 0 (the rename target is wired and accepts --help)."""
@@ -481,16 +481,6 @@ class TestListUnknownCommand:
         with pytest.raises(SystemExit) as exc_info:
             main(["search", "--help"])
         assert exc_info.value.code == 0
-
-    def test_kanon_list_error_names_invalid_choice(self, capsys: pytest.CaptureFixture) -> None:
-        """The unknown-command error names 'list' as the invalid choice and lists 'search'."""
-        from kanon_cli.cli import main
-
-        with pytest.raises(SystemExit):
-            main(["list"])
-        captured = capsys.readouterr()
-        assert "list" in captured.err
-        assert "search" in captured.err
 
 
 @pytest.mark.unit

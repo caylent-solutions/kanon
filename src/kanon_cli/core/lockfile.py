@@ -11,6 +11,11 @@ Public entry points:
     (alias uniqueness, alias-set parity, per-alias ref-spec parity; spec FR-24,
     Section 4.5).  ``kanon validate lockfile`` runs this check, and ``kanon install``
     runs it implicitly before resolving (spec Section 4.3).
+  - ``reconcile_declared_installed(kanon_aliases, kanon_ref_specs, lockfile) ->
+    SourceReconciliation``: the non-raising core of ``check_lockfile_consistency``;
+    returns the installed / not-installed / orphaned alias partition (plus duplicate
+    and ref-spec-mismatch diagnostics) so a read-only caller (``kanon list``) can
+    render the declared-vs-installed divergence instead of failing on it.
 
 Exception hierarchy:
   - ``LockfileSchemaError``: raised when the schema_version is not supported or has
@@ -396,6 +401,34 @@ class Lockfile:
     sources: list[SourceEntry] = field(default_factory=list)
     marketplace_registered: bool = False
     marketplace_dir: str = ""
+
+
+@dataclass
+class SourceReconciliation:
+    """Non-fatal declared-vs-installed reconciliation of ``.kanon`` and ``.kanon.lock``.
+
+    The pure result object produced by :func:`reconcile_declared_installed`: it
+    carries the same alias/ref-spec comparison that :func:`check_lockfile_consistency`
+    enforces, but as data instead of an exception so a read-only consumer
+    (``kanon list``) can render the divergence rather than fail on it.
+
+    Fields:
+        installed: Aliases present in BOTH ``.kanon`` and ``.kanon.lock``, sorted.
+        not_installed: Aliases declared in ``.kanon`` but absent from
+            ``.kanon.lock`` (declared, not yet installed), sorted.
+        orphaned: Aliases present in ``.kanon.lock`` but no longer declared in
+            ``.kanon`` (installed, undeclared), sorted.
+        duplicates: Aliases declared more than once in ``.kanon``, in first-seen
+            order.  A non-empty list is a fatal condition for the consistency check.
+        ref_mismatches: Aliases present in both files whose ``.kanon`` revision
+            differs from the ``.kanon.lock`` ``ref_spec``, sorted.
+    """
+
+    installed: list[str]
+    not_installed: list[str]
+    orphaned: list[str]
+    duplicates: list[str]
+    ref_mismatches: list[str]
 
 
 def _validate_kanon_hash(value: str) -> None:
@@ -988,6 +1021,64 @@ def write_lockfile(lockfile: Lockfile, path: Path) -> None:
         raise
 
 
+def reconcile_declared_installed(
+    kanon_aliases: list[str],
+    kanon_ref_specs: dict[str, str],
+    lockfile: Lockfile,
+) -> SourceReconciliation:
+    """Compute the declared-vs-installed reconciliation without raising.
+
+    This is the pure core of :func:`check_lockfile_consistency`: it performs the
+    same duplicate detection, alias-set difference, and per-alias ref-spec
+    comparison, but returns the results as a :class:`SourceReconciliation` so a
+    read-only caller can present the drift (``kanon list``) rather than fail on
+    it.  :func:`check_lockfile_consistency` calls this and raises when any of
+    ``duplicates``, ``not_installed``, ``orphaned``, or ``ref_mismatches`` is
+    non-empty.
+
+    Args:
+        kanon_aliases: The ordered list of source aliases declared in ``.kanon``.
+            Passed as a list (not a set) so duplicate declarations remain visible.
+        kanon_ref_specs: Mapping of each ``.kanon`` alias to its declared revision
+            (the ref-spec compared against each lock entry's ``ref_spec``).
+        lockfile: The parsed ``.kanon.lock`` whose ``sources`` carry the
+            alias-keyed entries.
+
+    Returns:
+        The :class:`SourceReconciliation` describing installed / not-installed /
+        orphaned aliases, duplicate declarations, and per-alias ref-spec
+        mismatches.
+    """
+
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for alias in kanon_aliases:
+        if alias in seen and alias not in duplicates:
+            duplicates.append(alias)
+        seen.add(alias)
+
+    kanon_alias_set = set(kanon_aliases)
+    lock_alias_set = {source.alias for source in lockfile.sources}
+
+    installed = sorted(kanon_alias_set & lock_alias_set)
+    not_installed = sorted(kanon_alias_set - lock_alias_set)
+    orphaned = sorted(lock_alias_set - kanon_alias_set)
+
+    mismatched: list[str] = []
+    for source in lockfile.sources:
+        declared_ref_spec = kanon_ref_specs.get(source.alias)
+        if declared_ref_spec is not None and source.ref_spec != declared_ref_spec:
+            mismatched.append(source.alias)
+
+    return SourceReconciliation(
+        installed=installed,
+        not_installed=not_installed,
+        orphaned=orphaned,
+        duplicates=duplicates,
+        ref_mismatches=sorted(mismatched),
+    )
+
+
 def check_lockfile_consistency(
     kanon_aliases: list[str],
     kanon_ref_specs: dict[str, str],
@@ -1032,27 +1123,21 @@ def check_lockfile_consistency(
             alias has a mismatched ref-spec.
     """
 
-    seen: set[str] = set()
-    duplicates: list[str] = []
-    for alias in kanon_aliases:
-        if alias in seen and alias not in duplicates:
-            duplicates.append(alias)
-        seen.add(alias)
-    if duplicates:
+    reconciliation = reconcile_declared_installed(kanon_aliases, kanon_ref_specs, lockfile)
+
+    if reconciliation.duplicates:
         raise LockfileConsistencyError(
-            f"ERROR: duplicate source alias in .kanon: {', '.join(sorted(duplicates))}.\n"
+            f"ERROR: duplicate source alias in .kanon: "
+            f"{', '.join(sorted(reconciliation.duplicates))}.\n"
             f"  Each source alias in .kanon must be unique; the alias keys the entry "
             f"in .kanon.lock.\n"
             f"  Remediation: rename the conflicting KANON_SOURCE_<alias>_* declarations "
             f"in .kanon so every alias is distinct, then re-run 'kanon install'."
         )
 
-    kanon_alias_set = set(kanon_aliases)
-    lock_alias_set = {source.alias for source in lockfile.sources}
-
-    missing_in_lock = sorted(kanon_alias_set - lock_alias_set)
-    orphaned_in_lock = sorted(lock_alias_set - kanon_alias_set)
-    if missing_in_lock or orphaned_in_lock:
+    if reconciliation.not_installed or reconciliation.orphaned:
+        missing_in_lock = reconciliation.not_installed
+        orphaned_in_lock = reconciliation.orphaned
         raise LockfileConsistencyError(
             f"ERROR: .kanon and .kanon.lock alias sets differ.\n"
             f"  Declared in .kanon but missing from .kanon.lock: "

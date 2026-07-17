@@ -15,6 +15,12 @@ are registered once via `kanon_cli.core.cli_args` so every parser exposes them.
 | `--no-color` | `NO_COLOR` | auto | Disable ANSI color. Any non-empty `NO_COLOR` also disables color. |
 | `--no-update-check` | `KANON_SKIP_UPDATE_CHECK` | off | Skip the best-effort PyPI "update available" check. The flag is equivalent to setting `KANON_SKIP_UPDATE_CHECK=1`. |
 | `--home` / `--store-dir <path>` | `KANON_HOME` | `~/.kanon-home` | Shared kanon home root (content-addressed store plus caches). `--store-dir` is an accepted alias of `--home`. Precedence: flag > `KANON_HOME` env > `~/.kanon-home`. |
+| `--telemetry-debug` | `KANON_TELEMETRY_DEBUG` | off | Print the exact usage-telemetry JSON that would be sent to stderr for this invocation (still non-blocking). |
+| `--telemetry-endpoint <url>` | `KANON_TELEMETRY_ENDPOINT` | `https://collector.platform.solutions.caylent.com/v1/logs` | Override the usage-telemetry collector endpoint (`https://` only). Flag wins over the env var. |
+
+Usage telemetry is on by default and can be disabled entirely by setting
+`KANON_TELEMETRY_DISABLED` to a truthy value (there is no disable flag). See
+[docs/privacy.md](privacy.md) for exactly what is collected and why.
 
 ## Shared Argument Factories
 
@@ -68,6 +74,9 @@ completion variables), see [docs/configuration.md](configuration.md).
 | `KANON_CATALOG_SOURCES` | Remote catalog source(s) as `<git_url>@<ref>`, one entry per line. Sets the default for every command that accepts `--catalog-source`; the resolving commands require exactly one entry unless `--catalog-source` is passed. | (none) |
 | `KANON_HOME` | Shared kanon home root (store plus caches). Overridden by the `--home` / `--store-dir` flag. | `~/.kanon-home` |
 | `KANON_SKIP_UPDATE_CHECK` | Set to `1` to skip the PyPI update-available check (same effect as `--no-update-check`). | (unset) |
+| `KANON_TELEMETRY_DISABLED` | Set to a truthy value (`1`/`true`/`yes`/`on`) to disable usage telemetry entirely. The only opt-out; there is no disable flag. See [docs/privacy.md](privacy.md). | (unset) |
+| `KANON_TELEMETRY_ENDPOINT` | Usage-telemetry collector endpoint (`https://` only). Overridden by `--telemetry-endpoint`. | `https://collector.platform.solutions.caylent.com/v1/logs` |
+| `KANON_TELEMETRY_DEBUG` | Set to a truthy value to print the would-send telemetry JSON to stderr (same effect as `--telemetry-debug`). | (unset) |
 | `KANON_OUTDATED_FORMAT` | Default output format for `kanon outdated` (`table` or `json`). Overridden by `--format`. | `table` |
 | `KANON_OUTDATED_JSON_INDENT` | JSON indentation (number of spaces) used by `kanon outdated --format json`. | `2` |
 | `KANON_WHY_FORMAT` | Default output format for `kanon why` (`text` or `json`). Overridden by `--format`. | `text` |
@@ -126,6 +135,76 @@ kanon completion powershell | Out-String | Invoke-Expression
 
 See `docs/shell-completion.md` for full installation instructions across shells
 and operating systems.
+
+---
+
+### `kanon list`
+
+List the sources declared in `.kanon` against the sources installed in
+`.kanon.lock`, tagging each with its status. This is the flat inventory
+command -- the kanon analogue of `pip list` / `npm ls` / `poetry show`. It
+complements [`kanon why`](#kanon-why) (the dependency graph),
+[`kanon outdated`](#kanon-outdated) (version staleness), and `kanon validate
+lockfile` (which *fails* on the same declared-vs-installed drift this command
+merely reports).
+
+**Status tags:**
+
+| Status | Meaning |
+|---|---|
+| `installed` | declared in `.kanon` **and** present in `.kanon.lock` |
+| `not-installed` | declared in `.kanon` but not yet in the lock -- run `kanon install` |
+| `orphan` | present in `.kanon.lock` but no longer declared in `.kanon` |
+
+The status is computed from the same alias comparison that `kanon install` and
+`kanon validate lockfile` enforce (`core/lockfile.py:reconcile_declared_installed`);
+`list` presents the divergence read-only instead of failing on it. The tags
+apply to the direct source aliases (transitive packages are only ever shown as
+installed, under `--tree`).
+
+**Flags:**
+
+| Flag | Effect |
+|---|---|
+| _(none)_ | Show every source (the declared ∪ installed union), one row each. |
+| `--declared` | Show only sources declared in `.kanon` (omit `orphan` sources). |
+| `--tree` | Expand each installed source to its transitive packages (from the lock). |
+| `--status <installed\|not-installed\|orphan>` | Show only sources with the given status. |
+| `--format <table\|json>` | Output format (default `table`). `KANON_LIST_OUTPUT_FORMAT` sets the default; the flag wins. |
+| `--kanon-file <path>` | Path to `.kanon` (default: auto-discovery walking up from the cwd; `KANON_KANON_FILE` overrides). |
+| `--lock-file <path>` | Path to `.kanon.lock` (default `<kanon-file>.lock`; `KANON_LOCK_FILE` overrides). |
+
+**Behaviour:**
+
+1. **`.kanon` required** -- resolved via `--kanon-file`, the `KANON_KANON_FILE`
+   env var, or auto-discovery. When none is found the command exits `1` with a
+   clean `ERROR:` message.
+2. **Lockfile optional** -- when `.kanon.lock` is absent every declared source is
+   reported `not-installed` and a note is written to stderr; the command still
+   exits `0`. An explicit `--lock-file` / `KANON_LOCK_FILE` that does not exist
+   is an error.
+3. **Exit code** -- `0` for any successful inventory (including the empty and
+   not-yet-installed states); `1` for an unresolvable `.kanon`, an
+   unreadable/malformed lock, or an unrecognised `KANON_LIST_OUTPUT_FORMAT`.
+
+**Examples:**
+
+```console
+$ kanon list
+SOURCE | REF                  | STATUS
+-------+----------------------+--------------
+bar    | 2.0.0                | not-installed
+baz    | 0.9.0 (cccccccccccc) | orphan
+foo    | 1.0.0 (aaaaaaaaaaaa) | installed
+
+$ kanon list --status orphan
+SOURCE | REF                  | STATUS
+-------+----------------------+-------
+baz    | 0.9.0 (cccccccccccc) | orphan
+
+$ kanon list --format json
+{"sources":[{"alias":"foo","status":"installed","name":"foo", ...}]}
+```
 
 ---
 

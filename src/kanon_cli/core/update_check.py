@@ -298,6 +298,27 @@ def write_cached_version(version: str, now: int) -> None:
     write_epoch(entry_dir / "fetched_at.txt", now)
 
 
+def write_offline_stamp(now: int) -> None:
+    """Record a "checked, no result" stamp after a failed inline lookup.
+
+    Writes an empty ``latest.txt`` and stamps ``fetched_at.txt`` with ``now`` so a
+    later :func:`read_cached_version` within the TTL window classifies the entry as
+    FRESH with no version. This suppresses both the repeated inline network lookup
+    AND the repeated "no internet" notice for the rest of the TTL window, so the
+    notice is shown at most once per window on a cold cache (spec Section 7.1).
+
+    Args:
+        now: Current epoch seconds to record as ``fetched_at``.
+    """
+    entry_dir = _cache_entry_dir()
+    write_entries(
+        entry_dir / constants.KANON_UPDATE_CHECK_VERSION_FILENAME,
+        [],
+        completer_name="update-check",
+    )
+    write_epoch(entry_dir / "fetched_at.txt", now)
+
+
 def _refresh_cache() -> None:
     """Fetch the latest version and write it to the cache (background-refresh body).
 
@@ -332,24 +353,54 @@ def _is_newer(latest: str, current: str) -> bool:
 
 
 def _render_alert(latest: str, current: str, *, colorize: bool) -> str:
-    """Build the alert text, optionally wrapped in bright-color SGR sequences.
+    """Build the alert text, optionally colorised inside the yellow banner.
+
+    When colour is enabled the whole banner is wrapped in ``ANSI_YELLOW`` and,
+    nested within it, the installed (current) version is wrapped in ``ANSI_RED``
+    and the available (latest) version in ``ANSI_GREEN`` so the operator sees the
+    old version they are on in red and the new version to move to in green. Each
+    nested colour re-opens ``ANSI_YELLOW`` after its ``ANSI_RESET`` so the
+    surrounding banner colour is preserved across the coloured spans.
 
     Args:
         latest: The available newer version.
         current: The installed version.
-        colorize: When True the message is wrapped in
-            ``ANSI_BRIGHT_CYAN`` ... ``ANSI_RESET``; when False it is plain text.
+        colorize: When True the banner is coloured (yellow banner, red current,
+            green latest); when False it is plain text.
 
     Returns:
         The rendered alert string (no trailing newline; the caller adds it).
     """
+    if colorize:
+        current_display = f"{constants.ANSI_RED}{current}{constants.ANSI_RESET}{constants.ANSI_YELLOW}"
+        latest_display = f"{constants.ANSI_GREEN}{latest}{constants.ANSI_RESET}{constants.ANSI_YELLOW}"
+    else:
+        current_display = current
+        latest_display = latest
+
     message = constants.KANON_UPDATE_ALERT_TEMPLATE.format(
-        latest=latest,
-        current=current,
+        latest=latest_display,
+        current=current_display,
         command=constants.KANON_UPDATE_UPGRADE_COMMAND,
     )
     if colorize:
-        return f"{constants.ANSI_BRIGHT_CYAN}{message}{constants.ANSI_RESET}"
+        return f"{constants.ANSI_YELLOW}{message}{constants.ANSI_RESET}"
+    return message
+
+
+def _render_no_internet_notice(*, colorize: bool) -> str:
+    """Build the "no internet -- could not check for updates" stderr notice.
+
+    Args:
+        colorize: When True the notice is wrapped in ``ANSI_RED`` ...
+            ``ANSI_RESET``; when False it is plain text.
+
+    Returns:
+        The rendered notice string (no trailing newline; the caller adds it).
+    """
+    message = constants.KANON_UPDATE_NO_INTERNET_NOTICE
+    if colorize:
+        return f"{constants.ANSI_RED}{message}{constants.ANSI_RESET}"
     return message
 
 
@@ -418,6 +469,10 @@ def maybe_alert_update(
         latest = fetch_latest_version()
         if latest is not None:
             write_cached_version(latest, current_epoch)
+        else:
+            write_offline_stamp(current_epoch)
+            out.write(_render_no_internet_notice(colorize=_should_colorize(out, environ)) + "\n")
+            return
     elif freshness is Freshness.STALE:
         fork_background_refresh(_refresh_cache)
 

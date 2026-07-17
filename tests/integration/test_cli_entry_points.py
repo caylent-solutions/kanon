@@ -76,11 +76,10 @@ class TestParserConstruction:
             parser.parse_args(["bootstrap", "kanon"])
         assert exc_info.value.code == 2
 
-    def test_list_subcommand_not_registered(self) -> None:
+    def test_list_subcommand_registered_as_inventory_command(self) -> None:
+        """'list' is a registered inventory subcommand (distinct from catalog 'search')."""
         parser = build_parser()
-        with pytest.raises(SystemExit) as exc_info:
-            parser.parse_args(["list"])
-        assert exc_info.value.code == 2
+        assert parser.parse_args(["list"]).command == "list"
 
     def test_validate_repo_root_option(self) -> None:
         parser = build_parser()
@@ -130,23 +129,27 @@ class TestMainDispatch:
         assert "invalid choice" in captured.err
         assert "bootstrap" in captured.err
 
-    def test_list_invocation_exits_2_as_unknown_command(
+    def test_list_is_registered_inventory_command_not_unknown(
         self,
         capsys: pytest.CaptureFixture[str],
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`kanon list ...` exits 2 as an unknown command after the search rename.
+        """`kanon list` is a registered inventory command, not an unknown choice.
 
-        'list' was renamed to 'search' in 3.0.0 and is no longer registered or
-        intercepted, so main() lets argparse reject it as an invalid choice and
-        exit 2, just like any other unknown subcommand. The new surface is
-        reachable as `kanon search`.
+        Catalog discovery was renamed from 'list' to 'search' in 3.0.0; 'list' was
+        later reintroduced as a distinct declared-vs-installed inventory command
+        (covered by tests/unit/test_list.py). So argparse recognises it: run from a
+        directory with no .kanon it fails cleanly (exit 1, an actionable ERROR),
+        never argparse's unknown-command exit 2.
         """
+        monkeypatch.chdir(tmp_path)
         with pytest.raises(SystemExit) as exc:
             main(["list"])
-        assert exc.value.code == 2
+        assert exc.value.code == 1
         captured = capsys.readouterr()
-        assert "invalid choice" in captured.err
-        assert "list" in captured.err
+        assert "invalid choice" not in captured.err
+        assert "ERROR:" in captured.err
 
     def test_validate_xml_with_explicit_repo_root_exits_1_when_empty(self, tmp_path: pathlib.Path) -> None:
         with pytest.raises(SystemExit) as exc_info:

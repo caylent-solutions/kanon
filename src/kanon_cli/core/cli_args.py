@@ -199,6 +199,27 @@ def add_global_flags(parser: argparse.ArgumentParser) -> None:
             "and the ~/.kanon-home default. --store-dir is an accepted alias."
         ),
     )
+    parser.add_argument(
+        "--telemetry-debug",
+        dest="telemetry_debug",
+        action="store_true",
+        default=False,
+        help=(
+            "Print the exact usage-telemetry JSON that would be sent to stderr for this "
+            "invocation (still non-blocking). Equivalent to setting KANON_TELEMETRY_DEBUG=1. "
+            "Telemetry is on by default; disable it entirely with KANON_TELEMETRY_DISABLED=1."
+        ),
+    )
+    parser.add_argument(
+        "--telemetry-endpoint",
+        dest="telemetry_endpoint",
+        default=None,
+        metavar="<url>",
+        help=(
+            "Override the usage-telemetry collector endpoint (https:// only) for this "
+            "invocation. Takes precedence over the KANON_TELEMETRY_ENDPOINT environment variable."
+        ),
+    )
 
 
 def _apply_global_flags(args: argparse.Namespace) -> None:

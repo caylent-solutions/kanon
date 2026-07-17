@@ -409,8 +409,8 @@ def test_stale_cache_serves_value_and_schedules_background_refresh() -> None:
 
 
 @pytest.mark.unit
-def test_graceful_fail_missing_cache_and_failed_fetch_no_alert_no_error() -> None:
-    """A cold cache with a failed lookup prints no alert and raises nothing."""
+def test_graceful_fail_missing_cache_and_failed_fetch_prints_notice_no_error() -> None:
+    """A cold cache with a failed lookup prints the no-internet notice and raises nothing."""
     stream = io.StringIO()
     with (
         patch.object(update_check, "installed_version", return_value="1.0.0"),
@@ -418,7 +418,41 @@ def test_graceful_fail_missing_cache_and_failed_fetch_no_alert_no_error() -> Non
         patch.object(update_check, "fetch_latest_version", return_value=None),
     ):
         update_check.maybe_alert_update(_args(), "install", environ={}, stream=stream, now=2000)
-    assert stream.getvalue() == ""
+    assert constants.KANON_UPDATE_NO_INTERNET_NOTICE in stream.getvalue()
+
+
+@pytest.mark.unit
+def test_no_internet_notice_shown_at_most_once_per_ttl_window() -> None:
+    """After a failed cold lookup the offline stamp suppresses a second notice within the TTL."""
+    with (
+        patch.object(update_check, "installed_version", return_value="1.0.0"),
+        patch.object(update_check, "is_editable_install", return_value=False),
+        patch.object(update_check, "fetch_latest_version", return_value=None) as fetch,
+    ):
+        first = io.StringIO()
+        update_check.maybe_alert_update(_args(), "install", environ={}, stream=first, now=2000)
+        second = io.StringIO()
+        update_check.maybe_alert_update(_args(), "install", environ={}, stream=second, now=2000 + 5)
+
+    assert constants.KANON_UPDATE_NO_INTERNET_NOTICE in first.getvalue()
+    assert second.getvalue() == ""
+    fetch.assert_called_once()
+
+
+@pytest.mark.unit
+def test_no_internet_notice_colored_red_on_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The no-internet notice is wrapped in ANSI_RED on a TTY with NO_COLOR unset."""
+    monkeypatch.setattr(constants, "_NO_COLOR_ACTIVE", False, raising=False)
+    stream = _TTYStream()
+    with (
+        patch.object(update_check, "installed_version", return_value="1.0.0"),
+        patch.object(update_check, "is_editable_install", return_value=False),
+        patch.object(update_check, "fetch_latest_version", return_value=None),
+    ):
+        update_check.maybe_alert_update(_args(), "install", environ={}, stream=stream, now=2000)
+    out = stream.getvalue()
+    assert constants.ANSI_RED in out
+    assert constants.KANON_UPDATE_NO_INTERNET_NOTICE in out
 
 
 @pytest.mark.unit
@@ -453,8 +487,48 @@ def test_alert_colored_on_tty_without_no_color(monkeypatch: pytest.MonkeyPatch) 
     ):
         update_check.maybe_alert_update(_args(), "install", environ={}, stream=stream, now=1000 + 5)
     out = stream.getvalue()
-    assert constants.ANSI_BRIGHT_CYAN in out
+    assert constants.ANSI_YELLOW in out
+    assert constants.ANSI_RED in out
+    assert constants.ANSI_GREEN in out
     assert constants.ANSI_RESET in out
+
+
+@pytest.mark.unit
+def test_render_alert_wraps_current_red_and_latest_green() -> None:
+    """The colorized banner wraps the CURRENT version in red and the LATEST in green (U1).
+
+    Guards the exact colour-to-version mapping (not merely the presence of the
+    codes) so a future swap of red/green would fail loudly.
+    """
+    rendered = update_check._render_alert(latest="9.9.9", current="1.0.0", colorize=True)
+    assert f"{constants.ANSI_RED}1.0.0{constants.ANSI_RESET}" in rendered
+    assert f"{constants.ANSI_GREEN}9.9.9{constants.ANSI_RESET}" in rendered
+    assert rendered.startswith(constants.ANSI_YELLOW)
+    assert rendered.endswith(constants.ANSI_RESET)
+
+
+@pytest.mark.unit
+def test_render_alert_plain_has_no_ansi_when_not_colorized() -> None:
+    """A non-colorized alert carries the versions verbatim with zero ANSI escape codes (U1)."""
+    rendered = update_check._render_alert(latest="9.9.9", current="1.0.0", colorize=False)
+    for code in (constants.ANSI_RED, constants.ANSI_GREEN, constants.ANSI_YELLOW, constants.ANSI_RESET):
+        assert code not in rendered
+    assert "1.0.0" in rendered
+    assert "9.9.9" in rendered
+
+
+@pytest.mark.unit
+def test_render_no_internet_notice_red_when_colorized_plain_otherwise() -> None:
+    """The offline notice is wrapped in red when colorized and has zero ANSI when not (U2)."""
+    colored = update_check._render_no_internet_notice(colorize=True)
+    assert colored.startswith(constants.ANSI_RED)
+    assert colored.endswith(constants.ANSI_RESET)
+    assert constants.KANON_UPDATE_NO_INTERNET_NOTICE in colored
+
+    plain = update_check._render_no_internet_notice(colorize=False)
+    assert plain == constants.KANON_UPDATE_NO_INTERNET_NOTICE
+    for code in (constants.ANSI_RED, constants.ANSI_RESET):
+        assert code not in plain
 
 
 @pytest.mark.unit
@@ -475,7 +549,8 @@ def test_alert_not_colored_when_no_color_env_set() -> None:
         )
     out = stream.getvalue()
     assert "99.0.0" in out
-    assert constants.ANSI_BRIGHT_CYAN not in out
+    assert constants.ANSI_YELLOW not in out
+    assert constants.ANSI_RED not in out
 
 
 @pytest.mark.unit
@@ -490,7 +565,8 @@ def test_alert_not_colored_on_non_tty_stream() -> None:
         update_check.maybe_alert_update(_args(), "install", environ={}, stream=stream, now=1000 + 5)
     out = stream.getvalue()
     assert "99.0.0" in out
-    assert constants.ANSI_BRIGHT_CYAN not in out
+    assert constants.ANSI_YELLOW not in out
+    assert constants.ANSI_RED not in out
 
 
 @pytest.mark.unit
@@ -504,13 +580,14 @@ def test_alert_not_colored_when_no_color_active_flag(monkeypatch: pytest.MonkeyP
         patch.object(update_check, "is_editable_install", return_value=False),
     ):
         update_check.maybe_alert_update(_args(), "install", environ={}, stream=stream, now=1000 + 5)
-    assert constants.ANSI_BRIGHT_CYAN not in stream.getvalue()
+    assert constants.ANSI_YELLOW not in stream.getvalue()
+    assert constants.ANSI_RED not in stream.getvalue()
 
 
 @pytest.mark.unit
 def test_constants_defaults_match_spec() -> None:
     """The locked spec defaults are wired through constants.py."""
-    assert constants.KANON_UPDATE_CHECK_TTL == 86400
+    assert constants.KANON_UPDATE_CHECK_TTL == 10800
     assert constants.KANON_UPDATE_CONNECT_TIMEOUT == 2
     assert constants.KANON_UPDATE_READ_TIMEOUT == 3
     assert constants.KANON_UPDATE_BODY_SIZE_CAP == 200 * 1024

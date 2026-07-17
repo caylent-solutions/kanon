@@ -18,6 +18,7 @@ _shtab_kanon_commands() {
     "completion:Emit the shell completion script for kanon to stdout."
     "doctor:Run workspace health checks against the current project directory."
     "install:Execute the full Kanon install lifecycle."
+    "list:Reconcile the sources declared in .kanon against the sources recorded in"
     "marketplace:Manage the per-dependency Claude marketplace install flag in .kanon."
     "outdated:Compare each KANON_SOURCE_\<name\>_\* block in the .kanon file against"
     "remove:Remove the KANON_SOURCE_\<alias\>_\{URL,REF,PATH,NAME\} block (plus any"
@@ -63,6 +64,8 @@ _shtab_kanon_options=(
   "--no-color[Disable ANSI color output. Takes precedence over the NO_COLOR environment variable and TTY auto-detection.]"
   "--no-update-check[Skip the best-effort \'update available\' PyPI lookup for this invocation. Equivalent to setting KANON_SKIP_UPDATE_CHECK\=1.]"
   {--home,--store-dir}"[Use \<path\> as the shared kanon home root (the content-addressed store and caches live under it). Takes precedence over the KANON_HOME environment variable and the \~\/.kanon-home default. --store-dir is an accepted alias.]:home:"
+  "--telemetry-debug[Print the exact usage-telemetry JSON that would be sent to stderr for this invocation (still non-blocking). Equivalent to setting KANON_TELEMETRY_DEBUG\=1. Telemetry is on by default\; disable it entirely with KANON_TELEMETRY_DISABLED\=1.]"
+  "--telemetry-endpoint[Override the usage-telemetry collector endpoint (https\:\/\/ only) for this invocation. Takes precedence over the KANON_TELEMETRY_ENDPOINT environment variable.]:telemetry_endpoint:"
 )
 
 # guard to ensure default positional specs are added only once per session
@@ -228,6 +231,19 @@ _shtab_kanon_install_options=(
 
 # guard to ensure default positional specs are added only once per session
 _shtab_kanon_install_defaults_added=0
+
+_shtab_kanon_list_options=(
+  "(- : *)"{-h,--help}"[show this help message and exit]"
+  "--declared[Show only sources declared in .kanon (installed and not-installed)\; omit orphan sources that are in .kanon.lock but no longer declared.]"
+  "--tree[Expand each installed source to its transitive packages (from .kanon.lock).]"
+  "--status[Filter to sources with the given status\: installed, not-installed, orphan.]:status:(installed not-installed orphan)"
+  "--format[Output format\: \'table\' (default) or \'json\'. Overridden by the KANON_LIST_OUTPUT_FORMAT environment variable\; the CLI flag takes precedence when both are set.]:format:(table json)"
+  "--kanon-file[Path to the .kanon file. Defaults to auto-discovery (walk up from the current directory). Overridden by the KANON_KANON_FILE environment variable\; the CLI flag takes precedence when both are set.]:kanon_file:"
+  "--lock-file[Path to the .kanon.lock file. Defaults to \<kanon-file\>.lock. Overridden by the KANON_LOCK_FILE environment variable\; the CLI flag takes precedence when both are set.]:lock_file:"
+)
+
+# guard to ensure default positional specs are added only once per session
+_shtab_kanon_list_defaults_added=0
 
 _shtab_kanon_marketplace_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
@@ -406,6 +422,7 @@ _shtab_kanon() {
         completion) _arguments -C -s $_shtab_kanon_completion_options ;;
         doctor) _arguments -C -s $_shtab_kanon_doctor_options ;;
         install) _arguments -C -s $_shtab_kanon_install_options ;;
+        list) _arguments -C -s $_shtab_kanon_list_options ;;
         marketplace) _shtab_kanon_marketplace ;;
         outdated) _arguments -C -s $_shtab_kanon_outdated_options ;;
         remove) _arguments -C -s $_shtab_kanon_remove_options ;;

@@ -2,7 +2,110 @@
 
 
 
+## v3.3.0 (2026-07-17)
+
+### Feature
+
+* feat: kanon list command + usage telemetry, full install-graph capture, and update-warning enhancement (#91)
+
+* feat: add usage telemetry, full install-graph capture, and update-warning enhancement
+
+Emit one structured usage-telemetry event per CLI command to the Caylent
+collector, fully capturing what was installed (every direct source plus every
+transitive repo package with URLs and resolved content SHAs), and enhance the
+&#34;update available&#34; warning.
+
+Telemetry (new core/telemetry.py):
+- Hooked via try/finally around dispatch in cli.py; captures command, subcommand,
+  boolean flag names, allowlisted flag values, outcome (exit code/status/error
+  class/duration), runtime environment, and credential-stripped git provenance.
+- OTLP/HTTP logs JSON with one log record whose body is a flat
+  {tool,timestamp,event_type,payload} object (payload a JSON string); POSTed via
+  stdlib urllib in a detached, non-blocking, silent, never-fail background
+  process (utils/spawn.spawn_detached), HTTPS-only guard, timeouts + body cap.
+- Auto opted-in by default; the only opt-out is KANON_TELEMETRY_DISABLED (no
+  --no-telemetry flag). KANON_TELEMETRY_ENDPOINT / --telemetry-endpoint and
+  KANON_TELEMETRY_DEBUG / --telemetry-debug are supported.
+- Zero-secret allowlist: never raw argv, keys, tokens, credentials, env-var
+  values, or file contents; every URL is credential-stripped.
+
+Full install-graph capture (core/install.py):
+- Populate SourceEntry.projects on install by resolving project -&gt; remote -&gt; URL
+  from the already-synced manifests (walk_includes_collecting_remotes +
+  join_project_repo_url + canonicalize_repo_url) joined with the captured content
+  pins. This also fixes `kanon why` showing an empty project layer on
+  install-written lockfiles. Telemetry emits payload.install_graph and a
+  flattened payload.installed_packages[] (direct + transitive), capped under the
+  collector body limit with install_graph_truncated on overflow.
+
+Update-warning enhancement (core/update_check.py):
+- Yellow banner with the current version in red and the latest in green; a red
+  &#34;no internet access -- could not check for updates&#34; notice on a failed fetch,
+  shown at most once per window; default KANON_UPDATE_CHECK_TTL lowered to 3h.
+
+Docs: new docs/privacy.md (collected fields, encryption, opt-out) linked from
+README; telemetry rows in docs/cli-reference.md and docs/configuration.md;
+regenerated help + completion snapshots.
+
+* test: include telemetry global flags in bash completion expectation
+
+The new --telemetry-debug / --telemetry-endpoint global flags now appear in the
+top-level bash completion, so the exact-match global_flags row in
+test_completion_bash.py is extended to include them.
+
+* test: use provider-neutral remote name in build_project_entries fixture
+
+The provider-agnostic host gate forbids the bare token &#39;gh&#39;; rename the fixture
+manifest remote from &#39;gh&#39; to &#39;origin&#39; so the manifest XML fixtures carry no
+provider-specific reference.
+
+* fix: record real command outcome in telemetry and emit for --version/--help/bare invocations
+
+* feat: add kanon list command (declared vs installed source inventory)
+
+Add `kanon list`, the flat inventory command that reconciles the sources
+declared in .kanon against those installed in .kanon.lock and tags each one
+installed / not-installed / orphan -- the kanon analogue of `pip list` /
+`npm ls` / `poetry show`.
+
+Flags: --declared, --tree, --status &lt;installed|not-installed|orphan&gt;,
+--format &lt;table|json&gt;, --kanon-file, --lock-file. Every failure path yields a
+clean single-prefixed ERROR (no traceback). The command emits usage telemetry
+like every other command (command=list, --tree flag, --format/--status values
+via the flag-value allowlist).
+
+The declared-vs-installed partition reuses a new non-raising
+reconcile_declared_installed() extracted from check_lockfile_consistency (one
+source of truth). Covered by unit/functional/integration/scenario tests plus a
+real-git add-&gt;install-&gt;edit-&gt;list journey; list.py at 100% coverage. Help and
+shell-completion snapshots and docs updated.
+
+The 3.0.0 list-&gt;search rename left guards asserting `list` is an unknown
+command; those are updated to reflect `list` now being a distinct command.
+
+* test: isolate test subprocesses from coverage subprocess measurement
+
+Under `pytest --cov` (make test) pytest-cov and coverage export COV_CORE_* /
+COVERAGE_PROCESS_* so spawned subprocesses auto-start coverage. A measured
+`kanon` subprocess then writes a .coverage-data directory into its working
+directory -- resolved relative to the child CWD on some filesystems -- which
+behavioural subprocess tests that inspect the child filesystem
+(`kanon repo status --orphans`) or parse its stderr (`--telemetry-debug` JSON)
+then trip over, non-deterministically across OS / filesystem.
+
+Strip the coverage subprocess-trigger variables from the child environment in
+the functional and scenario subprocess runners and the telemetry-journey env
+builder via a shared strip_subprocess_coverage_env helper. Behavioural CLI
+subprocess tests do not need coverage of the child; the 90% coverage gate is
+measured in-process on the unit tier, which uses its own runner and is
+unaffected. ([`57246f8`](https://github.com/caylent-solutions/kanon/commit/57246f8a8a46b99ad2b35a954289d7a9e7d1966c))
+
+
 ## v3.2.0 (2026-07-13)
+
+### Chore
+
+* chore(release): 3.2.0 ([`b503e3c`](https://github.com/caylent-solutions/kanon/commit/b503e3cf92479b6192b186ad6b2481563c916074))
 
 ### Feature
 
@@ -84,6 +187,12 @@ lifecycle also documents clean --purge-all running without a .kanon.
 ---------
 
 Co-authored-by: t &lt;t@e.x&gt; ([`d9b0ad1`](https://github.com/caylent-solutions/kanon/commit/d9b0ad1856ab58487b7ed3efdc3ff9d87b60b193))
+
+### Unknown
+
+* Merge pull request #90 from caylent-solutions/release-3.2.0
+
+Release 3.2.0 ([`fb944e2`](https://github.com/caylent-solutions/kanon/commit/fb944e251cf650020070e29cb28a26cbffc886da))
 
 
 ## v3.1.1 (2026-06-27)

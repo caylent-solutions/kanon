@@ -55,7 +55,7 @@ class TestLinkfileDestValidation:
 
     def test_valid_dest_returns_no_errors(self, tmp_path: Path) -> None:
         xml = _write_xml(tmp_path / "m.xml", _valid_marketplace_xml())
-        assert validate_linkfile_dest(xml) == []
+        assert validate_linkfile_dest(xml, tmp_path) == []
 
     def test_invalid_absolute_dest_returns_error(self, tmp_path: Path) -> None:
         xml = _write_xml(
@@ -68,11 +68,17 @@ class TestLinkfileDestValidation:
                 </manifest>
             """),
         )
-        errors = validate_linkfile_dest(xml)
+        errors = validate_linkfile_dest(xml, tmp_path)
         assert len(errors) >= 1
         assert "proj" in errors[0]
 
-    def test_missing_dest_prefix_returns_error(self, tmp_path: Path) -> None:
+    def test_workspace_relative_dest_returns_no_errors(self, tmp_path: Path) -> None:
+        """A project-root-relative dest is contained, so it is valid.
+
+        Replaces the former ``test_missing_dest_prefix_returns_error``, which
+        asserted the superseded blanket ``${CLAUDE_MARKETPLACES_DIR}/`` rule.
+        This shape is the one documented in ``docs/how-it-works.md``.
+        """
         xml = _write_xml(
             tmp_path / "m.xml",
             textwrap.dedent("""\
@@ -83,8 +89,7 @@ class TestLinkfileDestValidation:
                 </manifest>
             """),
         )
-        errors = validate_linkfile_dest(xml)
-        assert len(errors) >= 1
+        assert validate_linkfile_dest(xml, tmp_path) == []
 
 
 @pytest.mark.integration

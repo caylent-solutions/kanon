@@ -6,8 +6,9 @@ must agree on EXACTLY which ``${VAR}`` placeholders matter. A ``${VAR}`` matters
 only when it appears in a *functional* attribute value -- one the repo tool
 consumes during ``repo sync`` -- namely the attributes of the ``<remote>``
 elements a ``<project>`` references (explicitly via ``remote="NAME"`` or via the
-``<default>`` remote) and the attributes of the ``<project>`` elements
-themselves.
+``<default>`` remote), the attributes of the ``<project>`` elements themselves,
+and the attributes of each project's ``<linkfile>`` and ``<copyfile>`` children,
+whose ``dest`` decides where synced content is materialized on disk.
 
 A ``${VAR}`` that appears only in an XML comment, a ``<![CDATA[...]]>`` block,
 or element text is documentation prose: the repo tool never substitutes it and
@@ -26,7 +27,7 @@ from __future__ import annotations
 import pathlib
 import xml.etree.ElementTree as ET
 
-from kanon_cli.constants import SHELL_VAR_PATTERN
+from kanon_cli.constants import MANIFEST_PROJECT_FUNCTIONAL_CHILD_TAGS, SHELL_VAR_PATTERN
 from kanon_cli.core.include_walker import IncludeTree, _walk_includes
 
 
@@ -48,6 +49,33 @@ def _vars_in_attributes(element: ET.Element) -> set[str]:
     for value in element.attrib.values():
         for match in SHELL_VAR_PATTERN.finditer(value):
             found.add(match.group(1))
+    return found
+
+
+def _vars_in_project(project_element: ET.Element) -> set[str]:
+    """Return the ``${VAR}`` names a ``<project>`` references in functional positions.
+
+    A ``<project>``'s functional surface is not limited to its own attributes:
+    the ``src`` and ``dest`` attributes of its ``<linkfile>`` and ``<copyfile>``
+    children are consumed by ``repo sync``, which materializes ``dest`` as a
+    symlink or a copy on disk
+    (:class:`kanon_cli.repo.manifest_xml.XmlManifest._ParseProject` dispatches
+    both child tags). A ``${VAR}`` in a ``dest`` therefore decides where content
+    lands and must be treated exactly like a ``${VAR}`` in a project's own
+    ``path``.
+
+    Args:
+        project_element: A ``<project>`` element whose own attributes and
+            functional child elements are scanned.
+
+    Returns:
+        The set of placeholder variable names found across the project's own
+        attributes and its ``<linkfile>`` / ``<copyfile>`` children.
+    """
+    found = _vars_in_attributes(project_element)
+    for child_tag in MANIFEST_PROJECT_FUNCTIONAL_CHILD_TAGS:
+        for child_element in project_element.findall(child_tag):
+            found |= _vars_in_attributes(child_element)
     return found
 
 
@@ -88,7 +116,8 @@ def functional_vars_in_manifest_files(manifest_files: list[pathlib.Path]) -> set
     determines which remotes the projects reference (by explicit
     ``remote="NAME"`` or, when omitted, the ``<default>`` remote). The functional
     var set is the union of the ``${VAR}`` placeholders in those referenced
-    remotes' attributes plus any ``${VAR}`` in the projects' own attributes.
+    remotes' attributes plus any ``${VAR}`` in the projects' own attributes and
+    in their ``<linkfile>`` / ``<copyfile>`` children's attributes.
 
     Missing files are skipped (the install guard may be handed a path for a node
     that the include walker recorded but that does not exist on disk).
@@ -124,7 +153,7 @@ def functional_vars_in_manifest_files(manifest_files: list[pathlib.Path]) -> set
     referenced_remotes: set[str] = set()
     detected: set[str] = set()
     for project_el in projects:
-        detected |= _vars_in_attributes(project_el)
+        detected |= _vars_in_project(project_el)
         project_remote = project_el.get("remote")
         if project_remote:
             referenced_remotes.add(project_remote)

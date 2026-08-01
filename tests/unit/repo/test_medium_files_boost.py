@@ -1023,10 +1023,11 @@ class TestGcDeleteUnusedProjects(unittest.TestCase):
         opt.quiet = False
         opt.dryrun = False
 
-        with mock.patch("kanon_cli.repo.platform_utils.walk", return_value=walk_result):
-            with mock.patch("kanon_cli.repo.platform_utils.rename"):
-                with mock.patch("kanon_cli.repo.platform_utils.rmtree"):
-                    result = gc.delete_unused_projects([project], opt)
+        with mock.patch("kanon_cli.repo.progress._TTY", False):
+            with mock.patch("kanon_cli.repo.platform_utils.walk", return_value=walk_result):
+                with mock.patch("kanon_cli.repo.platform_utils.rename"):
+                    with mock.patch("kanon_cli.repo.platform_utils.rmtree"):
+                        result = gc.delete_unused_projects([project], opt)
         self.assertEqual(result, 0)
 
     def test_delete_unused_dryrun(self):
@@ -1044,9 +1045,10 @@ class TestGcDeleteUnusedProjects(unittest.TestCase):
         opt.quiet = False
         opt.dryrun = True
 
-        with mock.patch("kanon_cli.repo.platform_utils.walk", return_value=walk_result):
-            with mock.patch("kanon_cli.repo.platform_utils.rename") as mock_rename:
-                result = gc.delete_unused_projects([project], opt)
+        with mock.patch("kanon_cli.repo.progress._TTY", False):
+            with mock.patch("kanon_cli.repo.platform_utils.walk", return_value=walk_result):
+                with mock.patch("kanon_cli.repo.platform_utils.rename") as mock_rename:
+                    result = gc.delete_unused_projects([project], opt)
         mock_rename.assert_not_called()
         self.assertEqual(result, 0)
 
@@ -1097,16 +1099,17 @@ class TestGcRepackProjects(unittest.TestCase):
         mock_git_instance.Wait.return_value = 0
         mock_git_instance.stdout = "fake objects\n"
 
-        with mock.patch("os.path.isdir", return_value=False):
-            with mock.patch("os.mkdir"):
-                with mock.patch("kanon_cli.repo.platform_utils.rmtree"):
-                    with mock.patch("kanon_cli.repo.platform_utils.rename"):
-                        with mock.patch("kanon_cli.repo.platform_utils.walk", return_value=[]):
-                            with mock.patch(
-                                "kanon_cli.repo.subcmds.gc.GitCommand",
-                                return_value=mock_git_instance,
-                            ):
-                                result = gc.repack_projects([project], opt)
+        with mock.patch("kanon_cli.repo.progress._TTY", False):
+            with mock.patch("os.path.isdir", return_value=False):
+                with mock.patch("os.mkdir"):
+                    with mock.patch("kanon_cli.repo.platform_utils.rmtree"):
+                        with mock.patch("kanon_cli.repo.platform_utils.rename"):
+                            with mock.patch("kanon_cli.repo.platform_utils.walk", return_value=[]):
+                                with mock.patch(
+                                    "kanon_cli.repo.subcmds.gc.GitCommand",
+                                    return_value=mock_git_instance,
+                                ):
+                                    result = gc.repack_projects([project], opt)
         self.assertEqual(result, 0)
 
     def test_repack_skips_precious_objects(self):
@@ -1525,16 +1528,17 @@ class TestGitCommandRepackWithExistingPackDir(unittest.TestCase):
         mock_git_instance.Wait.return_value = 0
         mock_git_instance.stdout = "objects\n"
 
-        with mock.patch("os.path.isdir", return_value=True):
-            with mock.patch("kanon_cli.repo.platform_utils.rmtree") as mock_rmtree:
-                with mock.patch("os.mkdir"):
-                    with mock.patch("kanon_cli.repo.platform_utils.rename"):
-                        with mock.patch("kanon_cli.repo.platform_utils.walk", return_value=[]):
-                            with mock.patch(
-                                "kanon_cli.repo.subcmds.gc.GitCommand",
-                                return_value=mock_git_instance,
-                            ):
-                                result = gc.repack_projects([project], opt)
+        with mock.patch("kanon_cli.repo.progress._TTY", False):
+            with mock.patch("os.path.isdir", return_value=True):
+                with mock.patch("kanon_cli.repo.platform_utils.rmtree") as mock_rmtree:
+                    with mock.patch("os.mkdir"):
+                        with mock.patch("kanon_cli.repo.platform_utils.rename"):
+                            with mock.patch("kanon_cli.repo.platform_utils.walk", return_value=[]):
+                                with mock.patch(
+                                    "kanon_cli.repo.subcmds.gc.GitCommand",
+                                    return_value=mock_git_instance,
+                                ):
+                                    result = gc.repack_projects([project], opt)
 
         self.assertTrue(mock_rmtree.called)
         self.assertEqual(result, 0)

@@ -2022,6 +2022,13 @@ def _process_manifest_linkfiles(
     ``CLAUDE_MARKETPLACES_DIR`` even when the repo tool's linkfile step did
     not run (e.g., in test environments where ``repo_sync`` is mocked).
 
+    When ``repo sync`` did run, it has already materialized every
+    ``<linkfile>`` as a symlink at ``dest`` targeting ``src``
+    (:class:`kanon_cli.repo.project._LinkFile._Link`).  ``dest`` and ``src``
+    are then the same inode, the post-condition this function exists to
+    establish already holds, and there is nothing to copy.  Copying anyway
+    raises :class:`shutil.SameFileError`.
+
     Args:
         manifest_xml_path: Absolute path to the root manifest XML file.
         source_dir: Root of the source workspace (the directory passed to
@@ -2052,6 +2059,9 @@ def _process_manifest_linkfiles(
             dest_path = pathlib.Path(dest_str) if pathlib.Path(dest_str).is_absolute() else source_dir / dest_str
 
             if not src_abs.is_file():
+                continue
+
+            if dest_path.exists() and dest_path.samefile(src_abs):
                 continue
 
             dest_path.parent.mkdir(parents=True, exist_ok=True)

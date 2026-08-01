@@ -82,14 +82,15 @@ def test_pre_push_hook_runs_unit_tests():
 
     Given: The pre-push hook script
     When: Its contents are inspected
-    Then: It invokes the unit test target (make test-unit or pytest -m unit)
+    Then: It invokes the unit test target (make test-unit, make coverage-json, or pytest -m unit)
 
     AC-FUNC-001
     """
     content = _hook_content()
-    has_unit_tests = "make test-unit" in content or "pytest -m unit" in content
+    has_unit_tests = "make test-unit" in content or "pytest -m unit" in content or "make coverage-json" in content
     assert has_unit_tests, (
-        f"Pre-push hook must run unit tests via 'make test-unit' or 'pytest -m unit'. Hook content:\n{content}"
+        "Pre-push hook must run unit tests via 'make test-unit', 'make coverage-json', or "
+        f"'pytest -m unit'. Hook content:\n{content}"
     )
 
 
@@ -155,8 +156,10 @@ def test_pre_push_hook_fails_on_unit_test_failure():
     """
     content = _hook_content()
 
-    has_failure_check = ("make test-unit" in content and "exit 1" in content) or (
-        "pytest -m unit" in content and "exit 1" in content
+    has_failure_check = (
+        ("make test-unit" in content and "exit 1" in content)
+        or ("pytest -m unit" in content and "exit 1" in content)
+        or ("make coverage-json" in content and "exit 1" in content)
     )
     assert has_failure_check, (
         f"Pre-push hook must exit with non-zero status when unit tests fail. Hook content:\n{content}"

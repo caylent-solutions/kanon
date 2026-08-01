@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
+import shutil
 import sys
 import time
 
@@ -128,7 +128,7 @@ class Progress:
     def _write(self, s):
         s = "\r" + s
         if self._elide:
-            col = os.get_terminal_size(sys.stderr.fileno()).columns
+            col = shutil.get_terminal_size().columns
             if len(s) > col:
                 s = s[: col - 1] + ".."
         sys.stderr.write(s)

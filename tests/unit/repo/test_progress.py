@@ -1,5 +1,6 @@
 """Unittests for the progress.py module."""
 
+import os
 import unittest
 from unittest import mock
 
@@ -391,7 +392,7 @@ class TestProgressWrite(unittest.TestCase):
     def test_write_prepends_carriage_return(self, mock_stderr):
         """_write should prepend carriage return to output."""
         with mock.patch("kanon_cli.repo.progress.IsTraceToStderr", return_value=False):
-            with mock.patch("os.get_terminal_size", return_value=mock.Mock(columns=80)):
+            with mock.patch("shutil.get_terminal_size", return_value=mock.Mock(columns=80)):
                 p = progress.Progress("Test", total=5, delay=False, quiet=False, elide=True)
                 p._write("test content")
                 call_args = mock_stderr.write.call_args[0][0]
@@ -404,7 +405,7 @@ class TestProgressWrite(unittest.TestCase):
         with mock.patch("kanon_cli.repo.progress.IsTraceToStderr", return_value=False):
             mock_size = mock.Mock()
             mock_size.columns = 20
-            with mock.patch("os.get_terminal_size", return_value=mock_size):
+            with mock.patch("shutil.get_terminal_size", return_value=mock_size):
                 p = progress.Progress("Test", total=5, delay=False, quiet=False, elide=True)
                 p._write("x" * 100)
                 call_args = mock_stderr.write.call_args[0][0]
@@ -416,10 +417,36 @@ class TestProgressWrite(unittest.TestCase):
     def test_write_calls_flush(self, mock_stderr):
         """_write should flush stderr after writing."""
         with mock.patch("kanon_cli.repo.progress.IsTraceToStderr", return_value=False):
-            with mock.patch("os.get_terminal_size", return_value=mock.Mock(columns=80)):
+            with mock.patch("shutil.get_terminal_size", return_value=mock.Mock(columns=80)):
                 p = progress.Progress("Test", total=5, delay=False, quiet=False, elide=True)
                 p._write("test")
                 mock_stderr.flush.assert_called_once()
+
+    @mock.patch.object(progress, "_TTY", True)
+    @mock.patch("sys.stderr")
+    def test_write_falls_back_when_terminal_size_unavailable(self, mock_stderr):
+        """_write should not raise when the terminal-size ioctl is unsupported.
+
+        Regression test: sys.stderr.isatty() can report True while the
+        underlying fd still fails TIOCGWINSZ with OSError errno 25
+        ("Inappropriate ioctl for device"), which previously escaped
+        Progress._write() unhandled and surfaced to callers of repo_sync()/
+        repo_run() as RepoCommandError.
+        """
+        with mock.patch("kanon_cli.repo.progress.IsTraceToStderr", return_value=False):
+            with mock.patch.dict(os.environ):
+                os.environ.pop("COLUMNS", None)
+                os.environ.pop("LINES", None)
+                with mock.patch(
+                    "os.get_terminal_size",
+                    side_effect=OSError(25, "Inappropriate ioctl for device"),
+                ):
+                    p = progress.Progress("Test", total=5, delay=False, quiet=False, elide=True)
+                    p._write("x" * 100)
+
+                    call_args = mock_stderr.write.call_args[0][0]
+                    self.assertTrue(call_args.endswith(".."))
+                    mock_stderr.flush.assert_called_once()
 
 
 @pytest.mark.unit
@@ -431,7 +458,7 @@ class TestProgressUpdateWithTotal(unittest.TestCase):
     def test_update_shows_percentage(self, mock_stderr):
         """update should show percentage when total is set."""
         with mock.patch("kanon_cli.repo.progress.IsTraceToStderr", return_value=False):
-            with mock.patch("os.get_terminal_size", return_value=mock.Mock(columns=100)):
+            with mock.patch("shutil.get_terminal_size", return_value=mock.Mock(columns=100)):
                 p = progress.Progress("Test", total=10, delay=False, quiet=False, elide=True)
                 p.update(inc=5)
                 call_args = mock_stderr.write.call_args[0][0]
@@ -444,7 +471,7 @@ class TestProgressUpdateWithTotal(unittest.TestCase):
         with mock.patch("kanon_cli.repo.progress.IsTraceToStderr", return_value=False):
             mock_size = mock.Mock()
             mock_size.columns = 100
-            with mock.patch("os.get_terminal_size", return_value=mock_size):
+            with mock.patch("shutil.get_terminal_size", return_value=mock_size):
                 with mock.patch("time.time", side_effect=[0, 0, 10]):
                     p = progress.Progress(
                         "Test",
@@ -464,7 +491,7 @@ class TestProgressUpdateWithTotal(unittest.TestCase):
     def test_update_shows_jobs_when_active(self, mock_stderr):
         """update should show job count when _show_jobs is True."""
         with mock.patch("kanon_cli.repo.progress.IsTraceToStderr", return_value=False):
-            with mock.patch("os.get_terminal_size", return_value=mock.Mock(columns=100)):
+            with mock.patch("shutil.get_terminal_size", return_value=mock.Mock(columns=100)):
                 p = progress.Progress("Test", total=10, delay=False, quiet=False, elide=True)
                 p.start("job1")
                 p.start("job2")
@@ -482,7 +509,7 @@ class TestProgressUpdateWithoutTotal(unittest.TestCase):
     def test_update_shows_count_without_total(self, mock_stderr):
         """update should show count when total is 0."""
         with mock.patch("kanon_cli.repo.progress.IsTraceToStderr", return_value=False):
-            with mock.patch("os.get_terminal_size", return_value=mock.Mock(columns=100)):
+            with mock.patch("shutil.get_terminal_size", return_value=mock.Mock(columns=100)):
                 p = progress.Progress("Test", total=0, delay=False, quiet=False, elide=True)
                 p.update(inc=1)
                 p.update(inc=1)
@@ -511,7 +538,7 @@ class TestProgressUpdateDelay(unittest.TestCase):
     def test_update_shows_immediately_when_no_delay(self, mock_stderr):
         """update should display immediately when delay=False."""
         with mock.patch("kanon_cli.repo.progress.IsTraceToStderr", return_value=False):
-            with mock.patch("os.get_terminal_size", return_value=mock.Mock(columns=100)):
+            with mock.patch("shutil.get_terminal_size", return_value=mock.Mock(columns=100)):
                 p = progress.Progress("Test", total=10, delay=False, quiet=False, elide=True)
                 p.update(inc=1)
                 mock_stderr.write.assert_called()

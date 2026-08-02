@@ -139,6 +139,7 @@ __all__ = [
     "MalformedIncludeError",
     "_canonicalize_include_path",
     "_walk_includes",
+    "compute_project_address",
     "compute_store_entry_address",
     "kanon_home_inside_git_repo",
     "prune_store",
@@ -574,14 +575,17 @@ class UnresolvedManifestVarError(InstallError):
 
 
 class RefreshRepoInitError(InstallError):
-    """Raised when repo re-init fails on the --refresh-lock[-source] path.
+    """Raised when the manifests working-tree reset or a re-init ``repo init`` fails.
 
-    On the refresh path, kanon re-runs ``repo init`` with the new manifest revision
-    to advance the source manifest checkout to the moved branch tip. If this
-    re-init fails for any reason (e.g., a residual git state issue after restoring
-    the manifests working tree), the raw exception is caught here and re-raised
-    with the offending source name and a remediation hint so the operator receives
-    a structured diagnostic instead of a raw traceback.
+    Two distinct failure points are wrapped here: (1) resetting
+    ``.repo/manifests`` to a clean HEAD state before ``repo init`` -- this
+    reset runs before every ``repo init``, not only on a refresh (issue #96)
+    -- and (2) on the ``--refresh-lock``/``--refresh-lock-source``/reconcile
+    re-resolve path specifically, ``repo init`` itself re-running with a new
+    manifest revision to advance the source checkout to the moved branch tip.
+    If either fails, the raw exception is caught here and re-raised with the
+    offending source name and a remediation hint so the operator receives a
+    structured diagnostic instead of a raw traceback.
 
     Args:
         source_name: The KANON_SOURCE_<name> key of the source that failed.
@@ -595,7 +599,7 @@ class RefreshRepoInitError(InstallError):
 
     def __str__(self) -> str:
         return (
-            f"ERROR: refresh failed for source '{self.source_name}': "
+            f"ERROR: repo re-init failed for source '{self.source_name}': "
             f"{self.cause}\n"
             "  Remediation: remove the source's .kanon-data directory entry and "
             "re-run 'kanon install --refresh-lock'."
@@ -620,14 +624,21 @@ def _reset_manifests_working_tree(source_dir: pathlib.Path) -> None:
     untracked ``.bak`` files from ``.repo/manifests``, so the subsequent
     ``repo init`` can checkout the new revision cleanly.
 
+    Called unconditionally before every ``repo init`` (issue #96), not only on
+    a refresh/reconcile re-resolve: since each source workspace is now keyed by
+    a per-project address (``compute_project_address``), it is never shared
+    with another project, so resetting on a plain ``kanon install`` of an
+    already-installed source is always safe and lets envsubst re-resolve
+    correctly if a variable changed since the last install of this project.
+
     The function is a no-op when ``.repo/manifests`` does not exist (first
     install has not yet run) or when the directory exists but is not a git
     working tree (integration tests use a plain directory in place of a real
     repo; there is nothing to reset in that case).
 
     Args:
-        source_dir: Path to ``.kanon-data/sources/<name>/``. The manifests
-            working tree is at ``source_dir / ".repo" / "manifests"``.
+        source_dir: Path to ``.kanon-data/sources/<project_address>/<name>/``.
+            The manifests working tree is at ``source_dir / ".repo" / "manifests"``.
 
     Raises:
         OSError: If the ``git checkout -- .`` or ``.bak`` cleanup fails due
@@ -1233,6 +1244,37 @@ def resolve_kanon_lock_root(kanon_file: pathlib.Path) -> pathlib.Path:
     return store_base / KANON_HOME_STORE_LOCKS_SUBDIR / address
 
 
+def compute_project_address(kanon_file: pathlib.Path) -> str:
+    """Compute a stable per-consumer-project address for mutable store workspaces.
+
+    Mirrors ``resolve_kanon_lock_root``: a full 64-character lowercase hex
+    sha256 digest of the RESOLVED ``.kanon`` path -- the same address shape as
+    ``resolve_kanon_lock_root`` and ``compute_store_entry_address``, so every
+    address-shaped store subdirectory name in this module follows one
+    convention (untruncated, since both siblings require the full digest as a
+    store subdirectory name).
+
+    The per-source ``.repo`` workspace under ``.kanon-data/sources/`` is
+    single-tenant: ``repo envsubst`` bakes one project's absolute paths into
+    the manifest XML in place, and ``.repo/copy-link-files.json`` records
+    exactly one set of linkfile destinations. Two projects that declare the
+    same source alias cannot share that workspace without one silently
+    receiving nothing (or losing already-delivered files) while the other
+    owns it. Keying the workspace -- and the aggregated ``.packages/``
+    symlink tree -- by this address gives each consumer project its own
+    workspace while immutable published content still dedups across projects
+    via ``compute_store_entry_address``.
+
+    Args:
+        kanon_file: Path to the ``.kanon`` configuration file (resolved
+            internally; callers do not need to pre-resolve).
+
+    Returns:
+        A 64-character lowercase hex string.
+    """
+    return hashlib.sha256(str(kanon_file.resolve()).encode("utf-8")).hexdigest()
+
+
 def store_entries_dir(store_base: pathlib.Path) -> pathlib.Path:
     """Return the directory under ``store_base`` that holds content-addressed entries.
 
@@ -1451,12 +1493,17 @@ def prune_store(store_base: pathlib.Path) -> None:
 def create_source_dirs(
     source_names: list[str],
     base_dir: pathlib.Path,
+    project_address: str,
 ) -> dict[str, pathlib.Path]:
-    """Create .kanon-data/sources/<name>/ directories for each source.
+    """Create .kanon-data/sources/<project_address>/<name>/ directories for each source.
 
     Args:
         source_names: Ordered list of source names (auto-discovered, alphabetical).
-        base_dir: Project root directory.
+        base_dir: The resolved store base directory (``<KANON_HOME>/store``).
+        project_address: The consumer project's stable address from
+            ``compute_project_address``. Keys the workspace by consumer
+            project so two projects declaring the same source alias never
+            share the same mutable ``.repo`` workspace.
 
     Returns:
         Dict mapping source name to its directory path.
@@ -1467,7 +1514,7 @@ def create_source_dirs(
     """
     result: dict[str, pathlib.Path] = {}
     for name in source_names:
-        source_dir = base_dir / ".kanon-data" / "sources" / name
+        source_dir = base_dir / ".kanon-data" / "sources" / project_address / name
         try:
             source_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -1911,16 +1958,23 @@ def run_repo_sync(source_dir: pathlib.Path) -> None:
 def aggregate_symlinks(
     source_names: list[str],
     base_dir: pathlib.Path,
+    project_address: str,
 ) -> dict[str, str]:
-    """Aggregate packages from all sources into ``.packages/``.
+    """Aggregate packages from all sources into ``.packages/<project_address>/``.
 
-    For each ``.kanon-data/sources/<name>/.packages/*``, creates a symlink in
-    the top-level ``.packages/`` directory. Detects collisions when two
-    sources produce the same package name.
+    For each ``.kanon-data/sources/<project_address>/<name>/.packages/*``,
+    creates a symlink in the project's ``.packages/<project_address>/``
+    directory. Detects collisions when two sources produce the same package
+    name.
 
     Args:
         source_names: Ordered list of source names.
-        base_dir: Project root directory.
+        base_dir: The resolved store base directory (``<KANON_HOME>/store``).
+        project_address: The consumer project's stable address from
+            ``compute_project_address``. Keys both the read side (the source
+            workspaces from ``create_source_dirs``) and the write side (the
+            aggregated ``.packages/`` symlink tree) so two projects never
+            collide on a shared package name.
 
     Returns:
         Dict mapping package name to source name.
@@ -1928,13 +1982,13 @@ def aggregate_symlinks(
     Raises:
         ValueError: If two sources produce the same package name.
     """
-    packages_dir = base_dir / ".packages"
-    packages_dir.mkdir(exist_ok=True)
+    packages_dir = base_dir / ".packages" / project_address
+    packages_dir.mkdir(parents=True, exist_ok=True)
 
     package_owners: dict[str, str] = {}
 
     for name in source_names:
-        source_packages = base_dir / ".kanon-data" / "sources" / name / ".packages"
+        source_packages = base_dir / ".kanon-data" / "sources" / project_address / name / ".packages"
         if not source_packages.exists():
             continue
         for pkg in source_packages.iterdir():
@@ -2490,6 +2544,7 @@ def _run_install(
         )
 
     base_dir = resolve_workspace_base_dir()
+    project_address = compute_project_address(kanonenv_path)
     source_names = config["KANON_SOURCES"]
     sources = config["sources"]
     globals_dict = config["globals"]
@@ -2518,7 +2573,7 @@ def _run_install(
     if marketplace_dir_str:
         base_env_vars["CLAUDE_MARKETPLACES_DIR"] = marketplace_dir_str
 
-    source_dirs = create_source_dirs(source_names, base_dir)
+    source_dirs = create_source_dirs(source_names, base_dir, project_address)
 
     allow_insecure: bool = os.environ.get(KANON_ALLOW_INSECURE_REMOTES) == "1"
 
@@ -2691,15 +2746,16 @@ def _run_install(
 
         print(f"  repo init ({source_data['path']})...")
 
+        try:
+            _reset_manifests_working_tree(source_dir)
+        except OSError as exc:
+            raise RefreshRepoInitError(source_name=name, cause=exc) from exc
+
         _is_reresolve = install_state in (
             InstallState.REFRESH_LOCK,
             InstallState.REFRESH_LOCK_SOURCE,
         ) or (install_state is InstallState.RECONCILE and not reconcile_replay)
         if _is_reresolve:
-            try:
-                _reset_manifests_working_tree(source_dir)
-            except OSError as exc:
-                raise RefreshRepoInitError(source_name=name, cause=exc) from exc
             try:
                 run_repo_init(
                     source_dir,
@@ -2780,7 +2836,7 @@ def _run_install(
             raise PackagePathConflictError(reports=path_conflict_reports)
 
     print("kanon install: aggregating packages into .packages/...")
-    package_owners = aggregate_symlinks(source_names, base_dir)
+    package_owners = aggregate_symlinks(source_names, base_dir, project_address)
 
     write_store_gitignore_if_in_git_repo(base_dir)
 

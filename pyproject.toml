@@ -27,7 +27,10 @@ classifiers = [
 dependencies = [
     "defusedxml>=0.7.1",
     "packaging>=23.0",
-    "shtab>=1.7.0",
+    # Exact-pinned: shtab's generated output is compared byte-for-byte against
+    # committed golden fixtures (tests/fixtures/completion/); any newer shtab
+    # release can change that output and break the fixture comparison.
+    "shtab==1.8.0",
 ]
 
 [project.scripts]

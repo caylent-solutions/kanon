@@ -1482,6 +1482,13 @@ class TestProjectKeyedWorkspaces:
     """
 
     def _patched_install(self, kanonenv: pathlib.Path, resolved_sha: str) -> None:
+        """Run install() with repo/git network calls stubbed.
+
+        A reinstall of an already-locked project takes the LOCKFILE_CONSISTENT
+        path, which re-verifies the pinned SHA is still reachable via a real
+        ``git ls-remote``; that call is stubbed reachable here so these tests
+        exercise the project-keying wiring, not networking.
+        """
         ref_resolution = _RefResolution(sha=resolved_sha, resolved_ref="refs/heads/main")
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -1492,10 +1499,6 @@ class TestProjectKeyedWorkspaces:
                 "kanon_cli.core.install._walk_includes",
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
-            # A reinstall of an already-locked project takes the
-            # LOCKFILE_CONSISTENT path, which re-verifies the pinned SHA is
-            # still reachable via a real `git ls-remote`; stub it reachable so
-            # these tests exercise the project-keying wiring, not networking.
             patch(
                 "kanon_cli.core.install.run_git_ls_remote",
                 return_value=(0, f"{resolved_sha}\trefs/heads/main\n", ""),
@@ -1547,7 +1550,11 @@ class TestProjectKeyedWorkspaces:
     def test_two_projects_different_shas_both_install_successfully(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Two projects on the same alias but different resolved SHAs both succeed."""
+        """Two projects on the same alias but different resolved SHAs both succeed.
+
+        Reinstalling A afterward must still succeed -- B's install must not
+        have wedged a workspace A depends on.
+        """
         store = tmp_path / "home" / "store"
         monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
 
@@ -1556,8 +1563,6 @@ class TestProjectKeyedWorkspaces:
 
         self._patched_install(kanonenv_a, "a" * 40)
         self._patched_install(kanonenv_b, "b" * 40)
-        # Reinstalling A afterward must still succeed -- B's install must not
-        # have wedged a workspace A depends on.
         self._patched_install(kanonenv_a, "a" * 40)
 
         addr_a = compute_project_address(kanonenv_a)

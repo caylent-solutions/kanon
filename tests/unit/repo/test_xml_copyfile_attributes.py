@@ -20,9 +20,10 @@ The <copyfile> element documented attributes:
                      Validated at parse time: must not traverse outside the
                      project (no '..', no absolute, no '~', no '.git',
                      no '.repo*', no bad Unicode codepoints, no newlines).
-  Required: dest  -- relative path from the workspace root to write to.
-                     Same path-safety rules as src, except absolute paths
-                     are NOT allowed (unlike linkfile dest).
+  Required: dest  -- path to write to. Either relative to the workspace
+                     root, or absolute (spec 17.1, like linkfile dest) so a
+                     manifest can deliver a real file into the consuming
+                     project. Same other path-safety rules as src.
 
 Documented constraints for invalid-value tests:
   - src omitted (or blank)  -> ManifestParseError naming "src"
@@ -30,7 +31,7 @@ Documented constraints for invalid-value tests:
   - src contains '..'       -> ManifestInvalidPathError mentioning "src"
   - dest contains '..'      -> ManifestInvalidPathError mentioning "dest"
   - src is absolute         -> ManifestInvalidPathError mentioning "src"
-  - dest is absolute        -> ManifestInvalidPathError mentioning "dest"
+  - dest is absolute        -> accepted (spec 17.1)
   - src contains '~'        -> ManifestInvalidPathError mentioning "src"
   - dest contains '~'       -> ManifestInvalidPathError mentioning "dest"
   - src contains '.git'     -> ManifestInvalidPathError mentioning "src"
@@ -230,9 +231,9 @@ class TestCopyfileSrcValidValues:
 class TestCopyfileDestValidValues:
     """AC-TEST-001 -- valid values accepted for the dest attribute.
 
-    dest must be a relative path from the workspace root. Valid paths
-    include simple filenames and nested relative paths with forward slashes.
-    Absolute paths are NOT valid for dest (unlike linkfile).
+    dest may be a relative path from the workspace root, or an absolute
+    path (spec 17.1, matching linkfile dest) so a manifest can deliver a
+    real file into the consuming project.
     """
 
     @pytest.mark.parametrize(
@@ -262,6 +263,19 @@ class TestCopyfileDestValidValues:
         AC-TEST-001
         """
         dest = "a/b/c/d/e/file.txt"
+        xml_content = _manifest_with_copyfile(src="VERSION", dest=dest)
+        manifest = _write_and_load(tmp_path, xml_content)
+        copyfile = _get_copyfile(manifest, "platform/core")
+        assert copyfile.dest == dest, f"Expected copyfile.dest={dest!r} but got: {copyfile.dest!r}"
+
+    def test_dest_absolute_path_accepted(self, tmp_path: pathlib.Path) -> None:
+        """An absolute dest path is accepted and stored verbatim.
+
+        AC-TEST-001: spec 17.1 -- absolute dest is allowed for copyfile just
+        as it already is for linkfile, so a manifest can deliver a real
+        file into the consuming project rather than into the repo client.
+        """
+        dest = "/tmp/output/file.txt"
         xml_content = _manifest_with_copyfile(src="VERSION", dest=dest)
         manifest = _write_and_load(tmp_path, xml_content)
         copyfile = _get_copyfile(manifest, "platform/core")
@@ -357,18 +371,6 @@ class TestCopyfileDestInvalidValues:
         AC-TEST-002
         """
         xml_content = _manifest_with_copyfile(src="VERSION", dest=bad_dest)
-        with pytest.raises(ManifestInvalidPathError) as exc_info:
-            _write_and_load(tmp_path, xml_content)
-        assert "dest" in str(exc_info.value), (
-            f"Expected error message to mention 'dest' but got: {str(exc_info.value)!r}"
-        )
-
-    def test_dest_absolute_path_raises_invalid_path_error(self, tmp_path: pathlib.Path) -> None:
-        """An absolute dest path (starting with /) raises ManifestInvalidPathError.
-
-        AC-TEST-002: absolute paths are not allowed for copyfile dest (unlike linkfile).
-        """
-        xml_content = _manifest_with_copyfile(src="VERSION", dest="/tmp/output/file.txt")
         with pytest.raises(ManifestInvalidPathError) as exc_info:
             _write_and_load(tmp_path, xml_content)
         assert "dest" in str(exc_info.value), (

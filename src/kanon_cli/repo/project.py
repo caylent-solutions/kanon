@@ -454,7 +454,8 @@ class _CopyFile:
             git_worktree: Absolute path to the git project checkout.
             src: Relative path under |git_worktree| of file to read.
             topdir: Absolute path to the top of the repo client checkout.
-            dest: Relative path under |topdir| of file to write.
+            dest: Path under |topdir| of file to write, or an absolute path
+                (spec 17.1) to deliver the file outside the repo client.
         """
         self.git_worktree = git_worktree
         self.topdir = topdir
@@ -463,7 +464,20 @@ class _CopyFile:
 
     def _Copy(self):
         src = _SafeExpandPath(self.git_worktree, self.src)
-        dest = _SafeExpandPath(self.topdir, self.dest)
+
+        if os.path.isabs(self.dest):
+            # Absolute dest: use the path directly (spec 17.1).
+            # Defense-in-depth: reject path traversal components even
+            # though _CheckLocalPath already validated at manifest parse
+            # time. Split on both / and os.sep to match _SafeExpandPath.
+            resep = re.compile(r"[/%s]" % re.escape(os.path.sep))
+            components = resep.split(self.dest)
+            if ".." in components:
+                raise ManifestInvalidPathError(f'{self.dest}: ".." not allowed in absolute dest')
+            dest = os.path.normpath(self.dest)
+        else:
+            # Relative dest: resolve under topdir via _SafeExpandPath.
+            dest = _SafeExpandPath(self.topdir, self.dest)
 
         if platform_utils.isdir(src):
             raise ManifestInvalidPathError(f"{self.src}: copying from directory not supported")

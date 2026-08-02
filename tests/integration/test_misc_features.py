@@ -39,12 +39,16 @@ from kanon_cli.core.clean import (
 )
 from kanon_cli.core.install import (
     aggregate_symlinks,
+    compute_project_address,
     create_source_dirs,
     install,
     prepare_marketplace_dir,
     update_gitignore,
 )
 from kanon_cli.core.kanonenv import parse_kanonenv
+
+
+_PROJECT_ADDRESS = "d" * 64
 
 
 def _write_kanonenv(path: pathlib.Path, content: str) -> pathlib.Path:
@@ -122,25 +126,25 @@ class TestInstallCoreLogic:
     """Verify install helper functions produce correct directory structures."""
 
     def test_create_source_dirs_creates_directories(self, tmp_path: pathlib.Path) -> None:
-        result = create_source_dirs(["alpha", "beta"], tmp_path)
+        result = create_source_dirs(["alpha", "beta"], tmp_path, _PROJECT_ADDRESS)
         for name in ("alpha", "beta"):
-            assert (tmp_path / ".kanon-data" / "sources" / name).is_dir()
+            assert (tmp_path / ".kanon-data" / "sources" / _PROJECT_ADDRESS / name).is_dir()
             assert name in result
 
     def test_aggregate_symlinks_creates_packages_dir(self, tmp_path: pathlib.Path) -> None:
-        src_pkg = tmp_path / ".kanon-data" / "sources" / "build" / ".packages"
+        src_pkg = tmp_path / ".kanon-data" / "sources" / _PROJECT_ADDRESS / "build" / ".packages"
         src_pkg.mkdir(parents=True)
         (src_pkg / "my-tool").mkdir()
-        aggregate_symlinks(["build"], tmp_path)
-        assert (tmp_path / ".packages" / "my-tool").is_symlink()
+        aggregate_symlinks(["build"], tmp_path, _PROJECT_ADDRESS)
+        assert (tmp_path / ".packages" / _PROJECT_ADDRESS / "my-tool").is_symlink()
 
     def test_aggregate_symlinks_collision_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         for src in ("a", "b"):
-            pkg = tmp_path / ".kanon-data" / "sources" / src / ".packages"
+            pkg = tmp_path / ".kanon-data" / "sources" / _PROJECT_ADDRESS / src / ".packages"
             pkg.mkdir(parents=True)
             (pkg / "collision-pkg").mkdir()
         with pytest.raises(ValueError, match="Package collision"):
-            aggregate_symlinks(["a", "b"], tmp_path)
+            aggregate_symlinks(["a", "b"], tmp_path, _PROJECT_ADDRESS)
 
     def test_update_gitignore_creates_file(self, tmp_path: pathlib.Path) -> None:
         update_gitignore(tmp_path, [".packages/", ".kanon-data/"])
@@ -261,7 +265,8 @@ class TestKanonenvEdgeCases:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
-        assert (store_base / ".kanon-data" / "sources" / "s").is_dir()
+        project_address = compute_project_address(kanonenv)
+        assert (store_base / ".kanon-data" / "sources" / project_address / "s").is_dir()
         assert not (store_base / ".gitignore").exists(), (
             "install must not create a .gitignore in a store that is not inside a git repo"
         )

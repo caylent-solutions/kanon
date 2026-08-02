@@ -12,6 +12,7 @@ Covers:
 
 import argparse
 import pathlib
+import shutil
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -24,6 +25,7 @@ from kanon_cli.core.install import (
     _RefResolution,
     _reset_manifests_working_tree,
     aggregate_symlinks,
+    compute_project_address,
     create_source_dirs,
     install,
     prepare_marketplace_dir,
@@ -37,32 +39,35 @@ from kanon_cli.core.marketplace import create_dirsymlink
 from kanon_cli.repo import RepoCommandError
 
 
+_PROJECT_ADDRESS = "a" * 64
+
+
 @pytest.mark.unit
 class TestSourceDirectoryCreation:
     def test_creates_source_dirs(self, tmp_path: pathlib.Path) -> None:
-        result = create_source_dirs(["build", "marketplaces"], tmp_path)
+        result = create_source_dirs(["build", "marketplaces"], tmp_path, _PROJECT_ADDRESS)
         for name in ["build", "marketplaces"]:
-            assert (tmp_path / ".kanon-data" / "sources" / name).is_dir()
+            assert (tmp_path / ".kanon-data" / "sources" / _PROJECT_ADDRESS / name).is_dir()
             assert name in result
 
     def test_idempotent(self, tmp_path: pathlib.Path) -> None:
-        create_source_dirs(["build"], tmp_path)
-        result = create_source_dirs(["build"], tmp_path)
-        assert (tmp_path / ".kanon-data" / "sources" / "build").is_dir()
-        assert result["build"] == tmp_path / ".kanon-data" / "sources" / "build"
+        create_source_dirs(["build"], tmp_path, _PROJECT_ADDRESS)
+        result = create_source_dirs(["build"], tmp_path, _PROJECT_ADDRESS)
+        assert (tmp_path / ".kanon-data" / "sources" / _PROJECT_ADDRESS / "build").is_dir()
+        assert result["build"] == tmp_path / ".kanon-data" / "sources" / _PROJECT_ADDRESS / "build"
 
     def test_oserror_propagates_with_path_context(self, tmp_path: pathlib.Path) -> None:
         """create_source_dirs raises OSError with path context when mkdir fails."""
         with patch("pathlib.Path.mkdir", side_effect=OSError(13, "Permission denied")):
             with pytest.raises(OSError) as exc_info:
-                create_source_dirs(["src"], tmp_path)
+                create_source_dirs(["src"], tmp_path, _PROJECT_ADDRESS)
         assert "Cannot create source directory" in str(exc_info.value)
 
     def test_oserror_message_contains_strerror(self, tmp_path: pathlib.Path) -> None:
         """OSError raised by create_source_dirs includes the OS error message."""
         with patch("pathlib.Path.mkdir", side_effect=OSError(13, "Permission denied")):
             with pytest.raises(OSError) as exc_info:
-                create_source_dirs(["src"], tmp_path)
+                create_source_dirs(["src"], tmp_path, _PROJECT_ADDRESS)
         assert "Permission denied" in str(exc_info.value)
 
 
@@ -174,20 +179,20 @@ class TestRepoSync:
 @pytest.mark.unit
 class TestSymlinkAggregation:
     def test_aggregates(self, tmp_path: pathlib.Path) -> None:
-        build_pkg = tmp_path / ".kanon-data" / "sources" / "build" / ".packages"
+        build_pkg = tmp_path / ".kanon-data" / "sources" / _PROJECT_ADDRESS / "build" / ".packages"
         build_pkg.mkdir(parents=True)
         (build_pkg / "test-lint").mkdir()
-        aggregate_symlinks(["build"], tmp_path)
-        link = tmp_path / ".packages" / "test-lint"
+        aggregate_symlinks(["build"], tmp_path, _PROJECT_ADDRESS)
+        link = tmp_path / ".packages" / _PROJECT_ADDRESS / "test-lint"
         assert link.is_symlink()
 
     def test_collision_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         for src in ["a", "b"]:
-            pkg = tmp_path / ".kanon-data" / "sources" / src / ".packages"
+            pkg = tmp_path / ".kanon-data" / "sources" / _PROJECT_ADDRESS / src / ".packages"
             pkg.mkdir(parents=True)
             (pkg / "dup").mkdir()
         with pytest.raises(ValueError):
-            aggregate_symlinks(["a", "b"], tmp_path)
+            aggregate_symlinks(["a", "b"], tmp_path, _PROJECT_ADDRESS)
 
 
 @pytest.mark.unit
@@ -308,7 +313,8 @@ class TestInstallLifecycle:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         assert mp_dir.is_dir()
-        assert (store / ".kanon-data" / "sources" / "build").is_dir()
+        project_address = compute_project_address(kanonenv)
+        assert (store / ".kanon-data" / "sources" / project_address / "build").is_dir()
         mock_init.assert_called_once()
         mock_envsubst.assert_called_once()
         mock_sync.assert_called_once()
@@ -980,12 +986,12 @@ class TestAggregateSymlinksUsesSymlink:
 
     def test_aggregate_symlinks_calls_create_dirsymlink(self, tmp_path: pathlib.Path) -> None:
         """aggregate_symlinks calls create_dirsymlink for each package link."""
-        build_pkg = tmp_path / ".kanon-data" / "sources" / "build" / ".packages"
+        build_pkg = tmp_path / ".kanon-data" / "sources" / _PROJECT_ADDRESS / "build" / ".packages"
         build_pkg.mkdir(parents=True)
         (build_pkg / "test-lint").mkdir()
 
         with patch("kanon_cli.core.install.create_dirsymlink") as mock_helper:
-            aggregate_symlinks(["build"], tmp_path)
+            aggregate_symlinks(["build"], tmp_path, _PROJECT_ADDRESS)
 
         mock_helper.assert_called_once()
         call_args = mock_helper.call_args
@@ -996,15 +1002,15 @@ class TestAggregateSymlinksUsesSymlink:
 
     def test_aggregate_symlinks_produces_directory_link_on_posix(self, tmp_path: pathlib.Path) -> None:
         """aggregate_symlinks produces a working directory link on POSIX (not a mock)."""
-        build_pkg = tmp_path / ".kanon-data" / "sources" / "build" / ".packages"
+        build_pkg = tmp_path / ".kanon-data" / "sources" / _PROJECT_ADDRESS / "build" / ".packages"
         build_pkg.mkdir(parents=True)
         pkg_dir = build_pkg / "my-tool"
         pkg_dir.mkdir()
         (pkg_dir / "tool.sh").write_text("#!/bin/sh\necho hi\n")
 
-        aggregate_symlinks(["build"], tmp_path)
+        aggregate_symlinks(["build"], tmp_path, _PROJECT_ADDRESS)
 
-        link = tmp_path / ".packages" / "my-tool"
+        link = tmp_path / ".packages" / _PROJECT_ADDRESS / "my-tool"
         assert link.is_symlink(), f"Expected symlink at {link}"
         assert link.is_dir(), f"Expected symlink to resolve to a directory at {link}"
         assert (link / "tool.sh").is_file(), "Expected tool.sh accessible through the link"
@@ -1091,6 +1097,60 @@ class TestComputeStoreEntryAddress:
 
         with pytest.raises(ValueError):
             compute_store_entry_address(url, sha)
+
+
+@pytest.mark.unit
+class TestComputeProjectAddress:
+    """compute_project_address derives a stable per-consumer-project address (issue #96).
+
+    Two consumer projects that declare the same source alias must never share
+    the mutable per-source ``.repo`` workspace or the aggregated ``.packages/``
+    symlink tree; this address is the key that keeps them apart.
+    """
+
+    def test_same_resolved_path_yields_same_address_across_calls(self, tmp_path: pathlib.Path) -> None:
+        """The same resolved .kanon path produces the same address every time."""
+        kanon_file = tmp_path / "project" / ".kanon"
+        kanon_file.parent.mkdir()
+        kanon_file.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
+
+        first = compute_project_address(kanon_file)
+        second = compute_project_address(kanon_file)
+
+        assert first == second
+        assert len(first) == 64
+        assert all(c in "0123456789abcdef" for c in first)
+
+    def test_different_paths_yield_different_addresses(self, tmp_path: pathlib.Path) -> None:
+        """Two distinct .kanon files produce distinct addresses."""
+        first_file = tmp_path / "a" / ".kanon"
+        second_file = tmp_path / "b" / ".kanon"
+        first_file.parent.mkdir()
+        second_file.parent.mkdir()
+        first_file.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
+        second_file.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
+
+        assert compute_project_address(first_file) != compute_project_address(second_file)
+
+    def test_symlinked_kanon_resolves_to_same_address_as_real_path(self, tmp_path: pathlib.Path) -> None:
+        """A .kanon reached via a symlink addresses identically to the real file.
+
+        Mirrors the symlink fixture in tests/unit/test_clean.py: a real project
+        directory holding the actual .kanon, and a separate symlink_dir whose
+        .kanon symlinks to it.
+        """
+        real_project = tmp_path / "real_project"
+        real_project.mkdir()
+        symlink_dir = tmp_path / "symlink_dir"
+        symlink_dir.mkdir()
+
+        real_kanonenv = real_project / ".kanon"
+        real_kanonenv.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
+
+        symlink_kanonenv = symlink_dir / ".kanon"
+        symlink_kanonenv.symlink_to(real_kanonenv)
+
+        assert compute_project_address(symlink_kanonenv) == compute_project_address(real_kanonenv)
 
 
 @pytest.mark.unit
@@ -1390,3 +1450,140 @@ class TestResolveKanonLockRoot:
         second_file.write_text("KANON_SOURCE_FOO_URL=https://example.com/foo.git\n", encoding="utf-8")
 
         assert resolve_kanon_lock_root(first_file) != resolve_kanon_lock_root(second_file)
+
+
+def _write_project_kanonenv(
+    project_dir: pathlib.Path,
+    alias: str = "shared",
+    url: str = "https://example.com/shared.git",
+    ref: str = "main",
+) -> pathlib.Path:
+    """Write a minimal .kanon declaring one source under ``project_dir``."""
+    project_dir.mkdir(parents=True, exist_ok=True)
+    kanonenv = project_dir / ".kanon"
+    kanonenv.write_text(
+        f"KANON_SOURCE_{alias}_URL={url}\n"
+        f"KANON_SOURCE_{alias}_REF={ref}\n"
+        f"KANON_SOURCE_{alias}_PATH=meta.xml\n"
+        f"KANON_SOURCE_{alias}_NAME={alias}\n"
+        f"KANON_SOURCE_{alias}_GITBASE={url}\n"
+    )
+    return kanonenv
+
+
+@pytest.mark.unit
+class TestProjectKeyedWorkspaces:
+    """Two projects sharing one KANON_HOME never collide on a source alias (issue #96).
+
+    Repo network calls (repo_init, repo_envsubst, repo_sync) are mocked, same as
+    ``TestInstallLifecycle.test_full_lifecycle`` -- these tests verify the
+    project-address wiring through ``install()``, not the vendored repo tool's
+    own git behaviour.
+    """
+
+    def _patched_install(self, kanonenv: pathlib.Path, resolved_sha: str) -> None:
+        """Run install() with repo/git network calls stubbed.
+
+        A reinstall of an already-locked project takes the LOCKFILE_CONSISTENT
+        path, which re-verifies the pinned SHA is still reachable via a real
+        ``git ls-remote``; that call is stubbed reachable here so these tests
+        exercise the project-keying wiring, not networking.
+        """
+        ref_resolution = _RefResolution(sha=resolved_sha, resolved_ref="refs/heads/main")
+        with (
+            patch("kanon_cli.repo.repo_init"),
+            patch("kanon_cli.repo.repo_envsubst"),
+            patch("kanon_cli.repo.repo_sync"),
+            patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=ref_resolution),
+            patch(
+                "kanon_cli.core.install._walk_includes",
+                return_value=IncludeTree(path=pathlib.Path("meta.xml")),
+            ),
+            patch(
+                "kanon_cli.core.install.run_git_ls_remote",
+                return_value=(0, f"{resolved_sha}\trefs/heads/main\n", ""),
+            ),
+        ):
+            install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
+
+    def test_two_projects_same_alias_same_ref_both_receive_own_workspace(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two projects declaring the same alias each get their own source workspace."""
+        store = tmp_path / "home" / "store"
+        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
+
+        kanonenv_a = _write_project_kanonenv(tmp_path / "proj-a")
+        kanonenv_b = _write_project_kanonenv(tmp_path / "proj-b")
+
+        self._patched_install(kanonenv_a, "a" * 40)
+        self._patched_install(kanonenv_b, "a" * 40)
+
+        addr_a = compute_project_address(kanonenv_a)
+        addr_b = compute_project_address(kanonenv_b)
+        assert addr_a != addr_b
+        assert (store / ".kanon-data" / "sources" / addr_a / "shared").is_dir()
+        assert (store / ".kanon-data" / "sources" / addr_b / "shared").is_dir()
+
+    def test_second_project_install_does_not_resurrect_first(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Deleting project A's workspace then installing B does not recreate A's."""
+        store = tmp_path / "home" / "store"
+        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
+
+        kanonenv_a = _write_project_kanonenv(tmp_path / "proj-a")
+        kanonenv_b = _write_project_kanonenv(tmp_path / "proj-b")
+
+        self._patched_install(kanonenv_a, "a" * 40)
+        addr_a = compute_project_address(kanonenv_a)
+        workspace_a = store / ".kanon-data" / "sources" / addr_a
+        assert workspace_a.is_dir()
+        shutil.rmtree(workspace_a)
+
+        self._patched_install(kanonenv_b, "a" * 40)
+
+        assert not workspace_a.exists(), "installing B must not resurrect A's deleted workspace"
+        addr_b = compute_project_address(kanonenv_b)
+        assert (store / ".kanon-data" / "sources" / addr_b / "shared").is_dir()
+
+    def test_two_projects_different_shas_both_install_successfully(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two projects on the same alias but different resolved SHAs both succeed.
+
+        Reinstalling A afterward must still succeed -- B's install must not
+        have wedged a workspace A depends on.
+        """
+        store = tmp_path / "home" / "store"
+        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
+
+        kanonenv_a = _write_project_kanonenv(tmp_path / "proj-a")
+        kanonenv_b = _write_project_kanonenv(tmp_path / "proj-b")
+
+        self._patched_install(kanonenv_a, "a" * 40)
+        self._patched_install(kanonenv_b, "b" * 40)
+        self._patched_install(kanonenv_a, "a" * 40)
+
+        addr_a = compute_project_address(kanonenv_a)
+        addr_b = compute_project_address(kanonenv_b)
+        assert (store / ".kanon-data" / "sources" / addr_a / "shared").is_dir()
+        assert (store / ".kanon-data" / "sources" / addr_b / "shared").is_dir()
+
+    def test_store_entry_dedup_survives_project_keying(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Two projects installing the same url@sha still dedupe to one store entry."""
+        from kanon_cli.core.install import store_entries_dir
+
+        store = tmp_path / "home" / "store"
+        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
+
+        kanonenv_a = _write_project_kanonenv(tmp_path / "proj-a")
+        kanonenv_b = _write_project_kanonenv(tmp_path / "proj-b")
+
+        self._patched_install(kanonenv_a, "a" * 40)
+        self._patched_install(kanonenv_b, "a" * 40)
+
+        entries = list(store_entries_dir(store).iterdir())
+        assert len(entries) == 1, f"expected exactly one deduped store entry; got {entries}"

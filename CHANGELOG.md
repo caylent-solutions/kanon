@@ -2,6 +2,23 @@
 
 
 
+## [Unreleased]
+
+### Fixed
+
+* fix: key per-source install workspaces and aggregated packages by consumer project (#96)
+
+Per-source install workspaces (`<KANON_HOME>/store/.kanon-data/sources/...`)
+and the aggregated `.packages/` symlink tree are now keyed by a stable
+per-project address (`compute_project_address`), not just the source alias.
+Previously, two unrelated projects declaring the same source alias shared one
+mutable `repo` workspace: the second project's install would silently deliver
+no content (while reporting success), or -- if the two projects pinned
+different refs -- raise an unhandled `GitCommandError` and wedge the shared
+workspace for both projects. Pre-existing workspaces from before this fix are
+orphaned under the old alias-only path; run `kanon clean` to reclaim them (no
+automatic migration).
+
 ## v3.3.0 (2026-07-17)
 
 ### Feature

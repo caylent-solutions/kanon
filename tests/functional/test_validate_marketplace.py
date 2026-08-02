@@ -108,14 +108,19 @@ class TestLinkfileDestValidation:
     @pytest.mark.parametrize(
         "bad_dest",
         [
+            "",
             "/absolute/bad/path",
-            "relative/path",
-            "CLAUDE_MARKETPLACES_DIR/missing-dollar-brace",
-            "${OTHER_VAR}/proj",
+            "../escape",
+            "nested/../../escape",
         ],
     )
     def test_invalid_dest_exits_one_with_error_on_stderr(self, tmp_path: Path, bad_dest: str) -> None:
         """AC-TEST-001 negative: invalid linkfile dest exits 1 with diagnostic on stderr.
+
+        Only the three shapes ``_dest_containment_error`` rejects -- empty,
+        absolute, or containing a ``..`` component -- exit 1. A plain relative
+        path, an unprefixed ``${VAR}``, or a bare word are all contained and
+        valid (see ``validate_linkfile_dest``'s docstring).
 
         AC-FUNC-001: the CLI surfaces the marketplace-specific linkfile dest error.
         AC-CHANNEL-001: error goes to stderr, not stdout.

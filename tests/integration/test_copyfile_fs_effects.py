@@ -4,6 +4,7 @@ Tests cover actual on-disk behavior produced by _CopyFile._Copy():
 - AC-TEST-001: regular file creation (not a symlink)
 - AC-TEST-002: source file permissions preserved in the copy
 - AC-TEST-003: atomic replacement of an existing destination file
+- AC-TEST-004: absolute dest delivers a real file outside topdir
 
 AC-FUNC-001: copyfile produces an actual filesystem copy (bytes on disk).
 AC-CHANNEL-001: no stdout leakage on success paths.
@@ -30,7 +31,7 @@ def _make_copyfile(
         git_worktree: Absolute path to the simulated project checkout.
         src: Source path relative to git_worktree.
         topdir: Absolute path to the simulated workspace root.
-        dest: Destination path relative to topdir.
+        dest: Destination path relative to topdir, or absolute (spec 17.1).
 
     Returns:
         A configured _CopyFile instance.
@@ -488,4 +489,90 @@ def test_copyfile_replacement_does_not_write_to_stdout(tmp_path: pathlib.Path, c
     captured = capsys.readouterr()
     assert not captured.out, (
         f"Expected no stdout output from _CopyFile._Copy() during file replacement, but got: {captured.out!r}"
+    )
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_creates_regular_file_outside_topdir(tmp_path: pathlib.Path) -> None:
+    """_Copy() with an absolute dest creates a real file at that absolute path.
+
+    AC-TEST-004: the absolute dest branch allows the copy to be placed outside
+    the workspace topdir. The resulting entry must be a regular file (not a
+    symlink) whose content matches the source.
+    """
+    worktree = tmp_path / "project"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+
+    src_file = worktree / "schema.json"
+    src_file.write_text('{"schema": true}\n', encoding="utf-8")
+
+    abs_dest = str(tmp_path / "absolute-copy" / "schema.json")
+
+    cf = _make_copyfile(worktree, "schema.json", topdir, abs_dest)
+    cf._Copy()
+
+    assert os.path.isfile(abs_dest), f"Expected a regular file at the absolute dest path {abs_dest!r} after _Copy()."
+    assert not os.path.islink(abs_dest), f"Expected {abs_dest!r} to be a real file, not a symlink."
+    resolved = pathlib.Path(abs_dest).read_text(encoding="utf-8")
+    assert resolved == '{"schema": true}\n', (
+        f"Expected file at absolute dest {abs_dest!r} to contain source content, but read: {resolved!r}"
+    )
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_is_actual_file_not_symlink(tmp_path: pathlib.Path) -> None:
+    """The entry at an absolute dest path is a regular file, not a symlink.
+
+    AC-TEST-004: confirms that the branch handling absolute dest paths still
+    copies bytes (via shutil.copy) rather than creating a symlink, unlike
+    linkfile's equivalent absolute-dest handling.
+    """
+    worktree = tmp_path / "project"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+
+    src_file = worktree / "README.md"
+    src_file.write_text("# project\n", encoding="utf-8")
+
+    abs_dest = str(tmp_path / "out" / "README.md")
+
+    cf = _make_copyfile(worktree, "README.md", topdir, abs_dest)
+    cf._Copy()
+
+    dest_stat = os.lstat(abs_dest)
+    assert stat.S_ISREG(dest_stat.st_mode), (
+        f"Expected lstat at {abs_dest!r} to show a regular file (mode {dest_stat.st_mode:#o}), "
+        f"but S_ISREG returned False."
+    )
+    assert not stat.S_ISLNK(dest_stat.st_mode), (
+        f"Expected {abs_dest!r} not to be a symbolic link (mode {dest_stat.st_mode:#o}), but S_ISLNK returned True."
+    )
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_creates_parent_dirs(tmp_path: pathlib.Path) -> None:
+    """_Copy() with an absolute dest creates intermediate parent directories.
+
+    AC-TEST-004: nested absolute destinations must have their parent
+    directories created automatically, matching linkfile's behavior.
+    """
+    worktree = tmp_path / "project"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+
+    src_file = worktree / "tool.conf"
+    src_file.write_text("setting=true\n", encoding="utf-8")
+
+    abs_dest = str(tmp_path / "deep" / "nested" / "dir" / "tool.conf")
+
+    cf = _make_copyfile(worktree, "tool.conf", topdir, abs_dest)
+    cf._Copy()
+
+    assert os.path.isfile(abs_dest), (
+        f"Expected a regular file at {abs_dest!r} after _Copy() with nested absolute dest, "
+        f"but the path does not exist or is not a file."
     )

@@ -23,8 +23,8 @@ The <linkfile> element documented attributes:
                      and absolute paths are rejected unless abs_ok=True (not
                      set for src).
   Required: dest  -- relative path from the workspace root where the symlink
-                     is created. Unlike <copyfile dest>, ABSOLUTE paths are
-                     ALLOWED for <linkfile dest> (abs_ok=True).
+                     is created. ABSOLUTE paths are also ALLOWED for
+                     <linkfile dest> (abs_ok=True), same as <copyfile dest>.
   Optional: exclude -- comma-separated list of immediate child names to omit
                      when linking a directory source. Stored as a frozenset
                      on the model; absent means an empty frozenset.
@@ -255,7 +255,7 @@ class TestLinkfileDestValidValues:
     """AC-TEST-001 -- valid values accepted for the dest attribute.
 
     dest is the path from the workspace root where the symlink is created.
-    Unlike <copyfile>, <linkfile> dest allows absolute paths (abs_ok=True).
+    <linkfile> dest allows absolute paths (abs_ok=True), same as <copyfile>.
     Relative paths are also accepted.
     """
 
@@ -280,7 +280,7 @@ class TestLinkfileDestValidValues:
         assert linkfile.dest == dest, f"Expected linkfile.dest={dest!r} but got: {linkfile.dest!r}"
 
     def test_dest_absolute_path_accepted(self, tmp_path: pathlib.Path) -> None:
-        """An absolute dest path is accepted for <linkfile> (unlike <copyfile>).
+        """An absolute dest path is accepted for <linkfile>.
 
         AC-TEST-001: abs_ok=True is set for linkfile dest validation per spec 17.1.
         """

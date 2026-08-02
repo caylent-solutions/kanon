@@ -28,7 +28,7 @@ import pytest
 
 from kanon_cli.core.clean import clean
 from kanon_cli.core.discover import find_kanonenv
-from kanon_cli.core.install import install
+from kanon_cli.core.install import compute_project_address, install
 from kanon_cli.repo import RepoCommandError
 from tests.functional.conftest import _run_kanon
 
@@ -1021,8 +1021,9 @@ class TestFullJourneyErrorRecovery:
                 )
 
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
-        partial_exists = (store_base / ".kanon-data" / "sources" / "good").is_dir() or (
-            store_base / ".kanon-data" / "sources" / "bad"
+        project_address = compute_project_address(kanonenv_path)
+        partial_exists = (store_base / ".kanon-data" / "sources" / project_address / "good").is_dir() or (
+            store_base / ".kanon-data" / "sources" / project_address / "bad"
         ).is_dir()
         assert partial_exists, "Some partial state (store .kanon-data/sources/) must exist after failed install"
 

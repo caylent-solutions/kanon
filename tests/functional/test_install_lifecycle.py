@@ -16,7 +16,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.commands.install import _run as _install_run
-from kanon_cli.core.install import install, resolve_workspace_base_dir
+from kanon_cli.core.install import compute_project_address, install, resolve_workspace_base_dir
 from tests.conftest import write_manifest_for_sync
 
 
@@ -67,7 +67,8 @@ class TestInstallLifecycle:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (store / ".kanon-data" / "sources" / "build").is_dir()
+        project_address = compute_project_address(kanonenv)
+        assert (store / ".kanon-data" / "sources" / project_address / "build").is_dir()
         assert (store / ".packages" / "pkg-a").is_symlink()
         assert not (store / ".gitignore").exists()
 

@@ -64,6 +64,7 @@ from tests.scenarios.conftest import (
     clone_as_bare,
     init_git_work_dir,
     kanon_install,
+    project_address_for,
     run_git,
     run_kanon,
     write_kanonenv,
@@ -191,7 +192,8 @@ def _run_ks(
         f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
     )
     store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
-    source_dir = store_base / ".kanon-data" / "sources" / "pep"
+    project_address = project_address_for(work_dir)
+    source_dir = store_base / ".kanon-data" / "sources" / project_address / "pep"
     assert source_dir.is_dir(), f"source dir missing: {source_dir}"
     manifest_result = run_kanon("repo", "manifest", "--revision-as-tag", cwd=source_dir)
     combined = manifest_result.stdout + manifest_result.stderr
@@ -375,7 +377,8 @@ class TestKS:
             f"stdout={install_result.stdout!r}\nstderr={install_result.stderr!r}"
         )
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
-        source_dir = store_base / ".kanon-data" / "sources" / "pep"
+        project_address = project_address_for(work_dir)
+        source_dir = store_base / ".kanon-data" / "sources" / project_address / "pep"
         assert source_dir.is_dir(), f"source dir missing: {source_dir}"
         manifest_result = run_kanon("repo", "manifest", "--revision-as-tag", cwd=source_dir)
         combined = manifest_result.stdout + manifest_result.stderr

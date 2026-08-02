@@ -24,7 +24,7 @@ import sys
 import pytest
 
 from kanon_cli.core.lockfile import read_lockfile
-from tests.scenarios.conftest import init_git_work_dir, run_git
+from tests.scenarios.conftest import init_git_work_dir, project_address_for, run_git
 
 
 def _git_out(args: list[str], cwd: pathlib.Path) -> str:
@@ -183,8 +183,10 @@ def test_branch_revision_pins_tip_and_replays_after_advance(tmp_path: pathlib.Pa
     assert replay.returncode == 0, replay.stderr
     assert _content_pin(ws / ".kanon.lock", "dep", "content.git") == locked
 
+    project_address = project_address_for(ws)
     checkout_head = _git_out(
-        ["rev-parse", "HEAD"], kanon_home / "store" / ".kanon-data" / "sources" / "dep" / "content"
+        ["rev-parse", "HEAD"],
+        kanon_home / "store" / ".kanon-data" / "sources" / project_address / "dep" / "content",
     )
     assert checkout_head == locked
 

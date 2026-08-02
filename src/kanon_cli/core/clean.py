@@ -142,11 +142,6 @@ def remove_kanon_home_store() -> None:
 def _print_remove_summary(packages_dir: pathlib.Path) -> None:
     """Print a summary of packages that will be removed.
 
-    ``packages_dir`` nests one level of per-project-address subdirectories
-    (``.packages/<project_address>/<pkg>``, see ``aggregate_symlinks`` in
-    ``kanon_cli.core.install``), so package names are collected from the
-    project-address subdirectories rather than from ``packages_dir`` itself.
-
     Args:
         packages_dir: Path to ``.packages/`` directory.
     """
@@ -154,13 +149,7 @@ def _print_remove_summary(packages_dir: pathlib.Path) -> None:
         print("kanon clean: no packages to remove.")
         return
 
-    pkgs = sorted(
-        pkg.name
-        for project_dir in packages_dir.iterdir()
-        if project_dir.is_dir() and not project_dir.name.startswith(".")
-        for pkg in project_dir.iterdir()
-        if not pkg.name.startswith(".")
-    )
+    pkgs = sorted(p.name for p in packages_dir.iterdir() if not p.name.startswith("."))
     if not pkgs:
         print("kanon clean: no packages to remove.")
         return

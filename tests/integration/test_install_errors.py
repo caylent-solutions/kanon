@@ -17,7 +17,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.cli import main
-from kanon_cli.core.install import resolve_workspace_base_dir
+from kanon_cli.core.install import compute_project_address, resolve_workspace_base_dir
 from kanon_cli.repo import RepoCommandError
 
 
@@ -87,6 +87,7 @@ def _valid_two_source_content(source_alpha: str = "alpha", source_bravo: str = "
 
 
 def _populate_source_package(
+    kanonenv: pathlib.Path,
     source_name: str,
     package_name: str,
 ) -> None:
@@ -95,14 +96,19 @@ def _populate_source_package(
     Simulates what repo sync would place on disk so aggregate_symlinks has real
     directories to process. In the 3.0.0 store model (spec Section 7.1 / FR-15)
     the source workspaces live under ``<KANON_HOME>/store/.kanon-data/``, so the
-    package is created there (KANON_HOME must be set by the caller).
+    package is created there (KANON_HOME must be set by the caller). Since
+    issue #96, that workspace is additionally keyed by the consumer project's
+    address, mirroring what install() computes internally.
 
     Args:
+        kanonenv: The .kanon file this package belongs to (used to compute the
+            project address the real install() would use).
         source_name: Name of the source that owns the package.
         package_name: Name of the package directory to create.
     """
     store = resolve_workspace_base_dir()
-    pkg_dir = store / ".kanon-data" / "sources" / source_name / ".packages" / package_name
+    project_address = compute_project_address(kanonenv)
+    pkg_dir = store / ".kanon-data" / "sources" / project_address / source_name / ".packages" / package_name
     pkg_dir.mkdir(parents=True, exist_ok=True)
     (pkg_dir / "README.md").write_text(f"# {package_name}\n")
 
@@ -424,8 +430,8 @@ class TestDuplicatePathCollisionExitsOne:
         this collision and exit 1, not silently overwrite the first symlink.
         """
         kanonenv = _write_kanonenv(tmp_path, _valid_two_source_content("alpha", "bravo"))
-        _populate_source_package("alpha", "shared-pkg")
-        _populate_source_package("bravo", "shared-pkg")
+        _populate_source_package(kanonenv, "alpha", "shared-pkg")
+        _populate_source_package(kanonenv, "bravo", "shared-pkg")
 
         with pytest.raises(SystemExit) as exc_info:
             with (
@@ -448,8 +454,8 @@ class TestDuplicatePathCollisionExitsOne:
         from the error message alone.
         """
         kanonenv = _write_kanonenv(tmp_path, _valid_two_source_content("alpha", "bravo"))
-        _populate_source_package("alpha", "collision-pkg")
-        _populate_source_package("bravo", "collision-pkg")
+        _populate_source_package(kanonenv, "alpha", "collision-pkg")
+        _populate_source_package(kanonenv, "bravo", "collision-pkg")
 
         with pytest.raises(SystemExit):
             with (
@@ -475,8 +481,8 @@ class TestDuplicatePathCollisionExitsOne:
         .kanon source definitions to reconcile.
         """
         kanonenv = _write_kanonenv(tmp_path, _valid_two_source_content("alpha", "bravo"))
-        _populate_source_package("alpha", "conflict-tool")
-        _populate_source_package("bravo", "conflict-tool")
+        _populate_source_package(kanonenv, "alpha", "conflict-tool")
+        _populate_source_package(kanonenv, "bravo", "conflict-tool")
 
         with pytest.raises(SystemExit):
             with (
@@ -501,8 +507,8 @@ class TestDuplicatePathCollisionExitsOne:
         output only.
         """
         kanonenv = _write_kanonenv(tmp_path, _valid_two_source_content("alpha", "bravo"))
-        _populate_source_package("alpha", "channel-test-pkg")
-        _populate_source_package("bravo", "channel-test-pkg")
+        _populate_source_package(kanonenv, "alpha", "channel-test-pkg")
+        _populate_source_package(kanonenv, "bravo", "channel-test-pkg")
 
         with pytest.raises(SystemExit):
             with (
@@ -540,8 +546,8 @@ class TestDuplicatePathCollisionExitsOne:
         regardless of the specific package name.
         """
         kanonenv = _write_kanonenv(tmp_path, _valid_two_source_content("alpha", "bravo"))
-        _populate_source_package("alpha", colliding_pkg)
-        _populate_source_package("bravo", colliding_pkg)
+        _populate_source_package(kanonenv, "alpha", colliding_pkg)
+        _populate_source_package(kanonenv, "bravo", colliding_pkg)
 
         with pytest.raises(SystemExit) as exc_info:
             with (

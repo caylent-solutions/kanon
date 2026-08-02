@@ -46,6 +46,7 @@ from tests.scenarios.conftest import (
     init_git_work_dir,
     kanon_install,
     make_plain_repo,
+    project_address_for,
     run_git,
     run_kanon,
     write_kanonenv,
@@ -180,16 +181,18 @@ def _run_rx_scenario(
     )
 
 
-def _resolved_tag() -> str:
+def _resolved_tag(work_dir: pathlib.Path) -> str:
     """Run ``kanon repo manifest --revision-as-tag`` in the synced source dir.
 
     Returns stdout so callers can assert on the ``refs/tags/<tag>`` fragment.
 
     The synced source dir now lives under the shared store
-    (``<KANON_HOME>/store``), not beside the project ``.kanon`` in *work_dir*.
+    (``<KANON_HOME>/store``), keyed by ``work_dir``'s project address, not
+    beside the project ``.kanon`` in *work_dir* itself.
     """
     store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
-    source_dir = store_base / ".kanon-data" / "sources" / "pep"
+    project_address = project_address_for(work_dir)
+    source_dir = store_base / ".kanon-data" / "sources" / project_address / "pep"
     result = run_kanon("repo", "manifest", "--revision-as-tag", cwd=source_dir)
     return result.stdout
 
@@ -221,7 +224,7 @@ class TestRX:
             f"stderr={install_result.stderr!r}"
         )
 
-        manifest_output = _resolved_tag()
+        manifest_output = _resolved_tag(work_dir)
         expected_ref = f"refs/tags/{expected_tag}"
         assert expected_ref in manifest_output, (
             f"{scenario_id}: expected {expected_ref!r} not found in "

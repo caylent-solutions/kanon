@@ -183,7 +183,7 @@ class TestSymlinkAggregation:
         build_pkg.mkdir(parents=True)
         (build_pkg / "test-lint").mkdir()
         aggregate_symlinks(["build"], tmp_path, _PROJECT_ADDRESS)
-        link = tmp_path / ".packages" / _PROJECT_ADDRESS / "test-lint"
+        link = tmp_path / ".packages" / "test-lint"
         assert link.is_symlink()
 
     def test_collision_raises_value_error(self, tmp_path: pathlib.Path) -> None:
@@ -1010,7 +1010,7 @@ class TestAggregateSymlinksUsesSymlink:
 
         aggregate_symlinks(["build"], tmp_path, _PROJECT_ADDRESS)
 
-        link = tmp_path / ".packages" / _PROJECT_ADDRESS / "my-tool"
+        link = tmp_path / ".packages" / "my-tool"
         assert link.is_symlink(), f"Expected symlink at {link}"
         assert link.is_dir(), f"Expected symlink to resolve to a directory at {link}"
         assert (link / "tool.sh").is_file(), "Expected tool.sh accessible through the link"

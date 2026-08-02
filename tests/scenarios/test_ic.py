@@ -22,6 +22,7 @@ from tests.scenarios.conftest import (
     kanon_clean,
     kanon_install,
     make_plain_repo,
+    project_address_for,
 )
 
 
@@ -105,17 +106,18 @@ def _assert_install_pass_criteria(work_dir: pathlib.Path, store_base: pathlib.Pa
         f"kanon install exited {result.returncode}\nstdout={result.stdout!r}\nstderr={result.stderr!r}"
     )
     assert "kanon install: done" in result.stdout, f"'kanon install: done' not in stdout: {result.stdout!r}"
-    assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
-        ".kanon-data/sources/primary/ directory missing under store"
+    project_address = project_address_for(work_dir)
+    assert (store_base / ".kanon-data" / "sources" / project_address / "primary").is_dir(), (
+        ".kanon-data/sources/<project_address>/primary/ directory missing under store"
     )
     assert (store_base / ".packages").is_dir(), ".packages/ directory missing under store"
     pkg_alpha_link = store_base / ".packages" / "pkg-alpha"
     assert pkg_alpha_link.is_symlink(), ".packages/pkg-alpha is not a symlink"
     link_target = os.readlink(str(pkg_alpha_link))
-    assert ".kanon-data/sources/primary" in link_target or (
-        store_base / ".kanon-data" / "sources" / "primary"
+    assert f".kanon-data/sources/{project_address}/primary" in link_target or (
+        store_base / ".kanon-data" / "sources" / project_address / "primary"
     ).as_posix() in os.path.realpath(str(pkg_alpha_link)), (
-        f"symlink target does not reference .kanon-data/sources/primary: {link_target!r}"
+        f"symlink target does not reference .kanon-data/sources/<project_address>/primary: {link_target!r}"
     )
     assert not (store_base / ".gitignore").exists(), (
         ".gitignore must not be written for a store outside a git working tree"

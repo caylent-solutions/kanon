@@ -27,6 +27,7 @@ from typing import Iterable
 
 import pytest
 
+from kanon_cli.core.install import compute_project_address
 from tests.conftest import _isolation_env, strip_subprocess_coverage_env
 
 
@@ -315,6 +316,17 @@ def write_kanonenv(
     target = target_dir / ".kanon"
     target.write_text("\n".join(lines) + "\n")
     return target
+
+
+def project_address_for(working_dir: pathlib.Path) -> str:
+    """Return the store project-address for the ``.kanon`` file in ``working_dir``.
+
+    Mirrors what ``kanon install`` computes internally (``compute_project_address``)
+    so scenario tests can assert on the resulting
+    ``.kanon-data/sources/<project_address>/<name>`` and
+    ``.packages/<project_address>/<pkg>`` paths under the shared store.
+    """
+    return compute_project_address(working_dir / ".kanon")
 
 
 def kanon_install(working_dir: pathlib.Path, **kwargs) -> subprocess.CompletedProcess:

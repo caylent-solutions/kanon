@@ -136,7 +136,7 @@ class TestInstallCoreLogic:
         src_pkg.mkdir(parents=True)
         (src_pkg / "my-tool").mkdir()
         aggregate_symlinks(["build"], tmp_path, _PROJECT_ADDRESS)
-        assert (tmp_path / ".packages" / _PROJECT_ADDRESS / "my-tool").is_symlink()
+        assert (tmp_path / ".packages" / "my-tool").is_symlink()
 
     def test_aggregate_symlinks_collision_raises_value_error(self, tmp_path: pathlib.Path) -> None:
         for src in ("a", "b"):

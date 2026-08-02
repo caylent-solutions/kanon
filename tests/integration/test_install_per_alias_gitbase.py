@@ -25,7 +25,7 @@ import subprocess
 import pytest
 
 from kanon_cli.constants import KANON_ALLOW_INSECURE_REMOTES
-from kanon_cli.core.install import build_source_envsubst_vars, install
+from kanon_cli.core.install import build_source_envsubst_vars, compute_project_address, install
 
 
 _GIT_USER_NAME = "Per Alias Gitbase Test"
@@ -74,15 +74,16 @@ def _make_manifest_bare_repo(base: pathlib.Path, slug: str) -> pathlib.Path:
     return bare_dir
 
 
-def _substituted_manifest_path(alias: str) -> pathlib.Path:
+def _substituted_manifest_path(kanonenv: pathlib.Path, alias: str) -> pathlib.Path:
     """Return the post-envsubst manifest path under the isolated KANON_HOME store.
 
     The ``_isolate_kanon_home`` autouse fixture points KANON_HOME at a fresh
     per-test temp dir; ``install()`` writes source artifacts under
-    ``<KANON_HOME>/store/.kanon-data/sources/<alias>/``.
+    ``<KANON_HOME>/store/.kanon-data/sources/<project_address>/<alias>/``.
     """
     store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
-    return store_base / ".kanon-data" / "sources" / alias / ".repo" / "manifests" / _MANIFEST_NAME
+    project_address = compute_project_address(kanonenv)
+    return store_base / ".kanon-data" / "sources" / project_address / alias / ".repo" / "manifests" / _MANIFEST_NAME
 
 
 @pytest.fixture
@@ -134,7 +135,7 @@ class TestPerAliasGitbaseDrivesEnvsubst:
 
         install(kanonenv.resolve(), lock_file_path=workspace / ".kanon.lock")
 
-        manifest_text = _substituted_manifest_path("cpk").read_text(encoding="utf-8")
+        manifest_text = _substituted_manifest_path(kanonenv, "cpk").read_text(encoding="utf-8")
         assert "${GITBASE}" not in manifest_text, (
             f"${{GITBASE}} must be substituted using the per-alias gitbase; manifest was: {manifest_text!r}"
         )
@@ -182,8 +183,8 @@ class TestPerAliasGitbaseDrivesEnvsubst:
 
         install(kanonenv.resolve(), lock_file_path=workspace / ".kanon.lock")
 
-        alpha_text = _substituted_manifest_path("alpha").read_text(encoding="utf-8")
-        beta_text = _substituted_manifest_path("beta").read_text(encoding="utf-8")
+        alpha_text = _substituted_manifest_path(kanonenv, "alpha").read_text(encoding="utf-8")
+        beta_text = _substituted_manifest_path(kanonenv, "beta").read_text(encoding="utf-8")
 
         assert f'fetch="{org_alpha}/repos"' in alpha_text, f"alpha manifest must use {org_alpha!r}; got {alpha_text!r}"
         assert f'fetch="{org_beta}/repos"' in beta_text, f"beta manifest must use {org_beta!r}; got {beta_text!r}"

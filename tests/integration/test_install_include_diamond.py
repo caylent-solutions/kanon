@@ -23,7 +23,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.core.install import install, resolve_workspace_base_dir
+from kanon_cli.core.install import compute_project_address, install, resolve_workspace_base_dir
 from kanon_cli.core.lockfile import read_lockfile
 
 
@@ -115,7 +115,8 @@ class TestInstallIncludeDiamond:
         monkeypatch.setenv("KANON_HOME", str(kanon_home))
         store = resolve_workspace_base_dir()
 
-        source_dir = store / ".kanon-data" / "sources" / "test"
+        project_address = compute_project_address(kanonenv)
+        source_dir = store / ".kanon-data" / "sources" / project_address / "test"
         manifest_repo = source_dir / ".repo" / "manifests"
         manifest_repo.mkdir(parents=True, exist_ok=True)
 

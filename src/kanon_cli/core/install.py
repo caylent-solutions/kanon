@@ -1960,21 +1960,27 @@ def aggregate_symlinks(
     base_dir: pathlib.Path,
     project_address: str,
 ) -> dict[str, str]:
-    """Aggregate packages from all sources into ``.packages/<project_address>/``.
+    """Aggregate packages from all sources into ``.packages/``.
 
     For each ``.kanon-data/sources/<project_address>/<name>/.packages/*``,
-    creates a symlink in the project's ``.packages/<project_address>/``
-    directory. Detects collisions when two sources produce the same package
-    name.
+    creates a symlink in the top-level ``.packages/`` directory. Detects
+    collisions when two sources produce the same package name.
+
+    Unlike the per-source ``.repo`` workspace, this aggregation farm is NOT
+    keyed by project: it is write-only bookkeeping consumed only within this
+    same install call (the collision check below, and the human-readable
+    install summary) -- nothing reads it back across installs or across
+    projects, so two projects sharing a package name here is cosmetic (last
+    write wins in the shared farm), never a data-loss bug like the source
+    workspace was.
 
     Args:
         source_names: Ordered list of source names.
         base_dir: The resolved store base directory (``<KANON_HOME>/store``).
         project_address: The consumer project's stable address from
-            ``compute_project_address``. Keys both the read side (the source
-            workspaces from ``create_source_dirs``) and the write side (the
-            aggregated ``.packages/`` symlink tree) so two projects never
-            collide on a shared package name.
+            ``compute_project_address``. Used only to locate this project's
+            keyed source workspaces (the read side); the aggregated
+            ``.packages/`` write side is intentionally left unkeyed.
 
     Returns:
         Dict mapping package name to source name.
@@ -1982,8 +1988,8 @@ def aggregate_symlinks(
     Raises:
         ValueError: If two sources produce the same package name.
     """
-    packages_dir = base_dir / ".packages" / project_address
-    packages_dir.mkdir(parents=True, exist_ok=True)
+    packages_dir = base_dir / ".packages"
+    packages_dir.mkdir(exist_ok=True)
 
     package_owners: dict[str, str] = {}
 

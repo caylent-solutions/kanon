@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.clean import clean
-from kanon_cli.core.install import install
+from kanon_cli.core.install import compute_project_address, install
 
 
 def _store_base() -> Path:
@@ -115,9 +115,10 @@ class TestInstallCleanRoundtrip:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         store_base = _store_base()
+        project_address = compute_project_address(kanonenv)
         assert (store_base / ".packages" / "tool-a").is_symlink(), "install() should create a symlink in .packages/"
-        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
-            "install() should create .kanon-data/sources/primary/"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "primary").is_dir(), (
+            "install() should create .kanon-data/sources/<project_address>/primary/"
         )
 
         clean(kanonenv)

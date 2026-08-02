@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kanon_cli.core.install import install
+from kanon_cli.core.install import compute_project_address, install
 
 
 def _store_base() -> Path:
@@ -105,7 +105,8 @@ class TestInstallWithoutPipx:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert (_store_base() / ".kanon-data" / "sources" / "primary").is_dir()
+        project_address = compute_project_address(kanonenv)
+        assert (_store_base() / ".kanon-data" / "sources" / project_address / "primary").is_dir()
 
 
 @pytest.mark.integration
@@ -132,7 +133,8 @@ class TestInstallWithoutRepoOnPath:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         store_base = _store_base()
-        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir()
+        project_address = compute_project_address(kanonenv)
+        assert (store_base / ".kanon-data" / "sources" / project_address / "primary").is_dir()
         assert not (store_base / ".gitignore").exists(), "install() must not write .gitignore under a non-git store"
 
 
@@ -209,7 +211,8 @@ class TestInstallSubdirectoryAutoDiscovery:
         ):
             install(discovered, lock_file_path=discovered.parent / ".kanon.lock")
 
-        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
+        project_address = compute_project_address(discovered)
+        assert (store_base / ".kanon-data" / "sources" / project_address / "primary").is_dir(), (
             "install() should create .kanon-data/ under the shared store"
         )
         assert not (store_base / ".gitignore").exists(), "install() must not write .gitignore under a non-git store"
@@ -367,7 +370,8 @@ class TestInstallRelativeKanonPath:
         )
 
         store_base = Path(env["KANON_HOME"]) / "store"
-        source_dir = store_base / ".kanon-data" / "sources" / "primary" / ".repo"
+        project_address = compute_project_address(workspace / ".kanon")
+        source_dir = store_base / ".kanon-data" / "sources" / project_address / "primary" / ".repo"
         assert source_dir.is_dir(), (
             f"Expected {source_dir} to exist after install; contents of store base: "
             f"{sorted(p.name for p in store_base.iterdir()) if store_base.exists() else 'MISSING'!r}"

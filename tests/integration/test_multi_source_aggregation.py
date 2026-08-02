@@ -6,9 +6,11 @@ and the CD-01/CD-02 collision detection scenarios from Category 6.
 The aggregate_symlinks() function at kanon_cli.core.install:
 - Accepts an ordered list of source names, a base directory, and a
   per-project address.
-- Creates symlinks in .packages/<project_address>/ pointing into
+- Creates symlinks in .packages/ pointing into
   .kanon-data/sources/<project_address>/<name>/.packages/<pkg>/ for each
-  package.
+  package. Only the source-workspace read side is keyed by project address;
+  the aggregated .packages/ destination is intentionally left unkeyed (see
+  aggregate_symlinks's docstring).
 - Returns a dict mapping package name to source name.
 - Raises ValueError (not SystemExit) on collision when two sources
   produce the same package name.
@@ -82,8 +84,8 @@ class TestMS01TwoSourcesDistinctPackages:
 
         aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
-        alpha_link = tmp_path / ".packages" / _PROJECT_ADDRESS / "pkg-alpha"
-        bravo_link = tmp_path / ".packages" / _PROJECT_ADDRESS / "pkg-bravo"
+        alpha_link = tmp_path / ".packages" / "pkg-alpha"
+        bravo_link = tmp_path / ".packages" / "pkg-bravo"
         assert alpha_link.is_symlink(), f"pkg-alpha must be a symlink in .packages/ at {alpha_link}; it does not exist"
         assert bravo_link.is_symlink(), f"pkg-bravo must be a symlink in .packages/ at {bravo_link}; it does not exist"
 
@@ -98,7 +100,7 @@ class TestMS01TwoSourcesDistinctPackages:
 
         aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
-        alpha_link = tmp_path / ".packages" / _PROJECT_ADDRESS / "pkg-alpha"
+        alpha_link = tmp_path / ".packages" / "pkg-alpha"
         assert alpha_link.resolve() == alpha_pkg.resolve(), (
             f"pkg-alpha symlink must resolve to alpha workspace; "
             f"expected {alpha_pkg.resolve()}, got {alpha_link.resolve()}"
@@ -352,7 +354,7 @@ class TestAggregationStabilityAcrossReRuns:
         aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
         for pkg_name in ("pkg-alpha", "pkg-bravo"):
-            link = tmp_path / ".packages" / _PROJECT_ADDRESS / pkg_name
+            link = tmp_path / ".packages" / pkg_name
             assert link.is_symlink(), f"{pkg_name} must remain a symlink after second run; found at {link}"
             assert link.resolve().exists(), f"{pkg_name} symlink must resolve to an existing path; got {link.resolve()}"
 

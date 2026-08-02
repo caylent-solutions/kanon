@@ -15,6 +15,7 @@ from tests.scenarios.conftest import (
     kanon_clean,
     kanon_install,
     make_plain_repo,
+    project_address_for,
     write_kanonenv,
 )
 
@@ -114,19 +115,22 @@ class TestLF:
         pkg_linked_link = store_base / ".packages" / "pkg-linked"
         assert pkg_linked_link.is_symlink(), ".packages/pkg-linked is not a symlink"
 
-        sources_linked = store_base / ".kanon-data" / "sources" / "linked"
-        assert sources_linked.is_dir(), ".kanon-data/sources/linked/ directory missing"
+        project_address = project_address_for(work_dir)
+        sources_linked = store_base / ".kanon-data" / "sources" / project_address / "linked"
+        assert sources_linked.is_dir(), ".kanon-data/sources/<project_address>/linked/ directory missing"
 
         app_config_link = sources_linked / "app-config.json"
-        assert app_config_link.is_symlink(), ".kanon-data/sources/linked/app-config.json is not a symlink"
+        assert app_config_link.is_symlink(), (
+            ".kanon-data/sources/<project_address>/linked/app-config.json is not a symlink"
+        )
         assert app_config_link.resolve().exists(), (
-            ".kanon-data/sources/linked/app-config.json symlink does not resolve to a valid file"
+            ".kanon-data/sources/<project_address>/linked/app-config.json symlink does not resolve to a valid file"
         )
 
         lint_toml_link = sources_linked / "lint.toml"
-        assert lint_toml_link.is_symlink(), ".kanon-data/sources/linked/lint.toml is not a symlink"
+        assert lint_toml_link.is_symlink(), ".kanon-data/sources/<project_address>/linked/lint.toml is not a symlink"
         assert lint_toml_link.resolve().exists(), (
-            ".kanon-data/sources/linked/lint.toml symlink does not resolve to a valid file"
+            ".kanon-data/sources/<project_address>/linked/lint.toml symlink does not resolve to a valid file"
         )
 
         kanon_clean(work_dir)

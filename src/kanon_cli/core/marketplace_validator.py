@@ -1,8 +1,15 @@
 """Validate marketplace XML manifest files.
 
 Checks:
-  - All <linkfile dest> attributes use the ${CLAUDE_MARKETPLACES_DIR}
-    variable prefix, rejecting hard-coded or relative paths.
+  - Every <linkfile dest> resolves inside the consumer workspace: an absolute
+    path, an empty dest, and a '..' traversal component are rejected. A dest
+    rooted at ${CLAUDE_MARKETPLACES_DIR}/, at any other ${VAR}, or at a plain
+    workspace-relative path is accepted -- an entry may ship non-plugin content
+    (shared rules, lint config, git hooks) alongside a Claude plugin.
+  - An entry whose <catalog-metadata><type> is 'claude-marketplace' lands at
+    least one <linkfile> under ${CLAUDE_MARKETPLACES_DIR}/, so an entry that
+    declares itself a marketplace actually registers one. Entries of any other
+    type (or none) carry no such requirement.
   - All <include> chains are unbroken (every referenced file exists).
   - All flattened project path names are unique across manifests.
   - All <project revision> attributes are pinnable refs: an exact existing git
@@ -27,6 +34,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from kanon_cli.constants import (
+    CATALOG_TYPE_CLAUDE_MARKETPLACE,
     GIT_RETRY_COUNT_DEFAULT,
     GIT_RETRY_COUNT_ENV_VAR,
     KANON_GIT_LS_REMOTE_TIMEOUT,
@@ -47,34 +55,168 @@ LsRemoteRunner = Callable[[str, str], tuple[int, str, str]]
 _FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
-def validate_linkfile_dest(xml_path: Path) -> list[str]:
-    """Validate all linkfile dest attributes in a manifest XML file.
+def read_entry_type(xml_path: Path) -> str | None:
+    """Return the entry's ``<catalog-metadata><type>`` text, or None.
 
-    Checks that every <linkfile> element's dest attribute starts with
-    ${CLAUDE_MARKETPLACES_DIR}/. Returns a list of error messages for
-    any violations found. An empty list means validation passed.
+    A lightweight, side-effect-free read of the one metadata field this module
+    needs. It deliberately does NOT reuse
+    :func:`kanon_cli.core.metadata._parse_catalog_metadata`: that parser raises
+    on any missing REQUIRED field and warns on stderr for missing RECOMMENDED
+    ones, which is ``kanon validate metadata``'s job (spec Section 3.5
+    soft-spot 1), not this module's. A metadata problem must be reported once,
+    by the command that owns it -- never as a spurious linkfile error here.
 
     Args:
-        xml_path: Path to the XML manifest file to validate.
+        xml_path: Path to the catalog entry manifest.
 
     Returns:
-        List of error messages. Empty if all dest attributes are valid.
-        Each error identifies the file, project name, and invalid dest.
+        The stripped ``<type>`` text, or None when the file is unparseable, has
+        no ``<catalog-metadata>`` block, or declares no non-empty ``<type>``.
+    """
+    try:
+        root = ET.parse(xml_path).getroot()
+    except ET.ParseError:
+        return None
+
+    for block in root.findall("catalog-metadata"):
+        type_el = block.find("type")
+        if type_el is not None and type_el.text and type_el.text.strip():
+            return type_el.text.strip()
+    return None
+
+
+def _dest_containment_error(dest: str) -> str | None:
+    """Return why *dest* escapes the consumer workspace, or None when it is safe.
+
+    A ``<linkfile dest>`` names a symlink created relative to the top of the
+    consumer tree. The property worth enforcing is containment -- the link must
+    land inside the workspace -- not which specific variable roots it. Three
+    shapes escape and are rejected:
+
+    - An empty dest (nothing to create).
+    - An absolute path (``/etc/...``), which writes outside the workspace
+      regardless of where kanon runs.
+    - Any ``..`` path component, which climbs out of the workspace.
+
+    A dest rooted at ``${CLAUDE_MARKETPLACES_DIR}/``, at another ``${VAR}``, or
+    at a plain relative path is contained and accepted. A ``${VAR}`` root is
+    resolved from the consumer's own ``.kanon``, so the consumer -- not the
+    catalog author -- chooses where it lands.
+
+    Args:
+        dest: The raw ``dest`` attribute value, before variable expansion.
+
+    Returns:
+        A short reason string when *dest* escapes; None when it is safe.
+    """
+    if not dest:
+        return "dest is empty"
+    if dest.startswith("/"):
+        return "dest is an absolute path; it must be relative to the consumer workspace root"
+    if ".." in dest.split("/"):
+        return "dest contains a '..' component that escapes the consumer workspace"
+    return None
+
+
+def _collect_manifest_chain(xml_path: Path, repo_root: Path) -> list[Path]:
+    """Return *xml_path* plus every manifest reachable through ``<include>``.
+
+    Depth-first and cycle-safe, mirroring the traversal in
+    :func:`validate_include_chain`. Linkfile checks must see the same set of
+    ``<project>`` elements that ``kanon install`` acts on, and install resolves
+    the full include chain -- so a ``<project>`` moved into an included
+    ``packages.xml`` is validated exactly like one written inline. Missing
+    includes are skipped here; :func:`validate_include_chain` owns that error.
+
+    Args:
+        xml_path: The catalog entry manifest to start from.
+        repo_root: Repository root used to resolve ``<include name>`` paths.
+
+    Returns:
+        The entry manifest followed by each reachable include, in visit order.
+    """
+    chain: list[Path] = []
+    visited: set[str] = set()
+
+    def _walk(current: Path) -> None:
+        resolved = str(current.resolve())
+        if resolved in visited:
+            return
+        visited.add(resolved)
+        chain.append(current)
+        try:
+            root = ET.parse(current).getroot()
+        except ET.ParseError:
+            return
+        for include in root.findall("include"):
+            name = include.get("name")
+            if not name:
+                continue
+            include_path = repo_root / name
+            if include_path.exists():
+                _walk(include_path)
+
+    _walk(xml_path)
+    return chain
+
+
+def validate_linkfile_dest(xml_path: Path, repo_root: Path) -> list[str]:
+    """Validate the ``<linkfile dest>`` attributes reachable from a catalog entry.
+
+    Two rules, applied across the entry and its whole ``<include>`` chain:
+
+    1. **Containment (every entry).** Each dest must stay inside the consumer
+       workspace -- see :func:`_dest_containment_error`. A dest rooted at
+       ``${CLAUDE_MARKETPLACES_DIR}/``, at another ``${VAR}``, or at a plain
+       relative path all pass. This is what the old blanket
+       ``${CLAUDE_MARKETPLACES_DIR}/`` prefix requirement was standing in for,
+       and it no longer forbids an entry from shipping non-plugin content
+       (shared rules, lint config, git hooks) next to a Claude plugin.
+
+    2. **Marketplace entries register a marketplace.** When the entry declares
+       ``<catalog-metadata><type>claude-marketplace</type>`` -- the same field
+       ``kanon add`` reads to set ``KANON_SOURCE_<alias>_MARKETPLACE`` -- at
+       least one dest must sit under ``${CLAUDE_MARKETPLACES_DIR}/``. An entry
+       of any other type, or with no ``<type>``, carries no such requirement.
+
+    Args:
+        xml_path: Path to the catalog entry manifest.
+        repo_root: Repository root used to resolve ``<include name>`` paths.
+
+    Returns:
+        List of error messages, each naming the file, project, and dest.
+        Empty when the entry passes.
     """
     errors: list[str] = []
-    tree = ET.parse(xml_path)
-    root = tree.getroot()
+    is_marketplace = read_entry_type(xml_path) == CATALOG_TYPE_CLAUDE_MARKETPLACE
+    marketplace_dest_count = 0
 
-    for project in root.findall("project"):
-        project_name = project.get("name", "<unknown>")
-        for linkfile in project.findall("linkfile"):
-            dest = linkfile.get("dest", "")
-            if not dest.startswith(MARKETPLACE_DIR_PREFIX):
-                errors.append(
-                    f"{xml_path}: project '{project_name}' has "
-                    f"invalid linkfile dest='{dest}' -- "
-                    f"must start with {MARKETPLACE_DIR_PREFIX}"
-                )
+    for manifest_path in _collect_manifest_chain(xml_path, repo_root):
+        try:
+            root = ET.parse(manifest_path).getroot()
+        except ET.ParseError:
+            continue
+        for project in root.findall("project"):
+            project_name = project.get("name", "<unknown>")
+            for linkfile in project.findall("linkfile"):
+                dest = linkfile.get("dest", "")
+                if dest.startswith(MARKETPLACE_DIR_PREFIX):
+                    marketplace_dest_count += 1
+                    continue
+                reason = _dest_containment_error(dest)
+                if reason is not None:
+                    errors.append(
+                        f"{manifest_path}: project '{project_name}' has invalid linkfile dest='{dest}' -- {reason}"
+                    )
+
+    if is_marketplace and marketplace_dest_count == 0:
+        errors.append(
+            f"{xml_path}: entry declares "
+            f"<catalog-metadata><type>{CATALOG_TYPE_CLAUDE_MARKETPLACE}</type> "
+            f"but no <linkfile dest> targets {MARKETPLACE_DIR_PREFIX} -- "
+            f"such an entry registers no marketplace. Add a marketplace linkfile, "
+            f"or change <type> to a non-marketplace value."
+        )
 
     return errors
 
@@ -593,7 +735,9 @@ def validate_marketplace(
     """Validate all marketplace XML files found under repo-specs/.
 
     Scans for catalog entry manifests (``*.xml`` with a ``<catalog-metadata>``
-    block) and validates each one for linkfile dest attributes, include chain
+    block) and validates each one for linkfile dest containment (plus the
+    at-least-one-marketplace-dest rule for ``claude-marketplace`` entries),
+    include chain
     integrity, project path uniqueness, pinnable ``<project revision>`` format
     (a deep-path tag, a ``refs/heads/<name>`` branch ref, or a 40-hex SHA;
     covering revisions inherited from ``<default revision>``), and two-tier +
@@ -626,7 +770,7 @@ def validate_marketplace(
     for xml_file in marketplace_files:
         rel_path = xml_file.relative_to(repo_root)
         print(f"Validating {rel_path}...")
-        all_errors.extend(validate_linkfile_dest(xml_file))
+        all_errors.extend(validate_linkfile_dest(xml_file, repo_root))
         all_errors.extend(validate_include_chain(xml_file, repo_root))
 
     all_errors.extend(validate_name_uniqueness(marketplace_files))

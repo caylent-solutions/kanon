@@ -2,33 +2,37 @@ SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-dev lint lint-check lint-no-comments lint-markdown format format-check check test test-unit test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
+.PHONY: help install install-dev lint lint-check lint-no-comments lint-markdown format format-check check test test-unit test-unit-cov test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
+
+# Minimum total coverage enforced by `test-unit-cov`. Overridable so the
+# threshold is not hard-coded at its only call site.
+COVERAGE_MIN ?= 90
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install runtime dependencies
-	pip install -r requirements.txt
+install: ## Install the project and its runtime dependencies from uv.lock
+	uv sync --locked --no-dev
 
-install-dev: ## Install development dependencies (editable + ruff + pytest)
-	pip install -r requirements-dev.txt
+install-dev: ## Install development dependencies from uv.lock (editable project + dev tool group)
+	uv sync --locked --all-groups
 
 lint: lint-check format-check ## Run all lint checks (ruff check + ruff format --check)
 
 lint-check: lint-no-comments ## Lint Python files (ruff check + no-comments gate)
-	ruff check .
+	uv run ruff check .
 
 lint-no-comments: ## Forbid '#' comments in all first-party kanon Python (allows line-1 shebang + PEP 263 encoding cookie)
-	python tools/lint/check_no_comments.py
+	uv run python tools/lint/check_no_comments.py
 
 lint-markdown: ## Lint kanon's own Markdown under docs/ and README.md (pymarkdownlnt, config in [tool.pymarkdown]: MD013 off, MD024 siblings_only; vendored docs/repo/ excluded)
 	uv run pymarkdownlnt scan -r -e 'docs/repo/*' docs/ README.md
 
 format: ## Auto-format Python files (ruff format)
-	ruff format .
+	uv run ruff format .
 
 format-check: ## Verify formatting without modifying files (ruff format --check)
-	ruff format --check .
+	uv run ruff format --check .
 
 check: lint ## Run all static analysis checks
 
@@ -39,6 +43,9 @@ test: ## Run full test suite with coverage
 
 test-unit: ## Run unit tests only
 	uv run pytest -n auto --dist loadscope -m "unit"
+
+test-unit-cov: ## Run unit tests with coverage and enforce the COVERAGE_MIN gate (CI's unit job)
+	uv run pytest -n auto --dist loadscope -m "unit" --cov=kanon_cli --cov-report=term-missing --cov-fail-under=$(COVERAGE_MIN)
 
 test-integration: ## Run integration tests only
 	uv run pytest -n auto --dist loadscope -m "integration"
@@ -67,11 +74,11 @@ clean: ## Remove build artifacts and caches
 	find . -depth -type f -name '*.pyc' -delete
 
 build: ## Build the package
-	python -m build
+	uv run python -m build
 
 distcheck: ## Check the built distribution
-	twine check dist/*
-	python scripts/check_archive_no_duplicates.py dist/
+	uv run twine check dist/*
+	uv run python scripts/check_archive_no_duplicates.py dist/
 
 publish: clean build distcheck ## Build package (publishing is automated via CI pipeline)
 
@@ -80,12 +87,12 @@ coverage-json: ## Generate JSON coverage report
 	@echo "Coverage report generated in coverage.json"
 
 pre-commit-check: ## Run all pre-commit hooks
-	pre-commit run --all-files
+	uv run pre-commit run --all-files
 
 install-hooks: ## Install git hooks for pre-commit and pre-push
 	@echo "Installing git hooks..."
 	@git config --unset-all core.hooksPath || true
-	@pre-commit install || echo "pre-commit not found, skipping pre-commit installation"
+	@uv run pre-commit install || echo "pre-commit not found, skipping pre-commit installation"
 	@git config core.hooksPath git-hooks
 	@chmod +x git-hooks/pre-commit git-hooks/pre-push
 	@echo "Git hooks installed successfully!"

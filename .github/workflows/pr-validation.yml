@@ -130,17 +130,14 @@ jobs:
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
-      - name: Run unit tests with 90% coverage gate
+      - name: Run unit tests with coverage gate
         shell: bash
-        run: |
-          python -m pytest -n auto --dist loadscope -m "unit" --cov=kanon_cli --cov-report=term-missing
-          coverage json
-          coverage_percent=$(python -c "import json; f=open('coverage.json'); print(json.load(f)['totals']['percent_covered'])")
-          echo "Coverage: $coverage_percent%"
-          if (( $(echo "$coverage_percent < 90" | bc -l) )); then
-            echo "Error: Code coverage is below 90% threshold ($coverage_percent%)"
-            exit 1
-          fi
+        # Delegates to the Make target so the threshold lives in one place
+        # (Makefile: COVERAGE_MIN) instead of being duplicated across both
+        # workflow files, and so the run resolves from uv.lock like every other
+        # job. pytest-cov's own --cov-fail-under replaces the hand-rolled
+        # coverage-json + bc comparison.
+        run: make test-unit-cov
 
   integration-tests-linux:
     name: Integration tests (Linux)
@@ -157,7 +154,7 @@ jobs:
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run integration tests
         shell: bash
-        run: python -m pytest -n auto --dist loadscope -m "integration"
+        run: make test-integration
 
   functional-tests-linux:
     name: Functional tests (Linux)
@@ -174,7 +171,7 @@ jobs:
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run functional tests
         shell: bash
-        run: SMOKE_TEST_TIMEOUT=300 python -m pytest -n auto --dist loadscope -m "functional"
+        run: make test-functional
 
   scenario-tests-linux:
     name: Scenario tests (Linux, docs/integration-testing.md)

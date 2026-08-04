@@ -1393,6 +1393,12 @@ git config --global --get-regexp url
 make install-dev
 ```
 
+Installs the project plus the dev toolchain from `uv.lock` via
+`uv sync --locked --all-groups`. `--locked` fails rather than silently
+re-resolving if the lock is stale, so local and CI environments cannot diverge.
+Run tooling through the `make` targets (or `uv run`) so it resolves from the
+lock instead of your `PATH`.
+
 ### Set Up Git Hooks
 
 ```bash

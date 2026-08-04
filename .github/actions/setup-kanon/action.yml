@@ -3,11 +3,17 @@ description: |
   Composite action shared by every job in pr-validation.yml and
   main-validation.yml. Handles checkout, optional simulate-merge,
   Python install, asdf bootstrap (plus plugin install per
-  .tool-versions), pip dependency cache, dev dependency install via
-  `make install-dev`, and uv install. Each parallel CI job calls this
-  action once before invoking its own singular Make target / pytest
-  invocation, so the per-job step list stays minimal and the setup
-  drift between jobs is impossible.
+  .tool-versions), uv install with an uv.lock-keyed cache, and the
+  dependency install itself (`uv sync --locked --all-groups`). Each
+  parallel CI job calls this action once before invoking its own
+  singular Make target, so the per-job step list stays minimal and
+  setup drift between jobs is impossible.
+
+  Every job resolves dependencies from uv.lock and nowhere else. Jobs
+  must invoke Make targets rather than calling pytest/ruff/bandit
+  directly, because those targets run tools through `uv run`; a bare
+  invocation picks up whatever is on PATH and reintroduces the drift
+  this action exists to prevent.
 
 inputs:
   base-ref:
@@ -108,15 +114,20 @@ runs:
         asdf install
         asdf reshim
 
-    - name: Cache Python dependencies
-      uses: actions/cache@v5
+    - name: Install uv
+      # uv must be installed BEFORE the dependency step, because that step is
+      # now `uv sync`. It is also required at test time:
+      # `tests/unit/repo/test_wheel_contents.py`,
+      # `tests/integration/test_wheel_e2e.py`, and
+      # `tests/integration/test_ci_validation.py` shell out to `uv build` to
+      # produce the wheel under test.
+      # `enable-cache` replaces the previous actions/cache pip step; keying on
+      # uv.lock means the cache is invalidated by exactly the file that decides
+      # which versions get installed.
+      uses: astral-sh/setup-uv@v6
       with:
-        path: |
-          ~/.cache/pip
-          ~/.local/lib/python*/site-packages
-        key: ${{ runner.os }}-pip-${{ hashFiles('requirements-dev.txt', 'pyproject.toml') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
+        enable-cache: true
+        cache-dependency-glob: uv.lock
 
     - name: Install zsh (for shell-completion integration tests)
       if: runner.os == 'Linux'
@@ -140,22 +151,15 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        pip install --upgrade pip
-        # `make install-dev` is `pip install -r requirements-dev.txt`. GNU make
-        # is not guaranteed on the windows-latest runner image, so the Windows
-        # leg invokes pip directly (same dependency set, no make dependency)
-        # while Linux keeps the make target for parity with local dev.
-        if [ "$RUNNER_OS" = "Linux" ]; then
-          make install-dev
-        else
-          pip install -r requirements-dev.txt
-        fi
-
-    - name: Install uv
-      # `tests/unit/repo/test_wheel_contents.py`,
-      # `tests/integration/test_wheel_e2e.py`, and
-      # `tests/integration/test_ci_validation.py` shell out to
-      # `uv build` to produce the wheel under test; uv must be on
-      # PATH for any job that runs those suites (including the
-      # full-suite regression job that runs every test together).
-      uses: astral-sh/setup-uv@v6
+        # Single dependency-resolution path for every job. Previously this was
+        # `pip install -r requirements-dev.txt`, which resolved from PyPI at run
+        # time and ignored uv.lock, while `make test` / `make test-scenarios`
+        # ran under `uv run` and honoured it. The two disagreed -- the pip leg
+        # installed pytest 8.3 and an unbounded shtab, so a shtab release broke
+        # the completion golden fixtures in the pip-based jobs only.
+        #
+        # `--locked` fails the job if uv.lock is stale rather than silently
+        # re-resolving, so a dependency change cannot reach CI unlocked.
+        # `uv sync` needs no GNU make, so the Windows leg no longer needs a
+        # separate branch.
+        uv sync --locked --all-groups

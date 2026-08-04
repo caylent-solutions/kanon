@@ -12,6 +12,8 @@ import pytest
 
 REPO_ROOT = pathlib.Path(__file__).parents[2]
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
+UV_LOCK_PATH = REPO_ROOT / "uv.lock"
+PROJECT_NAME = "kanon-cli"
 
 REQUIRED_PACKAGES = [
     "src/kanon_cli",
@@ -40,6 +42,46 @@ def _load_pyproject() -> dict:
     assert PYPROJECT_PATH.is_file(), f"pyproject.toml must exist at {PYPROJECT_PATH}"
     with PYPROJECT_PATH.open("rb") as fh:
         return tomllib.load(fh)
+
+
+def _locked_project_version() -> str:
+    """Return the project's own version as recorded in uv.lock.
+
+    Returns:
+        The ``version`` field of the ``kanon-cli`` package entry in uv.lock.
+
+    Raises:
+        AssertionError: If uv.lock is absent or carries no entry for the project.
+    """
+    assert UV_LOCK_PATH.is_file(), f"uv.lock must exist at {UV_LOCK_PATH}"
+    with UV_LOCK_PATH.open("rb") as fh:
+        data = tomllib.load(fh)
+    for package in data.get("package", []):
+        if package.get("name") == PROJECT_NAME:
+            return package["version"]
+    raise AssertionError(f"uv.lock has no [[package]] entry for {PROJECT_NAME!r}")
+
+
+@pytest.mark.unit
+def test_uv_lock_records_the_declared_project_version() -> None:
+    """Verify uv.lock records the same project version as pyproject.toml.
+
+    Given: pyproject.toml and uv.lock at the repo root
+    When: the [project] version and the kanon-cli lock entry are compared
+    Then: the two are identical
+
+    uv.lock carries the project's own version, so bumping pyproject.toml
+    without re-locking leaves them out of step. Every job installs via
+    `uv sync --locked`, which refuses a stale lock outright, so the drift
+    surfaces as a hard failure at install time rather than a warning. This
+    catches it on the pull request instead of in the tag build.
+    """
+    declared = _load_pyproject()["project"]["version"]
+    locked = _locked_project_version()
+    assert locked == declared, (
+        f"uv.lock records {PROJECT_NAME} {locked!r} but pyproject.toml declares {declared!r}. "
+        f"Run `uv lock` and commit the result -- `uv sync --locked` fails while they disagree."
+    )
 
 
 @pytest.mark.unit

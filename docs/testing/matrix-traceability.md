@@ -122,8 +122,8 @@ surface at the integration level and confirm the gap.
 
 **Row 1 (per-entry / builders-plugins):** the per-dependency
 `KANON_SOURCE_<alias>_MARKETPLACE=true` flag is written, but builders-plugins
-uses a direct `path=` checkout with no `<linkfile>`, so
-`_process_manifest_linkfiles` registers nothing. DEFECT-004 fix only covered
+uses a direct `path=` checkout with no `<linkfile>`, so the linkfile step of
+`repo sync` registers nothing. The DEFECT-004 fix only covered
 linkfile-pattern entries. E49 tests in
 `tests/integration/test_add_core.py::TestAddMarketplaceTypeWritesFlagAndNotice`
 document the per-entry marketplace-flag behaviour. E51-F3 test

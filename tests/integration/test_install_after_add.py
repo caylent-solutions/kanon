@@ -33,6 +33,7 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.conftest import materialize_linkfiles_for_sync
 from kanon_cli.core.install import install
 from tests.integration.test_add_core import (
     _create_manifest_repo_with_tags,
@@ -256,7 +257,10 @@ class TestMarketplaceInstallAfterAdd:
                 side_effect=_make_repo_init_with_linkfiles(marketplace_dir),
             ),
             patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
+            patch(
+                "kanon_cli.repo.repo_sync",
+                side_effect=lambda repo_dir, **kwargs: materialize_linkfiles_for_sync(pathlib.Path(repo_dir)),
+            ),
             patch(
                 "kanon_cli.core.marketplace.shutil.which",
                 return_value=claude_bin,

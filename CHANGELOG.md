@@ -2,7 +2,167 @@
 
 
 
+## v3.3.1 (2026-08-04)
+
+### Chore
+
+* chore(git): ignore local settings files ([`61ceade`](https://github.com/caylent-solutions/kanon/commit/61ceade79f79a73b11316866572a71b3abce3052))
+
+* chore: add uv to toolchain via asdf
+
+Pin uv 0.12.1 in .tool-versions alongside the project&#39;s existing
+asdf-managed tools, and refresh uv.lock&#39;s kanon-cli editable entry
+to match the current pyproject.toml version. ([`300b979`](https://github.com/caylent-solutions/kanon/commit/300b979ae0dae98f200efd21be99fad0b5106658))
+
+### Fix
+
+* fix: let repo sync own &lt;linkfile&gt;, removing the duplicate copy pass (#105)
+
+* fix: skip linkfile copy when dest already resolves to src
+
+repo sync materializes every &lt;linkfile&gt; as a symlink before
+_process_manifest_linkfiles runs. For a file-level src the helper then
+called shutil.copy2 on the same inode pair, raising SameFileError and
+aborting the install with exit 1.
+
+Closes #93
+
+* fix: let repo sync own &lt;linkfile&gt;, removing the duplicate copy pass
+
+`_process_manifest_linkfiles` re-processed the same `&lt;linkfile&gt;` elements
+`repo sync` had just materialized. It read only the root manifest&#39;s direct
+`&lt;project&gt;` children (no `&lt;include&gt;` traversal) and skipped any non-file
+`src`, so in a real install it covered a strict subset of what sync had
+already done. Its three possible outcomes were: crash on the same inode
+(issue 93), write through a foreign symlink and clobber that link&#39;s target,
+or nothing. It had no branch that produced a correct result sync had not
+already produced.
+
+It existed to compensate for tests that replace `repo_sync` with a no-op,
+which its own docstring stated. The compensation belongs in the double, not
+in production, so it moves to `tests.conftest.materialize_linkfiles_for_sync`
+-- delegating to the production `_LinkFile` so the double cannot drift from
+what `repo` does. Mocked-sync tests now leave a symlink where a real sync
+leaves one, instead of a copy.
+
+Runtime behaviour is unchanged for every input except the crash: with
+`repo sync` succeeding, the deleted pass was already a no-op. No exported
+symbol is removed; `__all__` is byte-identical.
+
+Replaces the unit-level regression test, which imported the deleted
+function, with one that drives a real `repo init` + `repo sync` against
+local file:// fixtures. Verified RED against the pre-fix code: it reproduces
+`shutil.SameFileError` on the flagged/file-src case only, matching the scope
+table in issue 93.
+
+`test_only_flagged_source_registers_marketplace` asserted that an unflagged
+source cannot register a marketplace. Under a sync that behaves like the real
+one it registers anyway: `run_repo_sync` is unconditional, `_LinkFile._Link`
+knows nothing about kanon flags, `CLAUDE_MARKETPLACES_DIR` is exported to
+every source, and `install_marketplace_plugins` scans the directory once with
+no per-source attribution. The flag genuinely gates only
+`register_direct_checkout_marketplaces`, so the fixture now uses
+direct-checkout entries and the docstring records what the flag does not gate.
+
+Closes #93
+
+* ci: resolve every job from uv.lock, deleting the pip dependency path
+
+CI resolved dependencies two ways. The tiered test jobs ran bare
+`python -m pytest` against a `pip install -r requirements-dev.txt`
+environment, which resolves from PyPI at run time; `make test` and
+`make test-scenarios` ran under `uv run`, which honours uv.lock. The two
+manifests disagreed -- requirements-dev.txt pinned pytest ~=8.3.0 while
+[dependency-groups] dev asked for &gt;=9.0.3, so the same suite ran on two
+different runners depending on the job.
+
+That split is what let a shtab release break CI. `shtab&gt;=1.7.0` had no
+upper bound, shtab 1.9.0 (2026-07-31) changed its generated output, and
+the pip-based jobs installed 1.9.3 against completion golden fixtures
+generated with 1.8.0. The uv-based jobs stayed on uv.lock&#39;s 1.8.0 and
+passed. main has not run CI since 2026-07-17, before that release, so it
+is green in history and broken in fact; every PR branched from it fails
+the same two tests.
+
+Reproduced directly: a venv built from requirements-dev.txt resolves
+shtab 1.9.3 and pytest 8.3.5, and fails
+test_completion_stdout_matches_committed_golden[bash,zsh] with the same
+16098-vs-15657 byte mismatch CI reports. Installing shtab==1.8.0 into
+that same venv turns it green.
+
+9869ee7 pins shtab, which fixes the instance. This removes the cause:
+
+- [dependency-groups] dev absorbs ruff, bandit, twine, pre-commit and
+  python-semantic-release, the tools only requirements-dev.txt declared.
+  Existing pins carry over unchanged. ruff stays ~=0.11.0 for the same
+  reason shtab is pinned: `ruff format --check` is a byte-level gate.
+- requirements-dev.txt is deleted rather than kept in sync.
+- requirements.txt is deleted too. It declared packaging and nothing
+  else, one of three runtime dependencies, and `make install` was
+  referenced nowhere; pyproject&#39;s [project] dependencies supersedes it.
+- Every Makefile target invokes its tools through `uv run`. Previously
+  `make security-scan` was `uv run bandit` with bandit in no dependency
+  group, so uv fell through to PATH and silently ran a system-wide
+  bandit -- verified resolving to /usr/local/py-utils/bin/bandit.
+- The unit coverage gate moves into `make test-unit-cov` behind a
+  COVERAGE_MIN variable, replacing the coverage-json + bc comparison
+  duplicated across both workflow files with pytest-cov&#39;s own
+  --cov-fail-under.
+- setup-kanon installs uv before dependencies and runs
+  `uv sync --locked --all-groups`; --locked fails the job on a stale
+  lock instead of silently re-resolving. setup-uv&#39;s cache, keyed on
+  uv.lock, replaces the pip cache. The Windows leg no longer needs its
+  own branch because uv sync does not require GNU make.
+- The release and publish jobs move to the same path, and
+  `python -m semantic_release` becomes `uv run python -m semantic_release`.
+
+The CI-shape tests are updated rather than loosened. The tier assertions
+followed the existing `make test-scenarios` precedent and now check both
+halves of the contract: the workflow invokes the tier&#39;s Make target
+exactly once with no per-OS override, and that target selects the bare
+marker. Previously the marker was asserted but the delegation was not;
+now both are. test_ci_includes_repo_tests searches the Makefile as well,
+since --cov=kanon_cli moved there.
+
+Verified from a clean `uv sync --locked --all-groups`: ruff, bandit,
+twine, pre-commit and pytest all resolve inside .venv with no PATH
+fallthrough. All ten CI jobs pass locally with counts identical to the
+pre-change baseline -- full suite 17168 passed / 0 failed / 95%, unit
+11712 passed / 93.22%, integration 1947, functional 3089, scenario 413.
+
+---------
+
+Co-authored-by: Ryan Gross &lt;ryan.gross@caylent.com&gt; ([`23b320e`](https://github.com/caylent-solutions/kanon/commit/23b320e7818bf564cbc3b9dcb65acc3e7f4626ef))
+
+* fix: pin shtab to exact version to stop completion-fixture CI drift
+
+pyproject.toml declared shtab&gt;=1.7.0 with no upper bound. CI installs
+dependencies via `pip install -r requirements-dev.txt` (-e .), resolving
+shtab independently of uv.lock&#39;s exact pin; PyPI&#39;s latest shtab (1.9.2)
+changed its generated output, breaking the byte-for-byte comparison
+against the committed completion golden fixtures in both the
+integration and functional test suites. Exact-pinning to 1.8.0 (already
+locked in uv.lock) makes both install paths deterministic. ([`9869ee7`](https://github.com/caylent-solutions/kanon/commit/9869ee7b720829c329ad3c1afdcf2057a14427aa))
+
+* fix(test): put safeguards in place for pre-commit failures in devcontainer environment on macos ([`1f38b25`](https://github.com/caylent-solutions/kanon/commit/1f38b25ea3205cac983c0952baed76c4a976b3ee))
+
+* fix(tests): patch to avoid ioctl environment issues when running tests in devcontainer under uv ([`4931c10`](https://github.com/caylent-solutions/kanon/commit/4931c101c4cec06e778958e62b1af68ee9ada022))
+
+### Unknown
+
+* Merge pull request #97 from caylent-solutions/chore/add-uv-tool-version
+
+chore: add uv toolchain support and fix progress-bar ioctl crash
+
+Includes the issue-93 linkfile fix and the CI dependency-resolution
+consolidation merged into this branch via #105. ([`bfab7a3`](https://github.com/caylent-solutions/kanon/commit/bfab7a319ade76111057696ee049b6d6ab5c41ab))
+
+
 ## v3.3.0 (2026-07-17)
+
+### Chore
+
+* chore(release): 3.3.0 ([`5100db5`](https://github.com/caylent-solutions/kanon/commit/5100db56a01818a5914474d7ddb95c96b7ab6de9))
 
 ### Feature
 
@@ -99,6 +259,12 @@ builder via a shared strip_subprocess_coverage_env helper. Behavioural CLI
 subprocess tests do not need coverage of the child; the 90% coverage gate is
 measured in-process on the unit tier, which uses its own runner and is
 unaffected. ([`57246f8`](https://github.com/caylent-solutions/kanon/commit/57246f8a8a46b99ad2b35a954289d7a9e7d1966c))
+
+### Unknown
+
+* Merge pull request #92 from caylent-solutions/release-3.3.0
+
+Release 3.3.0 ([`56f49b9`](https://github.com/caylent-solutions/kanon/commit/56f49b9c98b2dfd9b5fac5d847fcb6350a6fafe4))
 
 
 ## v3.2.0 (2026-07-13)

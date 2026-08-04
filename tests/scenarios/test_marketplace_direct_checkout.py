@@ -9,16 +9,15 @@ Documents and locks the fix from spec S.0 / E51-F3:
   global ``KANON_MARKETPLACE_INSTALL`` header was removed in 3.0.0 / FR-17 and is
   superseded by the per-dependency opt-in.)
 
-Prior to the fix, ``_process_manifest_linkfiles`` only processed ``<linkfile>``
-elements.  A project that carries ``.claude-plugin/marketplace.json`` but has NO
-``<linkfile>`` fell through and registered nothing, leaving the marketplace
-absent from the ``CLAUDE_MARKETPLACES_DIR``.
+Prior to the fix, only ``<linkfile>`` elements placed anything into
+``CLAUDE_MARKETPLACES_DIR``.  A project that carries
+``.claude-plugin/marketplace.json`` but has NO ``<linkfile>`` fell through and
+registered nothing, leaving the marketplace absent from that directory.
 
 After the fix, ``register_direct_checkout_marketplaces`` (in
-``src/kanon_cli/core/marketplace.py``) is called alongside
-``_process_manifest_linkfiles`` and creates a symlink in ``CLAUDE_MARKETPLACES_DIR``
-pointing at the checked-out project directory so ``install_marketplace_plugins``
-can register it.
+``src/kanon_cli/core/marketplace.py``) runs after ``repo sync`` and creates a
+symlink in ``CLAUDE_MARKETPLACES_DIR`` pointing at the checked-out project
+directory so ``install_marketplace_plugins`` can register it.
 
 These are subprocess (operator-path) tests: each test invokes real ``kanon``
 subprocesses against on-disk fixture git repos.  The claude CLI mock pattern

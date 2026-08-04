@@ -44,6 +44,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.clean import clean
+from tests.conftest import materialize_linkfiles_for_sync
 from kanon_cli.core.install import install
 from tests.integration.test_add_core import (
     _create_manifest_repo_with_tags,
@@ -87,8 +88,9 @@ def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
     contains a ``<linkfile>`` element whose ``dest`` points to
     ``marketplace_dir/<source-name>/.claude-plugin/marketplace.json``.
 
-    Also writes the linkfile src file so that ``_process_manifest_linkfiles``
-    in ``install.py`` can copy it to the dest path after ``repo_sync`` completes.
+    Also writes the linkfile src file; ``repo sync`` materializes the link at
+    the dest path, so the paired ``repo_sync`` mock must use
+    :func:`tests.conftest.materialize_linkfiles_for_sync`.
 
     The source name is derived from the manifest filename stem using the
     convention ``<source-name>-marketplace.xml``.
@@ -300,7 +302,10 @@ class TestFullLifecycleSynthetic:
                     side_effect=_make_repo_init_with_linkfiles(entry_marketplace_dir),
                 ),
                 patch("kanon_cli.repo.repo_envsubst"),
-                patch("kanon_cli.repo.repo_sync"),
+                patch(
+                    "kanon_cli.repo.repo_sync",
+                    side_effect=lambda repo_dir, **kwargs: materialize_linkfiles_for_sync(pathlib.Path(repo_dir)),
+                ),
                 patch(
                     "kanon_cli.core.marketplace.shutil.which",
                     return_value=_MOCK_CLAUDE_BIN,

@@ -20,6 +20,7 @@ import pytest
 
 from kanon_cli.cli import main
 from kanon_cli.core.clean import clean
+from tests.conftest import materialize_linkfiles_for_sync
 from kanon_cli.core.install import install
 from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
@@ -276,9 +277,10 @@ def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
     ``install()`` expects after ``repo init + repo sync``. The manifest
     contains a ``<linkfile>`` element whose ``dest`` points into
     ``marketplace_dir/<source-name>/``. Also writes the corresponding
-    ``.claude-plugin/marketplace.json`` src file so that
-    ``_process_manifest_linkfiles`` in ``install.py`` can copy it to the
-    dest path (the E35 fix path).
+    ``.claude-plugin/marketplace.json`` src file so that the ``<linkfile>``
+    step of ``repo sync`` can materialize it at the dest path.  The paired
+    ``repo_sync`` mock must therefore use
+    :func:`tests.conftest.materialize_linkfiles_for_sync`.
 
     Args:
         marketplace_dir: Root marketplace directory (CLAUDE_MARKETPLACES_DIR).
@@ -358,9 +360,9 @@ class TestCleanMarketplaceTrue:
         Builds a 2-source synthetic catalog using ``_create_manifest_repo_with_tags``
         (spec section 3.1). The ``fake_repo_init`` side effect writes manifest XML
         with ``<linkfile>`` elements and creates the corresponding
-        ``.claude-plugin/marketplace.json`` src files so that
-        ``_process_manifest_linkfiles`` in ``install.py`` deposits them under
-        ``CLAUDE_MARKETPLACES_DIR`` (the E35 fix path).
+        ``.claude-plugin/marketplace.json`` src files, and the ``repo_sync``
+        mock materializes those linkfiles under ``CLAUDE_MARKETPLACES_DIR``
+        exactly as a real sync does.
 
         Both install and clean use the same subprocess.run mock so all invocations
         are recorded in a single list. After install, the recorded
@@ -435,7 +437,10 @@ class TestCleanMarketplaceTrue:
                 side_effect=_make_repo_init_with_linkfiles(marketplace_dir),
             ),
             patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
+            patch(
+                "kanon_cli.repo.repo_sync",
+                side_effect=lambda repo_dir, **kwargs: materialize_linkfiles_for_sync(pathlib.Path(repo_dir)),
+            ),
             patch(
                 "kanon_cli.core.marketplace.shutil.which",
                 return_value=claude_bin,

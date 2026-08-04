@@ -8,6 +8,7 @@ import os
 import pathlib
 import shutil
 import tempfile
+import xml.etree.ElementTree as ET
 from collections.abc import Generator
 
 import pytest
@@ -239,6 +240,60 @@ def write_manifest_for_sync(directory: pathlib.Path, sub_path: str = "repo-specs
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text('<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n')
     return manifest
+
+
+def materialize_linkfiles_for_sync(repo_dir: pathlib.Path) -> None:
+    """Perform the ``<linkfile>`` step of ``repo sync`` for a mocked sync.
+
+    ``repo sync`` materializes every ``<linkfile>`` in the manifest as a symlink
+    at ``dest`` targeting ``src``.  A test that replaces ``repo_sync`` with a
+    no-op therefore leaves a workspace that a real sync would never produce, and
+    any assertion about what reached a ``dest`` path is then an assertion about
+    the double rather than about ``kanon``.
+
+    Use this as the ``side_effect`` of a patched ``kanon_cli.repo.repo_sync``
+    whenever the test asserts on a linkfile destination::
+
+        patch(
+            "kanon_cli.repo.repo_sync",
+            side_effect=lambda repo_dir, **kwargs: materialize_linkfiles_for_sync(
+                pathlib.Path(repo_dir)
+            ),
+        )
+
+    Linking is delegated to the production :class:`kanon_cli.repo.project._LinkFile`
+    so the double cannot drift from what ``repo`` actually does.
+
+    Args:
+        repo_dir: The source workspace directory that ``install()`` passes to
+            ``repo_sync``; manifests are read from ``repo_dir/.repo/manifests``
+            and project checkouts are resolved relative to ``repo_dir``.
+
+    Raises:
+        xml.etree.ElementTree.ParseError: If a manifest XML is malformed.
+        OSError: If a symlink cannot be created.
+    """
+    from kanon_cli.repo.project import _LinkFile
+
+    for manifest in sorted((repo_dir / ".repo" / "manifests").rglob("*.xml")):
+        for project_el in ET.parse(str(manifest)).getroot().findall("project"):
+            project_path = project_el.get("path") or project_el.get("name", "")
+            if not project_path:
+                continue
+            worktree = repo_dir / project_path
+
+            for linkfile_el in project_el.findall("linkfile"):
+                src = linkfile_el.get("src", "")
+                dest = linkfile_el.get("dest", "")
+                if not src or not dest:
+                    continue
+                _LinkFile(
+                    str(worktree),
+                    src,
+                    str(repo_dir),
+                    dest,
+                    exclude=linkfile_el.get("exclude"),
+                )._Link()
 
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent

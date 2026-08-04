@@ -103,17 +103,14 @@ jobs:
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
-      - name: Run unit tests with 90% coverage gate
+      - name: Run unit tests with coverage gate
         shell: bash
-        run: |
-          python -m pytest -n auto --dist loadscope -m "unit" --cov=kanon_cli --cov-report=term-missing
-          coverage json
-          coverage_percent=$(python -c "import json; f=open('coverage.json'); print(json.load(f)['totals']['percent_covered'])")
-          echo "Coverage: $coverage_percent%"
-          if (( $(echo "$coverage_percent < 90" | bc -l) )); then
-            echo "Error: Code coverage is below 90% threshold ($coverage_percent%)"
-            exit 1
-          fi
+        # Delegates to the Make target so the threshold lives in one place
+        # (Makefile: COVERAGE_MIN) instead of being duplicated across both
+        # workflow files, and so the run resolves from uv.lock like every other
+        # job. pytest-cov's own --cov-fail-under replaces the hand-rolled
+        # coverage-json + bc comparison.
+        run: make test-unit-cov
 
   integration-tests-linux:
     name: Integration tests (Linux)
@@ -127,7 +124,7 @@ jobs:
       - uses: ./.github/actions/setup-kanon
       - name: Run integration tests
         shell: bash
-        run: python -m pytest -n auto --dist loadscope -m "integration"
+        run: make test-integration
 
   functional-tests-linux:
     name: Functional tests (Linux)
@@ -141,7 +138,7 @@ jobs:
       - uses: ./.github/actions/setup-kanon
       - name: Run functional tests
         shell: bash
-        run: SMOKE_TEST_TIMEOUT=300 python -m pytest -n auto --dist loadscope -m "functional"
+        run: make test-functional
 
   scenario-tests-linux:
     name: Scenario tests (Linux, docs/integration-testing.md)
@@ -276,22 +273,19 @@ jobs:
           asdf install
           asdf reshim
 
-      - name: Cache Python dependencies for release
-        uses: actions/cache@v5
+      - name: Install uv
+        # Same single resolution path as .github/actions/setup-kanon: deps come
+        # from uv.lock via `make install-dev` (`uv sync --locked`). Replaces the
+        # previous pip cache, which keyed on a requirements-dev.txt that no
+        # longer exists.
+        uses: astral-sh/setup-uv@v6
         with:
-          path: |
-            ~/.cache/pip
-            ~/.local/lib/python*/site-packages
-          key: ${{ runner.os }}-pip-release-${{ hashFiles('requirements-dev.txt', 'pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-release-
-            ${{ runner.os }}-pip-
+          enable-cache: true
+          cache-dependency-glob: uv.lock
 
       - name: Install dependencies
         shell: bash
-        run: |
-          pip install --upgrade pip
-          make install-dev
+        run: make install-dev
 
       - name: Compute next version
         id: semantic-release
@@ -299,7 +293,7 @@ jobs:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
         shell: bash
         run: |
-          NEW_VERSION=$(python -m semantic_release version --print | sed 's/^v//')
+          NEW_VERSION=$(uv run python -m semantic_release version --print | sed 's/^v//')
           echo "New version: $NEW_VERSION"
           if [[ -z "$NEW_VERSION" ]]; then
             echo "No new version detected, using current version"
@@ -313,7 +307,7 @@ jobs:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
         shell: bash
         run: |
-          python -m semantic_release version --no-push --no-vcs-release --no-commit
+          uv run python -m semantic_release version --no-push --no-vcs-release --no-commit
 
           NEW_VERSION=$(grep '^version = ' pyproject.toml | sed 's/.*version = "\([^"]*\)".*/\1/')
           echo "Updated version: $NEW_VERSION"

@@ -34,6 +34,7 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.conftest import materialize_linkfiles_for_sync
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import install
 from kanon_cli.core.lockfile import (
@@ -76,8 +77,8 @@ def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
     Mirrors ``tests/integration/test_install_marketplace_registration._make_repo_init_with_linkfiles``:
     the manifest declares a ``<linkfile>`` whose ``dest`` lands the marketplace
     manifest under ``marketplace_dir/<source-name>``, and the linkfile ``src``
-    file is written into the simulated checkout so install's
-    ``_process_manifest_linkfiles`` can copy it.  The marketplace ``name`` equals
+    file is written into the simulated checkout so the ``<linkfile>`` step of
+    ``repo sync`` can materialize it.  The marketplace ``name`` equals
     the source name.
     """
 
@@ -203,7 +204,10 @@ class TestInstallAutoPruneReconcile:
         with (
             patch("kanon_cli.repo.repo_init", side_effect=_make_repo_init_with_linkfiles(marketplace_dir)),
             patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
+            patch(
+                "kanon_cli.repo.repo_sync",
+                side_effect=lambda repo_dir, **kwargs: materialize_linkfiles_for_sync(pathlib.Path(repo_dir)),
+            ),
             patch("kanon_cli.core.marketplace.shutil.which", return_value=claude_bin),
             patch("kanon_cli.core.marketplace.subprocess.run", return_value=mock_completed),
         ):
@@ -226,7 +230,10 @@ class TestInstallAutoPruneReconcile:
         with (
             patch("kanon_cli.repo.repo_init", side_effect=_make_repo_init_with_linkfiles(marketplace_dir)),
             patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
+            patch(
+                "kanon_cli.repo.repo_sync",
+                side_effect=lambda repo_dir, **kwargs: materialize_linkfiles_for_sync(pathlib.Path(repo_dir)),
+            ),
             patch("kanon_cli.core.marketplace.shutil.which", return_value=claude_bin),
             patch("kanon_cli.core.marketplace.subprocess.run", return_value=mock_completed) as mock_run,
         ):
@@ -282,7 +289,10 @@ class TestInstallAutoPruneReconcile:
         with (
             patch("kanon_cli.repo.repo_init", side_effect=_make_repo_init_with_linkfiles(marketplace_dir)),
             patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
+            patch(
+                "kanon_cli.repo.repo_sync",
+                side_effect=lambda repo_dir, **kwargs: materialize_linkfiles_for_sync(pathlib.Path(repo_dir)),
+            ),
             patch("kanon_cli.core.marketplace.shutil.which", return_value=claude_bin),
             patch("kanon_cli.core.marketplace.subprocess.run", return_value=mock_completed),
         ):
@@ -341,7 +351,10 @@ class TestCleanOrphansCanonicalFlow:
         with (
             patch("kanon_cli.repo.repo_init", side_effect=_make_repo_init_with_linkfiles(marketplace_dir)),
             patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
+            patch(
+                "kanon_cli.repo.repo_sync",
+                side_effect=lambda repo_dir, **kwargs: materialize_linkfiles_for_sync(pathlib.Path(repo_dir)),
+            ),
             patch("kanon_cli.core.marketplace.shutil.which", return_value=claude_bin),
             patch("kanon_cli.core.marketplace.subprocess.run", return_value=mock_completed),
         ):

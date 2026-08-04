@@ -39,6 +39,72 @@ TEST_TIERS = ["unit", "integration", "functional", "scenario"]
 PER_OS_MARKER_FILTER = re.compile(r"and not (windows|linux)_only")
 
 
+MAKEFILE = REPO_ROOT / "Makefile"
+
+
+def _makefile_recipe(target: str) -> str:
+    """Return the recipe body of a Makefile target.
+
+    The workflows delegate each test tier to a Make target, so the tier marker
+    lives in the Makefile rather than in the workflow YAML. Reading the recipe
+    lets the tier contract below assert on the marker itself instead of trusting
+    that the target still carries it.
+
+    Args:
+        target: Make target name, for example ``test-integration``.
+
+    Returns:
+        The target's recipe lines joined by newlines, empty if it has none.
+    """
+    lines = MAKEFILE.read_text(encoding="utf-8").splitlines()
+    recipe: list[str] = []
+    collecting = False
+    for line in lines:
+        if re.match(rf"^{re.escape(target)}\s*:", line):
+            collecting = True
+            continue
+        if collecting:
+            if line.startswith("\t"):
+                recipe.append(line.strip())
+            elif line.strip():
+                break
+    return "\n".join(recipe)
+
+
+def _assert_tier_runs_once(workflow_path: pathlib.Path, target: str, marker: str) -> None:
+    """Assert a tier runs exactly once, via its Make target, with the bare marker.
+
+    The tier contract has two halves now that the workflows call Make targets:
+    the workflow must invoke the target exactly once with no per-OS override,
+    and the target itself must select the tier with the bare marker.
+
+    Args:
+        workflow_path: Workflow YAML under test.
+        target: Make target the tier job must invoke.
+        marker: Bare pytest marker the target must select.
+    """
+    workflow = _load_workflow(workflow_path)
+    steps = [step for step in _collect_run_steps(workflow) if f"make {target}" in step.get("run", "")]
+    assert len(steps) == 1, (
+        f"Workflow {workflow_path.name} must run the {marker} tier exactly once via "
+        f"`make {target}` on the single Linux set. "
+        f"Matching steps: {[s.get('name', '<unnamed>') for s in steps]}"
+    )
+    for step in steps:
+        run = step.get("run", "")
+        assert "PYTEST_PLATFORM_MARK" not in run, (
+            f"Step '{step.get('name', '<unnamed>')}' in {workflow_path.name} must not pass a "
+            f'PYTEST_PLATFORM_MARK override; the bare make target runs -m "{marker}". Run command: {run!r}'
+        )
+
+    recipe = _makefile_recipe(target)
+    assert f'-m "{marker}"' in recipe, (
+        f'Make target `{target}` must select the tier with the bare marker -m "{marker}" '
+        f"(no per-OS filter), because {workflow_path.name} delegates the tier to it. "
+        f"Recipe found:\n{recipe}"
+    )
+
+
 def _load_workflow(path: pathlib.Path) -> dict:
     """Load and parse a workflow YAML file.
 
@@ -210,18 +276,12 @@ def test_unit_tier_runs_once_with_bare_marker(workflow_path: pathlib.Path):
     """Validate that the unit tier runs once with the bare 'unit' marker.
 
     Given: A workflow YAML file
-    When: The run steps are inspected for the unit-tier pytest invocation
-    Then: Exactly one run step selects the unit tier with the bare marker
-        `-m "unit"` (no per-OS filter), on the single Linux set.
+    When: The run steps are inspected for the unit-tier invocation
+    Then: Exactly one run step invokes `make test-unit-cov`, passes no per-OS
+        override, and that target selects the tier with the bare marker
+        `-m "unit"` on the single Linux set.
     """
-    workflow = _load_workflow(workflow_path)
-    run_steps = _collect_run_steps(workflow)
-    bare_unit = re.compile(r'-m "unit"')
-    unit_steps = [step for step in run_steps if bare_unit.search(step.get("run", ""))]
-    assert len(unit_steps) == 1, (
-        f'Workflow {workflow_path.name} must run the unit tier exactly once with the bare marker -m "unit" '
-        f"on the single Linux set. Matching steps: {[s.get('name', '<unnamed>') for s in unit_steps]}"
-    )
+    _assert_tier_runs_once(workflow_path, "test-unit-cov", "unit")
 
 
 @pytest.mark.unit
@@ -230,22 +290,12 @@ def test_integration_tier_runs_once_with_bare_marker(workflow_path: pathlib.Path
     """Validate that the integration tier runs once with the bare marker.
 
     Given: A workflow YAML file
-    When: The integration job's run steps are inspected
-    Then: The integration job runs pytest with the bare marker `-m "integration"`
-        (no per-OS filter), on the single Linux set.
+    When: The run steps are inspected for the integration-tier invocation
+    Then: Exactly one run step invokes `make test-integration`, passes no per-OS
+        override, and that target selects the tier with the bare marker
+        `-m "integration"` on the single Linux set.
     """
-    workflow = _load_workflow(workflow_path)
-    jobs = workflow.get("jobs", {})
-    integration_jobs = {name: job for name, job in jobs.items() if "integration" in name.lower()}
-    assert len(integration_jobs) == 1, f"Expected exactly one integration job in {workflow_path.name}"
-
-    bare_integration = re.compile(r'-m "integration"')
-    for job_name, job in integration_jobs.items():
-        run_text = _job_run_text(job)
-        assert bare_integration.search(run_text), (
-            f"Integration job '{job_name}' in {workflow_path.name} must run pytest with the bare "
-            f'marker -m "integration" (no per-OS filter). Run steps found:\n{run_text}'
-        )
+    _assert_tier_runs_once(workflow_path, "test-integration", "integration")
 
 
 @pytest.mark.unit
@@ -254,19 +304,12 @@ def test_functional_tier_runs_once_with_bare_marker(workflow_path: pathlib.Path)
     """Validate that the functional tier runs once with the bare marker.
 
     Given: A workflow YAML file
-    When: The run steps are inspected for the functional-tier pytest invocation
-    Then: Exactly one run step selects the functional tier with the bare marker
-        `-m "functional"` (no per-OS filter), on the single Linux set.
+    When: The run steps are inspected for the functional-tier invocation
+    Then: Exactly one run step invokes `make test-functional`, passes no per-OS
+        override, and that target selects the tier with the bare marker
+        `-m "functional"` on the single Linux set.
     """
-    workflow = _load_workflow(workflow_path)
-    run_steps = _collect_run_steps(workflow)
-    bare_functional = re.compile(r'-m "functional"')
-    functional_steps = [step for step in run_steps if bare_functional.search(step.get("run", ""))]
-    assert len(functional_steps) == 1, (
-        f"Workflow {workflow_path.name} must run the functional tier exactly once with the bare "
-        f'marker -m "functional" on the single Linux set. '
-        f"Matching steps: {[s.get('name', '<unnamed>') for s in functional_steps]}"
-    )
+    _assert_tier_runs_once(workflow_path, "test-functional", "functional")
 
 
 @pytest.mark.unit

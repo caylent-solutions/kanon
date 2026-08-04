@@ -16,18 +16,18 @@ if ! make security-scan; then
 fi
 
 echo "Running unit tests with coverage check..."
-if ! make test-unit; then
+if ! make coverage-json; then
   echo "Unit tests failed. Please fix the issues before pushing."
   exit 1
 fi
 
-coverage_percent=$(python -m coverage report --format=total 2>/dev/null || echo "0")
+coverage_percent=$(python -c "import json; print(json.load(open('coverage.json'))['totals']['percent_covered'])")
 echo "Coverage: $coverage_percent%"
-if python -c "import sys; sys.exit(0 if float('${coverage_percent}') >= 90 else 1)"; then
-  echo "Coverage meets 90% threshold."
-else
+if (( $(echo "$coverage_percent < 90" | bc -l) )); then
   echo "Code coverage is below 90% threshold ($coverage_percent%). Please add more tests."
   exit 1
+else
+  echo "Coverage meets 90% threshold."
 fi
 
 echo "Running integration tests..."

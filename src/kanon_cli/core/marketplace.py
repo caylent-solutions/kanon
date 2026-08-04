@@ -359,14 +359,16 @@ def register_direct_checkout_marketplaces(
     ``.claude-plugin/marketplace.json``, creates a symlink in
     ``marketplace_dir/<name>`` pointing at the project checkout directory.
     This allows ``install_marketplace_plugins`` to discover and register the
-    marketplace even though no ``<linkfile>`` copied it there automatically.
+    marketplace even though no ``<linkfile>`` placed it there automatically.
 
     A project without a ``.claude-plugin/marketplace.json`` is silently skipped
     (not an error -- it may be a plain data package, not a marketplace).
 
     A project that already has at least one ``<linkfile>`` child is skipped
-    entirely because ``_process_manifest_linkfiles`` (in ``core.install``)
-    already handled it via the linkfile mechanism.
+    entirely because ``repo sync`` already materialized every ``<linkfile>``
+    as a symlink at its ``dest``
+    (:meth:`kanon_cli.repo.project._LinkFile._Link`), which is what puts the
+    entry into ``marketplace_dir`` when ``dest`` points there.
 
     Args:
         manifest_xml_path: Absolute path to the manifest XML file to parse.

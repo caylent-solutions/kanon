@@ -118,16 +118,21 @@ def test_ci_yaml_valid(workflow_path: pathlib.Path) -> None:
 
 @pytest.mark.integration
 def test_ci_includes_repo_tests(loaded_workflows: dict[str, dict]) -> None:
-    """Verify at least one workflow references the kanon_cli.repo module in tests.
+    """Verify CI covers the kanon_cli.repo module.
 
     The repo module (kanon_cli.repo) must be covered by CI. This is satisfied when
-    a workflow uses '--cov=kanon_cli' (which includes kanon_cli.repo as a subpackage)
+    a command uses '--cov=kanon_cli' (which includes kanon_cli.repo as a subpackage)
     or explicitly references 'kanon_cli.repo', 'tests/unit/repo', or
-    'tests/integration/repo' in any run command.
+    'tests/integration/repo'.
 
-    Given: All loaded workflow YAML files
-    When: All run commands across every workflow are inspected
-    Then: At least one run command references kanon_cli.repo coverage or repo test paths
+    The workflows delegate every test tier to a Make target, so the coverage flag
+    lives in the Makefile recipe rather than inline in the workflow YAML. The
+    Makefile is therefore part of the searched surface; searching only the
+    workflow YAML would assert nothing once the tiers moved behind `make`.
+
+    Given: All loaded workflow YAML files plus the Makefile they delegate to
+    When: Every run command and Make recipe line is inspected
+    Then: At least one references kanon_cli.repo coverage or repo test paths
 
     AC-TEST-002
     """
@@ -142,6 +147,7 @@ def test_ci_includes_repo_tests(loaded_workflows: dict[str, dict]) -> None:
     for workflow in loaded_workflows.values():
         commands = _collect_all_run_commands(workflow)
         all_commands.extend(commands)
+    all_commands.append((REPO_ROOT / "Makefile").read_text(encoding="utf-8"))
 
     found_indicator = None
     for command in all_commands:
@@ -153,10 +159,11 @@ def test_ci_includes_repo_tests(loaded_workflows: dict[str, dict]) -> None:
             break
 
     assert found_indicator is not None, (
-        "No workflow run command references kanon_cli.repo. "
-        "At least one workflow must include one of the following: "
-        f"{repo_indicators}. "
-        f"Searched {len(all_commands)} run commands across {len(loaded_workflows)} workflow(s)."
+        "Nothing in CI references kanon_cli.repo. "
+        "At least one workflow run command or Makefile recipe must include one of the "
+        f"following: {repo_indicators}. "
+        f"Searched {len(all_commands) - 1} run commands across {len(loaded_workflows)} "
+        "workflow(s), plus the Makefile."
     )
 
 

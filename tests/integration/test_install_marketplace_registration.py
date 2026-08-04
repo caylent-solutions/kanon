@@ -38,6 +38,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.install import install
+from tests.conftest import materialize_linkfiles_for_sync
 from tests.integration.test_add_core import _create_manifest_repo_with_tags
 
 
@@ -48,6 +49,13 @@ _MANIFEST_WITH_LINKFILE_TEMPLATE = textwrap.dedent("""\
         <linkfile src=".claude-plugin/marketplace.json"
                   dest="{marketplace_dest}/.claude-plugin/marketplace.json" />
       </project>
+    </manifest>
+""")
+
+_MANIFEST_DIRECT_CHECKOUT_TEMPLATE = textwrap.dedent("""\
+    <?xml version="1.0" encoding="UTF-8"?>
+    <manifest>
+      <project name="{name}" path="{name}" remote="origin" revision="main" />
     </manifest>
 """)
 
@@ -98,6 +106,22 @@ def _write_kanonenv_two_sources(
     return kanonenv.resolve()
 
 
+def _source_name_from_manifest_path(manifest_path: str) -> str:
+    """Derive the source name from the manifest path install() passes to repo_init.
+
+    Args:
+        manifest_path: The ``KANON_SOURCE_<name>_PATH`` value, by convention
+            ``repo-specs/<source-name>-marketplace.xml``.
+
+    Returns:
+        The source name embedded in the manifest file name.
+    """
+    stem = pathlib.Path(manifest_path).name
+    if stem.endswith("-marketplace.xml"):
+        return stem[: -len("-marketplace.xml")]
+    return stem.replace(".xml", "")
+
+
 def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
     """Return a fake_repo_init side-effect that writes manifests with linkfile elements.
 
@@ -108,16 +132,14 @@ def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
 
     Also writes a minimal ``.claude-plugin/marketplace.json`` into the
     project's simulated checkout directory (``repo_dir/<source-name>/``).
-    This file is the ``src`` side of the ``<linkfile>`` element and is
-    required so that ``_process_manifest_linkfiles`` in ``install.py`` can
-    copy it to the ``dest`` path after ``repo_sync`` completes.
+    This file is the ``src`` side of the ``<linkfile>`` element; ``repo sync``
+    materializes the link at ``dest``, so the paired ``repo_sync`` mock must
+    use :func:`tests.conftest.materialize_linkfiles_for_sync` as its side
+    effect or nothing will reach ``dest``.
 
     The manifest path is derived from the ``manifest_path`` argument that
     ``install()`` passes to ``repo_init``, so it matches the
     ``KANON_SOURCE_<name>_PATH`` value in the .kanon file.
-
-    The source name is derived from the ``manifest_path`` stem using the
-    convention ``<source-name>-marketplace.xml``.
 
     Args:
         marketplace_dir: Root marketplace directory (CLAUDE_MARKETPLACES_DIR).
@@ -136,11 +158,7 @@ def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
         manifest_file = pathlib.Path(repo_dir) / ".repo" / "manifests" / manifest_path
         manifest_file.parent.mkdir(parents=True, exist_ok=True)
 
-        stem = pathlib.Path(manifest_path).name
-        if stem.endswith("-marketplace.xml"):
-            source_name = stem[: -len("-marketplace.xml")]
-        else:
-            source_name = stem.replace(".xml", "")
+        source_name = _source_name_from_manifest_path(manifest_path)
 
         marketplace_dest = marketplace_dir / source_name
         manifest_file.write_text(
@@ -153,6 +171,41 @@ def _make_repo_init_with_linkfiles(marketplace_dir: pathlib.Path) -> object:
         src_file = pathlib.Path(repo_dir) / source_name / ".claude-plugin" / "marketplace.json"
         src_file.parent.mkdir(parents=True, exist_ok=True)
         src_file.write_text(_MARKETPLACE_JSON_TEMPLATE.format(name=source_name))
+
+    return fake_repo_init
+
+
+def _make_repo_init_direct_checkout() -> object:
+    """Return a fake_repo_init side-effect that writes direct-checkout manifests.
+
+    The manifest declares a ``<project>`` with NO ``<linkfile>`` child, and the
+    simulated checkout carries a ``.claude-plugin/marketplace.json``.  This is
+    the shape that ``register_direct_checkout_marketplaces`` handles, and it is
+    the only marketplace-placement path that the per-dependency
+    ``KANON_SOURCE_<alias>_MARKETPLACE`` flag actually gates: that function runs
+    once per flagged source, whereas ``repo sync`` materializes ``<linkfile>``
+    destinations for every source regardless of the flag.
+
+    Returns:
+        A callable suitable for use as ``side_effect`` on a mock.
+    """
+
+    def fake_repo_init(
+        repo_dir: str,
+        url: str,
+        revision: str,
+        manifest_path: str,
+        repo_rev: str = "",
+    ) -> None:
+        manifest_file = pathlib.Path(repo_dir) / ".repo" / "manifests" / manifest_path
+        manifest_file.parent.mkdir(parents=True, exist_ok=True)
+
+        source_name = _source_name_from_manifest_path(manifest_path)
+        manifest_file.write_text(_MANIFEST_DIRECT_CHECKOUT_TEMPLATE.format(name=source_name))
+
+        checkout_json = pathlib.Path(repo_dir) / source_name / ".claude-plugin" / "marketplace.json"
+        checkout_json.parent.mkdir(parents=True, exist_ok=True)
+        checkout_json.write_text(_MARKETPLACE_JSON_TEMPLATE.format(name=source_name))
 
     return fake_repo_init
 
@@ -250,7 +303,10 @@ class TestInstallMarketplaceRegistration:
                 side_effect=_make_repo_init_with_linkfiles(marketplace_dir),
             ),
             patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
+            patch(
+                "kanon_cli.repo.repo_sync",
+                side_effect=lambda repo_dir, **kwargs: materialize_linkfiles_for_sync(pathlib.Path(repo_dir)),
+            ),
             patch(
                 "kanon_cli.core.marketplace.shutil.which",
                 return_value=claude_bin,
@@ -341,7 +397,10 @@ class TestInstallMarketplaceRegistration:
                 side_effect=_make_repo_init_with_linkfiles(marketplace_dir),
             ),
             patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
+            patch(
+                "kanon_cli.repo.repo_sync",
+                side_effect=lambda repo_dir, **kwargs: materialize_linkfiles_for_sync(pathlib.Path(repo_dir)),
+            ),
             patch(
                 "kanon_cli.core.marketplace.shutil.which",
                 return_value="/usr/bin/claude",
@@ -418,10 +477,19 @@ class TestInstallMixedMarketplaceRegistration:
     ) -> None:
         """With alpha _MARKETPLACE=true and bravo absent, only alpha is registered.
 
-        Both sources expose a ``.claude-plugin/marketplace.json`` via their
-        linkfile manifest, so the difference in behaviour is driven solely by the
-        per-dependency ``KANON_SOURCE_<alias>_MARKETPLACE`` flag, not by manifest
-        content: source-alpha registers, source-bravo does not.
+        Both sources are direct-checkout entries: identical manifests carrying a
+        ``.claude-plugin/marketplace.json`` and no ``<linkfile>``.  The manifest
+        content is therefore held constant and the difference in behaviour is
+        driven solely by the per-dependency ``KANON_SOURCE_<alias>_MARKETPLACE``
+        flag, which gates the per-source call to
+        ``register_direct_checkout_marketplaces``: source-alpha registers,
+        source-bravo does not.
+
+        The flag does NOT gate ``<linkfile>`` placement.  ``repo sync`` runs for
+        every source and materializes every ``<linkfile>`` destination, so a
+        source that links into ``CLAUDE_MARKETPLACES_DIR`` is registered by the
+        directory-wide ``install_marketplace_plugins`` pass whether or not it
+        carries the flag.  A linkfile-based fixture cannot express this test.
         """
         monkeypatch.delenv("KANON_MARKETPLACE_INSTALL", raising=False)
 
@@ -458,10 +526,13 @@ class TestInstallMixedMarketplaceRegistration:
         with (
             patch(
                 "kanon_cli.repo.repo_init",
-                side_effect=_make_repo_init_with_linkfiles(marketplace_dir),
+                side_effect=_make_repo_init_direct_checkout(),
             ),
             patch("kanon_cli.repo.repo_envsubst"),
-            patch("kanon_cli.repo.repo_sync"),
+            patch(
+                "kanon_cli.repo.repo_sync",
+                side_effect=lambda repo_dir, **kwargs: materialize_linkfiles_for_sync(pathlib.Path(repo_dir)),
+            ),
             patch(
                 "kanon_cli.core.marketplace.shutil.which",
                 return_value=claude_bin,

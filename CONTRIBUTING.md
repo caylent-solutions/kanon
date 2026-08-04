@@ -15,6 +15,12 @@ Thank you for your interest in contributing to the Kanon CLI! This document prov
    make install-dev
    ```
 
+   This runs `uv sync --locked --all-groups`, so the toolchain comes from
+   `uv.lock` and matches CI exactly. [uv](https://docs.astral.sh/uv/) is a
+   prerequisite. Every `make` target invokes its tools through `uv run`; running
+   `ruff`, `pytest`, or `bandit` directly picks up whatever is on your `PATH`
+   instead of the locked version, which is how CI and local results drift apart.
+
 3. Set up git hooks to ensure code quality:
    ```bash
    make install-hooks

@@ -471,7 +471,7 @@ class _CopyFile:
             raise ManifestInvalidPathError(f"{self.dest}: copying to directory not allowed")
 
         # Copy file if it does not exist or is out of date.
-        if not os.path.exists(dest) or not filecmp.cmp(src, dest):
+        if not os.path.exists(dest) or not filecmp.cmp(src, dest, shallow=False):
             try:
                 # Remove existing file first, since it might be read-only.
                 if os.path.exists(dest):

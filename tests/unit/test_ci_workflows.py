@@ -270,6 +270,40 @@ def test_integration_job_runs_in_parallel_with_unit_tests(workflow_path: pathlib
             )
 
 
+MAIN_VALIDATION = WORKFLOWS_DIR / "main-validation.yml"
+
+
+@pytest.mark.unit
+def test_release_job_refreshes_and_stages_the_lockfile():
+    """Validate that the release version bump also re-locks and commits uv.lock.
+
+    Given: main-validation.yml
+    When: the release job's version-bump and commit steps are inspected
+    Then: it runs `uv lock` and stages uv.lock alongside the version files
+
+    uv.lock records the project's own version. semantic-release bumps
+    pyproject.toml and __init__.py through version_toml / version_variable and
+    knows nothing about the lock, so without an explicit refresh every release
+    leaves it a version behind. Because every job installs with
+    `uv sync --locked`, which refuses a stale lock, that skew fails the tag
+    build in "Build and publish to PyPI" rather than the pull request -- which
+    is exactly how 3.3.1 failed to publish.
+    """
+    text = MAIN_VALIDATION.read_text(encoding="utf-8")
+
+    assert re.search(r"^\s+uv lock\s*$", text, re.MULTILINE), (
+        "The release job must run `uv lock` after bumping the version, or uv.lock "
+        "keeps the previous version and `uv sync --locked` fails on the tag."
+    )
+
+    staged = re.search(r"git add ([^\n]*)", text)
+    assert staged, "The release job must stage the files it bumped."
+    assert "uv.lock" in staged.group(1), (
+        f"The release job stages {staged.group(1).strip()!r}, which omits uv.lock, so the "
+        f"refreshed lock never reaches the release commit or the tag built from it."
+    )
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
 def test_unit_tier_runs_once_with_bare_marker(workflow_path: pathlib.Path):

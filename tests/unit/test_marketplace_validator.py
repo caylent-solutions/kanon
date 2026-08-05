@@ -8,6 +8,7 @@ import pytest
 
 from kanon_cli.core.marketplace_validator import (
     _is_pinnable_revision,
+    read_entry_type,
     validate_include_chain,
     validate_linkfile_dest,
     validate_marketplace,
@@ -33,24 +34,202 @@ def _write_xml(path: Path, content: str) -> Path:
     return path
 
 
+def _entry_xml(body: str, entry_type: str | None = None) -> str:
+    """Wrap *body* in a manifest carrying a <catalog-metadata> block."""
+    type_line = f"    <type>{entry_type}</type>\n" if entry_type else ""
+    return textwrap.dedent("""\
+        <manifest>
+        {body}
+          <catalog-metadata>
+            <name>proj</name>
+            <display-name>Proj</display-name>
+            <description>d</description>
+            <version>1.0.0</version>
+        {type_line}  </catalog-metadata>
+        </manifest>
+    """).format(body=body, type_line=type_line)
+
+
 @pytest.mark.unit
 class TestLinkfileDest:
-    def test_valid_dest(self, tmp_path: Path) -> None:
+    def test_marketplace_dest_accepted(self, tmp_path: Path) -> None:
         xml = _write_xml(
             tmp_path / "m.xml",
-            textwrap.dedent("""\
-                <manifest>
-                  <project name="proj" path=".packages/proj" remote="r" revision="main">
-                    <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
-                  </project>
-                </manifest>
-            """),
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <linkfile src="s" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />\n'
+                "  </project>",
+                entry_type="claude-marketplace",
+            ),
         )
-        assert validate_linkfile_dest(xml) == []
+        assert validate_linkfile_dest(xml, tmp_path) == []
 
-    def test_invalid_dest(self, tmp_path: Path) -> None:
+    def test_absolute_dest_rejected(self, tmp_path: Path) -> None:
         xml = _write_xml(
             tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <linkfile src="s" dest="/bad/path" />\n'
+                "  </project>"
+            ),
+        )
+        errors = validate_linkfile_dest(xml, tmp_path)
+        assert len(errors) == 1
+        assert "proj" in errors[0]
+        assert "absolute path" in errors[0]
+
+    def test_traversal_dest_rejected(self, tmp_path: Path) -> None:
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <linkfile src="s" dest="../outside/rules" />\n'
+                "  </project>"
+            ),
+        )
+        errors = validate_linkfile_dest(xml, tmp_path)
+        assert len(errors) == 1
+        assert "'..'" in errors[0]
+
+    def test_empty_dest_rejected(self, tmp_path: Path) -> None:
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <linkfile src="s" dest="" />\n'
+                "  </project>"
+            ),
+        )
+        errors = validate_linkfile_dest(xml, tmp_path)
+        assert len(errors) == 1
+        assert "empty" in errors[0]
+
+    def test_custom_variable_dest_accepted_on_non_marketplace_entry(self, tmp_path: Path) -> None:
+        """A 'library' entry may link non-plugin content outside the marketplaces dir."""
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <linkfile src="rules" dest="${ACE_KIT_PROJECT_ROOT}/.claude/rules" />\n'
+                "  </project>",
+                entry_type="library",
+            ),
+        )
+        assert validate_linkfile_dest(xml, tmp_path) == []
+
+    def test_workspace_relative_dest_accepted(self, tmp_path: Path) -> None:
+        """The checkstyle shape documented in docs/how-it-works.md must validate."""
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <linkfile src="config/checkstyle/checkstyle.xml"'
+                ' dest="config/checkstyle/checkstyle.xml" />\n'
+                "  </project>",
+                entry_type="library",
+            ),
+        )
+        assert validate_linkfile_dest(xml, tmp_path) == []
+
+    def test_marketplace_entry_may_also_ship_non_plugin_content(self, tmp_path: Path) -> None:
+        """One entry, both payloads: a plugin plus project-root standards."""
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <linkfile src="plugin" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />\n'
+                '    <linkfile src="rules" dest="${ACE_KIT_PROJECT_ROOT}/.claude/rules" />\n'
+                '    <linkfile src="gitleaks.toml" dest="${ACE_KIT_PROJECT_ROOT}/.gitleaks.toml" />\n'
+                "  </project>",
+                entry_type="claude-marketplace",
+            ),
+        )
+        assert validate_linkfile_dest(xml, tmp_path) == []
+
+    def test_marketplace_entry_without_marketplace_dest_rejected(self, tmp_path: Path) -> None:
+        """Declaring type=claude-marketplace while registering no marketplace is an error."""
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <linkfile src="rules" dest="${ACE_KIT_PROJECT_ROOT}/.claude/rules" />\n'
+                "  </project>",
+                entry_type="claude-marketplace",
+            ),
+        )
+        errors = validate_linkfile_dest(xml, tmp_path)
+        assert len(errors) == 1
+        assert "registers no marketplace" in errors[0]
+
+    def test_marketplace_entry_with_no_linkfiles_is_exempt(self, tmp_path: Path) -> None:
+        """A direct-checkout marketplace entry declares no linkfiles and passes.
+
+        ``register_direct_checkout_marketplaces`` registers a project whose
+        checkout carries ``.claude-plugin/marketplace.json`` and which has NO
+        ``<linkfile>`` children -- the shape ``test_marketplace_direct_checkout.py``
+        covers end to end. Requiring a marketplace dest here would make
+        ``kanon validate marketplace`` reject an entry ``kanon install``
+        registers correctly, which is the same validator/install contradiction
+        issue #94 reports, aimed at a different entry shape.
+        """
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main" />',
+                entry_type="claude-marketplace",
+            ),
+        )
+        assert validate_linkfile_dest(xml, tmp_path) == []
+
+    def test_same_defect_reached_twice_is_reported_once(self, tmp_path: Path) -> None:
+        """A manifest reachable by two include paths yields one error, not two.
+
+        The entry includes ``a.xml`` directly and again through ``b.xml``. The
+        chain walk visits the shared manifest once per path, so without
+        de-duplication the single bad dest is reported twice.
+        """
+        _write_xml(
+            tmp_path / "shared.xml",
+            "<manifest>\n"
+            '  <project name="shared" path=".packages/shared" remote="r" revision="main">\n'
+            '    <linkfile src="s" dest="../escapes" />\n'
+            "  </project>\n"
+            "</manifest>",
+        )
+        _write_xml(tmp_path / "b.xml", '<manifest>\n  <include name="shared.xml" />\n</manifest>')
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <include name="shared.xml" />\n'
+                '  <include name="b.xml" />\n'
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <linkfile src="plugin" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />\n'
+                "  </project>",
+                entry_type="claude-marketplace",
+            ),
+        )
+
+        errors = validate_linkfile_dest(xml, tmp_path)
+
+        assert len(errors) == 1, f"expected the shared defect once, got {len(errors)}: {errors}"
+        assert "'..' component" in errors[0]
+
+    def test_non_marketplace_entry_needs_no_marketplace_dest(self, tmp_path: Path) -> None:
+        """The same manifest without the marketplace type passes."""
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <linkfile src="rules" dest="${ACE_KIT_PROJECT_ROOT}/.claude/rules" />\n'
+                "  </project>"
+            ),
+        )
+        assert validate_linkfile_dest(xml, tmp_path) == []
+
+    def test_linkfiles_reached_through_include_are_validated(self, tmp_path: Path) -> None:
+        """Moving a <project> into an include must not skip the containment check."""
+        _write_xml(
+            tmp_path / "packages.xml",
             textwrap.dedent("""\
                 <manifest>
                   <project name="proj" path=".packages/proj" remote="r" revision="main">
@@ -59,9 +238,43 @@ class TestLinkfileDest:
                 </manifest>
             """),
         )
-        errors = validate_linkfile_dest(xml)
+        xml = _write_xml(tmp_path / "m.xml", _entry_xml('  <include name="packages.xml" />'))
+        errors = validate_linkfile_dest(xml, tmp_path)
         assert len(errors) == 1
-        assert "proj" in errors[0]
+        assert "absolute path" in errors[0]
+
+    def test_marketplace_dest_in_include_satisfies_the_type(self, tmp_path: Path) -> None:
+        """The marketplace linkfile counts wherever in the include chain it lives."""
+        _write_xml(
+            tmp_path / "packages.xml",
+            textwrap.dedent("""\
+                <manifest>
+                  <project name="proj" path=".packages/proj" remote="r" revision="main">
+                    <linkfile src="plugin" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />
+                  </project>
+                </manifest>
+            """),
+        )
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml('  <include name="packages.xml" />', entry_type="claude-marketplace"),
+        )
+        assert validate_linkfile_dest(xml, tmp_path) == []
+
+
+@pytest.mark.unit
+class TestReadEntryType:
+    def test_returns_declared_type(self, tmp_path: Path) -> None:
+        xml = _write_xml(tmp_path / "m.xml", _entry_xml("", entry_type="claude-marketplace"))
+        assert read_entry_type(xml) == "claude-marketplace"
+
+    def test_returns_none_when_type_absent(self, tmp_path: Path) -> None:
+        xml = _write_xml(tmp_path / "m.xml", _entry_xml(""))
+        assert read_entry_type(xml) is None
+
+    def test_returns_none_when_no_metadata_block(self, tmp_path: Path) -> None:
+        xml = _write_xml(tmp_path / "m.xml", "<manifest />")
+        assert read_entry_type(xml) is None
 
 
 @pytest.mark.unit

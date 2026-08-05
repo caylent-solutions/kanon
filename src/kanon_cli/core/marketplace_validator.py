@@ -6,10 +6,12 @@ Checks:
     rooted at ${CLAUDE_MARKETPLACES_DIR}/, at any other ${VAR}, or at a plain
     workspace-relative path is accepted -- an entry may ship non-plugin content
     (shared rules, lint config, git hooks) alongside a Claude plugin.
-  - An entry whose <catalog-metadata><type> is 'claude-marketplace' lands at
-    least one <linkfile> under ${CLAUDE_MARKETPLACES_DIR}/, so an entry that
-    declares itself a marketplace actually registers one. Entries of any other
-    type (or none) carry no such requirement.
+  - An entry whose <catalog-metadata><type> is 'claude-marketplace' AND which
+    declares at least one <linkfile> lands one of them under
+    ${CLAUDE_MARKETPLACES_DIR}/, so an entry that declares itself a marketplace
+    actually registers one. An entry with no <linkfile> at all is exempt: that
+    is the direct-checkout shape that register_direct_checkout_marketplaces
+    handles. Entries of any other type (or none) carry no such requirement.
   - All <include> chains are unbroken (every referenced file exists).
   - All flattened project path names are unique across manifests.
   - All <project revision> attributes are pinnable refs: an exact existing git
@@ -173,22 +175,45 @@ def validate_linkfile_dest(xml_path: Path, repo_root: Path) -> list[str]:
        and it no longer forbids an entry from shipping non-plugin content
        (shared rules, lint config, git hooks) next to a Claude plugin.
 
-    2. **Marketplace entries register a marketplace.** When the entry declares
-       ``<catalog-metadata><type>claude-marketplace</type>`` -- the same field
-       ``kanon add`` reads to set ``KANON_SOURCE_<alias>_MARKETPLACE`` -- at
-       least one dest must sit under ``${CLAUDE_MARKETPLACES_DIR}/``. An entry
-       of any other type, or with no ``<type>``, carries no such requirement.
+    2. **A marketplace entry that uses linkfiles points one at the marketplace.**
+       When the entry declares ``<catalog-metadata><type>claude-marketplace</type>``
+       -- the same field ``kanon add`` reads to set
+       ``KANON_SOURCE_<alias>_MARKETPLACE`` -- and declares at least one
+       ``<linkfile>``, one of those dests must sit under
+       ``${CLAUDE_MARKETPLACES_DIR}/``. Otherwise the entry calls itself a
+       marketplace while every link it creates lands somewhere else.
+
+       An entry that declares **no** ``<linkfile>`` at all is exempt, because
+       that is the direct-checkout shape:
+       :func:`kanon_cli.core.marketplace.register_direct_checkout_marketplaces`
+       registers a project whose checkout carries
+       ``.claude-plugin/marketplace.json`` and which has no ``<linkfile>``
+       children. Requiring a marketplace dest there would reject an entry that
+       ``kanon install`` registers correctly -- the same validator/install
+       contradiction this function exists to remove, aimed at a different entry
+       shape. The catalog XML alone cannot prove that checkout carries a
+       ``marketplace.json``, so the absence of linkfiles is the only signal
+       available here and validation defers to install rather than guessing.
+
+       An entry of any other type, or with no ``<type>``, carries no such
+       requirement.
+
+    Errors are de-duplicated before returning. A ``<project>`` reached through
+    ``<include>`` is visited once per entry that includes it, so a single
+    defect in a shared include would otherwise be reported once per consumer.
 
     Args:
         xml_path: Path to the catalog entry manifest.
         repo_root: Repository root used to resolve ``<include name>`` paths.
 
     Returns:
-        List of error messages, each naming the file, project, and dest.
-        Empty when the entry passes.
+        List of error messages, each naming the file, project, and dest,
+        in first-seen order with duplicates removed. Empty when the entry
+        passes.
     """
     errors: list[str] = []
     is_marketplace = read_entry_type(xml_path) == CATALOG_TYPE_CLAUDE_MARKETPLACE
+    linkfile_count = 0
     marketplace_dest_count = 0
 
     for manifest_path in _collect_manifest_chain(xml_path, repo_root):
@@ -199,6 +224,7 @@ def validate_linkfile_dest(xml_path: Path, repo_root: Path) -> list[str]:
         for project in root.findall("project"):
             project_name = project.get("name", "<unknown>")
             for linkfile in project.findall("linkfile"):
+                linkfile_count += 1
                 dest = linkfile.get("dest", "")
                 if dest.startswith(MARKETPLACE_DIR_PREFIX):
                     marketplace_dest_count += 1
@@ -209,16 +235,18 @@ def validate_linkfile_dest(xml_path: Path, repo_root: Path) -> list[str]:
                         f"{manifest_path}: project '{project_name}' has invalid linkfile dest='{dest}' -- {reason}"
                     )
 
-    if is_marketplace and marketplace_dest_count == 0:
+    if is_marketplace and linkfile_count > 0 and marketplace_dest_count == 0:
         errors.append(
             f"{xml_path}: entry declares "
             f"<catalog-metadata><type>{CATALOG_TYPE_CLAUDE_MARKETPLACE}</type> "
-            f"but no <linkfile dest> targets {MARKETPLACE_DIR_PREFIX} -- "
-            f"such an entry registers no marketplace. Add a marketplace linkfile, "
-            f"or change <type> to a non-marketplace value."
+            f"and declares <linkfile> elements, but none target "
+            f"{MARKETPLACE_DIR_PREFIX} -- such an entry registers no marketplace. "
+            f"Point one linkfile at {MARKETPLACE_DIR_PREFIX}, change <type> to a "
+            f"non-marketplace value, or drop the linkfiles to register the "
+            f"project as a direct checkout."
         )
 
-    return errors
+    return list(dict.fromkeys(errors))
 
 
 def validate_include_chain(
@@ -736,13 +764,19 @@ def validate_marketplace(
 
     Scans for catalog entry manifests (``*.xml`` with a ``<catalog-metadata>``
     block) and validates each one for linkfile dest containment (plus the
-    at-least-one-marketplace-dest rule for ``claude-marketplace`` entries),
-    include chain
-    integrity, project path uniqueness, pinnable ``<project revision>`` format
-    (a deep-path tag, a ``refs/heads/<name>`` branch ref, or a 40-hex SHA;
-    covering revisions inherited from ``<default revision>``), and two-tier +
-    local-aware revision existence. Exits with a non-zero code if any validation
-    errors are found.
+    marketplace-dest rule for ``claude-marketplace`` entries that use
+    linkfiles), include chain integrity, project path uniqueness, pinnable
+    ``<project revision>`` format (a deep-path tag, a ``refs/heads/<name>``
+    branch ref, or a 40-hex SHA; covering revisions inherited from
+    ``<default revision>``), and two-tier + local-aware revision existence.
+    Exits with a non-zero code if any validation errors are found.
+
+    Errors are de-duplicated across the whole run before reporting. Linkfile
+    and include checks follow each entry's ``<include>`` chain, so a defect in
+    a manifest shared by several entries is reached once per entry; reporting
+    it once per consumer would inflate the count and bury the distinct
+    failures. Identical message text means the same file, project, and reason,
+    so collapsing exact duplicates cannot hide a second real defect.
 
     Args:
         repo_root: Repository root directory.
@@ -776,6 +810,8 @@ def validate_marketplace(
     all_errors.extend(validate_name_uniqueness(marketplace_files))
     all_errors.extend(validate_tag_format(marketplace_files, repo_root))
     all_errors.extend(validate_revision_existence(marketplace_files, repo_root, effective_env, runner))
+
+    all_errors = list(dict.fromkeys(all_errors))
 
     if all_errors:
         print(

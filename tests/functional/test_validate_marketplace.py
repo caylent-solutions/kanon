@@ -80,7 +80,14 @@ def _valid_marketplace_xml(
 
 @pytest.mark.functional
 class TestLinkfileDestValidation:
-    """AC-TEST-001: linkfile dest attribute must start with the marketplace dir prefix."""
+    """AC-TEST-001: every linkfile dest must resolve inside the consumer workspace.
+
+    The rule used to be a blanket ``${CLAUDE_MARKETPLACES_DIR}/`` prefix on every
+    dest in every entry, which rejected non-marketplace entries that install
+    handles correctly (issue #94). What is enforced now is containment for all
+    entries, plus a marketplace-dest requirement that applies only to
+    ``claude-marketplace`` entries that declare linkfiles.
+    """
 
     def test_valid_dest_exits_zero(self, tmp_path: Path) -> None:
         """AC-TEST-001 positive: valid dest attribute passes validation.
@@ -106,16 +113,54 @@ class TestLinkfileDestValidation:
         )
 
     @pytest.mark.parametrize(
-        "bad_dest",
+        "contained_dest",
         [
-            "/absolute/bad/path",
             "relative/path",
             "CLAUDE_MARKETPLACES_DIR/missing-dollar-brace",
             "${OTHER_VAR}/proj",
         ],
     )
-    def test_invalid_dest_exits_one_with_error_on_stderr(self, tmp_path: Path, bad_dest: str) -> None:
-        """AC-TEST-001 negative: invalid linkfile dest exits 1 with diagnostic on stderr.
+    def test_contained_dest_on_untyped_entry_exits_zero(self, tmp_path: Path, contained_dest: str) -> None:
+        """AC-TEST-001 positive: a contained dest on a non-marketplace entry passes.
+
+        ``_valid_marketplace_xml`` writes no ``<catalog-metadata><type>``, so the
+        entry is not a ``claude-marketplace`` entry and the marketplace-dest rule
+        does not apply to it. Each dest here stays inside the consumer workspace
+        -- a plain relative path, a literal that merely resembles the marketplace
+        variable, and a different ``${VAR}`` the consumer resolves -- so all are
+        legal. Requiring the marketplace prefix here was the defect in issue #94:
+        it rejected entries that ``kanon install`` places correctly.
+
+        AC-CHANNEL-001: success output goes to stdout, stderr is empty.
+        """
+        repo_root = _make_repo(tmp_path)
+        _write_xml(
+            repo_root / "repo-specs" / "contained-marketplace.xml",
+            _valid_marketplace_xml(dest=contained_dest),
+        )
+
+        result = _run_kanon("validate", "marketplace", "--repo-root", str(repo_root))
+
+        assert result.returncode == 0, (
+            f"AC-TEST-001: expected exit 0 for contained dest={contained_dest!r} on an "
+            f"entry with no <type>.\nstdout: {result.stdout!r}\nstderr: {result.stderr!r}"
+        )
+        assert result.stderr == "", f"AC-CHANNEL-001: expected no stderr on success.\nstderr: {result.stderr!r}"
+
+    @pytest.mark.parametrize(
+        "bad_dest",
+        [
+            "/absolute/bad/path",
+            "../escapes/the/workspace",
+            "",
+        ],
+    )
+    def test_escaping_dest_exits_one_with_error_on_stderr(self, tmp_path: Path, bad_dest: str) -> None:
+        """AC-TEST-001 negative: a dest that escapes the workspace exits 1 on stderr.
+
+        Containment is the rule that survives regardless of entry type: an
+        absolute path, a ``..`` component, and an empty dest each name a link
+        that cannot be created inside the consumer workspace.
 
         AC-FUNC-001: the CLI surfaces the marketplace-specific linkfile dest error.
         AC-CHANNEL-001: error goes to stderr, not stdout.

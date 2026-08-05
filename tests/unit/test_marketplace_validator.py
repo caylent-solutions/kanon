@@ -161,6 +161,59 @@ class TestLinkfileDest:
         assert len(errors) == 1
         assert "registers no marketplace" in errors[0]
 
+    def test_marketplace_entry_with_no_linkfiles_is_exempt(self, tmp_path: Path) -> None:
+        """A direct-checkout marketplace entry declares no linkfiles and passes.
+
+        ``register_direct_checkout_marketplaces`` registers a project whose
+        checkout carries ``.claude-plugin/marketplace.json`` and which has NO
+        ``<linkfile>`` children -- the shape ``test_marketplace_direct_checkout.py``
+        covers end to end. Requiring a marketplace dest here would make
+        ``kanon validate marketplace`` reject an entry ``kanon install``
+        registers correctly, which is the same validator/install contradiction
+        issue #94 reports, aimed at a different entry shape.
+        """
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main" />',
+                entry_type="claude-marketplace",
+            ),
+        )
+        assert validate_linkfile_dest(xml, tmp_path) == []
+
+    def test_same_defect_reached_twice_is_reported_once(self, tmp_path: Path) -> None:
+        """A manifest reachable by two include paths yields one error, not two.
+
+        The entry includes ``a.xml`` directly and again through ``b.xml``. The
+        chain walk visits the shared manifest once per path, so without
+        de-duplication the single bad dest is reported twice.
+        """
+        _write_xml(
+            tmp_path / "shared.xml",
+            "<manifest>\n"
+            '  <project name="shared" path=".packages/shared" remote="r" revision="main">\n'
+            '    <linkfile src="s" dest="../escapes" />\n'
+            "  </project>\n"
+            "</manifest>",
+        )
+        _write_xml(tmp_path / "b.xml", '<manifest>\n  <include name="shared.xml" />\n</manifest>')
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <include name="shared.xml" />\n'
+                '  <include name="b.xml" />\n'
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <linkfile src="plugin" dest="${CLAUDE_MARKETPLACES_DIR}/proj" />\n'
+                "  </project>",
+                entry_type="claude-marketplace",
+            ),
+        )
+
+        errors = validate_linkfile_dest(xml, tmp_path)
+
+        assert len(errors) == 1, f"expected the shared defect once, got {len(errors)}: {errors}"
+        assert "'..' component" in errors[0]
+
     def test_non_marketplace_entry_needs_no_marketplace_dest(self, tmp_path: Path) -> None:
         """The same manifest without the marketplace type passes."""
         xml = _write_xml(

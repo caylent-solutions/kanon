@@ -1521,6 +1521,197 @@ rm -rf "${VA06_DIR}"
 
 ---
 
+## 12b. Category 11b: Catalog Entry Type Validation (7 tests)
+
+`kanon validate marketplace` enforces two linkfile rules. **Containment** applies
+to every entry: a `<linkfile dest>` names a symlink created relative to the top of
+the consumer tree, so it must land inside that tree. **The marketplace-dest rule**
+applies only to an entry whose `<catalog-metadata><type>` is `claude-marketplace`
+*and* which declares at least one `<linkfile>`: one of those dests must sit under
+`${CLAUDE_MARKETPLACES_DIR}/`.
+
+The worked example throughout is a package of engineering standards containing a
+Claude Code plugin plus the repo-level assets a team expects at conventional
+paths: `.claude/rules/`, `.githooks/`, and a `.gitleaks.toml` at the repo root.
+
+**Shared setup for this category:**
+
+```bash
+export ET_DIR="${KANON_TEST_ROOT}/test-et"
+mkdir -p "${ET_DIR}"
+
+# Writes a catalog entry: $1 file, $2 <type> (empty for none), $3.. linkfile dests.
+et_entry() {
+  local file="$1" entry_type="$2"; shift 2
+  local links="" type_el=""
+  for dest in "$@"; do
+    links="${links}      <linkfile src=\"src\" dest=\"${dest}\" />
+"
+  done
+  [ -n "${entry_type}" ] && type_el="    <type>${entry_type}</type>
+"
+  mkdir -p "$(dirname "${file}")"
+  cat > "${file}" << ENTRYEOF
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="origin" fetch="https://example.com" />
+  <project name="standards" path=".packages/standards" remote="origin" revision="refs/tags/ex/standards/1.0.0">
+${links}  </project>
+  <catalog-metadata>
+    <name>standards</name>
+    <display-name>Engineering Standards</display-name>
+    <description>Plugin plus repo-level standards.</description>
+    <version>1.0.0</version>
+${type_el}    <owner-name>Example Org</owner-name>
+    <owner-email>eng@example.com</owner-email>
+    <keywords>standards</keywords>
+  </catalog-metadata>
+</manifest>
+ENTRYEOF
+}
+```
+
+### ET-01: Marketplace entry ships a plugin alongside repo-level standards
+
+The case issue #94 was filed to unblock. One entry registers a Claude plugin and
+also places rules, hooks, a root dotfile, and a plain relative config.
+
+```bash
+rm -rf "${ET_DIR}/c01" && et_entry "${ET_DIR}/c01/repo-specs/standards.xml" claude-marketplace \
+  '${CLAUDE_MARKETPLACES_DIR}/standards' \
+  '${PROJECT_ROOT}/.claude/rules' \
+  '${PROJECT_ROOT}/.githooks' \
+  '${PROJECT_ROOT}/.gitleaks.toml' \
+  'config/lint.toml'
+
+kanon validate marketplace --repo-root "${ET_DIR}/c01"
+```
+
+**Pass criteria:** Exit code 0, stderr empty. Before the fix each of the four
+non-marketplace dests produced one error.
+
+### ET-02: Non-marketplace entry links only into the project root
+
+An entry declaring `<type>library</type>` ships no plugin at all.
+
+```bash
+rm -rf "${ET_DIR}/c02" && et_entry "${ET_DIR}/c02/repo-specs/standards.xml" library \
+  '${PROJECT_ROOT}/.claude/rules' '${PROJECT_ROOT}/.gitleaks.toml'
+
+kanon validate marketplace --repo-root "${ET_DIR}/c02"
+```
+
+**Pass criteria:** Exit code 0, stderr empty. An entry with no `<type>` at all
+behaves identically.
+
+### ET-03: Direct-checkout marketplace entry declares no linkfiles
+
+A `claude-marketplace` entry registered from a checked-out
+`.claude-plugin/marketplace.json`, with no `<linkfile>` elements. The
+marketplace-dest rule must not fire, or validation would reject an entry that
+`kanon install` registers correctly.
+
+```bash
+rm -rf "${ET_DIR}/c03" && et_entry "${ET_DIR}/c03/repo-specs/standards.xml" claude-marketplace
+
+kanon validate marketplace --repo-root "${ET_DIR}/c03"
+```
+
+**Pass criteria:** Exit code 0, stderr empty.
+
+### ET-04: Marketplace entry whose linkfiles all miss the marketplace directory
+
+Declares itself a marketplace and uses linkfiles, but every dest lands elsewhere,
+so it registers nothing.
+
+```bash
+rm -rf "${ET_DIR}/c04" && et_entry "${ET_DIR}/c04/repo-specs/standards.xml" claude-marketplace \
+  '${PROJECT_ROOT}/.claude/rules' '${PROJECT_ROOT}/.githooks'
+
+set +e
+kanon validate marketplace --repo-root "${ET_DIR}/c04"
+exit_code=$?
+set -e
+```
+
+**Pass criteria:** Exit code non-zero. stderr contains `registers no marketplace`
+and names all three ways out, including `direct checkout`.
+
+### ET-05: A dest that escapes the consumer workspace is rejected
+
+Three shapes escape, for every entry type: an absolute path, a `..` component,
+and an empty dest.
+
+```bash
+for bad in '/etc/kanon/rules' '../../outside/workspace' ''; do
+  rm -rf "${ET_DIR}/c05" && et_entry "${ET_DIR}/c05/repo-specs/standards.xml" library "${bad}"
+  set +e
+  kanon validate marketplace --repo-root "${ET_DIR}/c05"
+  echo "dest=${bad} exit=$?"
+  set -e
+done
+```
+
+**Pass criteria:** Exit code non-zero for each. stderr names the specific reason:
+`absolute path`, `'..' component`, or `dest is empty`. No error text on stdout.
+
+### ET-06: A linkfile inside an `<include>` is validated like an inline one
+
+`kanon install` resolves the whole include chain, so validation must see the same
+projects. The entry below is clean; only the included manifest is not.
+
+```bash
+rm -rf "${ET_DIR}/c06" && mkdir -p "${ET_DIR}/c06/repo-specs"
+cat > "${ET_DIR}/c06/repo-specs/packages.xml" << 'INCEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <project name="shared" path=".packages/shared" remote="origin" revision="refs/tags/ex/shared/1.0.0">
+    <linkfile src="src" dest="../escapes" />
+  </project>
+</manifest>
+INCEOF
+et_entry "${ET_DIR}/c06/repo-specs/standards.xml" claude-marketplace '${CLAUDE_MARKETPLACES_DIR}/standards'
+sed -i.bak 's|<remote name="origin" fetch="https://example.com" />|<remote name="origin" fetch="https://example.com" />\n  <include name="repo-specs/packages.xml" />|' \
+  "${ET_DIR}/c06/repo-specs/standards.xml"
+
+set +e
+kanon validate marketplace --repo-root "${ET_DIR}/c06"
+exit_code=$?
+set -e
+```
+
+**Pass criteria:** Exit code non-zero. stderr contains `'..' component` and names
+`packages.xml`.
+
+### ET-07: A defect in a shared `<include>` is reported once
+
+Three entries include the same broken manifest. Reporting the identical message
+once per consumer inflates the count and buries the distinct failures.
+
+```bash
+rm -rf "${ET_DIR}/c07" && mkdir -p "${ET_DIR}/c07/repo-specs"
+cp "${ET_DIR}/c06/repo-specs/packages.xml" "${ET_DIR}/c07/repo-specs/packages.xml"
+for name in alpha bravo charlie; do
+  cp "${ET_DIR}/c06/repo-specs/standards.xml" "${ET_DIR}/c07/repo-specs/${name}.xml"
+done
+
+set +e
+kanon validate marketplace --repo-root "${ET_DIR}/c07" 2>&1 | grep -c "'..' component"
+set -e
+```
+
+**Pass criteria:** Exactly `1` occurrence, and stderr reports
+`Found 1 validation error(s)` despite three entries including the defect.
+
+**Cleanup:**
+
+```bash
+cd "${KANON_TEST_ROOT}"
+rm -rf "${ET_DIR}"
+```
+
+---
+
 ## 13. Category 12: Entry Points (2 tests)
 
 ### EP-01: python -m kanon_cli --version

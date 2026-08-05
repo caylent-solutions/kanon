@@ -35,7 +35,6 @@ REPO_ROOT = pathlib.Path(__file__).parents[2]
 MAKEFILE_PATH = REPO_ROOT / "Makefile"
 PYPROJECT_PATH = REPO_ROOT / "pyproject.toml"
 
-_UV_RUN_RE = re.compile(r"\buv\s+run\s+(?:--[\w-]+(?:[= ]\S+)?\s+)*([A-Za-z][\w.-]*)")
 _ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=\S*$")
 _REQUIREMENT_NAME_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)")
 
@@ -97,6 +96,42 @@ def _declared_dev_dependencies() -> set[str]:
     return names
 
 
+def _uv_run_tools(recipe: str) -> list[str]:
+    """Return the executables *recipe* invokes through ``uv run``.
+
+    Deliberately tokenizes rather than pattern-matching. A regex able to skip
+    ``uv run``'s own flags needs a repeated optional group, which backtracks
+    exponentially on adversarial input -- CodeQL's ``py/redos``. Walking tokens
+    is linear in the length of the line and easier to follow.
+
+    Any token starting with ``-`` after ``run`` is treated as a flag to uv
+    itself and skipped, so a flag written as ``--flag=value`` is handled. A flag
+    taking a detached value (``--flag value``) would misreport that value as the
+    tool; no target uses that form, and the assertion messages name the line, so
+    a future one would be obvious rather than silent.
+
+    Args:
+        recipe: A single recipe line, already stripped of its leading tab.
+
+    Returns:
+        One entry per ``uv run`` invocation in the line, in order.
+    """
+    tools: list[str] = []
+    tokens = recipe.split()
+    index = 0
+    while index < len(tokens) - 1:
+        if tokens[index] == _RUNNER and tokens[index + 1] == "run":
+            candidate = index + 2
+            while candidate < len(tokens) and tokens[candidate].startswith("-"):
+                candidate += 1
+            if candidate < len(tokens):
+                tools.append(tokens[candidate])
+            index = candidate
+            continue
+        index += 1
+    return tools
+
+
 def _command_heads(recipe: str) -> list[str]:
     """Return the executable invoked by each command in a recipe line.
 
@@ -135,7 +170,7 @@ def test_every_uv_run_tool_is_declared_as_a_dev_dependency() -> None:
     second is provided by the editable install of this project.
     """
     declared = _declared_dev_dependencies()
-    invoked = {tool for line in _recipe_lines() for tool in _UV_RUN_RE.findall(line)}
+    invoked = {tool for line in _recipe_lines() for tool in _uv_run_tools(line)}
     required = {tool for tool in invoked if tool not in _EXEMPT_FROM_DECLARATION}
 
     undeclared = sorted(tool for tool in required if tool.lower() not in declared)

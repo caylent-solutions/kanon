@@ -2,9 +2,57 @@
 
 
 
+## v3.3.2 (2026-08-05)
+
+### Fix
+
+* fix(ci): refresh uv.lock during the release version bump (#107)
+
+`Build and publish to PyPI` failed on the 3.3.1 tag:
+
+    uv sync --locked --all-groups
+    error: The lockfile at `uv.lock` needs to be updated, but `--locked` was provided.
+
+uv.lock records the project&#39;s own version alongside its dependencies.
+semantic-release bumps `pyproject.toml` and `src/kanon_cli/__init__.py`
+via version_toml / version_variable, but knows nothing about uv.lock, and
+the release job staged only those two files plus CHANGELOG.md. Every
+release therefore left uv.lock one version behind: after 3.3.1,
+pyproject.toml said 3.3.1 and uv.lock still said 3.3.0.
+
+The drift is not new -- before #97, uv.lock said 2.1.0 against a
+pyproject at 3.3.0, six releases of silent skew. What is new is that
+`make install-dev` is now `uv sync --locked`, which refuses a stale lock
+instead of quietly re-resolving, so a latent inconsistency became a hard
+failure at tag-build time.
+
+The release job now runs `uv lock` immediately after the version bump and
+stages uv.lock with the other version files, so the release commit is
+self-consistent and the tag it points at can be installed. Verified that
+`uv lock` against the current tree changes exactly one line
+(kanon-cli 3.3.0 -&gt; 3.3.1) with no dependency churn, so this does not turn
+a release into an unrelated dependency update.
+
+uv.lock is also corrected here so main is self-consistent again.
+
+Adds `test_uv_lock_records_the_declared_project_version`, which compares
+the kanon-cli entry in uv.lock against `[project] version`. Verified RED
+against the stale lock, failing with the same mismatch the publish job
+hit. It has to be run without `uv run` to fail, which is the reason this
+class of drift stays invisible in local development: `uv run` implicitly
+re-locks before executing, so a developer never sees the inconsistency
+that a `--locked` install in CI rejects.
+
+Note the existing 3.3.1 tag still points at a commit carrying the stale
+lock, so republishing that exact tag will keep failing until the tag is
+moved or a further release is cut. ([`00714e6`](https://github.com/caylent-solutions/kanon/commit/00714e648a42bea706945e7a38a66fa6dca8df28))
+
+
 ## v3.3.1 (2026-08-04)
 
 ### Chore
+
+* chore(release): 3.3.1 ([`71621d5`](https://github.com/caylent-solutions/kanon/commit/71621d50a72c412cae40b1886f6c73adc08e9fc0))
 
 * chore(git): ignore local settings files ([`61ceade`](https://github.com/caylent-solutions/kanon/commit/61ceade79f79a73b11316866572a71b3abce3052))
 
@@ -149,6 +197,10 @@ locked in uv.lock) makes both install paths deterministic. ([`9869ee7`](https://
 * fix(tests): patch to avoid ioctl environment issues when running tests in devcontainer under uv ([`4931c10`](https://github.com/caylent-solutions/kanon/commit/4931c101c4cec06e778958e62b1af68ee9ada022))
 
 ### Unknown
+
+* Merge pull request #106 from caylent-solutions/release-3.3.1
+
+Release 3.3.1 ([`35f709f`](https://github.com/caylent-solutions/kanon/commit/35f709f1f5e0c26a2bcf6317e573ca56303e49bd))
 
 * Merge pull request #97 from caylent-solutions/chore/add-uv-tool-version
 

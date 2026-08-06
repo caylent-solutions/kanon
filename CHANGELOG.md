@@ -2,7 +2,136 @@
 
 
 
+## v3.3.3 (2026-08-06)
+
+### Fix
+
+* fix: scope linkfile dest rule by entry type, exempt direct-checkout marketplaces (#109)
+
+* fix: scope marketplace linkfile dest rule to claude-marketplace entries
+
+validate_linkfile_dest required every &lt;linkfile dest&gt; in every catalog
+entry to start with ${CLAUDE_MARKETPLACES_DIR}/, ignoring the declared
+&lt;catalog-metadata&gt;&lt;type&gt;. Non-marketplace entries that install correctly
+could not pass validation.
+
+Closes #94
+
+* fix: exempt direct-checkout entries, de-duplicate errors, align tests
+
+Builds on ryano144&#39;s 0e75e27 (#99), which correctly identified issue #94:
+validate_linkfile_dest required every &lt;linkfile dest&gt; to start with
+${CLAUDE_MARKETPLACES_DIR}/ regardless of &lt;catalog-metadata&gt;&lt;type&gt;, so a
+non-marketplace entry that `kanon install` places correctly could not pass
+validation. Scoping that rule by entry type is right and is kept as is.
+
+Three problems remained.
+
+1. The new &#34;a claude-marketplace entry must land a dest under
+   ${CLAUDE_MARKETPLACES_DIR}/&#34; rule rejected an entry that declares no
+   &lt;linkfile&gt; at all. That is the direct-checkout shape:
+   register_direct_checkout_marketplaces registers a project whose checkout
+   carries .claude-plugin/marketplace.json and which has no &lt;linkfile&gt;
+   children, covered end to end by test_marketplace_direct_checkout.py. The
+   old validator accepted it, so the rule as written was a regression, and it
+   reproduced the very validator/install contradiction #94 reports, aimed at a
+   different entry shape. The rule now applies only when the entry declares at
+   least one &lt;linkfile&gt;; an entry declaring none is exempt. The useful half is
+   unchanged: an entry whose links all land elsewhere is still caught, and the
+   diagnostic now names the direct-checkout way out.
+
+2. Linkfile checks follow each entry&#39;s &lt;include&gt; chain, so a defect in a
+   manifest shared by several entries was reported once per consumer. Three
+   entries including one broken packages.xml produced three identical errors
+   and a count of three for a single defect. Errors are de-duplicated within a
+   call (a manifest reachable by two include paths) and across the run.
+   Identical message text means the same file, project and reason, so
+   collapsing exact duplicates cannot hide a second real defect.
+
+3. tests/functional/test_validate_marketplace.py still asserted the old
+   contract and was not touched by #99, so three parametrized cases failed:
+   relative/path, CLAUDE_MARKETPLACES_DIR/missing-dollar-brace and
+   ${OTHER_VAR}/proj are contained dests on an entry with no &lt;type&gt; and are
+   now legal. Rather than delete the coverage, the class is split: the three
+   contained dests assert exit 0, and a new negative case asserts exit 1 for
+   the three shapes that escape the workspace (absolute, &#39;..&#39;, empty).
+
+Adds docs/integration-testing.md Category 11b (ET-01..ET-07) with runnable
+manual reproductions, and tests/scenarios/test_et.py automating them through
+the real `kanon validate marketplace` subprocess: the full 3x4 entry-type by
+linkfile-shape matrix, containment across all three entry types, a linkfile
+inside an &lt;include&gt;, a marketplace dest supplied by an include, single
+reporting of a shared-include defect, and the mixed plugin-plus-standards
+package from #94 with its negative counterpart.
+
+Every documented scenario was also executed by hand against the built CLI and
+matched its stated pass criteria.
+
+Closes #94
+
+* test: guard the single dependency-resolution path
+
+Adds automated coverage for four invariants that were only ever verified by
+hand while diagnosing the shtab CI drift and the 3.3.1 publish failure. Each
+corresponds to a defect this repository actually hit, and none had a test.
+
+1. A tool invoked through `uv run` is declared in [dependency-groups].
+   `make security-scan` was `uv run bandit` while bandit was declared nowhere,
+   so uv fell through to PATH and silently ran a system-wide bandit -- an
+   undeclared dependency deciding a security gate. `uv run` does not fail on an
+   undeclared executable, so nothing surfaced it.
+
+2. No Make recipe invokes a tool directly. A bare `ruff check .` or
+   `pytest -m unit` resolves from PATH rather than uv.lock, which is precisely
+   the two-path split that let shtab 1.9.0 break the tiered CI jobs while the
+   uv-based jobs stayed green. Only the scenario target was previously guarded.
+
+3. A dependency whose generated output is byte-compared against a committed
+   fixture carries an upper bound. `shtab&gt;=1.7.0` allowed 1.9.0 to change its
+   completion output and break CI with no change to this repository.
+
+4. The release job re-locks and stages uv.lock. semantic-release bumps
+   pyproject.toml and __init__.py but knows nothing about uv.lock, so without
+   the explicit refresh every release leaves the lock a version behind and
+   `uv sync --locked` fails on the tag -- how 3.3.1 failed to publish. Its
+   symptom is already guarded by test_uv_lock_records_the_declared_project_version;
+   this guards the mechanism that prevents it.
+
+Each was verified RED by reverting the invariant it protects: removing bandit
+from the dev group, rewriting `uv run ruff` as `ruff`, restoring `shtab&gt;=1.7.0`,
+dropping `uv lock` from the release job, and dropping uv.lock from its `git add`.
+All five produce a message naming the file and the remedy.
+
+* fix(test): replace the uv-run regex with linear tokenization
+
+CodeQL flagged py/redos (high) on the pattern added in the previous commit:
+
+    \buv\s+run\s+(?:--[\w-]+(?:[= ]\S+)?\s+)*([A-Za-z][\w.-]*)
+
+The repeated group holds an optional sub-match, so input with many repetitions
+of &#39; --- ---&#39; backtracks exponentially. Skipping uv&#39;s own flags is awkward to
+express as a pattern and easy to get wrong in exactly this way.
+
+Walking tokens does the same job in linear time and reads more plainly: find
+`uv run`, skip following tokens that begin with &#39;-&#39;, take the next one. A flag
+with a detached value would misreport that value as the tool; no target uses
+that form, and the assertion names the offending line, so it would be obvious
+rather than silent. Documented on the helper.
+
+Not suppressed: CLAUDE.md forbids annotating away a security finding, and the
+finding was correct. Both guards were re-verified RED afterwards, and the
+tokenizer returns in single-digit milliseconds on 40k adversarial tokens.
+
+---------
+
+Co-authored-by: Ryan Gross &lt;ryan.gross@caylent.com&gt; ([`ccfdfec`](https://github.com/caylent-solutions/kanon/commit/ccfdfecdbd7b3e366e1ca9c0579bd84aa70e66ae))
+
+
 ## v3.3.2 (2026-08-05)
+
+### Chore
+
+* chore(release): 3.3.2 ([`6f5ffe7`](https://github.com/caylent-solutions/kanon/commit/6f5ffe7c01553820a2e091cdc996151b5100c6cb))
 
 ### Fix
 
@@ -46,6 +175,12 @@ that a `--locked` install in CI rejects.
 Note the existing 3.3.1 tag still points at a commit carrying the stale
 lock, so republishing that exact tag will keep failing until the tag is
 moved or a further release is cut. ([`00714e6`](https://github.com/caylent-solutions/kanon/commit/00714e648a42bea706945e7a38a66fa6dca8df28))
+
+### Unknown
+
+* Merge pull request #108 from caylent-solutions/release-3.3.2
+
+Release 3.3.2 ([`fc48540`](https://github.com/caylent-solutions/kanon/commit/fc48540a5fc082e64c81ef9809f68d583a3a16e8))
 
 
 ## v3.3.1 (2026-08-04)

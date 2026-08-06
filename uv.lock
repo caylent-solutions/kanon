@@ -643,7 +643,7 @@ wheels = [
 
 [[package]]
 name = "kanon-cli"
-version = "3.3.2"
+version = "3.3.3"
 source = { editable = "." }
 dependencies = [
     { name = "defusedxml" },

@@ -6,7 +6,7 @@ Covers:
 - AC-TEST-003: _cleanup_tracked_tempdirs is idempotent (second call is a no-op).
 """
 
-import atexit
+import importlib
 import os
 from unittest import mock
 
@@ -89,20 +89,16 @@ class TestAtexitRegistration:
     def test_cleanup_function_is_registered_with_atexit(self):
         """Verify _cleanup_tracked_tempdirs is a registered atexit callback.
 
-        Strategy: record the callback count, unregister the function, confirm the
-        count decreases, then re-register to leave the interpreter state intact.
+        Strategy: reload the module with atexit.register mocked and assert the
+        cleanup function was passed to it. This avoids relying on the private,
+        undocumented atexit._ncallbacks() counter, which does not decrement on
+        unregister() on every CPython build (unregister() itself still works
+        correctly -- only the counter is unreliable).
         """
-        before = atexit._ncallbacks()
-        atexit.unregister(module_under_test._cleanup_tracked_tempdirs)
-        after = atexit._ncallbacks()
+        with mock.patch("atexit.register") as mock_register:
+            importlib.reload(module_under_test)
 
-        try:
-            assert before - after >= 1, (
-                "_cleanup_tracked_tempdirs was not registered with atexit "
-                f"(ncallbacks before={before}, after unregister={after})"
-            )
-        finally:
-            atexit.register(module_under_test._cleanup_tracked_tempdirs)
+        mock_register.assert_any_call(module_under_test._cleanup_tracked_tempdirs)
 
 
 @pytest.mark.unit

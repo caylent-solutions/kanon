@@ -438,10 +438,10 @@ class TestPathMaxHandling:
 
         result = _run_kanon_subprocess("install", long_path_str)
 
-        assert "Error:" in result.stderr, (
-            f"Expected 'Error:' on stderr for PATH_MAX-exceeding path. Got stderr={result.stderr!r}"
+        assert "ERROR:" in result.stderr, (
+            f"Expected 'ERROR:' on stderr for PATH_MAX-exceeding path. Got stderr={result.stderr!r}"
         )
-        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("Error:")]
+        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("ERROR:")]
         assert not stdout_error_lines, f"Error text must not appear on stdout. stdout={result.stdout!r}"
 
 

@@ -39,3 +39,17 @@ repos:
         files: ^(src/kanon_cli|tests)/
         exclude: ^src/kanon_cli/repo/
         pass_filenames: true
+
+      # tests/fixtures/completion/*.sh are compared byte-for-byte by the
+      # functional and integration completion tests, so any parser change that
+      # is committed without regenerating them turns the whole suite red for a
+      # reason that has nothing to do with the change under review. Regenerate
+      # them here instead: if the fixtures move, pre-commit reports the modified
+      # files and the commit is retried with them staged.
+      - id: completion-snapshots
+        name: completion-snapshots (regenerate bash + zsh fixtures)
+        entry: make update-completion-snapshots
+        language: system
+        files: ^(src/kanon_cli/.*\.py|pyproject\.toml)$
+        exclude: ^src/kanon_cli/repo/
+        pass_filenames: false

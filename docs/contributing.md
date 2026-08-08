@@ -52,6 +52,34 @@ uv run pytest tests/functional -v
 uv run pytest tests/ -v
 ```
 
+### Test timeouts and subprocess containment
+
+Nothing in the suite is allowed to block indefinitely. Three settings
+enforce that, each with a working default so a bare `pytest` run is still
+protected:
+
+**`KANON_TEST_TIMEOUT`** (default: `600`) -- Per-test deadline in
+seconds, applied by `pytest-timeout`. Exported to `PYTEST_TIMEOUT` by
+`tests/conftest.py`. On expiry the worker dumps every thread's stack,
+which is what identifies a deadlock as opposed to a slow test.
+
+**`KANON_TEST_SUBPROCESS_TIMEOUT`** (default: `300`) -- Deadline in
+seconds for a single `kanon` subprocess spawned by
+`tests/functional/conftest.py::_run_kanon` or
+`tests/scenarios/conftest.py::run_kanon`. Keep it below
+`KANON_TEST_TIMEOUT` so the child is killed and reported by command line
+before the coarser per-test deadline takes down the whole worker.
+
+**`KANON_SYNC_JOBS`** (test default: `1`) -- `tests/conftest.py` pins
+this so `repo sync` runs in a single process. See `docs/configuration.md`
+for what the variable does in production.
+
+At the end of a session the xdist controller scans its process group for
+`kanon` processes that outlived the tests that spawned them. Any survivor
+is killed and the session exits non-zero: a leaked child means a
+subprocess helper is missing a `timeout=`, so it is treated as a test
+failure rather than cleaned up quietly.
+
 ### How to add a multi-provider parity test
 
 Multi-provider parity tests verify that kanon behaves identically regardless

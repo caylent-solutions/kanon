@@ -7,11 +7,16 @@ import contextlib
 import os
 import pathlib
 import shutil
+import signal
+import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from collections.abc import Generator
 
 import pytest
+
+from kanon_cli.constants import KANON_SYNC_JOBS_ENV
 
 
 _TMP_ROOT_ENV = "KANON_TEST_TMP_ROOT"
@@ -19,6 +24,19 @@ _TMP_ROOT_DEFAULT = "/var/tmp/kanon-test-runs"
 _KEEP_TMP_ENV = "KANON_TEST_KEEP_TMP"
 _XDIST_WORKER_ENV = "PYTEST_XDIST_WORKER"
 _TEMP_VARS = ("TMPDIR", "TMP", "TEMP")
+
+_SYNC_JOBS_DEFAULT = "1"
+
+_TEST_TIMEOUT_ENV = "KANON_TEST_TIMEOUT"
+_TEST_TIMEOUT_DEFAULT = "600"
+_PYTEST_TIMEOUT_ENV = "PYTEST_TIMEOUT"
+_TIMEOUT_PLUGIN_NAME = "timeout"
+
+_SUBPROCESS_TIMEOUT_ENV = "KANON_TEST_SUBPROCESS_TIMEOUT"
+_SUBPROCESS_TIMEOUT_DEFAULT = "300"
+
+_PROCESS_LEAK_EXIT_CODE = 4
+_PROCESS_SCAN_TIMEOUT_SECONDS = 30.0
 
 
 def _reap_dead_run_roots(parent: pathlib.Path) -> None:
@@ -42,6 +60,130 @@ def _reap_dead_run_roots(parent: pathlib.Path) -> None:
             continue
 
 
+def _positive_int_env(var: str, default: str) -> int:
+    """Return *var* from the environment as a positive integer, falling back to *default*.
+
+    Raises:
+        RuntimeError: When the variable is present but is not a positive integer.
+    """
+    raw = os.environ.get(var, default)
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{var} must be a positive integer number of seconds, got: {raw!r}") from exc
+    if value <= 0:
+        raise RuntimeError(f"{var} must be a positive integer number of seconds, got: {value}")
+    return value
+
+
+def subprocess_timeout() -> int:
+    """Return the deadline, in seconds, for a single ``kanon`` subprocess under test.
+
+    Every shared subprocess helper passes this to ``subprocess.run(timeout=...)`` so
+    a wedged child is killed and surfaced as a ``TimeoutExpired`` naming the command,
+    instead of blocking its pytest worker forever. Tuned with
+    ``KANON_TEST_SUBPROCESS_TIMEOUT``; it must stay below ``KANON_TEST_TIMEOUT`` so the
+    subprocess deadline (which reports the child's command line) fires before the
+    coarser per-test backstop kills the whole worker.
+
+    Raises:
+        RuntimeError: When ``KANON_TEST_SUBPROCESS_TIMEOUT`` is not a positive integer.
+    """
+    return _positive_int_env(_SUBPROCESS_TIMEOUT_ENV, _SUBPROCESS_TIMEOUT_DEFAULT)
+
+
+def _leaked_kanon_processes(pgid: int) -> list[tuple[int, str]]:
+    """Return every surviving ``kanon`` process in process group *pgid*.
+
+    A ``kanon install`` that deadlocks -- or whose pytest worker died before it
+    could be reaped -- keeps running after the session ends, reparented to init but
+    still carrying the process group it was spawned into. Scanning by process group
+    finds those survivors while never matching a ``kanon`` a developer is running in
+    an unrelated shell, because a different shell job has a different group.
+
+    Matching is on the argument vector rather than a substring so that a pytest
+    invocation carrying ``--cov=kanon_cli`` in its own command line is not mistaken
+    for a leaked child.
+
+    Args:
+        pgid: The process group to scan.
+
+    Returns:
+        ``(pid, command)`` pairs for each surviving process, in ``ps`` order.
+
+    Raises:
+        RuntimeError: When ``ps`` is unavailable or exits non-zero, so the check
+            fails loudly rather than silently reporting a clean session.
+    """
+    try:
+        listing = subprocess.run(
+            ["ps", "-eo", "pid=,pgid=,command="],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=_PROCESS_SCAN_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"Unable to scan for leaked kanon processes: {exc}") from exc
+
+    leaked: list[tuple[int, str]] = []
+    for line in listing.stdout.splitlines():
+        fields = line.split(maxsplit=2)
+        if len(fields) < 3:
+            continue
+        pid_text, pgid_text, command = fields
+        if not pid_text.isdigit() or not pgid_text.isdigit():
+            continue
+        pid = int(pid_text)
+        if int(pgid_text) != pgid or pid == os.getpid():
+            continue
+        if _is_kanon_command(command):
+            leaked.append((pid, command))
+    return leaked
+
+
+def _is_kanon_command(command: str) -> bool:
+    """Return True when *command* is a ``kanon`` CLI invocation rather than a test runner."""
+    argv = command.split()
+    if not argv:
+        return False
+    if pathlib.Path(argv[0]).name == "kanon":
+        return True
+    return any(argv[index] == "-m" and argv[index + 1] == "kanon_cli" for index in range(len(argv) - 1))
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Fail the session when a ``kanon`` subprocess outlived the tests that spawned it.
+
+    A leaked child is the observable signature of the deadlock this suite guards
+    against: the CLI's ``repo sync`` pool blocks in ``sem_wait()`` while its parent
+    blocks in ``waitpid()``, so both sit at 0% CPU indefinitely and accumulate across
+    runs. Detecting it here turns a silent resource leak into a red build.
+
+    Survivors are killed before the session exits so a failing run cannot leave the
+    machine dirtier than it found it. Only the xdist controller runs the scan --
+    workers share the controller's process group and would otherwise flag each
+    other's still-running children.
+    """
+    if os.environ.get(_XDIST_WORKER_ENV):
+        return
+    leaked = _leaked_kanon_processes(os.getpgrp())
+    if not leaked:
+        return
+    for pid, _command in leaked:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.kill(pid, signal.SIGKILL)
+    detail = "\n".join(f"  pid {pid}: {command}" for pid, command in leaked)
+    print(
+        f"\nERROR: {len(leaked)} kanon subprocess(es) outlived the test session and were killed:\n"
+        f"{detail}\n"
+        f"A test spawned a kanon process that never exited. Check that the spawning helper "
+        f"passes timeout= and that {KANON_SYNC_JOBS_ENV} is set, then re-run.",
+        file=sys.stderr,
+    )
+    session.exitstatus = _PROCESS_LEAK_EXIT_CODE
+
+
 def pytest_configure(config: pytest.Config) -> None:
     """Point every test temp at a managed, real-filesystem run root.
 
@@ -56,7 +198,17 @@ def pytest_configure(config: pytest.Config) -> None:
     never touched. Stale roots from a crashed prior run are reaped on startup by
     dead-pid detection. Under xdist only the controller creates the root; workers
     inherit ``TMPDIR`` and ``--basetemp`` from it.
+
+    Also refuses to run without ``pytest-timeout``. The per-test deadline is the only
+    thing standing between a deadlocked ``kanon`` subprocess and a worker that hangs
+    until the CI job's own limit expires, so a toolchain that resolved the plugin away
+    must fail loudly at startup rather than run unprotected.
     """
+    if not config.pluginmanager.hasplugin(_TIMEOUT_PLUGIN_NAME):
+        raise pytest.UsageError(
+            "pytest-timeout is not installed, so tests would run without a per-test deadline. "
+            "Install the dev dependencies (`make install-dev`, or `uv sync`) and re-run."
+        )
     if os.environ.get(_XDIST_WORKER_ENV):
         return
     parent = pathlib.Path(os.environ.get(_TMP_ROOT_ENV, _TMP_ROOT_DEFAULT))
@@ -91,7 +243,7 @@ def _isolation_env() -> dict[str, str]:
     this floor so the isolation cannot be bypassed.
     """
     floor: dict[str, str] = {}
-    for var in (*_TEMP_VARS, "KANON_HOME", "CLAUDE_CONFIG_DIR", _TMP_ROOT_ENV):
+    for var in (*_TEMP_VARS, "KANON_HOME", "CLAUDE_CONFIG_DIR", _TMP_ROOT_ENV, KANON_SYNC_JOBS_ENV):
         value = os.environ.get(var)
         if value is not None:
             floor[var] = value
@@ -300,7 +452,34 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 _SRC_DIR = _REPO_ROOT / "src"
 
 
-os.environ.setdefault("REPO_TRACE", "0")
+def _install_process_env_floor() -> None:
+    """Apply the session-wide environment floor, at import, before any hook runs.
+
+    ``REPO_TRACE`` silences the vendored repo tool's trace output.
+
+    ``KANON_SYNC_JOBS`` pins ``repo sync`` to a single process. Left at its default
+    every ``kanon install`` fans out to ``min(cpu_count, 8)`` pool workers, and a
+    ``pytest-xdist`` run multiplies that by the worker count until a hundred-odd
+    processes contend for the same POSIX semaphores; the pool then blocks in
+    ``sem_wait()`` while its parent blocks in ``waitpid()`` and neither ever wakes.
+    Pinning to ``1`` takes the single-process short-circuit in ``repo.command``, so
+    no pool is built and the deadlock has nothing to form around.
+
+    ``PYTEST_TIMEOUT`` is pytest-timeout's own variable and is derived from
+    ``KANON_TEST_TIMEOUT``, keeping every tunable in this suite under one prefix.
+    It is set here rather than in :func:`pytest_configure` because pytest-timeout
+    reads the environment from its own ``pytest_configure``, and hook ordering
+    between two plugins is not something to depend on.
+
+    Every entry uses ``setdefault``, so an operator who exports any of these keeps
+    their value.
+    """
+    os.environ.setdefault("REPO_TRACE", "0")
+    os.environ.setdefault(KANON_SYNC_JOBS_ENV, _SYNC_JOBS_DEFAULT)
+    os.environ.setdefault(_PYTEST_TIMEOUT_ENV, str(_positive_int_env(_TEST_TIMEOUT_ENV, _TEST_TIMEOUT_DEFAULT)))
+
+
+_install_process_env_floor()
 
 
 @pytest.fixture(scope="session", autouse=True)

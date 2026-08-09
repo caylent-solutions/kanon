@@ -17,6 +17,7 @@ import os
 import pathlib
 import subprocess
 import sys
+from unittest import mock
 
 import pytest
 
@@ -24,12 +25,39 @@ from tests.conftest import (
     _is_kanon_command,
     _leaked_kanon_processes,
     _positive_int_env,
+    _PS_SCAN_COMMAND,
     _SUBPROCESS_TIMEOUT_ENV,
     subprocess_timeout,
 )
 
 
 _HOLD_SCRIPT = "import sys, time\nsys.stdout.write('up\\n')\nsys.stdout.flush()\ntime.sleep(600)\n"
+
+_WIDTH_PADDING = "pad" * 80
+
+
+def _spawn_leak_probe(tmp_path: pathlib.Path) -> subprocess.Popen:
+    """Start a child that presents the command line of a leaked ``kanon`` install.
+
+    The child does no install work; it only needs an argument vector ``ps`` will
+    report as ``-m kanon_cli``. A long padding argument precedes that marker so the
+    marker sits far beyond column 80: procps truncates its command column to the
+    terminal width when stdout is not a tty, which once cut the marker off every
+    candidate in CI and made the scan report a clean session. Without the padding
+    this probe passes on a short path and hides that regression.
+
+    The caller is responsible for killing and reaping the returned process.
+    """
+    script = tmp_path / "hold.py"
+    script.write_text(_HOLD_SCRIPT, encoding="utf-8")
+    child = subprocess.Popen(
+        [sys.executable, str(script), _WIDTH_PADDING, "-m", "kanon_cli"],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert child.stdout is not None
+    assert child.stdout.readline() == "up\n", "child did not reach a running state"
+    return child
 
 
 @pytest.mark.unit
@@ -138,19 +166,11 @@ class TestLeakedProcessDetection:
     def test_finds_a_live_process_in_this_process_group(self, tmp_path: pathlib.Path) -> None:
         """A surviving kanon-shaped child is found by a scan of our own process group.
 
-        The child is spawned with a ``-m kanon_cli`` argument pair so it presents the
-        command line a leaked install would, without doing any install work.
+        The probe's marker sits past column 80, so this also covers the command-column
+        truncation that made the scan blind on Linux.
         """
-        script = tmp_path / "hold.py"
-        script.write_text(_HOLD_SCRIPT, encoding="utf-8")
-        child = subprocess.Popen(
-            [sys.executable, str(script), "-m", "kanon_cli"],
-            stdout=subprocess.PIPE,
-            text=True,
-        )
+        child = _spawn_leak_probe(tmp_path)
         try:
-            assert child.stdout is not None
-            assert child.stdout.readline() == "up\n", "child did not reach a running state"
             leaked = _leaked_kanon_processes(os.getpgrp())
             assert child.pid in [pid for pid, _command in leaked], (
                 f"pid {child.pid} is alive in process group {os.getpgrp()} but was not detected; got {leaked!r}"
@@ -161,16 +181,49 @@ class TestLeakedProcessDetection:
 
     def test_reports_nothing_once_the_child_is_gone(self, tmp_path: pathlib.Path) -> None:
         """A reaped child is no longer reported, so a clean session stays green."""
-        script = tmp_path / "hold.py"
-        script.write_text(_HOLD_SCRIPT, encoding="utf-8")
-        child = subprocess.Popen(
-            [sys.executable, str(script), "-m", "kanon_cli"],
-            stdout=subprocess.PIPE,
-            text=True,
-        )
-        assert child.stdout is not None
-        assert child.stdout.readline() == "up\n", "child did not reach a running state"
+        child = _spawn_leak_probe(tmp_path)
         child.kill()
         child.wait(timeout=subprocess_timeout())
         leaked = _leaked_kanon_processes(os.getpgrp())
         assert child.pid not in [pid for pid, _command in leaked]
+
+    def test_scan_command_disables_command_column_truncation(self) -> None:
+        """The ps invocation must ask for untruncated output.
+
+        procps truncates the command column to the terminal width (80 when stdout is
+        not a tty). Dropping the wide flag reintroduces a scan that silently sees no
+        leaks on Linux while passing on macOS, where ps does not truncate a non-tty.
+        """
+        assert "-ww" in _PS_SCAN_COMMAND, (
+            f"{_PS_SCAN_COMMAND!r} must pass -ww; without it procps truncates the command "
+            f"column and the trailing '-m kanon_cli' marker is cut off in CI."
+        )
+
+
+@pytest.mark.unit
+class TestLeakScanFailsClosed:
+    def test_raises_when_the_listing_does_not_contain_this_process(self) -> None:
+        """An unparseable ps listing raises instead of reporting a clean session.
+
+        Every process listing contains the process doing the listing. If this one does
+        not, the output is not in the assumed 'pid pgid command' form, and an empty
+        result would mean 'cannot see' rather than 'nothing leaked' -- the exact
+        fail-open behaviour that hid the truncation defect.
+        """
+        bogus = subprocess.CompletedProcess(args=list(_PS_SCAN_COMMAND), returncode=0, stdout="garbage\n", stderr="")
+        with mock.patch("tests.conftest.subprocess.run", return_value=bogus):
+            with pytest.raises(RuntimeError, match="did not find this process"):
+                _leaked_kanon_processes(os.getpgrp())
+
+    def test_raises_when_ps_is_unavailable(self) -> None:
+        """A missing or failing ps is surfaced, not swallowed."""
+        with mock.patch("tests.conftest.subprocess.run", side_effect=FileNotFoundError("ps")):
+            with pytest.raises(RuntimeError, match="Unable to scan"):
+                _leaked_kanon_processes(os.getpgrp())
+
+    def test_own_process_alone_is_not_reported_as_a_leak(self) -> None:
+        """The scanning process must never report itself, however it is named."""
+        listing = f"{os.getpid()} {os.getpgrp()} python -m kanon_cli install\n"
+        completed = subprocess.CompletedProcess(args=list(_PS_SCAN_COMMAND), returncode=0, stdout=listing, stderr="")
+        with mock.patch("tests.conftest.subprocess.run", return_value=completed):
+            assert _leaked_kanon_processes(os.getpgrp()) == []

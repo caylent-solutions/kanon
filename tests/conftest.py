@@ -37,6 +37,7 @@ _SUBPROCESS_TIMEOUT_DEFAULT = "300"
 
 _PROCESS_LEAK_EXIT_CODE = 4
 _PROCESS_SCAN_TIMEOUT_SECONDS = 30.0
+_PS_SCAN_COMMAND = ("ps", "-ww", "-eo", "pid=,pgid=,command=")
 
 
 def _reap_dead_run_roots(parent: pathlib.Path) -> None:
@@ -105,6 +106,18 @@ def _leaked_kanon_processes(pgid: int) -> list[tuple[int, str]]:
     invocation carrying ``--cov=kanon_cli`` in its own command line is not mistaken
     for a leaked child.
 
+    ``-ww`` is required, not cosmetic. procps truncates the command column to the
+    terminal width -- 80 when stdout is not a tty, as in CI -- which silently cut
+    the trailing ``-m kanon_cli`` off every candidate on Linux and made this scan
+    report a clean session for a machine full of leaked processes. BSD ``ps`` does
+    not truncate a non-tty, so the defect was invisible on macOS.
+
+    That failure mode is the reason for the self-check below: a scan that cannot
+    see must say so rather than return an empty list, which is indistinguishable
+    from success. If this process is missing from ``ps``'s own output then the
+    listing is not what this parser assumes, and reporting "no leaks" would be a
+    guess.
+
     Args:
         pgid: The process group to scan.
 
@@ -112,12 +125,13 @@ def _leaked_kanon_processes(pgid: int) -> list[tuple[int, str]]:
         ``(pid, command)`` pairs for each surviving process, in ``ps`` order.
 
     Raises:
-        RuntimeError: When ``ps`` is unavailable or exits non-zero, so the check
-            fails loudly rather than silently reporting a clean session.
+        RuntimeError: When ``ps`` is unavailable, exits non-zero, or returns a
+            listing this parser cannot make sense of -- so the check fails loudly
+            rather than silently reporting a clean session.
     """
     try:
         listing = subprocess.run(
-            ["ps", "-eo", "pid=,pgid=,command="],
+            _PS_SCAN_COMMAND,
             capture_output=True,
             text=True,
             check=True,
@@ -126,6 +140,8 @@ def _leaked_kanon_processes(pgid: int) -> list[tuple[int, str]]:
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(f"Unable to scan for leaked kanon processes: {exc}") from exc
 
+    own_pid = os.getpid()
+    seen_own_pid = False
     leaked: list[tuple[int, str]] = []
     for line in listing.stdout.splitlines():
         fields = line.split(maxsplit=2)
@@ -135,10 +151,21 @@ def _leaked_kanon_processes(pgid: int) -> list[tuple[int, str]]:
         if not pid_text.isdigit() or not pgid_text.isdigit():
             continue
         pid = int(pid_text)
-        if int(pgid_text) != pgid or pid == os.getpid():
+        if pid == own_pid:
+            seen_own_pid = True
+            continue
+        if int(pgid_text) != pgid:
             continue
         if _is_kanon_command(command):
             leaked.append((pid, command))
+
+    if not seen_own_pid:
+        raise RuntimeError(
+            f"Scanning for leaked kanon processes did not find this process "
+            f"(pid {own_pid}) in the output of {' '.join(_PS_SCAN_COMMAND)!r}. The listing "
+            f"is not in the expected 'pid pgid command' form, so an empty result would "
+            f"mean 'cannot see' rather than 'nothing leaked'."
+        )
     return leaked
 
 

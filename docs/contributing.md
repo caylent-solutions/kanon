@@ -52,6 +52,52 @@ uv run pytest tests/functional -v
 uv run pytest tests/ -v
 ```
 
+### Test tiers and what runs when
+
+Every test declares its tier with exactly one marker -- `unit`, `integration`,
+`functional`, or `scenario`. This is enforced by
+`tests/unit/test_marker_completeness.py`: a test with no marker is collected by
+no CI job, and once tiers are gated on which paths a change touches, its absence
+is indistinguishable from success.
+
+| Make target | Scope |
+| --- | --- |
+| `make test-unit-cov` | kanon's own unit tests + the `COVERAGE_MIN` gate |
+| `make test-unit-vendored` | the vendored repo tool's unit tests |
+| `make test-unit` | both of the above |
+| `make test-integration` / `test-functional` / `test-scenarios` | the named tier |
+| `make test` | everything in one process (cross-suite isolation guard) |
+
+**The vendored repo tool has its own tier.** `tests/unit/repo` is 6,666 of the
+suite's 17,285 tests and covers a tree that changed in 3 of the last 184 commits.
+Pull request validation runs it only when `src/kanon_cli/repo` or its tests are
+touched, or when something global changes (`tests/conftest.py`, dependencies,
+`Makefile`, CI).
+
+**Coverage measures kanon's own source.** `[tool.coverage.run]` omits
+`src/kanon_cli/repo`, which is 10,873 of 18,768 measured statements. Including it
+made the project gate largely a measure of a vendored tree: the same threshold
+read 92% across both and 94% across kanon's own.
+
+**Documentation-only changes skip the test tiers.** A pull request touching only
+`docs/`, Markdown, `LICENSE`, or `CODEOWNERS` runs lint and the security scan but
+no test tier. The classification fails closed -- an empty diff, a missing merge
+base, or any unrecognised path runs everything.
+
+**The full suite is not a pull request gate.** It runs on every push to `main`
+and nightly (`.github/workflows/nightly-regression.yml`). Across 90 measured runs
+it produced one unique failure the per-tier jobs did not already report, at a
+median of 20 minutes.
+
+### What runs before a push
+
+The `pre-push` hook runs lint, the security scan, and kanon's own unit tests with
+the coverage gate -- fast enough to wait for. The integration and functional
+tiers used to run here as well, which put roughly twenty minutes between deciding
+to push and pushing; CI runs both on every pull request regardless. Run
+`make test-integration` and `make test-functional` yourself before opening a pull
+request when a change touches subprocess or filesystem behaviour.
+
 ### Test timeouts and subprocess containment
 
 Nothing in the suite is allowed to block indefinitely. Three settings

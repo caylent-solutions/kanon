@@ -2105,6 +2105,7 @@ class TestKanonCatalogAuditTagFormatSummaryTemplate:
         assert "tag-format" in rendered
 
 
+@pytest.mark.unit
 class TestKanonCatalogAuditLegacyDirWarningTemplate:
     """Tests for KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE (E5-F2-S1-T7 AC-FUNC-006)."""
 

@@ -322,6 +322,7 @@ class TestFullLifecycleJourney:
         assert first_body == second_body, "install must replay the committed lock byte-for-byte across runs"
 
 
+@pytest.mark.functional
 def test_journey_helpers_build_a_real_git_repo(tmp_path: pathlib.Path) -> None:
     """The catalog-repo builder produces a real bare git repo with the release tag.
 

@@ -474,9 +474,9 @@ project element. Each element describes a src-dest pair of files;
 the "src" file will be copied to the "dest" place during `repo sync`
 command.
 
-"src" is project relative, "dest" is relative to the top of the tree.
-Copying from paths outside of the project or to paths outside of the repo
-client is not allowed.
+"src" is project relative.  "dest" is relative to the top of the tree, or
+an absolute path (see [Absolute dest paths](#absolute-dest-paths) below).
+Copying from paths outside of the project is not allowed.
 
 "src" and "dest" must be files.  Directories or symlinks are not allowed.
 Intermediate paths must not be symlinks either.
@@ -498,22 +498,24 @@ of the repo client.
 
 #### Absolute dest paths
 
-Unlike `copyfile`, `linkfile` permits absolute paths in the `dest` attribute.
+Both `linkfile` and `copyfile` permit absolute paths in the `dest` attribute.
 This is intended for use with `repo envsubst`, where an environment variable
-expands to an absolute filesystem path at sync time.  For example:
+expands to an absolute filesystem path at sync time -- for example, to
+deliver a file into the consuming project rather than into the repo client.
+For example:
 
     <linkfile src="config/settings.yml"
               dest="${CLAUDE_MARKETPLACES_DIR}/settings.yml" />
 
-After `repo envsubst` resolves `${CLAUDE_MARKETPLACES_DIR}`, the resulting
-absolute path is used directly.  Parent directories are created automatically.
+    <copyfile src="workflows/ci.yml"
+              dest="${KANON_SOURCE_PKG_TARGET}/.github/workflows/ci.yml" />
+
+After `repo envsubst` resolves the variable, the resulting absolute path is
+used directly.  Parent directories are created automatically.
 
 Absolute dest paths are still validated: path components such as `..`, `.git`,
 and other unsafe patterns are rejected.  However, the path is not restricted
 to the repo client tree.
-
-Note: `copyfile` dest remains relative-only.  Absolute dest paths are
-supported exclusively by `linkfile`.
 
 #### Exclude attribute
 

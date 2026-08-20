@@ -3,7 +3,7 @@
 Tests cover:
 - Symlink creation via _LinkFile._Link()
 - File copying via _CopyFile._Copy()
-- Absolute path handling for linkfile dest
+- Absolute path handling for linkfile and copyfile dest
 - Overwrite behavior for existing targets
 - Nested directory creation
 - Error cases: missing source, directory source, invalid paths
@@ -292,6 +292,79 @@ def test_copyfile_copies_file_content(tmp_path: pathlib.Path) -> None:
     assert not os.path.islink(str(dest)), f"Expected {dest} to be a regular file, not a symlink."
     dest_content = dest.read_text(encoding="utf-8")
     assert dest_content == src_content, f"Expected dest content {src_content!r} but got {dest_content!r}."
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_path_accepted(tmp_path: pathlib.Path) -> None:
+    """_CopyFile._Copy() accepts and uses an absolute destination path.
+
+    AC-FUNC-005: absolute path handling -- absolute dest is allowed per spec
+    17.1, so a manifest can deliver a real file into the consuming project
+    (outside the repo client topdir) rather than only inside it.
+    """
+    git_worktree = tmp_path / "project"
+    git_worktree.mkdir()
+    topdir = tmp_path / "topdir"
+    topdir.mkdir()
+
+    src_file = git_worktree / "config.yaml"
+    src_file.write_text("key: value\n", encoding="utf-8")
+
+    abs_dest = str(tmp_path / "abs_copy.yaml")
+
+    copy = _CopyFile(str(git_worktree), "config.yaml", str(topdir), abs_dest)
+    copy._Copy()
+
+    assert os.path.isfile(abs_dest), f"Expected a regular file at absolute path {abs_dest!r} after _Copy()."
+    assert not os.path.islink(abs_dest), f"Expected {abs_dest!r} to be a real file, not a symlink."
+    resolved = pathlib.Path(abs_dest).read_text(encoding="utf-8")
+    assert resolved == "key: value\n", f"Expected copied file to contain source content, but got {resolved!r}."
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_with_dotdot_raises(tmp_path: pathlib.Path) -> None:
+    """_CopyFile._Copy() rejects absolute dest containing '..' path components.
+
+    AC-FUNC-005: absolute path handling -- path traversal rejected
+    """
+    git_worktree = tmp_path / "project"
+    git_worktree.mkdir()
+    topdir = tmp_path / "topdir"
+    topdir.mkdir()
+
+    src_file = git_worktree / "safe.txt"
+    src_file.write_text("safe content\n", encoding="utf-8")
+
+    abs_dest_with_traversal = str(tmp_path / "subdir" / ".." / "traversal.txt")
+
+    copy = _CopyFile(str(git_worktree), "safe.txt", str(topdir), abs_dest_with_traversal)
+    with pytest.raises(ManifestInvalidPathError, match=r'"\.\." not allowed in absolute dest'):
+        copy._Copy()
+
+
+@pytest.mark.integration
+def test_copyfile_relative_dest_still_resolves_under_topdir(tmp_path: pathlib.Path) -> None:
+    """_CopyFile._Copy() with a relative dest still resolves under topdir.
+
+    Regression guard: adding the absolute-dest branch must not change
+    behavior for the existing relative-dest case -- the file must still
+    land inside topdir, not beside it or inside git_worktree.
+    """
+    git_worktree = tmp_path / "project"
+    git_worktree.mkdir()
+    topdir = tmp_path / "topdir"
+    topdir.mkdir()
+
+    src_file = git_worktree / "relative.txt"
+    src_file.write_text("relative content\n", encoding="utf-8")
+
+    copy = _CopyFile(str(git_worktree), "relative.txt", str(topdir), "nested/relative.txt")
+    copy._Copy()
+
+    dest = topdir / "nested" / "relative.txt"
+    assert dest.is_file(), f"Expected relative dest to resolve under topdir at {dest}, but it was not found."
+    assert not (git_worktree / "nested" / "relative.txt").exists(), "Relative dest must not resolve under git_worktree."
+    assert not (tmp_path / "nested" / "relative.txt").exists(), "Relative dest must not resolve outside topdir."
 
 
 @pytest.mark.integration

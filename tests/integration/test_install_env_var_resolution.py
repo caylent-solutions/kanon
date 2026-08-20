@@ -271,7 +271,7 @@ class TestInstallEnvVarResolution:
 
         install(kanonenv.resolve(), lock_file_path=workspace / ".kanon.lock")
 
-        manifest_text = _substituted_manifest_path("linkvar").read_text(encoding="utf-8")
+        manifest_text = _substituted_manifest_path(kanonenv, "linkvar").read_text(encoding="utf-8")
         assert "${KITROOT}" not in manifest_text, f"${{KITROOT}} must be substituted; got {manifest_text!r}"
         assert f'dest="{project_root}/.claude/rules"' in manifest_text, (
             f"<linkfile dest> must resolve to {project_root!r}; got {manifest_text!r}"

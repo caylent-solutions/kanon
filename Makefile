@@ -9,10 +9,16 @@ SHELL := /bin/bash
 # own source; the vendored tree is omitted in [tool.coverage.run].
 COVERAGE_MIN ?= 90
 
-# The vendored repo tool's tests. 6,666 of the suite's 17,285 tests cover a tree
-# that changed in 3 of the last 184 commits, so they are their own tier and CI
-# runs them only when that tree is touched. Referenced by more than one target,
+# The vendored repo tool's tests. Roughly 6,700 of the suite's ~17,300 tests cover
+# a tree that changed in 3 of the last 184 commits, so they are their own tier and
+# CI runs them only when that tree is touched. Referenced by more than one target,
 # so the path lives here rather than being repeated.
+#
+# test-unit-cov selects by MARKER and excludes this path -- it must not also take a
+# positional path argument. A positional narrows collection to that directory and
+# silently drops every unit-marked test living elsewhere (tests/security,
+# tests/regression, tests/test_wheel_layout.py), which then run in no CI job at all.
+# tests/unit/test_marker_completeness.py asserts the two tiers still sum to the whole.
 VENDORED_TESTS := tests/unit/repo
 
 help: ## Show available targets
@@ -52,7 +58,7 @@ test-unit: ## Run every unit test, first-party and vendored
 	uv run pytest -n auto --dist loadscope -m "unit"
 
 test-unit-cov: ## Run first-party unit tests with coverage and enforce the COVERAGE_MIN gate (CI's unit job)
-	uv run pytest -n auto --dist loadscope -m "unit" --ignore=$(VENDORED_TESTS) tests/unit \
+	uv run pytest -n auto --dist loadscope -m "unit" --ignore=$(VENDORED_TESTS) \
 		--cov=kanon_cli --cov-report=term-missing --cov-fail-under=$(COVERAGE_MIN)
 
 test-unit-vendored: ## Run the vendored repo tool's unit tests (gated in CI on that tree changing)

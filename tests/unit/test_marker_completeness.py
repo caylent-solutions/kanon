@@ -41,7 +41,7 @@ _MULTIPLE_TIERS_EXPRESSION = " or ".join(
 _EXIT_NO_TESTS_COLLECTED = 5
 
 
-def _collect(marker_expression: str) -> subprocess.CompletedProcess:
+def _collect(marker_expression: str, *extra_args: str) -> subprocess.CompletedProcess:
     """Return the result of collecting the tests matching *marker_expression*.
 
     Collection only -- no test in the selection is executed, so this cannot
@@ -49,6 +49,8 @@ def _collect(marker_expression: str) -> subprocess.CompletedProcess:
 
     Args:
         marker_expression: A pytest ``-m`` expression.
+        *extra_args: Further pytest arguments, so a caller can reproduce a CI
+            tier's exact selection rather than an approximation of it.
 
     Returns:
         The completed ``pytest --collect-only`` process.
@@ -64,6 +66,7 @@ def _collect(marker_expression: str) -> subprocess.CompletedProcess:
             "no:cacheprovider",
             "-m",
             marker_expression,
+            *extra_args,
         ],
         cwd=str(REPO_ROOT),
         capture_output=True,
@@ -115,4 +118,46 @@ def test_no_test_carries_more_than_one_tier_marker() -> None:
     assert result.returncode == _EXIT_NO_TESTS_COLLECTED, (
         "These tests carry more than one tier marker, so they run in more than one "
         "tiered job:\n  " + "\n  ".join(_collected_node_ids(result) or [result.stdout.strip()])
+    )
+
+
+VENDORED_TESTS_PATH = "tests/unit/repo"
+
+
+@pytest.mark.unit
+def test_ci_unit_tiers_collect_every_unit_test() -> None:
+    """The two CI unit jobs together must collect every unit-marked test.
+
+    Carrying a tier marker is not enough: a test also has to be *selected by a job
+    that runs*. The unit tier is split in two -- ``make test-unit-cov`` excludes the
+    vendored tree and ``make test-unit-vendored`` runs only that tree -- so their
+    selections must partition ``-m unit`` exactly.
+
+    They once did not. ``test-unit-cov`` additionally took a positional ``tests/unit``
+    argument, which narrowed collection to that directory and silently dropped 193
+    unit-marked tests living elsewhere, including every test in ``tests/security``.
+    Those tests then ran in no pull-request job at all, and nothing reported it: the
+    marker guard above still passed, because the tests did carry a marker.
+
+    This asserts the property that was actually missing -- that the tiers sum to the
+    whole -- rather than the weaker property that each test is labelled.
+    """
+    everything = _collected_node_ids(_collect("unit"))
+    first_party = _collected_node_ids(_collect("unit", f"--ignore={VENDORED_TESTS_PATH}"))
+    vendored = _collected_node_ids(_collect("unit", VENDORED_TESTS_PATH))
+
+    assert everything, "Expected the unit tier to collect at least one test."
+
+    covered = set(first_party) | set(vendored)
+    missed = sorted(set(everything) - covered)
+
+    assert not missed, (
+        f"{len(missed)} unit-marked test(s) are collected by neither CI unit job, so they run "
+        f"in no pull-request job:\n  " + "\n  ".join(missed[:20]) + ("\n  ..." if len(missed) > 20 else "")
+    )
+
+    overlap = sorted(set(first_party) & set(vendored))
+    assert not overlap, (
+        f"{len(overlap)} unit-marked test(s) are collected by BOTH CI unit jobs, so they run "
+        f"twice and their coverage is double-counted:\n  " + "\n  ".join(overlap[:20])
     )

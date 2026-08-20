@@ -97,6 +97,31 @@ def _vars_in_attributes(element: ET.Element) -> set[str]:
     return found
 
 
+MANIFEST_FUNCTIONAL_ELEMENT_TAGS = (
+    "default",
+    "extend-project",
+    "remove-project",
+    "manifest-server",
+    "superproject",
+    "contactinfo",
+    "repo-hooks",
+    "submanifest",
+)
+"""Top-level elements whose attributes ``repo`` consumes.
+
+Detection previously walked ``<project>`` and the ``<remote>`` elements projects
+reference, so a ``${VAR}`` anywhere else was substituted but never announced --
+the same silent no-delivery for a different element. ``<default revision>`` is
+the sharpest example: every project without its own ``revision`` inherits it, so
+a variable there decides which commit is checked out.
+
+Scanning *every* element indiscriminately was considered and rejected. It would
+pull in ``<remote>`` elements no project references, and since an unfilled
+variable now fails the install, a manifest carrying an unused remote would stop
+installing altogether. Remotes stay scoped to the ones actually referenced.
+"""
+
+
 def _vars_in_project(project_element: ET.Element) -> set[str]:
     """Return the ``${VAR}`` names a ``<project>`` references in functional positions.
 
@@ -113,14 +138,21 @@ def _vars_in_project(project_element: ET.Element) -> set[str]:
         project_element: A ``<project>`` element whose own attributes and
             functional child elements are scanned.
 
+    A ``<project>`` may also nest sub-projects, which the vendored parser fully
+    resolves, so the walk recurses: a sub-project's own attributes and its own
+    delivery children are just as functional as the outer project's.
+
     Returns:
         The set of placeholder variable names found across the project's own
-        attributes and its ``<linkfile>`` / ``<copyfile>`` children.
+        attributes, its ``<linkfile>`` / ``<copyfile>`` children, and any nested
+        ``<project>`` elements.
     """
     found = _vars_in_attributes(project_element)
     for child_tag in MANIFEST_PROJECT_FUNCTIONAL_CHILD_TAGS:
         for child_element in project_element.findall(child_tag):
             found |= _vars_in_attributes(child_element)
+    for nested_project in project_element.findall("project"):
+        found |= _vars_in_project(nested_project)
     return found
 
 
@@ -180,6 +212,8 @@ def functional_vars_in_manifest_files(manifest_files: list[pathlib.Path]) -> set
     remotes: dict[str, ET.Element] = {}
     default_remotes: set[str] = set()
     projects: list[ET.Element] = []
+    other_element_vars: set[str] = set()
+    extra_referenced_remotes: set[str] = set()
 
     for manifest_file in manifest_files:
         if not manifest_file.is_file():
@@ -194,9 +228,15 @@ def functional_vars_in_manifest_files(manifest_files: list[pathlib.Path]) -> set
             if default_remote:
                 default_remotes.add(default_remote)
         projects.extend(root.findall("project"))
+        for tag in MANIFEST_FUNCTIONAL_ELEMENT_TAGS:
+            for element in root.findall(tag):
+                other_element_vars |= _vars_in_attributes(element)
+                element_remote = element.get("remote")
+                if element_remote:
+                    extra_referenced_remotes.add(element_remote)
 
-    referenced_remotes: set[str] = set()
-    detected: set[str] = set()
+    referenced_remotes: set[str] = set(extra_referenced_remotes)
+    detected: set[str] = set(other_element_vars)
     for project_el in projects:
         detected |= _vars_in_project(project_el)
         project_remote = project_el.get("remote")

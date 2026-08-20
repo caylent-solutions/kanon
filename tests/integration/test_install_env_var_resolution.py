@@ -22,7 +22,11 @@ import xml.etree.ElementTree as ET
 
 from kanon_cli.constants import UNFILLED_VAR_SENTINEL
 from kanon_cli.core.install import _UNRESOLVED_PLACEHOLDER_PATTERN, _is_unfilled_source_var
-from kanon_cli.core.manifest_vars import MalformedManifestVarError, _vars_in_attributes
+from kanon_cli.core.manifest_vars import (
+    functional_vars_in_manifest_files,
+    MalformedManifestVarError,
+    _vars_in_attributes,
+)
 
 
 from kanon_cli.constants import KANON_ALLOW_INSECURE_REMOTES
@@ -426,3 +430,79 @@ class TestUnfilledSourceVariable:
     def test_sentinel_is_caught_by_the_placeholder_scanner(self) -> None:
         """The value ``kanon add`` writes is one the install-time scanner rejects."""
         assert _UNRESOLVED_PLACEHOLDER_PATTERN.search(UNFILLED_VAR_SENTINEL) is not None
+
+
+@pytest.mark.integration
+class TestFunctionalElementCoverage:
+    """Every manifest position `repo` consumes must be visible to detection.
+
+    Detection walked `<project>` and the `<remote>` elements projects reference.
+    A `${VAR}` anywhere else was substituted by `repo envsubst` but announced by
+    nothing, so `kanon add` wrote no line for it and the install-time guard saw
+    nothing to complain about -- the same silent no-delivery as issue #95, in a
+    different element.
+    """
+
+    def _detect(self, tmp_path: pathlib.Path, xml: str) -> set[str]:
+        manifest = tmp_path / "m.xml"
+        manifest.write_text(xml, encoding="utf-8")
+        return functional_vars_in_manifest_files([manifest])
+
+    def test_default_revision_is_detected(self, tmp_path: pathlib.Path) -> None:
+        """`<default revision>` decides which commit every unpinned project checks out."""
+        assert self._detect(
+            tmp_path,
+            '<manifest><default remote="o" revision="${DEFREV}"/><project name="p" path="p"/></manifest>',
+        ) == {"DEFREV"}
+
+    def test_nested_project_children_are_detected(self, tmp_path: pathlib.Path) -> None:
+        """A sub-project's delivery destination is as functional as its parent's."""
+        assert self._detect(
+            tmp_path,
+            '<manifest><project name="p" path="p">'
+            '<project name="s" path="s"><linkfile src="a" dest="${SUBROOT}/x"/></project>'
+            "</project></manifest>",
+        ) == {"SUBROOT"}
+
+    @pytest.mark.parametrize(
+        ("xml", "expected"),
+        [
+            ('<manifest><extend-project name="p" dest-path="${EXTDEST}"/></manifest>', "EXTDEST"),
+            ('<manifest><remove-project name="${GONE}"/></manifest>', "GONE"),
+            ('<manifest><manifest-server url="${MSURL}"/></manifest>', "MSURL"),
+            ('<manifest><superproject name="s" remote="o" revision="${SUPERREV}"/></manifest>', "SUPERREV"),
+            ('<manifest><contactinfo bugurl="${BUGURL}"/></manifest>', "BUGURL"),
+            ('<manifest><repo-hooks in-project="${HOOKPROJ}" enabled-list="p"/></manifest>', "HOOKPROJ"),
+        ],
+        ids=["extend-project", "remove-project", "manifest-server", "superproject", "contactinfo", "repo-hooks"],
+    )
+    def test_remaining_functional_elements_are_detected(self, tmp_path: pathlib.Path, xml: str, expected: str) -> None:
+        assert expected in self._detect(tmp_path, xml)
+
+    def test_a_remote_no_project_references_is_still_ignored(self, tmp_path: pathlib.Path) -> None:
+        """Scoping remotes to referenced ones is deliberate, not an oversight.
+
+        Detecting a variable in an unused `<remote>` would make `kanon add` write a
+        line for it, and an unfilled line now fails the install -- so a manifest
+        carrying an unused remote would stop installing altogether.
+        """
+        detected = self._detect(
+            tmp_path,
+            "<manifest>"
+            '<remote name="used" fetch="${USED}"/>'
+            '<remote name="unused" fetch="${UNUSED}"/>'
+            '<project name="p" path="p" remote="used"/>'
+            "</manifest>",
+        )
+        assert detected == {"USED"}, f"expected only the referenced remote's variable, got {detected!r}"
+
+    def test_a_remote_referenced_only_by_superproject_is_detected(self, tmp_path: pathlib.Path) -> None:
+        """A remote is live if anything references it, not only a `<project>`."""
+        detected = self._detect(
+            tmp_path,
+            "<manifest>"
+            '<remote name="sup" fetch="${SUPFETCH}"/>'
+            '<superproject name="s" remote="sup" revision="main"/>'
+            "</manifest>",
+        )
+        assert "SUPFETCH" in detected

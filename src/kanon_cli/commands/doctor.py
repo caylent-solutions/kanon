@@ -90,6 +90,7 @@ class DoctorArgsTypeError(TypeError):
 
 DOCTOR_SUBCHECK_KANON_HASH = "kanon_hash consistency"
 DOCTOR_SUBCHECK_ORPHAN_LOCKS = "no orphaned lock entries"
+DOCTOR_SUBCHECK_ORPHANED_WORKSPACES = "no orphaned source workspaces"
 DOCTOR_SUBCHECK_BRANCH_DRIFT = "no branch drift"
 
 
@@ -415,6 +416,68 @@ def _read_retry_policy() -> RetryPolicy:
     retry_count = int(os.environ.get(GIT_RETRY_COUNT_ENV_VAR, str(GIT_RETRY_COUNT_DEFAULT)))
     retry_delay = float(os.environ.get(GIT_RETRY_DELAY_ENV_VAR, str(GIT_RETRY_DELAY_DEFAULT)))
     return RetryPolicy(timeout=timeout, retry_count=retry_count, retry_delay=retry_delay)
+
+
+_PROJECT_ADDRESS_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _check_orphaned_workspaces(base_dir: pathlib.Path) -> list[DoctorFinding]:
+    """Report source workspaces left behind by the pre-keying store layout.
+
+    Per-source workspaces used to live at ``.kanon-data/sources/<alias>/`` and are
+    now keyed by the consuming project, at
+    ``.kanon-data/sources/<project_address>/<alias>/``. A workspace written by an
+    earlier kanon is therefore never read again, and a full source checkout can be
+    hundreds of megabytes. Left unreported it is silent, permanent disk growth.
+
+    Every directory kanon writes under ``sources/`` now has a 64-character hex
+    name, so anything else is a leftover. A project that was moved or renamed is
+    orphaned the same way, since its address derives from the resolved ``.kanon``
+    path, and is reported identically.
+
+    This reports rather than removes, so it is safe under ``--quiet`` and in CI. It
+    names the exact path so an operator can act without computing a digest.
+
+    Args:
+        base_dir: The ``<KANON_HOME>/store`` directory.
+
+    Returns:
+        One warning finding per orphaned workspace; empty when there are none.
+    """
+    sources_dir = base_dir / ".kanon-data" / "sources"
+    try:
+        entries = sorted(sources_dir.iterdir())
+    except FileNotFoundError:
+        return []
+    except OSError as exc:
+        print(f"WARN: Cannot list {sources_dir}: {exc}", file=sys.stderr)
+        return []
+
+    findings: list[DoctorFinding] = []
+    for entry in entries:
+        if _PROJECT_ADDRESS_RE.match(entry.name):
+            continue
+        try:
+            if not entry.is_dir():
+                continue
+        except OSError as exc:
+            print(f"WARN: Cannot stat {entry}: {exc}", file=sys.stderr)
+            continue
+        findings.append(
+            DoctorFinding(
+                kind="warn",
+                code="orphaned_source_workspace",
+                message=(
+                    f"'{entry.name}' under {sources_dir} predates per-project workspace keying and is never read again"
+                ),
+                remediation=(
+                    f"Remove it to reclaim the space: rm -rf {entry}. "
+                    f"'kanon clean' also reclaims it, but that removes the store's "
+                    f".kanon-data/ for every project sharing this KANON_HOME."
+                ),
+            )
+        )
+    return findings
 
 
 def _check_branch_drift(
@@ -1182,6 +1245,11 @@ def doctor_command(
     orphan_findings = _check_orphan_locks(kanon_file, lockfile)
     if _emit_subcheck_result(DOCTOR_SUBCHECK_ORPHAN_LOCKS, orphan_findings, quiet):
         has_errors = True
+
+    from kanon_cli.core.install import resolve_workspace_base_dir
+
+    orphaned_workspace_findings = _check_orphaned_workspaces(resolve_workspace_base_dir())
+    _emit_subcheck_result(DOCTOR_SUBCHECK_ORPHANED_WORKSPACES, orphaned_workspace_findings, quiet)
 
     drift_findings = _check_branch_drift(lockfile, strict_drift=strict_drift)
     if _emit_subcheck_result(DOCTOR_SUBCHECK_BRANCH_DRIFT, drift_findings, quiet):

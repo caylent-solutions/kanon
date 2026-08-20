@@ -4,20 +4,89 @@
 
 ## [Unreleased]
 
+### Added
+
+* feat: confine an absolute `<linkfile>`/`<copyfile>` dest to permitted roots
+
+A `<linkfile dest>` or `<copyfile dest>` may be an absolute path. Because the
+manifest declaring it is fetched from a remote repository, such a destination is
+now confined to a permitted root rather than being written anywhere the invoking
+user can write. The permitted roots are the consumer project root and the
+resolved `CLAUDE_MARKETPLACES_DIR`, plus anything an operator opts into with the
+new repeatable `--allow-abs-root <path>` flag or the `KANON_ALLOWED_ABS_ROOTS`
+environment variable (flag wins, matching `--home` / `KANON_HOME`). The two
+built-in roots are unconditional, so the setting can only widen the boundary. No
+new `.kanon` key is required and nothing is added to existing files. A
+destination outside every permitted root exits non-zero naming the destination,
+the roots, and how to widen them.
+
+* feat: `KANON_SYNC_JOBS` bounds `repo sync`'s fan-out
+
+Set it to a positive integer to pass `--jobs` to `repo sync`. Unset, `repo sync`
+resolves its own defaults and behaviour is unchanged.
+
 ### Fixed
 
-* fix: key per-source install workspaces and aggregated packages by consumer project (#96)
+* fix: key per-source install workspaces by consumer project (#96)
 
-Per-source install workspaces (`<KANON_HOME>/store/.kanon-data/sources/...`)
-and the aggregated `.packages/` symlink tree are now keyed by a stable
-per-project address (`compute_project_address`), not just the source alias.
-Previously, two unrelated projects declaring the same source alias shared one
-mutable `repo` workspace: the second project's install would silently deliver
-no content (while reporting success), or -- if the two projects pinned
-different refs -- raise an unhandled `GitCommandError` and wedge the shared
-workspace for both projects. Pre-existing workspaces from before this fix are
-orphaned under the old alias-only path; run `kanon clean` to reclaim them (no
-automatic migration).
+Per-source install workspaces (`<KANON_HOME>/store/.kanon-data/sources/...`) are
+now keyed by a stable per-project address (`compute_project_address`), not just
+the source alias. Previously, two unrelated projects declaring the same source
+alias shared one mutable `repo` workspace: the second project's install would
+silently deliver no content (while reporting success), or -- if the two projects
+pinned different refs -- raise an unhandled `GitCommandError` and wedge the
+shared workspace for both projects.
+
+The aggregated `.packages/` symlink tree is deliberately **not** keyed. It is
+write-only bookkeeping within a single `install()` call, and keying it broke
+roughly 140 end-to-end tests for no behavioural gain. Two projects that share a
+`KANON_HOME` and a package name still resolve `.packages/<name>` to whichever
+installed last; if downstream tooling reads `.packages/` for more than one
+project on a machine, reference the per-project source workspace instead.
+
+Workspaces written before this change are left under the old alias-only path and
+are never read again. Nothing needs to be done about them: `kanon doctor` reports
+them, and `kanon clean` reclaims them along with the rest of the store. Note that
+`kanon clean` removes the store's `.kanon-data/` for **every** project sharing
+that `KANON_HOME`, not only the current one -- each of those projects re-clones
+on its next install.
+
+* fix: detect `${VAR}` and `$VAR` in `<linkfile>`/`<copyfile>` src and dest (#95)
+
+Variable detection walked only `<project>` and `<remote>` attributes, so a
+variable used solely in a `<linkfile dest>` was invisible to both `kanon add` and
+the install-time guard, and install exited 0 with the variable unset having
+delivered nothing. Detection now covers those elements, and matches the grammar
+`repo envsubst` actually expands -- `$VAR` as well as `${VAR}`. A `${...}` body
+that is not a valid identifier (`${VAR:-default}`, for example) is rejected at
+detection rather than written into `.kanon` as a key no value can satisfy.
+
+`kanon add` now writes `<SET_ME>` for a variable it cannot derive, instead of an
+empty value. An empty value substituted as the empty string, so a
+`dest="${VAR}/rules"` collapsed to `/rules` at the filesystem root while leaving
+no placeholder for the guard to catch.
+
+* fix: `<copyfile>` dest is validated by `kanon validate marketplace`
+
+The validator applied its containment rule to `<linkfile>` only, so a
+`<copyfile>` could declare any destination and still pass.
+
+* fix: a failed `<copyfile>` copy raises instead of being logged and ignored
+
+`repo sync` could report success having delivered nothing.
+
+* fix: `kanon doctor` no longer aborts on an unreadable cache or lock entry
+
+Stat probes outside their error handler let an `OSError` escape as a traceback.
+
+* fix: `kanon repo forall` no longer raises when restoring a signal handler that
+  was not installed from Python
+
+### Changed
+
+* `RefreshRepoInitError` now reads `ERROR: repo re-init failed for source '<name>'`
+  where it previously read `ERROR: refresh failed for source '<name>'`. Scripts
+  matching the old text need updating.
 
 ## v3.3.3 (2026-08-06)
 

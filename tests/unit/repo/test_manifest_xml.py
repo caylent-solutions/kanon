@@ -1573,6 +1573,7 @@ class EnvsubstAbsoluteLinkfileIntegrationTest(unittest.TestCase):
     """
 
     ENV_VAR_NAME = "CLAUDE_MARKETPLACES_DIR"
+    ROOTS_ENV_VAR = "KANON_PERMITTED_ABS_ROOTS"
 
     def setUp(self):
         self.tempdirobj = tempfile.TemporaryDirectory(prefix="repo_tests")
@@ -1588,7 +1589,14 @@ class EnvsubstAbsoluteLinkfileIntegrationTest(unittest.TestCase):
         self.orig_env = os.environ.get(self.ENV_VAR_NAME)
         os.environ[self.ENV_VAR_NAME] = self.marketplace_dir
 
+        self.orig_roots = os.environ.get(self.ROOTS_ENV_VAR)
+        os.environ[self.ROOTS_ENV_VAR] = self.marketplace_dir
+
     def tearDown(self):
+        if self.orig_roots is None:
+            os.environ.pop(self.ROOTS_ENV_VAR, None)
+        else:
+            os.environ[self.ROOTS_ENV_VAR] = self.orig_roots
         if self.orig_env is None:
             os.environ.pop(self.ENV_VAR_NAME, None)
         else:

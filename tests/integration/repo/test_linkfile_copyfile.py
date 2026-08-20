@@ -225,11 +225,12 @@ def test_linkfile_overwrites_existing_symlink(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.integration
-def test_linkfile_absolute_dest_path_accepted(tmp_path: pathlib.Path) -> None:
+def test_linkfile_absolute_dest_path_accepted(tmp_path: pathlib.Path, permit_abs_roots) -> None:
     """_LinkFile._Link() accepts and uses an absolute destination path.
 
     AC-FUNC-005: absolute path handling -- absolute dest is allowed per spec 17.1
     """
+    permit_abs_roots(tmp_path)
     git_worktree = tmp_path / "project"
     git_worktree.mkdir()
     topdir = tmp_path / "topdir"
@@ -295,13 +296,14 @@ def test_copyfile_copies_file_content(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.integration
-def test_copyfile_absolute_dest_path_accepted(tmp_path: pathlib.Path) -> None:
+def test_copyfile_absolute_dest_path_accepted(tmp_path: pathlib.Path, permit_abs_roots) -> None:
     """_CopyFile._Copy() accepts and uses an absolute destination path.
 
     AC-FUNC-005: absolute path handling -- absolute dest is allowed per spec
     17.1, so a manifest can deliver a real file into the consuming project
     (outside the repo client topdir) rather than only inside it.
     """
+    permit_abs_roots(tmp_path)
     git_worktree = tmp_path / "project"
     git_worktree.mkdir()
     topdir = tmp_path / "topdir"
@@ -459,10 +461,12 @@ def test_copyfile_dest_is_directory_raises_error(tmp_path: pathlib.Path) -> None
 
 
 @pytest.mark.integration
-def test_copyfile_missing_source_does_not_create_dest(tmp_path: pathlib.Path) -> None:
-    """_CopyFile._Copy() with missing source file does not create the destination.
+def test_copyfile_missing_source_raises_and_does_not_create_dest(tmp_path: pathlib.Path) -> None:
+    """_CopyFile._Copy() with a missing source raises and creates no destination.
 
-    AC-FUNC-008: error case -- source file does not exist
+    AC-FUNC-008: error case -- source file does not exist. The failure is raised
+    rather than logged: a swallowed copy failure let ``repo sync`` report success
+    having delivered nothing, which is the silent-failure mode kanon forbids.
     """
     git_worktree = tmp_path / "project"
     git_worktree.mkdir()
@@ -470,7 +474,8 @@ def test_copyfile_missing_source_does_not_create_dest(tmp_path: pathlib.Path) ->
     topdir.mkdir()
 
     copy = _CopyFile(str(git_worktree), "nonexistent.txt", str(topdir), "output.txt")
-    copy._Copy()
+    with pytest.raises(OSError, match="Cannot copy file"):
+        copy._Copy()
 
     dest = topdir / "output.txt"
     assert not dest.exists(), f"Expected {dest} to NOT exist when source is missing, but it was created."

@@ -91,6 +91,9 @@ from kanon_cli.constants import (
     SOURCE_MARKETPLACE_KEY,
     SOURCE_PREFIX,
     resolve_kanon_home,
+    KANON_PERMITTED_ABS_ROOTS_ENV,
+    format_permitted_abs_roots,
+    resolve_allowed_abs_roots,
     resolve_sync_jobs,
 )
 from kanon_cli.core.git_runner import run_git_ls_remote
@@ -1944,6 +1947,46 @@ def assert_manifest_vars_resolved(
         raise UnresolvedManifestVarError(source_name=source_name, var_names=sorted(unresolved))
 
 
+def export_permitted_abs_roots(kanon_file: pathlib.Path, marketplace_dir_str: str) -> list[str]:
+    """Publish the roots an absolute manifest ``dest`` may resolve under.
+
+    A ``<linkfile>`` or ``<copyfile>`` may declare an absolute ``dest``, and the
+    manifest declaring it is fetched from a remote repository. Without a boundary
+    that is an arbitrary-file-write primitive, so the destination is confined to a
+    permitted set: the consumer project root, the resolved
+    ``CLAUDE_MARKETPLACES_DIR`` when one is configured, and any additional root the
+    operator opted into through ``--allow-abs-root`` or
+    ``KANON_ALLOWED_ABS_ROOTS``. The first two are unconditional, so the setting can
+    only widen the boundary and never lock an operator out of their own project.
+
+    The resolved list is placed in the environment because the vendored repo tool
+    enforces it at the point of use and runs in this process.
+
+    Args:
+        kanon_file: Path to the consumer project's ``.kanon`` file; its parent is
+            the project root.
+        marketplace_dir_str: The ``CLAUDE_MARKETPLACES_DIR`` value from the
+            ``.kanon`` globals, already envsubst-expanded, or an empty string when
+            no marketplace source is declared.
+
+    Returns:
+        The permitted roots as absolute path strings, in precedence order.
+    """
+    roots: list[str] = [str(kanon_file.resolve().parent)]
+    if marketplace_dir_str:
+        roots.append(str(pathlib.Path(marketplace_dir_str).expanduser().resolve()))
+    for extra in resolve_allowed_abs_roots():
+        roots.append(str(pathlib.Path(extra).resolve()))
+
+    deduped: list[str] = []
+    for root in roots:
+        if root not in deduped:
+            deduped.append(root)
+
+    os.environ[KANON_PERMITTED_ABS_ROOTS_ENV] = format_permitted_abs_roots(deduped)
+    return deduped
+
+
 def run_repo_sync(source_dir: pathlib.Path) -> None:
     """Run ``repo sync`` in source directory.
 
@@ -2520,6 +2563,8 @@ def _run_install(
         marketplace_dir = pathlib.Path(marketplace_dir_str)
         print("kanon install: preparing marketplace directory...")
         prepare_marketplace_dir(marketplace_dir)
+
+    export_permitted_abs_roots(kanonenv_path, marketplace_dir_str)
 
     repo_rev = globals_dict.get("REPO_REV", "")
 

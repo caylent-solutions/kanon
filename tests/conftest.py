@@ -16,7 +16,7 @@ from collections.abc import Generator
 
 import pytest
 
-from kanon_cli.constants import KANON_SYNC_JOBS_ENV
+from kanon_cli.constants import KANON_PERMITTED_ABS_ROOTS_ENV, KANON_SYNC_JOBS_ENV
 
 
 _TMP_ROOT_ENV = "KANON_TEST_TMP_ROOT"
@@ -1029,3 +1029,33 @@ def _set_default_catalog_source(monkeypatch: pytest.MonkeyPatch) -> str:
     """
     monkeypatch.setenv("KANON_CATALOG_SOURCES", DEFAULT_CATALOG_SOURCE)
     return DEFAULT_CATALOG_SOURCE
+
+
+@pytest.fixture()
+def permit_abs_roots(monkeypatch: pytest.MonkeyPatch):
+    """Return a helper that permits absolute manifest destinations under given roots.
+
+    An absolute ``<linkfile>``/``<copyfile>`` dest is confined to the roots kanon
+    publishes in ``KANON_PERMITTED_ABS_ROOTS``; outside a real install that variable
+    is unset, so the vendored resolver fails closed. A test that exercises an
+    absolute dest calls this with the root its destination lives under, which also
+    documents that the containment boundary is what makes the destination legal.
+
+    Example::
+
+        def test_absolute_dest(tmp_path, permit_abs_roots):
+            permit_abs_roots(tmp_path)
+
+    Args:
+        monkeypatch: pytest's environment patcher, so the value is undone per test.
+
+    Returns:
+        A callable taking one or more roots (``str`` or ``Path``).
+    """
+
+    def _permit(*roots: object) -> str:
+        value = os.pathsep.join(str(root) for root in roots)
+        monkeypatch.setenv(KANON_PERMITTED_ABS_ROOTS_ENV, value)
+        return value
+
+    return _permit

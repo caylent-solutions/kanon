@@ -493,13 +493,14 @@ def test_copyfile_replacement_does_not_write_to_stdout(tmp_path: pathlib.Path, c
 
 
 @pytest.mark.integration
-def test_copyfile_absolute_dest_creates_regular_file_outside_topdir(tmp_path: pathlib.Path) -> None:
+def test_copyfile_absolute_dest_creates_regular_file_outside_topdir(tmp_path: pathlib.Path, permit_abs_roots) -> None:
     """_Copy() with an absolute dest creates a real file at that absolute path.
 
     AC-TEST-004: the absolute dest branch allows the copy to be placed outside
     the workspace topdir. The resulting entry must be a regular file (not a
     symlink) whose content matches the source.
     """
+    permit_abs_roots(tmp_path)
     worktree = tmp_path / "project"
     worktree.mkdir()
     topdir = tmp_path / "workspace"
@@ -522,13 +523,14 @@ def test_copyfile_absolute_dest_creates_regular_file_outside_topdir(tmp_path: pa
 
 
 @pytest.mark.integration
-def test_copyfile_absolute_dest_is_actual_file_not_symlink(tmp_path: pathlib.Path) -> None:
+def test_copyfile_absolute_dest_is_actual_file_not_symlink(tmp_path: pathlib.Path, permit_abs_roots) -> None:
     """The entry at an absolute dest path is a regular file, not a symlink.
 
     AC-TEST-004: confirms that the branch handling absolute dest paths still
     copies bytes (via shutil.copy) rather than creating a symlink, unlike
     linkfile's equivalent absolute-dest handling.
     """
+    permit_abs_roots(tmp_path)
     worktree = tmp_path / "project"
     worktree.mkdir()
     topdir = tmp_path / "workspace"
@@ -553,12 +555,13 @@ def test_copyfile_absolute_dest_is_actual_file_not_symlink(tmp_path: pathlib.Pat
 
 
 @pytest.mark.integration
-def test_copyfile_absolute_dest_creates_parent_dirs(tmp_path: pathlib.Path) -> None:
+def test_copyfile_absolute_dest_creates_parent_dirs(tmp_path: pathlib.Path, permit_abs_roots) -> None:
     """_Copy() with an absolute dest creates intermediate parent directories.
 
     AC-TEST-004: nested absolute destinations must have their parent
     directories created automatically, matching linkfile's behavior.
     """
+    permit_abs_roots(tmp_path)
     worktree = tmp_path / "project"
     worktree.mkdir()
     topdir = tmp_path / "workspace"

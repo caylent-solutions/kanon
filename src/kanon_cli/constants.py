@@ -806,3 +806,80 @@ def resolve_sync_jobs() -> int | None:
     if jobs <= 0:
         raise SystemExit(f"ERROR: {KANON_SYNC_JOBS_ENV} must be a positive integer; got {jobs}")
     return jobs
+
+
+KANON_ALLOWED_ABS_ROOTS_ENV = "KANON_ALLOWED_ABS_ROOTS"
+"""Operator-facing list of extra roots an absolute manifest ``dest`` may resolve under."""
+
+KANON_PERMITTED_ABS_ROOTS_ENV = "KANON_PERMITTED_ABS_ROOTS"
+"""Internal, fully resolved permitted-root list handed to the vendored repo tool."""
+
+ABS_ROOTS_SEPARATOR = os.pathsep
+
+
+def resolve_allowed_abs_roots() -> list[str]:
+    """Return the operator-supplied extra roots for absolute manifest destinations.
+
+    A ``<linkfile>`` or ``<copyfile>`` may declare an absolute ``dest``. Such a
+    destination is confined to a set of permitted roots so that a manifest fetched
+    from a remote repository cannot write outside the consuming project. Two roots
+    are always permitted and are supplied by the caller rather than this function:
+    the consumer project root and the resolved ``CLAUDE_MARKETPLACES_DIR``. This
+    function returns only the *additional* roots an operator has opted into, in
+    precedence order ``--allow-abs-root`` flag > ``KANON_ALLOWED_ABS_ROOTS`` env
+    var > none. The flag is folded into the environment variable by
+    :func:`kanon_cli.core.cli_args.apply_global_flags` before this runs, so only
+    the variable is read here.
+
+    Because the two built-in roots are unconditional, this setting can only widen
+    the boundary, never narrow it below the project being installed into.
+
+    Returns:
+        The operator-supplied roots as absolute path strings, in the order given,
+        with duplicates preserved (the caller de-duplicates against the built-ins).
+
+    Raises:
+        SystemExit: When the variable is set but contains an empty entry or a
+            relative path, either of which would silently widen the boundary in a
+            way the operator did not intend.
+    """
+    raw = os.environ.get(KANON_ALLOWED_ABS_ROOTS_ENV)
+    if not raw:
+        return []
+    roots: list[str] = []
+    for entry in raw.split(ABS_ROOTS_SEPARATOR):
+        if not entry.strip():
+            raise SystemExit(
+                f"ERROR: {KANON_ALLOWED_ABS_ROOTS_ENV} contains an empty entry; "
+                f"expected {ABS_ROOTS_SEPARATOR!r}-separated absolute paths, got {raw!r}"
+            )
+        if not os.path.isabs(entry):
+            raise SystemExit(f"ERROR: {KANON_ALLOWED_ABS_ROOTS_ENV} entries must be absolute paths; got {entry!r}")
+        roots.append(os.path.normpath(entry))
+    return roots
+
+
+def format_permitted_abs_roots(roots: list[str]) -> str:
+    """Serialise permitted roots for :data:`KANON_PERMITTED_ABS_ROOTS_ENV`.
+
+    Args:
+        roots: Absolute path strings, already resolved and de-duplicated.
+
+    Returns:
+        The separator-joined value to place in the environment.
+    """
+    return ABS_ROOTS_SEPARATOR.join(roots)
+
+
+def parse_permitted_abs_roots(raw: str) -> list[str]:
+    """Parse the serialised permitted-root list.
+
+    Args:
+        raw: The raw environment value, possibly empty.
+
+    Returns:
+        The absolute path strings it encodes; empty when *raw* is empty.
+    """
+    if not raw:
+        return []
+    return [entry for entry in raw.split(ABS_ROOTS_SEPARATOR) if entry]

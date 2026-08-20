@@ -200,6 +200,20 @@ def add_global_flags(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--allow-abs-root",
+        dest="allow_abs_root",
+        action="append",
+        type=pathlib.Path,
+        default=None,
+        metavar="<path>",
+        help=(
+            "Permit an absolute <linkfile>/<copyfile> dest to resolve under <path>. "
+            "Repeatable. Takes precedence over the KANON_ALLOWED_ABS_ROOTS environment "
+            "variable. The consumer project root and CLAUDE_MARKETPLACES_DIR are always "
+            "permitted and cannot be removed, so this can only widen the boundary."
+        ),
+    )
+    parser.add_argument(
         "--telemetry-debug",
         dest="telemetry_debug",
         action="store_true",
@@ -270,3 +284,9 @@ def _apply_global_flags(args: argparse.Namespace) -> None:
     home_override = getattr(args, "home", None)
     if home_override is not None:
         os.environ[constants.KANON_HOME_ENV_VAR] = str(constants.resolve_kanon_home(override=home_override))
+
+    abs_roots_override = getattr(args, "allow_abs_root", None)
+    if abs_roots_override:
+        os.environ[constants.KANON_ALLOWED_ABS_ROOTS_ENV] = constants.ABS_ROOTS_SEPARATOR.join(
+            str(root) for root in abs_roots_override
+        )

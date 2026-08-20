@@ -444,6 +444,75 @@ def _SafeExpandPath(base, subpath, skipfinal=False):
     return path
 
 
+def _PermittedAbsRoots():
+    """Return the roots an absolute <linkfile>/<copyfile> dest may resolve under.
+
+    kanon resolves the permitted set (consumer project root, the resolved
+    CLAUDE_MARKETPLACES_DIR, plus anything the operator opted into via
+    --allow-abs-root / KANON_ALLOWED_ABS_ROOTS) and hands it to this tree through
+    the environment.  An empty or absent value means no absolute dest is
+    permitted, which is the fail-closed default when the vendored tool is driven
+    directly rather than through kanon.
+    """
+    raw = os.environ.get("KANON_PERMITTED_ABS_ROOTS", "")
+    if not raw:
+        return []
+    return [entry for entry in raw.split(os.pathsep) if entry]
+
+
+def _ResolveAbsDest(dest, skipfinal=False):
+    """Resolve and contain an absolute manifest dest.
+
+    Applies the same guarantees _SafeExpandPath gives a relative dest -- no "."
+    or ".." components, no symlinked component, no special files -- and adds the
+    containment check an absolute path needs: the resolved path must live under
+    one of the permitted roots.  A manifest is fetched from a remote repository,
+    so without containment an absolute dest is an arbitrary-file-write primitive.
+    """
+    resep = re.compile(r"[/%s]" % re.escape(os.path.sep))
+    components = resep.split(dest)
+    for part in components[1:]:
+        if part in {".", ".."}:
+            raise ManifestInvalidPathError(f'{dest}: "{part}" not allowed in absolute dest')
+
+    roots = _PermittedAbsRoots()
+    if not roots:
+        raise ManifestInvalidPathError(
+            f"{dest}: absolute dest is not permitted because no permitted root is configured; "
+            f"run this through kanon, or set KANON_ALLOWED_ABS_ROOTS"
+        )
+
+    normalized = os.path.normpath(dest)
+    real = os.path.realpath(normalized)
+    contained = False
+    for root in roots:
+        root_real = os.path.realpath(root)
+        if real == root_real or real.startswith(root_real + os.path.sep):
+            contained = True
+            break
+    if not contained:
+        listed = "\n         ".join(roots)
+        raise ManifestInvalidPathError(
+            f"{dest}: absolute dest resolves outside every permitted root:\n"
+            f"         {listed}\n"
+            f"         Widen with --allow-abs-root <path> or KANON_ALLOWED_ABS_ROOTS=<path>."
+        )
+
+    walk_to = components[:-1] if skipfinal else components
+    path = os.path.sep
+    for part in walk_to:
+        if not part:
+            continue
+        path = os.path.join(path, part)
+        if platform_utils.islink(path):
+            raise ManifestInvalidPathError(f"{path}: traversing symlinks not allow")
+        if os.path.exists(path):
+            if not os.path.isfile(path) and not platform_utils.isdir(path):
+                raise ManifestInvalidPathError(f"{path}: only regular files & directories allowed")
+
+    return normalized
+
+
 class _CopyFile:
     """Container for <copyfile> manifest element."""
 
@@ -466,15 +535,7 @@ class _CopyFile:
         src = _SafeExpandPath(self.git_worktree, self.src)
 
         if os.path.isabs(self.dest):
-            # Absolute dest: use the path directly (spec 17.1).
-            # Defense-in-depth: reject path traversal components even
-            # though _CheckLocalPath already validated at manifest parse
-            # time. Split on both / and os.sep to match _SafeExpandPath.
-            resep = re.compile(r"[/%s]" % re.escape(os.path.sep))
-            components = resep.split(self.dest)
-            if ".." in components:
-                raise ManifestInvalidPathError(f'{self.dest}: ".." not allowed in absolute dest')
-            dest = os.path.normpath(self.dest)
+            dest = _ResolveAbsDest(self.dest)
         else:
             # Relative dest: resolve under topdir via _SafeExpandPath.
             dest = _SafeExpandPath(self.topdir, self.dest)
@@ -499,8 +560,8 @@ class _CopyFile:
                 # mode = os.stat(dest)[stat.ST_MODE]
                 # mode = mode & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
                 # os.chmod(dest, mode)
-            except IOError:
-                logger.error("Cannot copy file %s to %s", src, dest)
+            except OSError as e:
+                raise OSError(f"Cannot copy file {src!r} to {dest!r}: {e}") from e
 
 
 # Entries that must never be symlinked when using exclude-based linking.
@@ -594,15 +655,7 @@ class _LinkFile:
             # Entity does not contain a wild card so just a simple one to one
             # link operation.
             if os.path.isabs(self.dest):
-                # Absolute dest: use the path directly (spec 17.1).
-                # Defense-in-depth: reject path traversal components even
-                # though _CheckLocalPath already validated at manifest parse
-                # time. Split on both / and os.sep to match _SafeExpandPath.
-                resep = re.compile(r"[/%s]" % re.escape(os.path.sep))
-                components = resep.split(self.dest)
-                if ".." in components:
-                    raise ManifestInvalidPathError(f'{self.dest}: ".." not allowed in absolute dest')
-                dest = os.path.normpath(self.dest)
+                dest = _ResolveAbsDest(self.dest, skipfinal=True)
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
             else:
                 # Relative dest: resolve under topdir via _SafeExpandPath.

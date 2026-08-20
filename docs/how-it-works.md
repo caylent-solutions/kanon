@@ -78,8 +78,11 @@ The command performs these steps in order:
 3. **If a marketplace was registered (any source set `KANON_SOURCE_<alias>_MARKETPLACE=true`):**
    - Uninstalls marketplace plugins via the Claude Code CLI (discovers entries, uninstalls each plugin, removes marketplace registrations)
    - Removes `CLAUDE_MARKETPLACES_DIR` entirely
-4. **Remove `.packages/`** -- `shutil.rmtree` with `ignore_errors=True`
-5. **Remove `.kanon-data/`** -- `shutil.rmtree` with `ignore_errors=True`
+4. **Remove this project's `.packages/` links** -- each link whose target
+   resolves under this project's workspace is unlinked; links owned by other
+   projects sharing the store are left in place
+5. **Remove this project's source workspace** -- `.kanon-data/sources/<project-address>/`,
+   not the whole `.kanon-data/` tree, which holds every other project's workspaces
 
 The order is critical: uninstalling plugins first ensures Claude Code's
 registry is clean. Removing the marketplace directory before deleting

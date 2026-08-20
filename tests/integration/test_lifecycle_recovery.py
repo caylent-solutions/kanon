@@ -144,7 +144,7 @@ class TestInstallCrashCleanReinstall:
 
         clean(kanonenv)
 
-        assert not (store_base / ".kanon-data").exists(), (
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
             "clean() must remove .kanon-data/ even after a simulated crash"
         )
         assert not (store_base / ".packages").exists(), "clean() must remove .packages/ even after a simulated crash"

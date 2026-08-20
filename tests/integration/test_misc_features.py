@@ -3,7 +3,7 @@
 Covers:
   - install core business logic (create_source_dirs, aggregate_symlinks,
     update_gitignore, prepare_marketplace_dir)
-  - clean lifecycle teardown (remove_packages_dir, remove_kanon_dir,
+  - clean lifecycle teardown (project-scoped removal,
     remove_marketplace_dir, clean())
   - kanonenv edge-case handling (comments, blank lines, value with equals)
   - constants module correctness (all required constants defined)
@@ -33,9 +33,7 @@ from kanon_cli.constants import (
 )
 from kanon_cli.core.clean import (
     clean,
-    remove_kanon_dir,
     remove_marketplace_dir,
-    remove_packages_dir,
 )
 from kanon_cli.core.install import (
     aggregate_symlinks,
@@ -174,22 +172,6 @@ class TestInstallCoreLogic:
 @pytest.mark.integration
 class TestCleanLifecycle:
     """Verify clean helper functions and full clean() lifecycle."""
-
-    def test_remove_packages_dir_removes_dir(self, tmp_path: pathlib.Path) -> None:
-        (tmp_path / ".packages").mkdir()
-        remove_packages_dir(tmp_path)
-        assert not (tmp_path / ".packages").exists()
-
-    def test_remove_packages_dir_ok_when_missing(self, tmp_path: pathlib.Path) -> None:
-        remove_packages_dir(tmp_path)
-
-    def test_remove_kanon_dir_removes_dir(self, tmp_path: pathlib.Path) -> None:
-        (tmp_path / ".kanon-data").mkdir()
-        remove_kanon_dir(tmp_path)
-        assert not (tmp_path / ".kanon-data").exists()
-
-    def test_remove_kanon_dir_ok_when_missing(self, tmp_path: pathlib.Path) -> None:
-        remove_kanon_dir(tmp_path)
 
     def test_remove_marketplace_dir_removes_dir(self, tmp_path: pathlib.Path) -> None:
         mp_dir = tmp_path / "mp"

@@ -14,7 +14,7 @@ _shtab_kanon_commands() {
     "__resolve_entry_to_repo_url:Internal hidden subcommand for the mid-token splitter. Given a catalog entry name, returns the catalog source URL to stdout so the shell helper can route to _kanon_complete_project_versions."
     "add:Resolve catalog entries from a manifest repo and append the"
     "catalog:Subcommands for inspecting and auditing manifest repos."
-    "clean:Execute the full Kanon clean lifecycle."
+    "clean:Execute the full Kanon clean lifecycle for THIS project."
     "completion:Emit the shell completion script for kanon to stdout."
     "doctor:Run workspace health checks against the current project directory."
     "install:Execute the full Kanon install lifecycle."

@@ -53,8 +53,8 @@ touched. See
    else any source's .kanon KANON_SOURCE_<alias>_MARKETPLACE flag):
    a. Uninstall marketplace plugins via claude CLI
    b. rm -rf CLAUDE_MARKETPLACES_DIR
-5. rm -rf .packages/ (ignore_errors)
-6. rm -rf .kanon-data/ (ignore_errors)
+5. unlink this project's links under .packages/ (other projects' links kept)
+6. rm -rf .kanon-data/sources/<project-address>/ (other projects' workspaces kept)
 7. If --purge or --purge-all: delete this project's .kanon and .kanon.lock
 8. If --purge-all: remove the KANON_HOME store dir (store/, cache/, empty root)
 ```

@@ -84,6 +84,19 @@ Stat probes outside their error handler let an `OSError` escape as a traceback.
 
 ### Changed
 
+* `kanon clean` is now scoped to the project you run it in
+
+It removed the shared store's entire `.packages/` and `.kanon-data/` trees plus
+every content-addressed entry, so cleaning one project destroyed the installed
+state of every other project sharing that `KANON_HOME`. It now removes only this
+project's source workspace and the aggregated package links this project created.
+Other projects' workspaces, their links, and the shared store entries survive.
+`--purge-all` is unchanged and remains the machine-wide teardown.
+
+One consequence worth noting: plain `kanon clean` no longer prunes
+content-addressed store entries, because they are shared cache. `--purge-all`
+still reclaims them.
+
 * All kanon diagnostics now use a single `ERROR:` prefix on stderr
 
 kanon emitted two prefixes for the same thing: `ERROR:` at 140 call sites and

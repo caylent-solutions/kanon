@@ -560,8 +560,12 @@ kanon clean --purge-all           # also remove the KANON_HOME store directory
 
 1. For any source with `KANON_SOURCE_<alias>_MARKETPLACE=true`: uninstalls
    plugins and removes the marketplace directory.
-2. Removes the `.packages/` and `.kanon-data/` directories and prunes this
-   project's content-addressed entries from the shared `KANON_HOME` store.
+2. Removes this project's source workspace under the shared `KANON_HOME`
+   store, and the aggregated `.packages/` links this project created.
+
+`kanon clean` is scoped to the project you run it in. Other projects sharing the
+same `KANON_HOME` keep their workspaces, their package links, and the shared
+content-addressed store entries. Use `--purge-all` for machine-wide teardown.
 
 With `--orphans`, before the normal teardown kanon also unregisters any
 kanon-owned marketplaces recorded in `.kanon.lock` that are no longer

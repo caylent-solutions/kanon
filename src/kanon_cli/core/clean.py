@@ -17,6 +17,7 @@ Performs full Kanon teardown in the following order:
 """
 
 import pathlib
+import os
 import shutil
 import sys
 
@@ -26,7 +27,7 @@ from kanon_cli.constants import (
     SOURCE_MARKETPLACE_KEY,
     resolve_kanon_home,
 )
-from kanon_cli.core.install import prune_store, resolve_workspace_base_dir
+from kanon_cli.core.install import compute_project_address, prune_store, resolve_workspace_base_dir
 from kanon_cli.core.marketplace import (
     locate_claude_binary,
     remove_marketplace,
@@ -46,22 +47,94 @@ def remove_marketplace_dir(marketplace_dir: pathlib.Path) -> None:
         shutil.rmtree(marketplace_dir)
 
 
-def remove_packages_dir(base_dir: pathlib.Path) -> None:
-    """Remove .packages/ directory with ignore_errors.
+def _remove_if_empty(directory: pathlib.Path) -> None:
+    """Remove *directory* when nothing else is using it.
+
+    A project-scoped clean removes this project's entries and leaves the shared
+    parents behind. On a machine with one project those parents are then empty
+    cruft, and leaving them means the store never returns to a pristine state. On
+    a machine with several, they still hold another project's entries and must
+    survive -- which is exactly what the emptiness check distinguishes.
 
     Args:
-        base_dir: Project root directory.
+        directory: The shared parent to remove if it is now empty.
     """
-    shutil.rmtree(base_dir / ".packages", ignore_errors=True)
+    try:
+        if not any(directory.iterdir()):
+            directory.rmdir()
+    except (FileNotFoundError, NotADirectoryError):
+        return
+    except OSError as exc:
+        print(f"WARN: Cannot remove empty {directory}: {exc}", file=sys.stderr)
 
 
-def remove_kanon_dir(base_dir: pathlib.Path) -> None:
-    """Remove .kanon-data/ directory with ignore_errors.
+def project_packages_links(base_dir: pathlib.Path, project_address: str) -> list[pathlib.Path]:
+    """Return the aggregated ``.packages/`` links owned by one project.
+
+    The aggregation farm is shared: every project on the machine writes into the
+    same ``<store>/.packages/``, keyed only by package name. Ownership therefore
+    has to be read off each link's target, which does carry the project address.
+    A link pointing into another project's workspace is not ours to remove.
 
     Args:
-        base_dir: Project root directory.
+        base_dir: The resolved store base directory.
+        project_address: The calling project's address.
+
+    Returns:
+        The links whose target lies under this project's source workspace.
     """
-    shutil.rmtree(base_dir / ".kanon-data", ignore_errors=True)
+    packages_dir = base_dir / ".packages"
+    owned: list[pathlib.Path] = []
+    try:
+        entries = sorted(packages_dir.iterdir())
+    except (FileNotFoundError, NotADirectoryError):
+        return owned
+
+    marker = str(base_dir / ".kanon-data" / "sources" / project_address) + os.sep
+    for entry in entries:
+        try:
+            target = os.path.realpath(entry)
+        except OSError as exc:
+            print(f"WARN: Cannot resolve {entry}: {exc}", file=sys.stderr)
+            continue
+        if target.startswith(marker):
+            owned.append(entry)
+    return owned
+
+
+def remove_project_packages_links(base_dir: pathlib.Path, project_address: str) -> None:
+    """Remove only the aggregated ``.packages/`` links this project created.
+
+    Removing the whole directory would delete the links of every other project
+    sharing this ``KANON_HOME``, which is what ``kanon clean`` used to do.
+
+    Args:
+        base_dir: The resolved store base directory.
+        project_address: The calling project's address.
+    """
+    for link in project_packages_links(base_dir, project_address):
+        try:
+            link.unlink()
+        except IsADirectoryError:
+            shutil.rmtree(link, ignore_errors=True)
+        except FileNotFoundError:
+            continue
+    _remove_if_empty(base_dir / ".packages")
+
+
+def remove_project_workspace(base_dir: pathlib.Path, project_address: str) -> None:
+    """Remove this project's keyed source workspace.
+
+    Only ``sources/<project_address>/`` is removed. The parent ``.kanon-data/``
+    holds every other project's workspaces and must survive.
+
+    Args:
+        base_dir: The resolved store base directory.
+        project_address: The calling project's address.
+    """
+    shutil.rmtree(base_dir / ".kanon-data" / "sources" / project_address, ignore_errors=True)
+    _remove_if_empty(base_dir / ".kanon-data" / "sources")
+    _remove_if_empty(base_dir / ".kanon-data")
 
 
 def remove_store_entries(base_dir: pathlib.Path) -> None:
@@ -139,17 +212,18 @@ def remove_kanon_home_store() -> None:
     home.rmdir()
 
 
-def _print_remove_summary(packages_dir: pathlib.Path) -> None:
-    """Print a summary of packages that will be removed.
+def _print_remove_summary(base_dir: pathlib.Path, project_address: str) -> None:
+    """Print a summary of the packages this project will have removed.
+
+    Only this project's links are listed. Listing the whole shared farm told the
+    operator that another project's packages were about to be removed, which was
+    true of the old behaviour and is the thing being fixed.
 
     Args:
-        packages_dir: Path to ``.packages/`` directory.
+        base_dir: The resolved store base directory.
+        project_address: The calling project's address.
     """
-    if not packages_dir.exists():
-        print("kanon clean: no packages to remove.")
-        return
-
-    pkgs = sorted(p.name for p in packages_dir.iterdir() if not p.name.startswith("."))
+    pkgs = sorted(link.name for link in project_packages_links(base_dir, project_address))
     if not pkgs:
         print("kanon clean: no packages to remove.")
         return
@@ -322,8 +396,8 @@ def clean(
         )
         sys.exit(1)
 
-    packages_dir = base_dir / ".packages"
-    _print_remove_summary(packages_dir)
+    project_address = compute_project_address(kanonenv_path)
+    _print_remove_summary(base_dir, project_address)
 
     if effective_marketplace_install:
         marketplace_dir = pathlib.Path(effective_marketplace_dir_str)
@@ -335,12 +409,13 @@ def clean(
             print("kanon clean: removing marketplace directory...")
             remove_marketplace_dir(marketplace_dir)
 
-    print("kanon clean: removing .packages/...")
-    remove_packages_dir(base_dir)
-    print("kanon clean: removing .kanon-data/...")
-    remove_kanon_dir(base_dir)
-    print("kanon clean: pruning content-addressed store entries...")
-    remove_store_entries(base_dir)
+    print("kanon clean: removing this project's aggregated package links...")
+    remove_project_packages_links(base_dir, project_address)
+    print("kanon clean: removing this project's source workspace...")
+    remove_project_workspace(base_dir, project_address)
+    if purge_home:
+        print("kanon clean: pruning content-addressed store entries...")
+        remove_store_entries(base_dir)
     if purge:
         remove_project_config(kanonenv_path, lockfile_path)
     if purge_home:

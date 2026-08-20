@@ -223,7 +223,7 @@ class TestAD:
         assert result.returncode == 0, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         assert "kanon clean: done" in result.stdout, f"stdout={result.stdout!r}"
         assert not (store_base / ".packages").exists(), f".packages/ still exists after clean under store {store_base}"
-        assert not (store_base / ".kanon-data").exists(), (
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
             f".kanon-data/ still exists after clean under store {store_base}"
         )
 
@@ -254,7 +254,9 @@ class TestAD:
         assert result.returncode == 0, f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         assert "kanon clean: done" in result.stdout, f"stdout={result.stdout!r}"
         assert not (store_base / ".packages").exists(), f".packages/ still exists under store {store_base}"
-        assert not (store_base / ".kanon-data").exists(), f".kanon-data/ still exists under store {store_base}"
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
+            f".kanon-data/ still exists under store {store_base}"
+        )
 
     def test_ad_07_explicit_path_overrides_discovery(self, tmp_path: pathlib.Path) -> None:
         """AD-07: kanon install /explicit/path/.kanon ignores cwd's .kanon."""

@@ -135,7 +135,7 @@ def _assert_clean_pass_criteria(store_base: pathlib.Path, result) -> None:
     )
     assert "kanon clean: done" in result.stdout, f"'kanon clean: done' not in stdout: {result.stdout!r}"
     assert not (store_base / ".packages").exists(), ".packages/ still exists after clean"
-    assert not (store_base / ".kanon-data").exists(), ".kanon-data/ still exists after clean"
+    assert not (store_base / ".kanon-data" / "sources").exists(), ".kanon-data/ still exists after clean"
 
 
 @pytest.mark.scenario

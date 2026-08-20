@@ -120,7 +120,7 @@ class TestInstallCleanRoundtripLifecycle:
         clean(kanonenv)
 
         assert not (store_base / ".packages").exists(), ".packages/ must be absent after clean"
-        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
+        assert not (store_base / ".kanon-data" / "sources").exists(), ".kanon-data/ must be absent after clean"
         assert kanonenv.is_file(), ".kanon config file must survive the full roundtrip"
 
     def test_roundtrip_gitignore_survives_clean(self, tmp_path: Path) -> None:
@@ -327,7 +327,7 @@ class TestPartialFailureRecovery:
 
         clean(kanonenv)
 
-        assert not (store_base / ".kanon-data").exists(), (
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
             "clean() must remove .kanon-data/ even after a partial install"
         )
         assert not (store_base / ".packages").exists(), "clean() must remove .packages/ even after a partial install"
@@ -451,7 +451,7 @@ class TestFilesystemStateAtLifecycleStages:
 
         assert kanonenv.is_file(), ".kanon must survive clean"
         assert not (store_base / ".packages").exists(), ".packages/ must be absent after clean"
-        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent after clean"
+        assert not (store_base / ".kanon-data" / "sources").exists(), ".kanon-data/ must be absent after clean"
         assert not (store_base / ".gitignore").exists(), (
             "no .gitignore is written under a non-git store, and clean must not create one"
         )

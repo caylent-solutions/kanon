@@ -18,11 +18,15 @@ def register(subparsers) -> None:
         add_help=True,
         help="Full teardown: uninstall, remove dirs",
         description=(
-            "Execute the full Kanon clean lifecycle.\n\n"
+            "Execute the full Kanon clean lifecycle for THIS project.\n\n"
             "If any dependency set KANON_SOURCE_<alias>_MARKETPLACE=true, runs\n"
             "the uninstall script and removes the marketplace directory. Then\n"
-            "removes .packages/ and .kanon-data/ directories and prunes the\n"
-            "content-addressed entries from the shared KANON_HOME store.\n\n"
+            "removes this project's source workspace under the shared store and\n"
+            "the aggregated package links this project created.\n\n"
+            "Other projects sharing the same KANON_HOME are left alone: their\n"
+            "workspaces, their package links, and the shared content-addressed\n"
+            "store entries all survive. Use --purge-all for machine-wide\n"
+            "teardown.\n\n"
             "With --orphans, before the normal teardown kanon also unregisters\n"
             "any kanon-owned marketplaces recorded in .kanon.lock that are no\n"
             "longer referenced by .kanon (pruning them from ~/.claude).\n\n"

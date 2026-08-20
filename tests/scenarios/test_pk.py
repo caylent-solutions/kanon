@@ -207,7 +207,7 @@ class TestPK:
         result = kanon_clean(work_dir)
         _assert_clean_ok(result, work_dir)
         assert not (store_base / ".packages").exists(), ".packages/ still exists after clean"
-        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ still exists after clean"
+        assert not (store_base / ".kanon-data" / "sources").exists(), ".kanon-data/ still exists after clean"
 
     def test_pk_02_pep440_tilde_equal_in_xml(self, tmp_path: pathlib.Path) -> None:
         """PK-02: PEP 440 `~=1.0.0` in XML revision resolves to 1.0.1."""

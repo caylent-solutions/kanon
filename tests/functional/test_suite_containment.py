@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import pathlib
 import subprocess
+import threading
 import sys
 from unittest import mock
 
@@ -74,8 +75,50 @@ def _spawn_leak_probe(tmp_path: pathlib.Path) -> subprocess.Popen:
         text=True,
     )
     assert child.stdout is not None
-    assert child.stdout.readline() == "up\n", "child did not reach a running state"
+    _await_ready(child, "up\n")
     return child
+
+
+def _await_ready(child: subprocess.Popen, expected: str) -> None:
+    """Block until *child* announces readiness, or fail with a bounded diagnostic.
+
+    A bare ``readline()`` has no deadline. If the probe never starts -- a bad
+    interpreter path, a syntax error in the script -- it blocks until pytest's own
+    600-second per-test timeout kills the worker. That is the exact hang class
+    this module exists to detect, so leaving it here would mean the guard could
+    wedge the suite it guards.
+
+    Readiness is an event, not a duration: this waits on the child's own
+    announcement and reads it as soon as it arrives. The deadline only bounds the
+    failure case.
+
+    Args:
+        child: The probe process, with ``stdout`` piped and text mode on.
+        expected: The readiness line the probe writes.
+
+    Raises:
+        AssertionError: When the probe does not announce readiness in time.
+    """
+    deadline = _positive_int_env(_PROBE_TIMEOUT_ENV, _PROBE_TIMEOUT_DEFAULT)
+    ready: list[str] = []
+
+    def _read() -> None:
+        assert child.stdout is not None
+        ready.append(child.stdout.readline())
+
+    reader = threading.Thread(target=_read, daemon=True)
+    reader.start()
+    reader.join(timeout=deadline)
+
+    observed = ready[0] if ready else None
+    if reader.is_alive() or observed != expected:
+        child.kill()
+        child.wait()
+        raise AssertionError(
+            f"probe did not announce readiness ({expected!r}) within {deadline}s; "
+            f"got {observed!r}. Raise "
+            f"{_PROBE_TIMEOUT_ENV} on a slow machine."
+        )
 
 
 @pytest.mark.functional

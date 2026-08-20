@@ -337,6 +337,12 @@ ERROR: Package collision for 'kanon-shared-utils':
   provided by source 'build-core' and source 'build-infra'
 ```
 
+A collision is also reported when the package name is already published in the
+shared `.packages/` directory by a *different project* using the same
+`KANON_HOME`. Installing would repoint that project's `.packages/<name>` at
+this project's content, so kanon refuses rather than overwriting. Rename the
+package, or give the two projects separate `KANON_HOME` values.
+
 ### Resolution
 
 - Rename one of the conflicting packages in its manifest

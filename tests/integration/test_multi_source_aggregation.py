@@ -21,6 +21,7 @@ state is exercised directly via aggregate_symlinks() against real tmp_path
 directories.
 """
 
+import os
 import pathlib
 
 import pytest
@@ -388,3 +389,80 @@ class TestAggregationStabilityAcrossReRuns:
         assert first == second, (
             f"aggregate_symlinks must return identical dict on every run; first={first}, second={second}"
         )
+
+
+@pytest.mark.integration
+class TestCrossProjectPackageCollision:
+    """A package name already published by another project is refused, not overwritten.
+
+    `.packages/` is shared by every project using a `KANON_HOME` and keyed only by
+    package name. Overwriting silently repointed the other project's tooling --
+    `docs/architecture.md` calls `.packages/` the directory downstream tooling
+    references -- at this project's content, while reporting success. That is the
+    same silent-wrong-content class the keyed source workspace closed.
+    """
+
+    def _publish(self, store: pathlib.Path, address: str, source: str, pkg: str) -> pathlib.Path:
+        pkg_dir = store / ".kanon-data" / "sources" / address / source / ".packages" / pkg
+        pkg_dir.mkdir(parents=True, exist_ok=True)
+        (pkg_dir / "marker.txt").write_text(address, encoding="utf-8")
+        return pkg_dir
+
+    def test_link_owned_by_another_project_is_refused(self, tmp_path: pathlib.Path) -> None:
+        store = tmp_path / "store"
+        theirs, ours = "b" * 64, "a" * 64
+
+        their_pkg = self._publish(store, theirs, "src", "shared-tool")
+        packages = store / ".packages"
+        packages.mkdir(parents=True)
+        (packages / "shared-tool").symlink_to(their_pkg)
+
+        self._publish(store, ours, "src", "shared-tool")
+
+        with pytest.raises(ValueError, match="already published by a different project"):
+            aggregate_symlinks(["src"], store, ours)
+
+        assert os.path.realpath(packages / "shared-tool") == str(their_pkg), (
+            "the other project's link must be left pointing at its own content"
+        )
+
+    def test_error_names_the_package_and_the_remedy(self, tmp_path: pathlib.Path) -> None:
+        """There is no prompt, so the diagnostic has to carry the way out."""
+        store = tmp_path / "store"
+        theirs, ours = "b" * 64, "a" * 64
+        their_pkg = self._publish(store, theirs, "src", "shared-tool")
+        packages = store / ".packages"
+        packages.mkdir(parents=True)
+        (packages / "shared-tool").symlink_to(their_pkg)
+        self._publish(store, ours, "src", "shared-tool")
+
+        with pytest.raises(ValueError) as excinfo:
+            aggregate_symlinks(["src"], store, ours)
+
+        message = str(excinfo.value)
+        assert "shared-tool" in message
+        assert "KANON_HOME" in message, f"expected the remedy to be named, got {message!r}"
+
+    def test_replacing_our_own_link_is_allowed(self, tmp_path: pathlib.Path) -> None:
+        """Re-installing the same project must keep working."""
+        store = tmp_path / "store"
+        ours = "a" * 64
+        our_pkg = self._publish(store, ours, "src", "shared-tool")
+        packages = store / ".packages"
+        packages.mkdir(parents=True)
+        (packages / "shared-tool").symlink_to(our_pkg)
+
+        assert aggregate_symlinks(["src"], store, ours) == {"shared-tool": "src"}
+
+    def test_unrelated_package_names_coexist(self, tmp_path: pathlib.Path) -> None:
+        """Two projects sharing a store but not a package name are unaffected."""
+        store = tmp_path / "store"
+        theirs, ours = "b" * 64, "a" * 64
+        their_pkg = self._publish(store, theirs, "src", "their-tool")
+        packages = store / ".packages"
+        packages.mkdir(parents=True)
+        (packages / "their-tool").symlink_to(their_pkg)
+        self._publish(store, ours, "src", "our-tool")
+
+        assert aggregate_symlinks(["src"], store, ours) == {"our-tool": "src"}
+        assert (packages / "their-tool").is_symlink()

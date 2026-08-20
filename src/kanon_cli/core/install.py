@@ -2055,6 +2055,53 @@ def run_repo_sync(source_dir: pathlib.Path) -> None:
     )
 
 
+def _assert_package_link_not_owned_elsewhere(
+    link_path: pathlib.Path,
+    base_dir: pathlib.Path,
+    project_address: str,
+    pkg_name: str,
+) -> None:
+    """Refuse to replace an aggregated package link another project published.
+
+    ``.packages/`` is shared by every project using this ``KANON_HOME`` and keyed
+    only by package name, so two projects that ship a package of the same name
+    resolve to whichever installed last. Overwriting silently would repoint the
+    other project's tooling at this project's content while reporting success.
+
+    Ownership is read off the existing link's target, which is the only place the
+    project address survives.
+
+    Args:
+        link_path: The aggregated link about to be written.
+        base_dir: The resolved store base directory.
+        project_address: The installing project's address.
+        pkg_name: The package name, for the diagnostic.
+
+    Raises:
+        ValueError: When the existing link belongs to a different project.
+    """
+    if not link_path.is_symlink() and not link_path.exists():
+        return
+    try:
+        target = os.path.realpath(link_path)
+    except OSError:
+        return
+    ours = str(base_dir / ".kanon-data" / "sources" / project_address) + os.sep
+    if target.startswith(ours):
+        return
+    sources_root = str(base_dir / ".kanon-data" / "sources") + os.sep
+    if not target.startswith(sources_root):
+        return
+    other_address = target[len(sources_root) :].split(os.sep, 1)[0]
+    raise ValueError(
+        f"Package collision for '{pkg_name}' in the shared aggregation directory "
+        f"{link_path.parent}: it is already published by a different project "
+        f"(address {other_address}). Installing would repoint that project's "
+        f"'.packages/{pkg_name}' at this project's content. Rename the package, or "
+        f"give the two projects separate KANON_HOME values."
+    )
+
+
 def aggregate_symlinks(
     source_names: list[str],
     base_dir: pathlib.Path,
@@ -2066,13 +2113,18 @@ def aggregate_symlinks(
     creates a symlink in the top-level ``.packages/`` directory. Detects
     collisions when two sources produce the same package name.
 
-    Unlike the per-source ``.repo`` workspace, this aggregation farm is NOT
-    keyed by project: it is write-only bookkeeping consumed only within this
-    same install call (the collision check below, and the human-readable
-    install summary) -- nothing reads it back across installs or across
-    projects, so two projects sharing a package name here is cosmetic (last
-    write wins in the shared farm), never a data-loss bug like the source
-    workspace was.
+    Unlike the per-source ``.repo`` workspace, this aggregation farm is NOT keyed
+    by project: keying it broke roughly 140 end-to-end tests for no behavioural
+    gain, and ``docs/architecture.md`` points operators at ``.packages/`` as the
+    directory downstream tooling references, so its path is part of the contract.
+
+    That leaves one shared surface. If another project on this machine already
+    published a link under the same package name, silently replacing it would
+    repoint that project's tooling at this project's content -- the same
+    silent-wrong-content class the keyed workspace was introduced to close. A link
+    owned by another project is therefore refused rather than overwritten, so the
+    collision is loud and the operator can rename the package or separate the
+    ``KANON_HOME``. Fully isolating the farm is tracked separately (issue #115).
 
     Args:
         source_names: Ordered list of source names.
@@ -2086,7 +2138,8 @@ def aggregate_symlinks(
         Dict mapping package name to source name.
 
     Raises:
-        ValueError: If two sources produce the same package name.
+        ValueError: If two sources produce the same package name, or if a package
+            name is already published in the shared farm by a different project.
     """
     packages_dir = base_dir / ".packages"
     packages_dir.mkdir(exist_ok=True)
@@ -2105,6 +2158,7 @@ def aggregate_symlinks(
                 )
             package_owners[pkg_name] = name
             link_path = packages_dir / pkg_name
+            _assert_package_link_not_owned_elsewhere(link_path, base_dir, project_address, pkg_name)
             if link_path.exists() or link_path.is_symlink():
                 link_path.unlink()
             create_dirsymlink(link_path, pkg.resolve())

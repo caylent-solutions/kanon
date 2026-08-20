@@ -42,12 +42,13 @@ silently deliver no content (while reporting success), or -- if the two projects
 pinned different refs -- raise an unhandled `GitCommandError` and wedge the
 shared workspace for both projects.
 
-The aggregated `.packages/` symlink tree is deliberately **not** keyed. It is
-write-only bookkeeping within a single `install()` call, and keying it broke
-roughly 140 end-to-end tests for no behavioural gain. Two projects that share a
-`KANON_HOME` and a package name still resolve `.packages/<name>` to whichever
-installed last; if downstream tooling reads `.packages/` for more than one
-project on a machine, reference the per-project source workspace instead.
+The aggregated `.packages/` symlink tree is deliberately **not** keyed: keying it
+broke roughly 140 end-to-end tests for no behavioural gain, and its path is part
+of the operator-facing contract. Instead, a package name already published there
+by a *different* project is now refused rather than silently overwritten, so a
+collision between two projects sharing a `KANON_HOME` fails loudly with the
+package name and the way out. Full isolation of the aggregation directory is
+tracked in issue #115.
 
 Workspaces written before this change are left under the old alias-only path and
 are never read again. Nothing needs to be done about them: `kanon doctor` reports

@@ -38,7 +38,14 @@ _PROJECT_ADDRESS_LENGTH = 64
 
 _SHARED_ALIAS = "shared"
 
-_PACKAGE_NAME = "shared-pkg"
+_PACKAGE_NAME_BY_TAG = {"v1": "pkg-from-v1", "v2": "pkg-from-v2"}
+"""Distinct package names per project, deliberately.
+
+This scenario exercises *source workspace* isolation. Two projects publishing the
+same package name is a different concern -- the aggregated ``.packages/`` farm is
+shared and keyed only by name -- and is covered on its own in
+``tests/integration/test_multi_source_aggregation.py``. Reusing one name here
+would make MP-01 fail for that second reason and stop testing the first."""
 
 _CONTENT_BY_TAG = {"v1": "payload from v1\n", "v2": "payload from v2\n"}
 
@@ -48,23 +55,22 @@ rejects by default. The scenarios that build their own git fixtures all opt out 
 same way."""
 
 
-def _make_content_repo(parent: pathlib.Path) -> pathlib.Path:
-    """Create a bare repo whose `v1` and `v2` tags carry different file content.
+def _make_content_repos(parent: pathlib.Path) -> None:
+    """Create one bare content repo per package, each carrying its own tag.
 
     Args:
-        parent: Directory to create the repository under.
-
-    Returns:
-        Path to the bare repository.
+        parent: Directory the repositories are created under; this is the
+            directory the manifest's ``fetch`` points at, so each repo's name is
+            the project name the manifest resolves beneath it.
     """
-    work = parent / f"{_PACKAGE_NAME}.work"
-    init_git_work_dir(work)
-    for tag, content in _CONTENT_BY_TAG.items():
-        (work / "payload.txt").write_text(content, encoding="utf-8")
+    for tag, package_name in _PACKAGE_NAME_BY_TAG.items():
+        work = parent / f"{package_name}.work"
+        init_git_work_dir(work)
+        (work / "payload.txt").write_text(_CONTENT_BY_TAG[tag], encoding="utf-8")
         run_git(["add", "payload.txt"], work)
         run_git(["commit", "-m", f"payload {tag}"], work)
         run_git(["tag", tag], work)
-    return clone_as_bare(work, parent / f"{_PACKAGE_NAME}.git")
+        clone_as_bare(work, parent / f"{package_name}.git")
 
 
 def _make_manifest_repo(parent: pathlib.Path, content_url: str) -> pathlib.Path:
@@ -85,12 +91,13 @@ def _make_manifest_repo(parent: pathlib.Path, content_url: str) -> pathlib.Path:
     specs = work / "repo-specs"
     specs.mkdir(parents=True, exist_ok=True)
     for tag in _CONTENT_BY_TAG:
+        package_name = _PACKAGE_NAME_BY_TAG[tag]
         (specs / "shared.xml").write_text(
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             "<manifest>\n"
             f'  <remote name="local" fetch="{content_url}" />\n'
             '  <default remote="local" revision="main" />\n'
-            f'  <project name="{_PACKAGE_NAME}" path=".packages/{_PACKAGE_NAME}" '
+            f'  <project name="{package_name}" path=".packages/{package_name}" '
             f'remote="local" revision="refs/tags/{tag}" />\n'
             "</manifest>\n",
             encoding="utf-8",
@@ -101,18 +108,19 @@ def _make_manifest_repo(parent: pathlib.Path, content_url: str) -> pathlib.Path:
     return clone_as_bare(work, parent / "manifest.git")
 
 
-def _delivered_payload(store: pathlib.Path, project_dir: pathlib.Path) -> str:
+def _delivered_payload(store: pathlib.Path, project_dir: pathlib.Path, package_name: str) -> str:
     """Return the payload delivered into *project_dir*'s own source workspace.
 
     Args:
         store: The `<KANON_HOME>/store` directory.
         project_dir: The consuming project's directory.
+        package_name: The package this project pinned.
 
     Returns:
         The contents of the delivered payload file.
     """
     address = project_address_for(project_dir)
-    payload = store / ".kanon-data" / "sources" / address / _SHARED_ALIAS / ".packages" / _PACKAGE_NAME / "payload.txt"
+    payload = store / ".kanon-data" / "sources" / address / _SHARED_ALIAS / ".packages" / package_name / "payload.txt"
     assert payload.is_file(), f"Expected delivered payload at {payload}, but it does not exist."
     return payload.read_text(encoding="utf-8")
 
@@ -135,7 +143,7 @@ class TestMP:
         manifest_repos = tmp_path / "manifest-repos"
         content_repos.mkdir(parents=True)
         manifest_repos.mkdir(parents=True)
-        _make_content_repo(content_repos)
+        _make_content_repos(content_repos)
         manifest_bare = _make_manifest_repo(manifest_repos, f"{content_repos.as_uri()}/")
 
         project_a = scenario_workspace / "project-a"
@@ -155,7 +163,7 @@ class TestMP:
 
         store = pathlib.Path(os.environ["KANON_HOME"]) / "store"
 
-        after_b = _delivered_payload(store, project_a)
+        after_b = _delivered_payload(store, project_a, _PACKAGE_NAME_BY_TAG["v1"])
         assert after_b == _CONTENT_BY_TAG["v1"], (
             f"Project B's install overwrote project A's content. Expected A to still hold "
             f"{_CONTENT_BY_TAG['v1']!r}, found {after_b!r}."
@@ -164,10 +172,10 @@ class TestMP:
         second_a = kanon_install(project_a, extra_env=_INSECURE_LOCAL_REMOTES)
         assert second_a.returncode == 0, f"project A re-install failed: {second_a.stderr!r}"
 
-        assert _delivered_payload(store, project_a) == _CONTENT_BY_TAG["v1"], (
+        assert _delivered_payload(store, project_a, _PACKAGE_NAME_BY_TAG["v1"]) == _CONTENT_BY_TAG["v1"], (
             "Re-installing project A did not restore its own pinned content."
         )
-        assert _delivered_payload(store, project_b) == _CONTENT_BY_TAG["v2"], (
+        assert _delivered_payload(store, project_b, _PACKAGE_NAME_BY_TAG["v2"]) == _CONTENT_BY_TAG["v2"], (
             f"Re-installing project A disturbed project B's workspace. Expected B to hold {_CONTENT_BY_TAG['v2']!r}."
         )
 

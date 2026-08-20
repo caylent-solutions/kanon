@@ -139,17 +139,28 @@ jobs:
         # pull request whose tests were skipped by mistake.
         #
         # `code=false` requires that every changed file is documentation or
-        # repository metadata. `vendored=false` requires that nothing touched the
-        # vendored tree, its tests, or anything global enough to change how they
-        # run (shared conftest, dependencies, Make targets, CI itself).
+        # repository metadata AND that none of it is a documentation file the test
+        # suite reads. `vendored=false` requires that nothing touched the vendored
+        # tree, its tests, or anything global enough to change how they run (shared
+        # conftest, dependencies, Make targets, CI itself).
+        #
+        # Documentation is not inert in this repository. tests/scenarios/conftest.py
+        # parses docs/integration-testing.md at import to derive scenario ids, and
+        # other modules assert against docs/ and README.md. Editing one of those can
+        # turn the suite red, so a change touching them must run the tiers even
+        # though it is "only docs". TEST_INPUT_DOCS lists them, and
+        # tests/unit/test_ci_workflows.py asserts the list still covers every
+        # documentation file the suite reads -- so it cannot silently drift.
         run: |
           set -euo pipefail
+          INERT='^(docs/|\.github/CODEOWNERS$|LICENSE$|.*\.md$)'
+          TEST_INPUT_DOCS='^(README\.md$|docs/README\.md$|docs/catalogs-explained\.md$|docs/configuration\.md$|docs/git-auth-setup\.md$|docs/how-it-works\.md$|docs/integration-testing\.md$|docs/lifecycle\.md$|docs/manifest-format\.md$|docs/migration-to-add\.md$|docs/repo/manifest-format\.md$|docs/security-model\.md$|docs/shell-completion\.md$|docs/source-test-atomicity\.md$|docs/testing/)'
           code=true
           vendored=true
           if base_sha=$(git merge-base "origin/${{ github.base_ref }}" HEAD 2>/dev/null); then
             files=$(git diff --name-only "$base_sha" HEAD)
             if [ -n "$files" ]; then
-              if ! grep -qvE '^(docs/|\.github/CODEOWNERS$|LICENSE$|.*\.md$)' <<<"$files"; then
+              if ! grep -qvE "$INERT" <<<"$files" && ! grep -qE "$TEST_INPUT_DOCS" <<<"$files"; then
                 code=false
               fi
               if ! grep -qE '^(src/kanon_cli/repo/|tests/unit/repo/|tests/conftest\.py$|pyproject\.toml$|uv\.lock$|Makefile$|\.tool-versions$|\.github/)' <<<"$files"; then

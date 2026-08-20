@@ -464,3 +464,73 @@ def test_ruff_format_check_covers_src_repo(workflow_path: pathlib.Path):
                 f"Step '{step_name}' in {workflow_path.name}: ruff format --check must cover src/ "
                 f"(including src/kanon_cli/repo/). Run command: {run!r}"
             )
+
+
+TESTS_DIR = REPO_ROOT / "tests"
+
+_TEST_INPUT_DOCS_ASSIGNMENT = re.compile(r"TEST_INPUT_DOCS='([^']+)'")
+
+_DOC_REFERENCE = re.compile(r"(?:docs/[A-Za-z0-9_./-]+\.md|(?<![\w/])README\.md)")
+
+
+def _classifier_test_input_docs_pattern() -> re.Pattern[str]:
+    """Return the TEST_INPUT_DOCS regex the pull-request classifier uses.
+
+    Reading it out of the workflow rather than restating it here is deliberate: a
+    copy in the test would let the two drift apart, which is the failure mode this
+    guard exists to prevent.
+
+    Returns:
+        The compiled pattern.
+
+    Raises:
+        AssertionError: When the assignment is missing, meaning the classifier no
+            longer carves documentation test inputs out of its inert set.
+    """
+    match = _TEST_INPUT_DOCS_ASSIGNMENT.search(PR_WORKFLOW.read_text(encoding="utf-8"))
+    assert match is not None, (
+        "pr-validation.yml no longer assigns TEST_INPUT_DOCS. Documentation is a test input "
+        "in this repository, so the classifier must exempt the docs the suite reads from its "
+        "inert set, or a docs-only change will skip the tiers it can break."
+    )
+    return re.compile(match.group(1))
+
+
+def _documentation_files_read_by_tests() -> set[str]:
+    """Return every documentation path referenced from the test tree.
+
+    Returns:
+        Repository-relative paths, as they would appear in ``git diff --name-only``.
+    """
+    referenced: set[str] = set()
+    for path in TESTS_DIR.rglob("*.py"):
+        for hit in _DOC_REFERENCE.findall(path.read_text(encoding="utf-8")):
+            referenced.add(hit)
+    return referenced
+
+
+@pytest.mark.unit
+def test_classifier_exempts_every_doc_the_suite_reads() -> None:
+    """Docs the tests read must never be classified as inert.
+
+    A pull request touching only documentation skips every test tier. That is safe
+    only for documentation nothing asserts against -- and in this repository plenty
+    is asserted against: tests/scenarios/conftest.py parses
+    docs/integration-testing.md at import to derive scenario ids, so renaming a
+    heading there turns the suite red while the change that did it runs no tests
+    and merges green.
+
+    This asserts the classifier's carve-out still covers every documentation file
+    referenced from the test tree, so adding a new doc-driven test cannot silently
+    reopen the hole.
+    """
+    pattern = _classifier_test_input_docs_pattern()
+
+    unexempt = sorted(doc for doc in _documentation_files_read_by_tests() if not pattern.search(doc))
+
+    assert not unexempt, (
+        f"{len(unexempt)} documentation file(s) are read by the test suite but are still "
+        f"classified as inert by pr-validation.yml, so a change touching them would run no "
+        f"test tier:\n  " + "\n  ".join(unexempt) + "\n"
+        "Add them to TEST_INPUT_DOCS in the 'Classify the changed paths' step."
+    )

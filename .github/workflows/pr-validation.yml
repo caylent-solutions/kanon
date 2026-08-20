@@ -198,26 +198,38 @@ jobs:
 
   unit-tests-linux:
     name: Unit tests (Linux, with coverage gate)
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     needs: changes
+    if: ${{ always() && github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
       # Every tiered job below keeps running even when its tier is skipped, and
-      # gates the work at step level instead. A job skipped with a job-level `if`
-      # reports no status at all, which leaves a required check permanently
-      # pending and blocks the pull request it was meant to speed up.
+      # gates the work at step level instead, so the job still reports a status.
+      #
+      # Two properties this arrangement has to hold, both of which it previously
+      # got wrong:
+      #
+      # The gate is `!= 'false'`, not `== 'true'`. Only a classifier that
+      # positively decided a tier is unaffected may skip it. Anything else -- an
+      # empty output, a renamed output key, a typo'd step id -- runs the tests.
+      # With `== 'true'` every one of those skipped the tier while the job still
+      # reported success, which is the one outcome this must never produce.
+      #
+      # The job condition is `always()`, so a tier still runs when the `changes`
+      # job itself failed. Without it a transient checkout failure there skipped
+      # all five tier jobs, and branch protection treats a skipped required check
+      # as satisfied -- one flaky step, five green checks, zero tests executed.
       - name: Checkout code
-        if: ${{ needs.changes.outputs.code == 'true' }}
+        if: ${{ needs.changes.outputs.code != 'false' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
-        if: ${{ needs.changes.outputs.code == 'true' }}
+        if: ${{ needs.changes.outputs.code != 'false' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run unit tests with coverage gate
-        if: ${{ needs.changes.outputs.code == 'true' }}
+        if: ${{ needs.changes.outputs.code != 'false' }}
         shell: bash
         # Delegates to the Make target so the threshold lives in one place
         # (Makefile: COVERAGE_MIN) instead of being duplicated across both
@@ -229,8 +241,8 @@ jobs:
 
   vendored-tests-linux:
     name: Vendored repo tool tests (Linux)
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     needs: changes
+    if: ${{ always() && github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
       # 6,666 of the suite's 17,285 tests cover a vendored tree that changed in
@@ -238,80 +250,80 @@ jobs:
       # largest single block of test time in the repository re-proving code the
       # change could not have touched.
       - name: Checkout code
-        if: ${{ needs.changes.outputs.vendored == 'true' }}
+        if: ${{ needs.changes.outputs.vendored != 'false' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
-        if: ${{ needs.changes.outputs.vendored == 'true' }}
+        if: ${{ needs.changes.outputs.vendored != 'false' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run vendored repo tool tests
-        if: ${{ needs.changes.outputs.vendored == 'true' }}
+        if: ${{ needs.changes.outputs.vendored != 'false' }}
         shell: bash
         run: make test-unit-vendored
 
   integration-tests-linux:
     name: Integration tests (Linux)
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     needs: changes
+    if: ${{ always() && github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
-        if: ${{ needs.changes.outputs.code == 'true' }}
+        if: ${{ needs.changes.outputs.code != 'false' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
-        if: ${{ needs.changes.outputs.code == 'true' }}
+        if: ${{ needs.changes.outputs.code != 'false' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run integration tests
-        if: ${{ needs.changes.outputs.code == 'true' }}
+        if: ${{ needs.changes.outputs.code != 'false' }}
         shell: bash
         run: make test-integration
 
   functional-tests-linux:
     name: Functional tests (Linux)
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     needs: changes
+    if: ${{ always() && github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
-        if: ${{ needs.changes.outputs.code == 'true' }}
+        if: ${{ needs.changes.outputs.code != 'false' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
-        if: ${{ needs.changes.outputs.code == 'true' }}
+        if: ${{ needs.changes.outputs.code != 'false' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run functional tests
-        if: ${{ needs.changes.outputs.code == 'true' }}
+        if: ${{ needs.changes.outputs.code != 'false' }}
         shell: bash
         run: make test-functional
 
   scenario-tests-linux:
     name: Scenario tests (Linux, docs/integration-testing.md)
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     needs: changes
+    if: ${{ always() && github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
-        if: ${{ needs.changes.outputs.code == 'true' }}
+        if: ${{ needs.changes.outputs.code != 'false' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
-        if: ${{ needs.changes.outputs.code == 'true' }}
+        if: ${{ needs.changes.outputs.code != 'false' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run scenario tests
-        if: ${{ needs.changes.outputs.code == 'true' }}
+        if: ${{ needs.changes.outputs.code != 'false' }}
         shell: bash
         # Invokes the make target (operator-path guard E50-F1-S1-T2 requires it).
         # The recipe runs `pytest -m "scenario"` with no platform filter.

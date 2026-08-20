@@ -534,3 +534,52 @@ def test_classifier_exempts_every_doc_the_suite_reads() -> None:
         f"test tier:\n  " + "\n  ".join(unexempt) + "\n"
         "Add them to TEST_INPUT_DOCS in the 'Classify the changed paths' step."
     )
+
+
+_STEP_GATE = re.compile(r"needs\.changes\.outputs\.(?P<output>\w+)\s*(?P<op>==|!=)\s*'(?P<value>\w+)'")
+
+
+@pytest.mark.unit
+def test_tier_gates_run_unless_positively_told_otherwise() -> None:
+    """A tier may be skipped only by a classifier that decided it is unaffected.
+
+    ``== 'true'`` skips the tier for any value that is not literally ``true`` --
+    an empty output, a renamed output key, a typo'd step id -- while the job still
+    reports success. That is a green pull request whose tests never ran, which is
+    the failure this gating exists to avoid. ``!= 'false'`` inverts the default so
+    only a positive decision skips anything.
+    """
+    gates = _STEP_GATE.findall(PR_WORKFLOW.read_text(encoding="utf-8"))
+
+    assert gates, "Expected the tiered jobs to gate their steps on the changes job's outputs."
+
+    wrong = [f"{output} {op} '{value}'" for output, op, value in gates if (op, value) != ("!=", "false")]
+
+    assert not wrong, (
+        f"{len(wrong)} tier gate(s) skip unless the output is exactly a chosen value, so an "
+        f"empty or unexpected output silently skips the tests and still reports success: "
+        f"{sorted(set(wrong))}. Gate on \"!= 'false'\" instead."
+    )
+
+
+@pytest.mark.unit
+def test_tier_jobs_still_run_when_the_classifier_job_fails() -> None:
+    """A failed classifier must not skip the tiers that depend on it.
+
+    A job whose ``needs`` failed is *skipped*, and branch protection treats a
+    skipped required check as satisfied. Without ``always()`` a single transient
+    failure in the classifier turned all five required tier checks green with no
+    test executed.
+    """
+    workflow = yaml.safe_load(PR_WORKFLOW.read_text(encoding="utf-8"))
+
+    dependents = {name: job for name, job in workflow["jobs"].items() if "changes" in str(job.get("needs", ""))}
+
+    assert dependents, "Expected at least one tiered job to depend on the changes job."
+
+    missing = sorted(name for name, job in dependents.items() if "always()" not in str(job.get("if", "")))
+
+    assert not missing, (
+        f"{len(missing)} job(s) depend on the changes job without always(), so a failure there "
+        f"skips them and branch protection reads the skip as a pass: {missing}."
+    )

@@ -22,11 +22,14 @@ from unittest import mock
 import pytest
 
 from tests.conftest import (
+    _PROCESS_LEAK_EXIT_CODE,
+    _PS_SCAN_COMMAND,
+    _SPAWNED_PROCESS_GROUPS,
+    _SUBPROCESS_TIMEOUT_ENV,
     _is_kanon_command,
     _leaked_kanon_processes,
     _positive_int_env,
-    _PS_SCAN_COMMAND,
-    _SUBPROCESS_TIMEOUT_ENV,
+    register_spawned_process_group,
     subprocess_timeout,
 )
 
@@ -227,3 +230,85 @@ class TestLeakScanFailsClosed:
         completed = subprocess.CompletedProcess(args=list(_PS_SCAN_COMMAND), returncode=0, stdout=listing, stderr="")
         with mock.patch("tests.conftest.subprocess.run", return_value=completed):
             assert _leaked_kanon_processes(os.getpgrp()) == []
+
+
+@pytest.mark.unit
+class TestLeakScanOwnership:
+    """The leak scan judges only process groups this suite created.
+
+    It used to scan ``os.getpgrp()`` -- every process sharing the running
+    process's group. Under a non-interactive shell, ``make``, or a CI step no new
+    groups are created, so that is everything on the machine. Combined with argv
+    matching, which is satisfied by any command line merely *mentioning* a kanon
+    invocation, it flagged and SIGKILLed processes the suite never started. That
+    happened during this branch's development: regenerating a help fixture, the
+    scan matched the shell running the command because its argv contained
+    ``python -m kanon_cli clean --help``.
+    """
+
+    def test_argv_matching_still_accepts_a_bare_mention(self) -> None:
+        """The matcher alone cannot tell a kanon process from a mention of one.
+
+        This is why ownership, not matching, is what makes the scan safe. If this
+        ever stops being true the matcher improved, but the registry is still the
+        guarantee.
+        """
+        shell = "/bin/sh -c 'cd /repo && python -m kanon_cli install'"
+        assert _is_kanon_command(shell), (
+            "expected the argv matcher to be satisfied by a mention; the ownership "
+            "registry is what prevents that from becoming a kill"
+        )
+
+    def test_unregistered_group_is_never_scanned(self) -> None:
+        """A process the suite did not start is not the suite's to judge."""
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            start_new_session=True,
+        )
+        try:
+            assert child.pid not in _SPAWNED_PROCESS_GROUPS, (
+                "a group the suite never registered must not appear in the registry"
+            )
+        finally:
+            child.kill()
+            child.wait()
+
+    def test_running_process_group_is_not_in_the_registry(self) -> None:
+        """The scan must never judge its own group, which is what it used to do."""
+        assert os.getpgrp() not in _SPAWNED_PROCESS_GROUPS, (
+            "the running process's own group is in the registry, so the scan would "
+            "flag anything sharing it -- under make or a CI step, that is everything"
+        )
+
+    def test_registered_group_with_a_kanon_process_is_found(self) -> None:
+        """Detection still works: ownership narrows the scan, it does not disable it."""
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(30)", "-m", "kanon_cli"],
+            start_new_session=True,
+        )
+        try:
+            register_spawned_process_group(child.pid)
+            found = _leaked_kanon_processes(child.pid)
+            assert any(pid == child.pid for pid, _command in found), (
+                f"expected the registered group to be scanned and its kanon process found; got {found!r}"
+            )
+        finally:
+            _SPAWNED_PROCESS_GROUPS.discard(child.pid)
+            child.kill()
+            child.wait()
+
+
+@pytest.mark.unit
+class TestLeakExitCode:
+    """The leak status must not collide with pytest's own exit codes."""
+
+    def test_exit_code_is_outside_pytests_reserved_range(self) -> None:
+        """4 is pytest's USAGE_ERROR, so CI could not tell the two apart.
+
+        The same PR that added this scan also made a missing plugin exit 4, so a
+        leaked process and a broken command line reported identically.
+        """
+        reserved = {code.value for code in pytest.ExitCode}
+        assert _PROCESS_LEAK_EXIT_CODE not in reserved, (
+            f"leak exit code {_PROCESS_LEAK_EXIT_CODE} collides with pytest's reserved codes {sorted(reserved)}"
+        )

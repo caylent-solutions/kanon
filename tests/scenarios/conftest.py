@@ -28,7 +28,12 @@ from typing import Iterable
 import pytest
 
 from kanon_cli.core.install import compute_project_address
-from tests.conftest import _isolation_env, strip_subprocess_coverage_env, subprocess_timeout
+from tests.conftest import (
+    _isolation_env,
+    run_owned_subprocess,
+    strip_subprocess_coverage_env,
+    subprocess_timeout,
+)
 
 
 INTEGRATION_DOC = pathlib.Path(__file__).resolve().parents[2] / "docs" / "integration-testing.md"
@@ -88,11 +93,10 @@ def run_kanon(
         resolved_env = dict(os.environ)
     resolved_env = strip_subprocess_coverage_env(resolved_env)
     resolved_cwd = str(cwd) if cwd is not None else None
-    return subprocess.run(
+    return run_owned_subprocess(
         [sys.executable, "-m", "kanon_cli", *args],
         capture_output=True,
         text=True,
-        check=False,
         cwd=resolved_cwd,
         env=resolved_env,
         timeout=subprocess_timeout(),

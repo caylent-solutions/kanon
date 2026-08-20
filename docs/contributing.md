@@ -100,7 +100,7 @@ request when a change touches subprocess or filesystem behaviour.
 
 ### Test timeouts and subprocess containment
 
-Nothing in the suite is allowed to block indefinitely. Three settings
+Nothing in the suite is allowed to block indefinitely. Four settings
 enforce that, each with a working default so a bare `pytest` run is still
 protected:
 
@@ -116,15 +116,26 @@ seconds for a single `kanon` subprocess spawned by
 `KANON_TEST_TIMEOUT` so the child is killed and reported by command line
 before the coarser per-test deadline takes down the whole worker.
 
+**`KANON_TEST_PROCESS_KILL_GRACE`** (default: `5`) -- seconds a spawned
+process group is given to exit after `SIGTERM` before the suite escalates to
+`SIGKILL`. A process with a signal handler gets the chance to exit cleanly
+rather than being killed outright.
+
 **`KANON_SYNC_JOBS`** (test default: `1`) -- `tests/conftest.py` pins
 this so `repo sync` runs in a single process. See `docs/configuration.md`
 for what the variable does in production.
 
-At the end of a session the xdist controller scans its process group for
-`kanon` processes that outlived the tests that spawned them. Any survivor
-is killed and the session exits non-zero: a leaked child means a
-subprocess helper is missing a `timeout=`, so it is treated as a test
-failure rather than cleaned up quietly.
+At the end of a session the controller process scans **only the process
+groups the suite itself created** for `kanon` processes that outlived the
+tests that spawned them. Each spawned command runs in its own process group,
+so the whole subtree is addressable and a developer's unrelated `kanon`, a
+second concurrent pytest session, or the shell running the tests can never be
+mistaken for a leak.
+
+Survivors get `SIGTERM`, then `SIGKILL` after `KANON_TEST_PROCESS_KILL_GRACE`
+seconds. A kill that fails is reported rather than suppressed, and the session
+exits with status 70: a leaked child means a subprocess helper is missing a
+`timeout=`, so it is treated as a test failure rather than cleaned up quietly.
 
 ### How to add a multi-provider parity test
 

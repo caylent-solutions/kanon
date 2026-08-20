@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 from collections.abc import Generator
 
@@ -35,7 +36,16 @@ _TIMEOUT_PLUGIN_NAME = "timeout"
 _SUBPROCESS_TIMEOUT_ENV = "KANON_TEST_SUBPROCESS_TIMEOUT"
 _SUBPROCESS_TIMEOUT_DEFAULT = "300"
 
-_PROCESS_LEAK_EXIT_CODE = 4
+_PROCESS_LEAK_EXIT_CODE = 70
+"""Session exit status when a spawned process outlived the tests.
+
+Outside pytest's reserved 0-5 range: 4 is pytest's own USAGE_ERROR, so CI could
+not tell "processes leaked" from "the command line was wrong".
+"""
+
+_PROCESS_KILL_GRACE_ENV = "KANON_TEST_PROCESS_KILL_GRACE"
+_PROCESS_KILL_GRACE_DEFAULT = "5"
+_PROCESS_KILL_POLL_SECONDS = 0.05
 _PROCESS_SCAN_TIMEOUT_SECONDS = 30.0
 _PS_SCAN_COMMAND = ("ps", "-ww", "-eo", "pid=,pgid=,command=")
 
@@ -93,18 +103,100 @@ def subprocess_timeout() -> int:
     return _positive_int_env(_SUBPROCESS_TIMEOUT_ENV, _SUBPROCESS_TIMEOUT_DEFAULT)
 
 
+_SPAWNED_PROCESS_GROUPS: set[int] = set()
+"""Process groups this suite created, so the leak scan only judges its own work.
+
+Scanning by *this* process's group flagged anything sharing it, and matching on
+argv alone flagged any command line that merely mentions a kanon invocation --
+including the shell running the test command. Both produced false positives on a
+real session. Recording what the suite actually started removes the guesswork.
+"""
+
+
+def register_spawned_process_group(pgid: int) -> None:
+    """Record a process group the suite created.
+
+    Args:
+        pgid: The group id, which equals the child's pid when it was spawned with
+            ``start_new_session=True``.
+    """
+    _SPAWNED_PROCESS_GROUPS.add(pgid)
+
+
+def run_owned_subprocess(argv: "list[str]", **kwargs: object) -> "subprocess.CompletedProcess":
+    """Run *argv* in its own process group and register it for leak detection.
+
+    ``subprocess.run(timeout=...)`` kills only the direct child. The processes this
+    suite actually leaks are its grandchildren -- ``repo sync`` pool workers parked
+    in ``sem_wait()`` -- which survive their parent and are never reaped. Putting
+    the child in a new process group makes the whole subtree addressable, so a
+    timeout can signal all of it and the leak scan can recognise it as ours.
+
+    Args:
+        argv: The command to run.
+        **kwargs: Passed through to :func:`subprocess.run`.
+
+    Returns:
+        The completed process.
+
+    Raises:
+        subprocess.TimeoutExpired: When the child exceeds its deadline. The whole
+            process group is signalled before this propagates.
+    """
+    kwargs.setdefault("start_new_session", True)
+    timeout = kwargs.pop("timeout", None)
+    kwargs.pop("check", None)
+    if kwargs.pop("capture_output", False):
+        kwargs.setdefault("stdout", subprocess.PIPE)
+        kwargs.setdefault("stderr", subprocess.PIPE)
+    with subprocess.Popen(argv, **kwargs) as child:
+        register_spawned_process_group(child.pid)
+        try:
+            stdout, stderr = child.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _terminate_process_group(child.pid)
+            child.kill()
+            stdout, stderr = child.communicate()
+            raise
+        return subprocess.CompletedProcess(argv, child.returncode, stdout, stderr)
+
+
+def _terminate_process_group(pgid: int) -> None:
+    """Signal a whole process group, escalating only if it does not go quietly.
+
+    Args:
+        pgid: The group to signal.
+    """
+    deadline = _positive_int_env(_PROCESS_KILL_GRACE_ENV, _PROCESS_KILL_GRACE_DEFAULT)
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(pgid, signal.SIGTERM)
+    waited = 0.0
+    while waited < deadline:
+        try:
+            os.killpg(pgid, 0)
+        except (ProcessLookupError, PermissionError):
+            return
+        time.sleep(_PROCESS_KILL_POLL_SECONDS)
+        waited += _PROCESS_KILL_POLL_SECONDS
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(pgid, signal.SIGKILL)
+
+
 def _leaked_kanon_processes(pgid: int) -> list[tuple[int, str]]:
     """Return every surviving ``kanon`` process in process group *pgid*.
 
     A ``kanon install`` that deadlocks -- or whose pytest worker died before it
     could be reaped -- keeps running after the session ends, reparented to init but
-    still carrying the process group it was spawned into. Scanning by process group
-    finds those survivors while never matching a ``kanon`` a developer is running in
-    an unrelated shell, because a different shell job has a different group.
+    still carrying the process group it was spawned into.
 
-    Matching is on the argument vector rather than a substring so that a pytest
-    invocation carrying ``--cov=kanon_cli`` in its own command line is not mistaken
-    for a leaked child.
+    *pgid* must be a group this suite created and registered, never the running
+    process's own group. Scanning the latter judged every process that happened to
+    share it: under a non-interactive shell, ``make``, or a CI step, no new groups
+    are created, so that is everything. Combined with argv matching -- which is
+    satisfied by any command line merely *mentioning* a kanon invocation, including
+    the shell running the test command -- it flagged and killed processes the suite
+    never started. That is not hypothetical; it happened while this branch was
+    being developed.
 
     ``-ww`` is required, not cosmetic. procps truncates the command column to the
     terminal width -- 80 when stdout is not a tty, as in CI -- which silently cut
@@ -187,28 +279,56 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     blocks in ``waitpid()``, so both sit at 0% CPU indefinitely and accumulate across
     runs. Detecting it here turns a silent resource leak into a red build.
 
-    Survivors are killed before the session exits so a failing run cannot leave the
-    machine dirtier than it found it. Only the xdist controller runs the scan --
-    workers share the controller's process group and would otherwise flag each
+    Only the process groups this suite registered are scanned, so a developer's
+    unrelated ``kanon``, a second concurrent pytest session, or the shell running
+    the tests cannot be mistaken for a leak.
+
+    Survivors are signalled with SIGTERM and then SIGKILL, so a process with a
+    handler gets the chance to exit cleanly. A kill that *fails* is reported rather
+    than suppressed: claiming processes "were killed" while they are still running
+    is the silent failure this check exists to prevent.
+
+    Only the xdist controller runs the scan -- workers would otherwise flag each
     other's still-running children.
     """
     if os.environ.get(_XDIST_WORKER_ENV):
         return
-    leaked = _leaked_kanon_processes(os.getpgrp())
+    leaked: list[tuple[int, str]] = []
+    for spawned_pgid in sorted(_SPAWNED_PROCESS_GROUPS):
+        leaked.extend(_leaked_kanon_processes(spawned_pgid))
     if not leaked:
         return
-    for pid, _command in leaked:
+
+    survivors: list[tuple[int, str, str]] = []
+    for pid, command in leaked:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
+        except PermissionError as exc:
+            survivors.append((pid, command, str(exc)))
+
+    for pid, command in leaked:
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.kill(pid, signal.SIGKILL)
+
     detail = "\n".join(f"  pid {pid}: {command}" for pid, command in leaked)
-    print(
-        f"\nERROR: {len(leaked)} kanon subprocess(es) outlived the test session and were killed:\n"
+    message = (
+        f"\nERROR: {len(leaked)} kanon subprocess(es) outlived the test session:\n"
         f"{detail}\n"
         f"A test spawned a kanon process that never exited. Check that the spawning helper "
-        f"passes timeout= and that {KANON_SYNC_JOBS_ENV} is set, then re-run.",
-        file=sys.stderr,
+        f"passes timeout= and that {KANON_SYNC_JOBS_ENV} is set, then re-run."
     )
-    session.exitstatus = _PROCESS_LEAK_EXIT_CODE
+    if survivors:
+        unkilled = "\n".join(f"  pid {pid}: {reason}" for pid, _command, reason in survivors)
+        message += (
+            f"\n{len(survivors)} of them could NOT be killed and are still running:\n{unkilled}\n"
+            f"Reap them by hand; the machine is dirtier than this session found it."
+        )
+    print(message, file=sys.stderr)
+
+    if session.exitstatus == pytest.ExitCode.OK:
+        session.exitstatus = _PROCESS_LEAK_EXIT_CODE
 
 
 def pytest_configure(config: pytest.Config) -> None:

@@ -15,6 +15,7 @@ from tests.scenarios.conftest import (
     kanon_clean,
     kanon_install,
     make_plain_repo,
+    project_address_for,
     write_kanonenv,
 )
 
@@ -116,12 +117,13 @@ class TestMS:
         assert "kanon install: done" in result.stdout, f"'kanon install: done' not in stdout: {result.stdout!r}"
 
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        project_address = project_address_for(work_dir)
 
-        assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir(), (
-            ".kanon-data/sources/alpha/ directory missing"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "alpha").is_dir(), (
+            ".kanon-data/sources/<project_address>/alpha/ directory missing"
         )
-        assert (store_base / ".kanon-data" / "sources" / "bravo").is_dir(), (
-            ".kanon-data/sources/bravo/ directory missing"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "bravo").is_dir(), (
+            ".kanon-data/sources/<project_address>/bravo/ directory missing"
         )
 
         packages_dir = store_base / ".packages"

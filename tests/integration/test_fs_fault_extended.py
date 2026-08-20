@@ -550,7 +550,7 @@ class TestMidOperationDeletionRace:
         base_dir.chmod(0o555)
         try:
             with pytest.raises(OSError, match="Cannot create source directory"):
-                create_source_dirs(["src"], base_dir)
+                create_source_dirs(["src"], base_dir, "e" * 64)
         finally:
             base_dir.chmod(0o755)
 

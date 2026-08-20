@@ -425,14 +425,26 @@ tree, leaving HEAD pointing to a deleted branch ref and raising an unhandled
 
 ### Behaviour after fix
 
-- Before re-running `repo init`, the `.repo/manifests` working tree is reset
-  to a clean HEAD state: tracked files are restored via `git checkout -- .`
-  and untracked `.bak` files are removed.
-- `repo init` is then re-run with the new revision; if it fails, the error is
-  caught and re-raised as a structured `RefreshRepoInitError` that names the
-  offending source and provides a remediation hint, rather than a raw traceback.
+- Before every `repo init` -- not only under `--refresh-lock` /
+  `--refresh-lock-source` -- the `.repo/manifests` working tree is reset to a
+  clean HEAD state: tracked files are restored via `git checkout -- .` and
+  untracked `.bak` files are removed.
+- `repo init` is then re-run with the new revision; under `--refresh-lock` /
+  `--refresh-lock-source`, a failure is caught and re-raised as a structured
+  `RefreshRepoInitError` that names the offending source and provides a
+  remediation hint, rather than a raw traceback.
 - Both `--refresh-lock` (full re-resolve) and `--refresh-lock-source <name>`
   (single-source re-resolve) apply this reset-and-reinit logic identically.
+
+As of issue #96, this reset runs before *every* `repo init`, including a
+plain `kanon install` on an already-installed workspace with no refresh flag.
+This is safe because each project's source workspace is now keyed by a
+stable per-project address (`compute_project_address`) and is never shared
+with another project's workspace -- before #96, an unconditional reset was
+unsafe because the shared, single-tenant workspace's `.repo/copy-link-files.json`
+ledger could only remember one project's set of linkfile destinations, so
+resetting and resyncing on one project's install could delete another
+project's already-delivered files.
 
 ### Usage examples
 

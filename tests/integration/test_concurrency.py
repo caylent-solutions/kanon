@@ -23,7 +23,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.core.install import install
+from kanon_cli.core.install import compute_project_address, install
 
 
 fcntl = pytest.importorskip("fcntl")
@@ -417,9 +417,11 @@ class TestParallelInstallsDeterministic:
         assert (store_base / ".kanon-data").is_dir(), (
             f".kanon-data/ must exist in the store after parallel installs; found: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
-        source_dir = store_base / ".kanon-data" / "sources" / "source1"
+        project_address = compute_project_address(kanonenv)
+        source_dir = store_base / ".kanon-data" / "sources" / project_address / "source1"
         assert source_dir.is_dir(), (
-            f".kanon-data/sources/source1/ must exist after parallel installs; found: {list((store_base / '.kanon-data').rglob('*'))}"
+            f".kanon-data/sources/<project_address>/source1/ must exist after parallel installs; "
+            f"found: {list((store_base / '.kanon-data').rglob('*'))}"
         )
 
     def test_parallel_installs_leave_consistent_gitignore(
@@ -570,11 +572,12 @@ class TestIdempotentRetryAfterPartialFailure:
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
 
+        project_address = compute_project_address(kanonenv)
         assert (store_base / ".packages").is_dir(), (
             ".packages/ must exist in the store after successful retry following partial failure"
         )
-        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
-            ".kanon-data/sources/primary/ must exist in the store after successful retry"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "primary").is_dir(), (
+            ".kanon-data/sources/<project_address>/primary/ must exist in the store after successful retry"
         )
 
     def test_retry_after_repo_init_failure_succeeds(
@@ -604,11 +607,12 @@ class TestIdempotentRetryAfterPartialFailure:
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
 
+        project_address = compute_project_address(kanonenv)
         assert (store_base / ".packages").is_dir(), (
             ".packages/ must exist in the store after successful retry following repo_init failure"
         )
-        assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir(), (
-            ".kanon-data/sources/alpha/ must exist in the store after successful retry"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "alpha").is_dir(), (
+            ".kanon-data/sources/<project_address>/alpha/ must exist in the store after successful retry"
         )
 
     def test_retry_with_partial_state_from_prior_run_succeeds(
@@ -622,8 +626,9 @@ class TestIdempotentRetryAfterPartialFailure:
         """
         kanonenv = _write_kanonenv(tmp_path, "beta")
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        project_address = compute_project_address(kanonenv)
 
-        partial_source_dir = store_base / ".kanon-data" / "sources" / "beta"
+        partial_source_dir = store_base / ".kanon-data" / "sources" / project_address / "beta"
         partial_source_dir.mkdir(parents=True, exist_ok=True)
         (partial_source_dir / "leftover.txt").write_text("stale file", encoding="utf-8")
 
@@ -632,8 +637,8 @@ class TestIdempotentRetryAfterPartialFailure:
         assert (store_base / ".packages").is_dir(), (
             ".packages/ must exist in the store after install succeeds over partial state"
         )
-        assert (store_base / ".kanon-data" / "sources" / "beta").is_dir(), (
-            ".kanon-data/sources/beta/ must exist in the store after install succeeds over partial state"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "beta").is_dir(), (
+            ".kanon-data/sources/<project_address>/beta/ must exist in the store after install succeeds over partial state"
         )
 
     @pytest.mark.parametrize("failing_source", ["first", "second"])
@@ -675,11 +680,12 @@ class TestIdempotentRetryAfterPartialFailure:
                 )
 
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        project_address = compute_project_address(kanonenv)
         _patched_install(kanonenv)
 
         for sn in source_names:
-            assert (store_base / ".kanon-data" / "sources" / sn).is_dir(), (
-                f".kanon-data/sources/{sn}/ must exist in the store after successful retry"
+            assert (store_base / ".kanon-data" / "sources" / project_address / sn).is_dir(), (
+                f".kanon-data/sources/<project_address>/{sn}/ must exist in the store after successful retry"
             )
         assert (store_base / ".packages").is_dir(), ".packages/ must exist in the store after retry"
 
@@ -784,13 +790,14 @@ class TestInstallOverInstallIdempotent:
         """
         kanonenv = _write_kanonenv(tmp_path, "primary")
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        project_address = compute_project_address(kanonenv)
 
         for _ in range(num_installs):
             _patched_install(kanonenv)
 
         assert (store_base / ".packages").is_dir(), ".packages/ must exist in the store after repeated installs"
-        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
-            ".kanon-data/sources/primary/ must exist in the store after repeated installs"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "primary").is_dir(), (
+            ".kanon-data/sources/<project_address>/primary/ must exist in the store after repeated installs"
         )
 
     def test_install_over_install_with_two_sources_is_idempotent(
@@ -804,12 +811,13 @@ class TestInstallOverInstallIdempotent:
         """
         kanonenv = _write_two_source_kanonenv(tmp_path, "alpha", "bravo")
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        project_address = compute_project_address(kanonenv)
         _patched_install(kanonenv)
         _patched_install(kanonenv)
 
         for sn in ("alpha", "bravo"):
-            assert (store_base / ".kanon-data" / "sources" / sn).is_dir(), (
-                f".kanon-data/sources/{sn}/ must exist in the store after repeated install"
+            assert (store_base / ".kanon-data" / "sources" / project_address / sn).is_dir(), (
+                f".kanon-data/sources/<project_address>/{sn}/ must exist in the store after repeated install"
             )
         assert (store_base / ".packages").is_dir(), ".packages/ must exist in the store after repeated install"
 

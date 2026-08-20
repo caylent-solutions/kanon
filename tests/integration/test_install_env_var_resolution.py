@@ -19,7 +19,7 @@ import subprocess
 import pytest
 
 from kanon_cli.constants import KANON_ALLOW_INSECURE_REMOTES
-from kanon_cli.core.install import UnresolvedManifestVarError, install
+from kanon_cli.core.install import UnresolvedManifestVarError, compute_project_address, install
 
 
 _GIT_USER_NAME = "Env Var Install Test"
@@ -100,10 +100,11 @@ def _make_manifest_bare_repo(base: pathlib.Path, slug: str, manifest: str) -> pa
     return bare_dir
 
 
-def _substituted_manifest_path(alias: str) -> pathlib.Path:
+def _substituted_manifest_path(kanonenv: pathlib.Path, alias: str) -> pathlib.Path:
     """Return the post-envsubst manifest path under the isolated KANON_HOME store."""
     store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
-    return store_base / ".kanon-data" / "sources" / alias / ".repo" / "manifests" / _MANIFEST_NAME
+    project_address = compute_project_address(kanonenv)
+    return store_base / ".kanon-data" / "sources" / project_address / alias / ".repo" / "manifests" / _MANIFEST_NAME
 
 
 @pytest.fixture
@@ -147,7 +148,7 @@ class TestInstallEnvVarResolution:
 
         install(kanonenv.resolve(), lock_file_path=workspace / ".kanon.lock")
 
-        manifest_text = _substituted_manifest_path("noenv").read_text(encoding="utf-8")
+        manifest_text = _substituted_manifest_path(kanonenv, "noenv").read_text(encoding="utf-8")
         assert "${" not in manifest_text, f"no placeholder expected; got {manifest_text!r}"
 
     def test_custom_var_resolves_when_value_provided(
@@ -173,7 +174,7 @@ class TestInstallEnvVarResolution:
 
         install(kanonenv.resolve(), lock_file_path=workspace / ".kanon.lock")
 
-        manifest_text = _substituted_manifest_path("custom").read_text(encoding="utf-8")
+        manifest_text = _substituted_manifest_path(kanonenv, "custom").read_text(encoding="utf-8")
         assert "${MYBASE}" not in manifest_text, f"${{MYBASE}} must be substituted; got {manifest_text!r}"
         assert f'fetch="{org_base}/repos"' in manifest_text, f"manifest must use {org_base!r}; got {manifest_text!r}"
 
@@ -310,7 +311,7 @@ class TestInstallEnvVarResolution:
 
         install(kanonenv.resolve(), lock_file_path=workspace / ".kanon.lock")
 
-        manifest_text = _substituted_manifest_path("prose").read_text(encoding="utf-8")
+        manifest_text = _substituted_manifest_path(kanonenv, "prose").read_text(encoding="utf-8")
         assert f'fetch="{org_base}/repos"' in manifest_text, (
             f"functional <remote fetch> must resolve to {org_base!r}; got {manifest_text!r}"
         )
@@ -340,8 +341,8 @@ class TestInstallEnvVarResolution:
 
         install(kanonenv.resolve(), lock_file_path=workspace / ".kanon.lock")
 
-        gb_text = _substituted_manifest_path("gb").read_text(encoding="utf-8")
-        plain_text = _substituted_manifest_path("plain").read_text(encoding="utf-8")
+        gb_text = _substituted_manifest_path(kanonenv, "gb").read_text(encoding="utf-8")
+        plain_text = _substituted_manifest_path(kanonenv, "plain").read_text(encoding="utf-8")
         assert f'fetch="{org_base}/repos"' in gb_text, f"gb manifest must use {org_base!r}; got {gb_text!r}"
         assert "${GITBASE}" not in gb_text, f"${{GITBASE}} must be substituted; got {gb_text!r}"
         assert "${" not in plain_text, f"no-var manifest must carry no placeholder; got {plain_text!r}"

@@ -18,7 +18,7 @@ import pytest
 
 from kanon_cli.core.clean import clean
 from kanon_cli.core.discover import find_kanonenv
-from kanon_cli.core.install import install
+from kanon_cli.core.install import compute_project_address, install
 
 
 def _store_base() -> Path:
@@ -111,9 +111,10 @@ class TestInstallCleanRoundtripLifecycle:
 
         _install_with_synced_packages(kanonenv, {"primary": ["tool-x"]})
 
+        project_address = compute_project_address(kanonenv)
         assert (store_base / ".packages").is_dir(), ".packages/ must exist after install"
-        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
-            ".kanon-data/sources/primary/ must exist after install"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "primary").is_dir(), (
+            ".kanon-data/sources/<project_address>/primary/ must exist after install"
         )
 
         clean(kanonenv)
@@ -165,11 +166,12 @@ class TestMultiSourceInstallLifecycle:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         store_base = _store_base()
-        assert (store_base / ".kanon-data" / "sources" / "marketplace").is_dir(), (
-            ".kanon-data/sources/marketplace/ must be created for the marketplace source"
+        project_address = compute_project_address(kanonenv)
+        assert (store_base / ".kanon-data" / "sources" / project_address / "marketplace").is_dir(), (
+            ".kanon-data/sources/<project_address>/marketplace/ must be created for the marketplace source"
         )
-        assert (store_base / ".kanon-data" / "sources" / "repo").is_dir(), (
-            ".kanon-data/sources/repo/ must be created for the repo source"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "repo").is_dir(), (
+            ".kanon-data/sources/<project_address>/repo/ must be created for the repo source"
         )
 
     def test_multi_source_repo_init_called_once_per_source(self, tmp_path: Path) -> None:
@@ -270,8 +272,9 @@ class TestAutoDiscoveryWorkflow:
         ):
             install(discovered, lock_file_path=discovered.parent / ".kanon.lock")
 
-        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
-            "install() must create .kanon-data/sources/primary/ under the shared store"
+        project_address = compute_project_address(discovered)
+        assert (store_base / ".kanon-data" / "sources" / project_address / "primary").is_dir(), (
+            "install() must create .kanon-data/sources/<project_address>/primary/ under the shared store"
         )
         assert not (store_base / ".gitignore").exists(), "install() must not write .gitignore under a non-git store"
 
@@ -316,8 +319,9 @@ class TestPartialFailureRecovery:
                 install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         store_base = _store_base()
+        project_address = compute_project_address(kanonenv)
 
-        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
+        assert (store_base / ".kanon-data" / "sources" / project_address / "primary").is_dir(), (
             "Source dir must exist after partial install (created before failed sync)"
         )
 
@@ -395,8 +399,9 @@ class TestFilesystemStateAtLifecycleStages:
         _install_with_synced_packages(kanonenv, {"primary": ["some-tool"]})
 
         assert kanonenv.is_file(), ".kanon config must still exist after install"
-        source_dir = store_base / ".kanon-data" / "sources" / "primary"
-        assert source_dir.is_dir(), ".kanon-data/sources/primary/ must exist after install"
+        project_address = compute_project_address(kanonenv)
+        source_dir = store_base / ".kanon-data" / "sources" / project_address / "primary"
+        assert source_dir.is_dir(), ".kanon-data/sources/<project_address>/primary/ must exist after install"
         assert (store_base / ".packages").is_dir(), ".packages/ must exist after install"
         assert not (store_base / ".gitignore").exists(), "install() must not write .gitignore under a non-git store"
         assert (store_base / ".packages" / "some-tool").is_symlink(), (
@@ -420,8 +425,9 @@ class TestFilesystemStateAtLifecycleStages:
         )
 
         store_base = _store_base()
-        assert (store_base / ".kanon-data" / "sources" / "marketplace").is_dir()
-        assert (store_base / ".kanon-data" / "sources" / "repo").is_dir()
+        project_address = compute_project_address(kanonenv)
+        assert (store_base / ".kanon-data" / "sources" / project_address / "marketplace").is_dir()
+        assert (store_base / ".kanon-data" / "sources" / project_address / "repo").is_dir()
         assert (store_base / ".packages" / "plugin-mp").is_symlink()
         assert (store_base / ".packages" / "tool-repo").is_symlink()
 

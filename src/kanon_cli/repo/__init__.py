@@ -229,6 +229,8 @@ def repo_sync(
     groups: list[str] | None = None,
     platform: str | None = None,
     jobs: int | None = None,
+    jobs_network: int | None = None,
+    jobs_checkout: int | None = None,
 ) -> None:
     """Clone and fetch all projects defined in the manifest.
 
@@ -258,6 +260,8 @@ def repo_sync(
             ``"all"``, ``"none"``) to restrict which projects are synced.
             Accepted for API completeness; sync uses the stored platform
             configuration from the prior ``repo init`` invocation.
+        jobs_network: Optional cap on parallel network fetch jobs.
+        jobs_checkout: Optional cap on parallel local checkout jobs.
         jobs: Optional number of parallel jobs for network fetching and local
             checkout. When None, the sync command uses the default derived
             from the manifest's ``sync-j`` attribute or the CPU count.
@@ -285,6 +289,10 @@ def repo_sync(
     argv: list[str] = ["sync"]
     if jobs is not None:
         argv.append(f"--jobs={jobs}")
+    if jobs_network is not None:
+        argv.append(f"--jobs-network={jobs_network}")
+    if jobs_checkout is not None:
+        argv.append(f"--jobs-checkout={jobs_checkout}")
 
     run_from_args(argv, repo_dir=repo_dot_dir)
 

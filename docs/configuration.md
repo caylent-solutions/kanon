@@ -271,113 +271,29 @@ each `git ls-remote` call in `kanon install`, `kanon outdated`,
 `kanon why`, and `kanon doctor`. Bounded per call; not a global wall
 clock. Defined in `src/kanon_cli/constants.py`.
 
-**`KANON_SYNC_JOBS`** (default: unset) -- Number of parallel jobs
-`kanon install` passes to `repo sync` for network fetch and local
-checkout. When unset, `repo sync` uses its own default
-(`min(cpu_count, 8)`). Set it to `1` to run the sync in a single process
-with no worker pool; that is worth doing when many `kanon` processes
-share one machine (a parallel test run, or a CI runner executing several
-installs at once), because the pools then contend for the same POSIX
-semaphores and can wedge. Must be a positive integer; any other value
-exits non-zero. Defined in `src/kanon_cli/constants.py`.
+**`KANON_SYNC_JOBS`** (default: unset) -- Upper bound on how many worker
+processes `repo sync` fans out to during `kanon install`. This is a **cap**: it
+can lower fan-out, never raise it.
 
-**`KANON_KANON_FILE`** (default: `./.kanon`) -- Default `.kanon` file
-path. It supplies the default target for `kanon add` / `kanon remove`
-writes and the default `--kanon-file` value for the commands that accept
-that flag (`kanon add`, `kanon remove`, `kanon doctor`). On `kanon install`
-and `kanon validate lockfile` the `.kanon` path is given as a positional
-argument (these commands do not expose a `--kanon-file` flag). The
-`--kanon-file` CLI flag takes precedence over this variable when both are
-set.
+`repo sync` resolves two independent job counts, and their defaults differ:
+network fetch defaults to **1**, local checkout to `min(cpu_count, 8)`. kanon
+caps each against its own default and passes them separately, so
+`KANON_SYNC_JOBS=64` leaves network fetch at 1 rather than raising it to 64. The
+cap also takes precedence over a manifest's `<default sync-j>`: an operator
+bounding fan-out on their own machine should not be overridden by a value a
+remote manifest chose.
 
-**`KANON_LIST_FORMAT`** (default: `names`) -- Default output format
-for `kanon search`. Supported values: `names`, `json`. Overridden by
-`--format` CLI flag.
+Set it to `1` to run the sync in a single process. That is what the test suite
+pins, because many concurrent `kanon install` processes each building their own
+worker pool contend for the same POSIX semaphores and can wedge.
 
-**`KANON_LIST_LIMIT`** (default: `50`) -- Default cap on the number
-of entries returned by `kanon search -A`. Overridden by
-`--limit N` / `--no-limit` CLI flags.
+When unset, kanon passes no job arguments at all and `repo sync` resolves its own
+defaults, clipped by a limit derived from `RLIMIT_NOFILE`.
 
-**`KANON_TREE_NO_FILTER_THRESHOLD`** (default: `20`) -- Entry count
-above which `kanon search --tree` requires a filter argument. Without a
-filter, `kanon search --tree` exits with an error suggesting `--regex`,
-`<substring>`, or `--max-depth 0`. Override with
-`--no-filter-required`.
-
-**`KANON_LIST_OUTPUT_FORMAT`** (default: `table`) -- Default output
-format for `kanon list` (the declared-vs-installed inventory command).
-Supported values: `table`, `json`. Overridden by the `--format` CLI
-flag. Distinct from `KANON_LIST_FORMAT` above, which configures
-`kanon search`'s output.
-
-**`KANON_LIST_JSON_INDENT`** (default: `2`) -- Number of spaces per
-indentation level in JSON output from `kanon list --format json`. Must
-be a non-negative integer parseable by Python `int()`.
-
-**`KANON_OUTDATED_FORMAT`** (default: `table`) -- Default output
-format for `kanon outdated`. Currently only `table` is supported.
-Overridden by `--format` CLI flag.
-
-**`KANON_WHY_FORMAT`** (default: `text`) -- Default output format for
-`kanon why`. Supported values: `text` (human-readable arrow-separated
-chains) and `json` (machine-readable JSON array). Overridden by
-`--format` CLI flag.
-
-**`KANON_WHY_JSON_INDENT`** (default: `2`) -- Number of spaces per
-indentation level in JSON output from `kanon why --format json`. Must
-be a non-negative integer parseable by Python `int()`.
-
-**`KANON_WHY_SUGGEST_MAX_DISTANCE`** (default: `3`) -- Maximum
-Levenshtein edit distance for closest-match suggestions when
-`kanon why` cannot find the requested argument. Must be a
-non-negative integer.
-
-**`KANON_WHY_SUGGEST_TOP_N`** (default: `3`) -- Maximum number of
-closest-match suggestions displayed on not-found. Results are sorted
-ascending by edit distance, ties broken lexicographically. Must be a
-non-negative integer.
-
-**`KANON_ALLOW_INSECURE_REMOTES`** (default: unset) -- When set to
-exactly `1`, disables the insecure-remote URL security check in
-`kanon install`. All remote URL schemes (HTTP, `file://`, `git://`,
-etc.) are accepted without error. Any value other than `1` is treated
-as unset. See the security rationale below.
-
-#### KANON\_ALLOW\_INSECURE\_REMOTES -- security rationale
-
-kanon enforces a trust model (spec Section 3.6) that requires all
-`<remote>` fetch URLs in resolved manifests to use HTTPS or SSH. Plain
-HTTP, `file://`, `git://`, and other unencrypted schemes are rejected
-by default because they expose dependency resolution to network-level
-interception and tampering.
-
-**Allowed unconditionally:**
-
-- `https://...` -- encrypted, authenticated.
-- `git@host:org/repo.git` -- SCP-style SSH; encrypted, key-authed.
-- `ssh://...` -- explicit SSH; encrypted, key-authenticated.
-
-**Rejected by default (allowed only with `KANON_ALLOW_INSECURE_REMOTES=1`):**
-
-- `http://...` -- unencrypted; interceptable in transit.
-- `file://...` -- local path; no network-level guarantees.
-- Any other scheme (`git://`, `ftp://`, custom schemes, empty URL).
-
-**Override:** Set `KANON_ALLOW_INSECURE_REMOTES=1` to disable the
-check. Only the exact string `1` enables it. Values such as `true`,
-`yes`, `on`, or `0` do NOT enable the override.
-
-```bash
-# Default: HTTP remote rejected
-kanon install .kanon  # exits 1 if any <remote> uses http://
-
-# Override: HTTP remote accepted
-KANON_ALLOW_INSECURE_REMOTES=1 kanon install .kanon
-```
-
-The check also runs on the lockfile-consistent replay path: even if a
-lockfile was recorded with an HTTP URL, `kanon install` rejects it.
-See [docs/lockfile.md](lockfile.md) for details on replay enforcement.
+Must be a positive integer; any other value aborts with exit 1. It is validated
+at CLI entry, before any command does work, so a bad value cannot abort an
+install part-way with a half-built workspace on disk. Defined in
+`src/kanon_cli/constants.py`.
 
 ---
 

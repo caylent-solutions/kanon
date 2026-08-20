@@ -804,11 +804,23 @@ if KANON_TELEMETRY_GRAPH_SIZE_CAP <= 0:
 KANON_SYNC_JOBS_ENV = "KANON_SYNC_JOBS"
 
 
+REPO_DEFAULT_NETWORK_JOBS = 1
+"""The job count repo sync uses for network fetch when given no --jobs.
+
+Mirrors repo/subcmds/sync.py. Deliberately not the same as the local-checkout
+default: conflating the two is what made a single --jobs=N raise network
+fan-out while appearing to bound it.
+"""
+
+
 def resolve_sync_jobs() -> int | None:
     """Return the operator-requested ``repo sync`` job count, or ``None`` when unset.
 
-    ``repo sync`` fans out over a :class:`multiprocessing.Pool` sized from
-    ``min(os.cpu_count(), 8)`` unless an explicit ``--jobs`` is supplied. When many
+    ``repo sync`` resolves two independent job counts whose defaults differ:
+    network fetch is 1 and local checkout is ``min(os.cpu_count(), 8)``. The value
+    here is an upper bound applied to each against its own default, never a single
+    ``--jobs`` that would set both -- doing that raised network fan-out while
+    appearing to bound it. When many
     ``kanon`` processes run concurrently on one machine -- most acutely a
     ``pytest-xdist`` run, where every worker drives its own ``kanon install`` --
     each of those pools contends for the same POSIX semaphores, and the pool

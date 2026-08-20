@@ -245,6 +245,9 @@ def _apply_global_flags(args: argparse.Namespace) -> None:
       formatter helper (constants._NO_COLOR_ACTIVE) when --no-color is
       set OR when the NO_COLOR env var is non-empty. Precedence:
       --no-color flag > NO_COLOR env var > TTY auto-detect.
+    - Validates ``KANON_SYNC_JOBS`` before any command runs, so an invalid value
+      fails at startup rather than part-way through an install with a half-built
+      workspace already on disk.
     - Injects the ``--home`` / ``--store-dir`` flag (when given) into
       ``KANON_HOME`` in the process environment so every downstream
       ``constants.resolve_kanon_home()`` reader (the store base dir, the
@@ -284,6 +287,8 @@ def _apply_global_flags(args: argparse.Namespace) -> None:
     home_override = getattr(args, "home", None)
     if home_override is not None:
         os.environ[constants.KANON_HOME_ENV_VAR] = str(constants.resolve_kanon_home(override=home_override))
+
+    constants.resolve_sync_jobs()
 
     abs_roots_override = getattr(args, "allow_abs_root", None)
     if abs_roots_override:

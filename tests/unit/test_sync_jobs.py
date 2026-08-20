@@ -17,7 +17,8 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.constants import KANON_SYNC_JOBS_ENV, resolve_sync_jobs
+from kanon_cli.repo.command import DEFAULT_LOCAL_JOBS
+from kanon_cli.constants import REPO_DEFAULT_NETWORK_JOBS, KANON_SYNC_JOBS_ENV, resolve_sync_jobs
 from kanon_cli.core.install import run_repo_sync
 
 
@@ -56,22 +57,26 @@ class TestResolveSyncJobs:
 @pytest.mark.unit
 class TestRunRepoSyncJobsPassthrough:
     def test_forwards_configured_job_count(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The resolved job count reaches repo_sync as the jobs keyword."""
+        """The resolved cap reaches repo_sync as a per-phase bound.
+
+        Not a single ``jobs=`` argument: that sets network and checkout alike, and
+        their defaults differ, so one value silently raised network fan-out.
+        """
         source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
         monkeypatch.setenv(KANON_SYNC_JOBS_ENV, "1")
         with patch("kanon_cli.repo.repo_sync") as mock_sync:
             run_repo_sync(source_dir)
-        mock_sync.assert_called_once_with(str(source_dir), jobs=1)
+        mock_sync.assert_called_once_with(str(source_dir), jobs_network=1, jobs_checkout=1)
 
     def test_forwards_none_when_unset(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """With the variable unset, repo_sync receives jobs=None and keeps its default."""
+        """With the variable unset, repo_sync is called bare and keeps its own defaults."""
         source_dir = tmp_path / ".kanon-data" / "sources" / "build"
         source_dir.mkdir(parents=True)
         monkeypatch.delenv(KANON_SYNC_JOBS_ENV, raising=False)
         with patch("kanon_cli.repo.repo_sync") as mock_sync:
             run_repo_sync(source_dir)
-        mock_sync.assert_called_once_with(str(source_dir), jobs=None)
+        mock_sync.assert_called_once_with(str(source_dir))
 
     def test_rejects_bad_value_before_running_sync(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -98,4 +103,62 @@ class TestSuitePinsSyncToSingleProcess:
         assert resolve_sync_jobs() == 1, (
             f"The test session must pin {KANON_SYNC_JOBS_ENV} to 1 so repo sync takes the "
             f"single-process short-circuit; got {resolve_sync_jobs()!r}"
+        )
+
+
+@pytest.mark.unit
+class TestSyncJobsIsACap:
+    """`KANON_SYNC_JOBS` bounds fan-out; it must never raise it.
+
+    `repo sync` resolves two independent job counts with *different* defaults:
+    network fetch is 1, local checkout is `min(cpu_count, 8)`. A single
+    `--jobs=N` sets both, so passing the requested value straight through took
+    network fetch from 1 to N -- increasing the fan-out the variable exists to
+    bound, while its own documentation called it a cap.
+    """
+
+    def _captured_call(self, monkeypatch: pytest.MonkeyPatch, requested: str) -> dict:
+        captured: dict = {}
+
+        def fake_sync(repo_dir, **kwargs):
+            captured.update(kwargs)
+
+        monkeypatch.setenv(KANON_SYNC_JOBS_ENV, requested)
+        monkeypatch.setattr("kanon_cli.core.install._repo.repo_sync", fake_sync)
+        run_repo_sync(pathlib.Path("/tmp/source"))
+        return captured
+
+    def test_network_jobs_never_exceed_repos_own_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A large request must not raise network fetch above its default of 1."""
+        captured = self._captured_call(monkeypatch, "64")
+        assert captured["jobs_network"] == REPO_DEFAULT_NETWORK_JOBS, (
+            f"KANON_SYNC_JOBS=64 raised network fetch to {captured['jobs_network']}, above "
+            f"repo's own default of {REPO_DEFAULT_NETWORK_JOBS}. The variable is a cap."
+        )
+
+    def test_checkout_jobs_never_exceed_repos_own_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured = self._captured_call(monkeypatch, "64")
+        assert captured["jobs_checkout"] == DEFAULT_LOCAL_JOBS
+
+    def test_a_smaller_request_is_honoured(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Capping must still allow bounding below the default -- the actual use case."""
+        captured = self._captured_call(monkeypatch, "1")
+        assert captured["jobs_network"] == 1
+        assert captured["jobs_checkout"] == 1
+
+    def test_no_jobs_argument_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Unset means repo resolves its own defaults, so production is unchanged."""
+        captured: dict = {}
+
+        def fake_sync(repo_dir, **kwargs):
+            captured.update(kwargs)
+            captured["called"] = True
+
+        monkeypatch.delenv(KANON_SYNC_JOBS_ENV, raising=False)
+        monkeypatch.setattr("kanon_cli.core.install._repo.repo_sync", fake_sync)
+        run_repo_sync(pathlib.Path("/tmp/source"))
+
+        assert captured == {"called": True}, (
+            f"With KANON_SYNC_JOBS unset, repo_sync must be called with no job arguments so "
+            f"repo resolves its own defaults; got {captured!r}"
         )

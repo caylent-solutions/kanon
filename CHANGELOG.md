@@ -20,10 +20,15 @@ new `.kanon` key is required and nothing is added to existing files. A
 destination outside every permitted root exits non-zero naming the destination,
 the roots, and how to widen them.
 
-* feat: `KANON_SYNC_JOBS` bounds `repo sync`'s fan-out
+* feat: `KANON_SYNC_JOBS` caps `repo sync`'s fan-out
 
-Set it to a positive integer to pass `--jobs` to `repo sync`. Unset, `repo sync`
-resolves its own defaults and behaviour is unchanged.
+An upper bound on worker processes during `kanon install`. It can lower fan-out,
+never raise it: `repo sync` resolves separate network and checkout job counts
+whose defaults differ (1 and `min(cpu_count, 8)`), so each is capped against its
+own default rather than both being set from one value. The cap takes precedence
+over a manifest's `<default sync-j>`. Validated at CLI entry, so a bad value
+cannot abort an install part-way. Unset, `repo sync` resolves its own defaults
+and behaviour is unchanged.
 
 ### Fixed
 

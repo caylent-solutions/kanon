@@ -78,6 +78,7 @@ from packaging.specifiers import SpecifierSet, InvalidSpecifier
 import kanon_cli.repo as _repo
 from kanon_cli.repo.git_command import GitCommandError
 from kanon_cli import __version__
+from kanon_cli.repo.command import DEFAULT_LOCAL_JOBS
 from kanon_cli.constants import (
     KANON_ALLOW_INSECURE_REMOTES,
     KANON_GIT_LS_REMOTE_TIMEOUT,
@@ -93,6 +94,7 @@ from kanon_cli.constants import (
     SOURCE_RESERVED_SUFFIXES,
     resolve_kanon_home,
     KANON_PERMITTED_ABS_ROOTS_ENV,
+    REPO_DEFAULT_NETWORK_JOBS,
     format_permitted_abs_roots,
     resolve_allowed_abs_roots,
     resolve_sync_jobs,
@@ -2018,21 +2020,39 @@ def export_permitted_abs_roots(kanon_file: pathlib.Path, marketplace_dir_str: st
 
 
 def run_repo_sync(source_dir: pathlib.Path) -> None:
-    """Run ``repo sync`` in source directory.
+    """Run ``repo sync`` in source directory, bounded by ``KANON_SYNC_JOBS``.
 
-    The job count is taken from :func:`resolve_sync_jobs`, so an operator (or the
-    test suite, which pins it to ``1``) can bound how many worker processes the
-    sync fans out to. When ``KANON_SYNC_JOBS`` is unset this passes no ``--jobs``
-    and ``repo sync`` keeps its own default.
+    ``KANON_SYNC_JOBS`` is a **cap**, not an override. ``repo sync`` resolves two
+    independent job counts, and they do not share a default: network fetch
+    defaults to 1 while local checkout defaults to ``min(cpu_count, 8)``. Passing
+    a single ``--jobs=N`` sets *both*, so ``KANON_SYNC_JOBS=8`` on a four-core host
+    would take network fetch from 1 to 8 -- increasing the very fan-out the
+    variable exists to bound. Each phase is therefore capped against its own
+    default and passed separately.
+
+    Capping also wins over a manifest's ``<default sync-j>``: an operator bounding
+    fan-out on their own machine should not be overridden by a value a remote
+    manifest chose.
+
+    When ``KANON_SYNC_JOBS`` is unset nothing is passed and ``repo sync`` resolves
+    its own defaults, so behaviour is unchanged.
 
     Args:
-        source_dir: Path to ``.kanon-data/sources/<name>/``.
+        source_dir: Path to the source workspace.
 
     Raises:
         RepoCommandError: If repo sync exits non-zero.
         SystemExit: If ``KANON_SYNC_JOBS`` is set to a non-positive-integer value.
     """
-    _repo.repo_sync(str(source_dir), jobs=resolve_sync_jobs())
+    requested = resolve_sync_jobs()
+    if requested is None:
+        _repo.repo_sync(str(source_dir))
+        return
+    _repo.repo_sync(
+        str(source_dir),
+        jobs_network=min(requested, REPO_DEFAULT_NETWORK_JOBS),
+        jobs_checkout=min(requested, DEFAULT_LOCAL_JOBS),
+    )
 
 
 def aggregate_symlinks(

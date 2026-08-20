@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-dev lint lint-check lint-no-comments lint-markdown format format-check check test test-unit test-unit-cov test-unit-vendored test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
+.PHONY: check-completion-snapshots help install install-dev lint lint-check lint-no-comments lint-markdown format format-check check test test-unit test-unit-cov test-unit-vendored test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
 
 # Minimum total coverage enforced by `test-unit-cov`. Overridable so the
 # threshold is not hard-coded at its only call site. It is measured over kanon's
@@ -114,6 +114,24 @@ install-hooks: ## Install git hooks for pre-commit and pre-push
 	@chmod +x git-hooks/pre-commit git-hooks/pre-push
 	@echo "Git hooks installed successfully!"
 
-update-completion-snapshots: ## Regenerate bash + zsh completion fixture files
-	uv run kanon completion bash > tests/fixtures/completion/expected-bash.sh
-	uv run kanon completion zsh > tests/fixtures/completion/expected-zsh.sh
+update-completion-snapshots: ## Regenerate bash + zsh completion fixture files (deliberate, review the diff)
+	uv run kanon completion bash > tests/fixtures/completion/expected-bash.sh.tmp
+	mv tests/fixtures/completion/expected-bash.sh.tmp tests/fixtures/completion/expected-bash.sh
+	uv run kanon completion zsh > tests/fixtures/completion/expected-zsh.sh.tmp
+	mv tests/fixtures/completion/expected-zsh.sh.tmp tests/fixtures/completion/expected-zsh.sh
+
+check-completion-snapshots: ## Verify the completion fixtures match generated output
+	@uv run kanon completion bash > tests/fixtures/completion/expected-bash.sh.check
+	@uv run kanon completion zsh > tests/fixtures/completion/expected-zsh.sh.check
+	@status=0; \
+	for shell in bash zsh; do \
+		if ! diff -u "tests/fixtures/completion/expected-$$shell.sh" "tests/fixtures/completion/expected-$$shell.sh.check"; then \
+			status=1; \
+		fi; \
+	done; \
+	rm -f tests/fixtures/completion/expected-bash.sh.check tests/fixtures/completion/expected-zsh.sh.check; \
+	if [ "$$status" -ne 0 ]; then \
+		echo "ERROR: completion fixtures are stale. Run 'make update-completion-snapshots' and review the diff before committing."; \
+		exit 1; \
+	fi; \
+	echo "completion fixtures match generated output"

@@ -404,3 +404,33 @@ def test_makefile_lint_markdown_excludes_vendored_repo_docs():
     assert "-e" in recipe.split() or "--exclude" in recipe, (
         f"lint-markdown recipe must use pymarkdownlnt's -e/--exclude option to scope out docs/repo/. Recipe:\n{recipe}"
     )
+
+
+@pytest.mark.unit
+def test_completion_snapshot_hook_verifies_rather_than_regenerates():
+    """The completion hook must check the golden fixtures, not rewrite them.
+
+    A hook that regenerates a golden file destroys what the golden is for. The
+    diff that would have shown a reviewer the generated output changed gets
+    authored automatically, so the reviewer sees a regenerated fixture instead of
+    a failed check.
+
+    That matters most for the case this hook triggers on: its file set includes
+    `pyproject.toml`, which is exactly where a `shtab` version bump lives, and
+    `shtab` is what generates this output. The fixtures exist because a shtab
+    release once changed that output and broke CI with no change to this
+    repository -- so an unreviewed regeneration is the specific failure they were
+    added to prevent.
+
+    Regeneration stays available deliberately, as `make update-completion-snapshots`.
+    """
+    config = (REPO_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+
+    assert "entry: make check-completion-snapshots" in config, (
+        "the completion-snapshots hook must run the verifier; regenerating goldens in a "
+        "hook lands the change without review"
+    )
+    assert "entry: make update-completion-snapshots" not in config, (
+        "the completion-snapshots hook regenerates the golden fixtures again, which rewrites "
+        "the evidence a reviewer needs instead of failing the check"
+    )

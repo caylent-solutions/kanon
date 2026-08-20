@@ -27,7 +27,14 @@ from kanon_cli.constants import (
     SOURCE_MARKETPLACE_KEY,
     resolve_kanon_home,
 )
-from kanon_cli.core.install import compute_project_address, prune_store, resolve_workspace_base_dir
+from kanon_cli.core.install import (
+    KANON_DATA_SUBDIR,
+    compute_project_address,
+    project_sources_dir,
+    prune_store,
+    resolve_workspace_base_dir,
+    sources_root_dir,
+)
 from kanon_cli.core.marketplace import (
     locate_claude_binary,
     remove_marketplace,
@@ -90,7 +97,7 @@ def project_packages_links(base_dir: pathlib.Path, project_address: str) -> list
     except (FileNotFoundError, NotADirectoryError):
         return owned
 
-    marker = str(base_dir / ".kanon-data" / "sources" / project_address) + os.sep
+    marker = str(project_sources_dir(base_dir, project_address)) + os.sep
     for entry in entries:
         try:
             target = os.path.realpath(entry)
@@ -132,9 +139,9 @@ def remove_project_workspace(base_dir: pathlib.Path, project_address: str) -> No
         base_dir: The resolved store base directory.
         project_address: The calling project's address.
     """
-    shutil.rmtree(base_dir / ".kanon-data" / "sources" / project_address, ignore_errors=True)
-    _remove_if_empty(base_dir / ".kanon-data" / "sources")
-    _remove_if_empty(base_dir / ".kanon-data")
+    shutil.rmtree(project_sources_dir(base_dir, project_address), ignore_errors=True)
+    _remove_if_empty(sources_root_dir(base_dir))
+    _remove_if_empty(base_dir / KANON_DATA_SUBDIR)
 
 
 def remove_store_entries(base_dir: pathlib.Path) -> None:

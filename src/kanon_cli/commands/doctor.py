@@ -444,7 +444,9 @@ def _check_orphaned_workspaces(base_dir: pathlib.Path) -> list[DoctorFinding]:
     Returns:
         One warning finding per orphaned workspace; empty when there are none.
     """
-    sources_dir = base_dir / ".kanon-data" / "sources"
+    from kanon_cli.core.install import sources_root_dir
+
+    sources_dir = sources_root_dir(base_dir)
     try:
         entries = sorted(sources_dir.iterdir())
     except FileNotFoundError:

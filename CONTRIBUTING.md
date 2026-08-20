@@ -211,7 +211,7 @@ A coverage meta test (`tests/scenarios/test_scenario_coverage_meta.py`) fails CI
 
 ### Test Requirements
 
-- **Unit Tests**: Must maintain at least `COVERAGE_MIN` (default 90%) coverage
+- **Unit Tests**: Must maintain at least `COVERAGE_MIN` (default 93%) coverage
   of kanon's own source. The vendored `src/kanon_cli/repo` tree is measured by
   its own tier and omitted from this gate.
 - **Functional Tests**: Must test all CLI commands and common error scenarios

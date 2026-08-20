@@ -44,11 +44,11 @@ shared workspace for both projects.
 
 The aggregated `.packages/` symlink tree is deliberately **not** keyed: keying it
 broke roughly 140 end-to-end tests for no behavioural gain, and its path is part
-of the operator-facing contract. Instead, a package name already published there
-by a *different* project is now refused rather than silently overwritten, so a
-collision between two projects sharing a `KANON_HOME` fails loudly with the
-package name and the way out. Full isolation of the aggregation directory is
-tracked in issue #115.
+of the operator-facing contract. Instead, replacing a link published there by a
+*different* project now prints a warning naming both projects and the remedy,
+where it was previously silent. It warns rather than failing so that two projects
+sharing a package name can still coexist. Full isolation of the aggregation
+directory is tracked in issue #115.
 
 Workspaces written before this change are left under the old alias-only path and
 are never read again. Nothing needs to be done about them: `kanon doctor` reports
@@ -100,6 +100,13 @@ requires no operator action: `kanon doctor` reports anything left behind by an
 older store layout and `kanon clean` reclaims it.
 
 The `kanon catalog audit` legacy-directory warning now cites the archived path.
+
+* The unit-coverage gate is raised from 90% to 93%
+
+`COVERAGE_MIN` measured 90% against a surface that included the vendored repo
+tree. That tree is now its own tier and omitted from this gate, so the same
+threshold was a looser bar against a smaller denominator. 93% restores real
+stringency against kanon's own source, which currently measures 93.75%.
 
 * `kanon clean` is now scoped to the project you run it in
 

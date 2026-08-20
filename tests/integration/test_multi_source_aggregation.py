@@ -393,13 +393,16 @@ class TestAggregationStabilityAcrossReRuns:
 
 @pytest.mark.integration
 class TestCrossProjectPackageCollision:
-    """A package name already published by another project is refused, not overwritten.
+    """A package name already published by another project is announced, not silent.
 
     `.packages/` is shared by every project using a `KANON_HOME` and keyed only by
-    package name. Overwriting silently repointed the other project's tooling --
-    `docs/architecture.md` calls `.packages/` the directory downstream tooling
-    references -- at this project's content, while reporting success. That is the
-    same silent-wrong-content class the keyed source workspace closed.
+    package name. Replacing a link silently repointed the other project's tooling
+    -- `docs/architecture.md` calls `.packages/` the directory downstream tooling
+    references -- at this project's content, while reporting success.
+
+    It warns rather than refusing: refusing would stop two projects that share a
+    package name from coexisting at all, which kanon has never required. The
+    collision has to be visible, not fatal. Isolating the farm is issue #115.
     """
 
     def _publish(self, store: pathlib.Path, address: str, source: str, pkg: str) -> pathlib.Path:
@@ -408,43 +411,38 @@ class TestCrossProjectPackageCollision:
         (pkg_dir / "marker.txt").write_text(address, encoding="utf-8")
         return pkg_dir
 
-    def test_link_owned_by_another_project_is_refused(self, tmp_path: pathlib.Path) -> None:
-        store = tmp_path / "store"
+    def _collide(self, store: pathlib.Path) -> tuple[str, str, pathlib.Path]:
         theirs, ours = "b" * 64, "a" * 64
-
         their_pkg = self._publish(store, theirs, "src", "shared-tool")
         packages = store / ".packages"
         packages.mkdir(parents=True)
         (packages / "shared-tool").symlink_to(their_pkg)
-
         self._publish(store, ours, "src", "shared-tool")
+        return theirs, ours, packages
 
-        with pytest.raises(ValueError, match="already published by a different project"):
-            aggregate_symlinks(["src"], store, ours)
+    def test_collision_is_announced_on_stderr(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
+        store = tmp_path / "store"
+        theirs, ours, _packages = self._collide(store)
 
-        assert os.path.realpath(packages / "shared-tool") == str(their_pkg), (
-            "the other project's link must be left pointing at its own content"
+        aggregate_symlinks(["src"], store, ours)
+
+        stderr = capsys.readouterr().err
+        assert "shared-tool" in stderr, f"expected the package named on stderr, got {stderr!r}"
+        assert theirs in stderr, "expected the other project's address named"
+        assert "KANON_HOME" in stderr, "expected the remedy named"
+
+    def test_install_still_proceeds(self, tmp_path: pathlib.Path) -> None:
+        """Warning, not refusing: two projects sharing a package name must coexist."""
+        store = tmp_path / "store"
+        _theirs, ours, packages = self._collide(store)
+
+        assert aggregate_symlinks(["src"], store, ours) == {"shared-tool": "src"}
+        assert os.path.realpath(packages / "shared-tool").startswith(str(store / ".kanon-data" / "sources" / ours)), (
+            "the installing project's link should now be in place"
         )
 
-    def test_error_names_the_package_and_the_remedy(self, tmp_path: pathlib.Path) -> None:
-        """There is no prompt, so the diagnostic has to carry the way out."""
-        store = tmp_path / "store"
-        theirs, ours = "b" * 64, "a" * 64
-        their_pkg = self._publish(store, theirs, "src", "shared-tool")
-        packages = store / ".packages"
-        packages.mkdir(parents=True)
-        (packages / "shared-tool").symlink_to(their_pkg)
-        self._publish(store, ours, "src", "shared-tool")
-
-        with pytest.raises(ValueError) as excinfo:
-            aggregate_symlinks(["src"], store, ours)
-
-        message = str(excinfo.value)
-        assert "shared-tool" in message
-        assert "KANON_HOME" in message, f"expected the remedy to be named, got {message!r}"
-
-    def test_replacing_our_own_link_is_allowed(self, tmp_path: pathlib.Path) -> None:
-        """Re-installing the same project must keep working."""
+    def test_replacing_our_own_link_is_silent(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
+        """Re-installing the same project is not a collision and must not warn."""
         store = tmp_path / "store"
         ours = "a" * 64
         our_pkg = self._publish(store, ours, "src", "shared-tool")
@@ -452,10 +450,11 @@ class TestCrossProjectPackageCollision:
         packages.mkdir(parents=True)
         (packages / "shared-tool").symlink_to(our_pkg)
 
-        assert aggregate_symlinks(["src"], store, ours) == {"shared-tool": "src"}
+        aggregate_symlinks(["src"], store, ours)
 
-    def test_unrelated_package_names_coexist(self, tmp_path: pathlib.Path) -> None:
-        """Two projects sharing a store but not a package name are unaffected."""
+        assert "shared-tool" not in capsys.readouterr().err
+
+    def test_unrelated_package_names_do_not_warn(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
         store = tmp_path / "store"
         theirs, ours = "b" * 64, "a" * 64
         their_pkg = self._publish(store, theirs, "src", "their-tool")
@@ -465,4 +464,5 @@ class TestCrossProjectPackageCollision:
         self._publish(store, ours, "src", "our-tool")
 
         assert aggregate_symlinks(["src"], store, ours) == {"our-tool": "src"}
+        assert capsys.readouterr().err == ""
         assert (packages / "their-tool").is_symlink()

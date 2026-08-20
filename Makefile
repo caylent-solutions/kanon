@@ -2,12 +2,12 @@ SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := help
 
-.PHONY: check-completion-snapshots help install install-dev lint lint-check lint-no-comments lint-markdown format format-check check test test-unit test-unit-cov test-unit-vendored test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
+.PHONY: check-completion-snapshots help install install-dev lint lint-check lint-no-comments lint-markdown format format-check check test test-unit test-unit-cov test-unit-vendored test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks security-scan update-completion-snapshots
 
 # Minimum total coverage enforced by `test-unit-cov`. Overridable so the
 # threshold is not hard-coded at its only call site. It is measured over kanon's
 # own source; the vendored tree is omitted in [tool.coverage.run].
-COVERAGE_MIN ?= 90
+COVERAGE_MIN ?= 93
 
 # The vendored repo tool's tests. Roughly 6,700 of the suite's ~17,300 tests cover
 # a tree that changed in 3 of the last 184 commits, so they are their own tier and
@@ -99,9 +99,6 @@ distcheck: ## Check the built distribution
 
 publish: clean build distcheck ## Build package (publishing is automated via CI pipeline)
 
-coverage-json: ## Generate JSON coverage report
-	uv run pytest -n auto --dist loadscope -m unit --cov=kanon_cli --cov-report=json
-	@echo "Coverage report generated in coverage.json"
 
 pre-commit-check: ## Run all pre-commit hooks
 	uv run pre-commit run --all-files

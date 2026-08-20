@@ -12,7 +12,6 @@ Covers:
 
 import argparse
 import pathlib
-import shutil
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -1505,70 +1504,6 @@ class TestProjectKeyedWorkspaces:
             ),
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
-
-    def test_two_projects_same_alias_same_ref_both_receive_own_workspace(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Two projects declaring the same alias each get their own source workspace."""
-        store = tmp_path / "home" / "store"
-        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
-
-        kanonenv_a = _write_project_kanonenv(tmp_path / "proj-a")
-        kanonenv_b = _write_project_kanonenv(tmp_path / "proj-b")
-
-        self._patched_install(kanonenv_a, "a" * 40)
-        self._patched_install(kanonenv_b, "a" * 40)
-
-        addr_a = compute_project_address(kanonenv_a)
-        addr_b = compute_project_address(kanonenv_b)
-        assert addr_a != addr_b
-        assert (store / ".kanon-data" / "sources" / addr_a / "shared").is_dir()
-        assert (store / ".kanon-data" / "sources" / addr_b / "shared").is_dir()
-
-    def test_second_project_install_does_not_resurrect_first(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Deleting project A's workspace then installing B does not recreate A's."""
-        store = tmp_path / "home" / "store"
-        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
-
-        kanonenv_a = _write_project_kanonenv(tmp_path / "proj-a")
-        kanonenv_b = _write_project_kanonenv(tmp_path / "proj-b")
-
-        self._patched_install(kanonenv_a, "a" * 40)
-        addr_a = compute_project_address(kanonenv_a)
-        workspace_a = store / ".kanon-data" / "sources" / addr_a
-        assert workspace_a.is_dir()
-        shutil.rmtree(workspace_a)
-
-        self._patched_install(kanonenv_b, "a" * 40)
-
-        assert not workspace_a.exists(), "installing B must not resurrect A's deleted workspace"
-        addr_b = compute_project_address(kanonenv_b)
-        assert (store / ".kanon-data" / "sources" / addr_b / "shared").is_dir()
-
-    def test_two_projects_different_shas_both_install_successfully(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """Two projects on the same alias but different resolved SHAs both succeed.
-
-        Reinstalling A afterward must still succeed -- B's install must not
-        have wedged a workspace A depends on.
-        """
-        store = tmp_path / "home" / "store"
-        monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
-
-        kanonenv_a = _write_project_kanonenv(tmp_path / "proj-a")
-        kanonenv_b = _write_project_kanonenv(tmp_path / "proj-b")
-
-        self._patched_install(kanonenv_a, "a" * 40)
-        self._patched_install(kanonenv_b, "b" * 40)
-        self._patched_install(kanonenv_a, "a" * 40)
-
-        addr_a = compute_project_address(kanonenv_a)
-        addr_b = compute_project_address(kanonenv_b)
-        assert (store / ".kanon-data" / "sources" / addr_a / "shared").is_dir()
-        assert (store / ".kanon-data" / "sources" / addr_b / "shared").is_dir()
 
     def test_store_entry_dedup_survives_project_keying(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

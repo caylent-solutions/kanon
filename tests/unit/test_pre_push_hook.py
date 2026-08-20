@@ -102,15 +102,14 @@ def test_pre_push_hook_runs_unit_tests():
 
     Given: The pre-push hook script
     When: Its contents are inspected
-    Then: It invokes the unit test target (make test-unit, make coverage-json, or pytest -m unit)
+    Then: It invokes make test-unit-cov, which carries the coverage gate
 
     AC-FUNC-001
     """
     content = _hook_content()
-    has_unit_tests = "make test-unit" in content or "pytest -m unit" in content or "make coverage-json" in content
+    has_unit_tests = "test-unit-cov" in _executed_make_targets()
     assert has_unit_tests, (
-        "Pre-push hook must run unit tests via 'make test-unit', 'make coverage-json', or "
-        f"'pytest -m unit'. Hook content:\n{content}"
+        f"Pre-push hook must run unit tests via 'make test-unit-cov'. 'pytest -m unit'. Hook content:\n{content}"
     )
 
 
@@ -188,14 +187,11 @@ def test_pre_push_hook_fails_on_unit_test_failure():
     AC-FUNC-005
     """
     content = _hook_content()
+    executed = _executed_make_targets()
 
-    has_failure_check = (
-        ("make test-unit" in content and "exit 1" in content)
-        or ("pytest -m unit" in content and "exit 1" in content)
-        or ("make coverage-json" in content and "exit 1" in content)
-    )
-    assert has_failure_check, (
-        f"Pre-push hook must exit with non-zero status when unit tests fail. Hook content:\n{content}"
+    assert "test-unit-cov" in executed and "exit 1" in content, (
+        f"Pre-push hook must run 'make test-unit-cov' and exit non-zero when it fails. "
+        f"Executed targets: {sorted(executed)}. Hook content:\n{content}"
     )
 
 

@@ -15,6 +15,10 @@ asserted with pytest's own marker-selection semantics on the real test tree. A
 ``pytest_collection_modifyitems`` hook would have to observe items before the mark
 plugin deselects them, which depends on hook ordering between two plugins --
 exactly the kind of implicit coupling this suite has been bitten by before.
+
+Tier: functional, not unit. Each guard runs a full-tree ``pytest --collect-only``
+in a subprocess -- roughly 17,000 items, twice -- which is neither fast nor
+isolated, and the unit tier is what ``git push`` runs.
 """
 
 from __future__ import annotations
@@ -81,7 +85,7 @@ def _collected_node_ids(result: subprocess.CompletedProcess) -> list[str]:
     return [line for line in result.stdout.splitlines() if "::" in line]
 
 
-@pytest.mark.unit
+@pytest.mark.functional
 def test_every_test_carries_a_tier_marker() -> None:
     """Verify no test escapes tier selection.
 
@@ -101,7 +105,7 @@ def test_every_test_carries_a_tier_marker() -> None:
     )
 
 
-@pytest.mark.unit
+@pytest.mark.functional
 def test_no_test_carries_more_than_one_tier_marker() -> None:
     """Verify tiers stay disjoint.
 
@@ -124,7 +128,7 @@ def test_no_test_carries_more_than_one_tier_marker() -> None:
 VENDORED_TESTS_PATH = "tests/unit/repo"
 
 
-@pytest.mark.unit
+@pytest.mark.functional
 def test_ci_unit_tiers_collect_every_unit_test() -> None:
     """The two CI unit jobs together must collect every unit-marked test.
 

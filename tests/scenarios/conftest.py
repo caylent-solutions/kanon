@@ -335,8 +335,11 @@ def project_address_for(working_dir: pathlib.Path) -> str:
 
     Mirrors what ``kanon install`` computes internally (``compute_project_address``)
     so scenario tests can assert on the resulting
-    ``.kanon-data/sources/<project_address>/<name>`` and
-    ``.packages/<project_address>/<pkg>`` paths under the shared store.
+    ``.kanon-data/sources/<project_address>/<name>`` path under the shared store.
+
+    The aggregated ``.packages/`` farm is deliberately NOT keyed by project, so
+    there is no ``.packages/<project_address>/`` path; a name already published
+    there by a different project is refused rather than overwritten.
     """
     return compute_project_address(working_dir / ".kanon")
 

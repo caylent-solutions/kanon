@@ -9,6 +9,12 @@ Covers:
 - the per-test pytest-timeout deadline actually being in effect
 - the leaked-process matcher, against both a live process and a false-positive
   command line
+
+Tier: functional, not unit. These tests spawn real subprocesses and shell out to
+``ps``. ``pyproject.toml`` defines ``unit`` as "fast, isolated, no external
+dependencies" and ``functional`` as "exercise CLI via subprocess", and the unit
+tier is what ``git push`` runs -- so marking these ``unit`` made every push pay
+for process spawning and a process-table scan.
 """
 
 from __future__ import annotations
@@ -36,7 +42,16 @@ from tests.conftest import (
 
 _HOLD_SCRIPT = "import sys, time\nsys.stdout.write('up\\n')\nsys.stdout.flush()\ntime.sleep(600)\n"
 
-_WIDTH_PADDING = "pad" * 80
+_PROBE_TIMEOUT_ENV = "KANON_TEST_WEDGE_PROBE_TIMEOUT"
+_PROBE_TIMEOUT_DEFAULT = "1"
+
+_PROCPS_NON_TTY_WIDTH = 80
+"""Column width procps truncates a non-tty command listing to.
+
+The padding below has to cross it, or the probe cannot reproduce the truncation
+this suite exists to catch."""
+
+_WIDTH_PADDING = "pad" * _PROCPS_NON_TTY_WIDTH
 
 
 def _spawn_leak_probe(tmp_path: pathlib.Path) -> subprocess.Popen:
@@ -63,7 +78,7 @@ def _spawn_leak_probe(tmp_path: pathlib.Path) -> subprocess.Popen:
     return child
 
 
-@pytest.mark.unit
+@pytest.mark.functional
 class TestSubprocessTimeout:
     def test_uses_env_value_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """An operator-supplied deadline overrides the suite default."""
@@ -97,7 +112,7 @@ class TestSubprocessTimeout:
         assert _positive_int_env("KANON_TEST_CONTAINMENT_PROBE", "99") == 99
 
 
-@pytest.mark.unit
+@pytest.mark.functional
 class TestSubprocessDeadlineIsEnforced:
     def test_a_wedged_child_is_killed_and_reported(self, tmp_path: pathlib.Path) -> None:
         """subprocess.run with the suite's timeout kills a hung child instead of blocking."""
@@ -109,12 +124,12 @@ class TestSubprocessDeadlineIsEnforced:
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=1,
+                timeout=_positive_int_env(_PROBE_TIMEOUT_ENV, _PROBE_TIMEOUT_DEFAULT),
             )
         assert str(script) in " ".join(exc_info.value.cmd)
 
 
-@pytest.mark.unit
+@pytest.mark.functional
 class TestPerTestDeadline:
     def test_timeout_plugin_is_loaded(self, request: pytest.FixtureRequest) -> None:
         """Without pytest-timeout there is no backstop for a hang outside a helper."""
@@ -132,7 +147,7 @@ class TestPerTestDeadline:
         )
 
 
-@pytest.mark.unit
+@pytest.mark.functional
 class TestLeakedProcessMatching:
     @pytest.mark.parametrize(
         "command",
@@ -164,7 +179,7 @@ class TestLeakedProcessMatching:
         assert not _is_kanon_command(command)
 
 
-@pytest.mark.unit
+@pytest.mark.functional
 class TestLeakedProcessDetection:
     def test_finds_a_live_process_in_this_process_group(self, tmp_path: pathlib.Path) -> None:
         """A surviving kanon-shaped child is found by a scan of our own process group.
@@ -203,7 +218,7 @@ class TestLeakedProcessDetection:
         )
 
 
-@pytest.mark.unit
+@pytest.mark.functional
 class TestLeakScanFailsClosed:
     def test_raises_when_the_listing_does_not_contain_this_process(self) -> None:
         """An unparseable ps listing raises instead of reporting a clean session.
@@ -232,7 +247,7 @@ class TestLeakScanFailsClosed:
             assert _leaked_kanon_processes(os.getpgrp()) == []
 
 
-@pytest.mark.unit
+@pytest.mark.functional
 class TestLeakScanOwnership:
     """The leak scan judges only process groups this suite created.
 
@@ -298,7 +313,7 @@ class TestLeakScanOwnership:
             child.wait()
 
 
-@pytest.mark.unit
+@pytest.mark.functional
 class TestLeakExitCode:
     """The leak status must not collide with pytest's own exit codes."""
 

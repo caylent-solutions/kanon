@@ -1276,7 +1276,7 @@ def resolve_kanon_lock_root(kanon_file: pathlib.Path) -> pathlib.Path:
     operator deliberately points KANON_HOME there.
     """
     store_base = resolve_workspace_base_dir()
-    address = hashlib.sha256(str(kanon_file.resolve()).encode("utf-8")).hexdigest()
+    address = compute_project_address(kanon_file)
     return store_base / KANON_HOME_STORE_LOCKS_SUBDIR / address
 
 
@@ -1309,6 +1309,56 @@ def compute_project_address(kanon_file: pathlib.Path) -> str:
         A 64-character lowercase hex string.
     """
     return hashlib.sha256(str(kanon_file.resolve()).encode("utf-8")).hexdigest()
+
+
+KANON_DATA_SUBDIR = ".kanon-data"
+"""Store subdirectory holding per-project workspaces and the store-global lock."""
+
+SOURCES_SUBDIR = "sources"
+"""Directory under :data:`KANON_DATA_SUBDIR` holding one entry per project address."""
+
+
+def sources_root_dir(base_dir: pathlib.Path) -> pathlib.Path:
+    """Return the directory holding every project's keyed source workspaces.
+
+    Args:
+        base_dir: The resolved store base directory.
+
+    Returns:
+        ``<store>/.kanon-data/sources``.
+    """
+    return base_dir / KANON_DATA_SUBDIR / SOURCES_SUBDIR
+
+
+def project_sources_dir(base_dir: pathlib.Path, project_address: str) -> pathlib.Path:
+    """Return one project's source-workspace root.
+
+    Composed in one place rather than at each call site: the path is the whole
+    point of the per-project keying, and four separate literals agreeing by
+    coincidence is how a future call site quietly gets it wrong.
+
+    Args:
+        base_dir: The resolved store base directory.
+        project_address: The consumer project's address.
+
+    Returns:
+        ``<store>/.kanon-data/sources/<project_address>``.
+    """
+    return sources_root_dir(base_dir) / project_address
+
+
+def source_workspace_dir(base_dir: pathlib.Path, project_address: str, source_name: str) -> pathlib.Path:
+    """Return one source's workspace within one project.
+
+    Args:
+        base_dir: The resolved store base directory.
+        project_address: The consumer project's address.
+        source_name: The source alias.
+
+    Returns:
+        ``<store>/.kanon-data/sources/<project_address>/<source_name>``.
+    """
+    return project_sources_dir(base_dir, project_address) / source_name
 
 
 def store_entries_dir(store_base: pathlib.Path) -> pathlib.Path:
@@ -1550,7 +1600,7 @@ def create_source_dirs(
     """
     result: dict[str, pathlib.Path] = {}
     for name in source_names:
-        source_dir = base_dir / ".kanon-data" / "sources" / project_address / name
+        source_dir = source_workspace_dir(base_dir, project_address, name)
         try:
             source_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
@@ -2055,18 +2105,23 @@ def run_repo_sync(source_dir: pathlib.Path) -> None:
     )
 
 
-def _assert_package_link_not_owned_elsewhere(
+def _warn_if_package_link_owned_elsewhere(
     link_path: pathlib.Path,
     base_dir: pathlib.Path,
     project_address: str,
     pkg_name: str,
 ) -> None:
-    """Refuse to replace an aggregated package link another project published.
+    """Warn before replacing an aggregated package link another project published.
 
     ``.packages/`` is shared by every project using this ``KANON_HOME`` and keyed
     only by package name, so two projects that ship a package of the same name
-    resolve to whichever installed last. Overwriting silently would repoint the
-    other project's tooling at this project's content while reporting success.
+    resolve to whichever installed last. Replacing the link silently would repoint
+    the other project's tooling at this project's content while reporting success.
+
+    This warns rather than refusing. Refusing would make two projects sharing a
+    package name unable to coexist at all, which is a restriction kanon has never
+    had; the collision needs to be *visible*, not fatal. Full isolation of the
+    aggregation directory is the real fix and is tracked separately.
 
     Ownership is read off the existing link's target, which is the only place the
     project address survives.
@@ -2076,9 +2131,6 @@ def _assert_package_link_not_owned_elsewhere(
         base_dir: The resolved store base directory.
         project_address: The installing project's address.
         pkg_name: The package name, for the diagnostic.
-
-    Raises:
-        ValueError: When the existing link belongs to a different project.
     """
     if not link_path.is_symlink() and not link_path.exists():
         return
@@ -2086,19 +2138,19 @@ def _assert_package_link_not_owned_elsewhere(
         target = os.path.realpath(link_path)
     except OSError:
         return
-    ours = str(base_dir / ".kanon-data" / "sources" / project_address) + os.sep
+    ours = str(project_sources_dir(base_dir, project_address)) + os.sep
     if target.startswith(ours):
         return
-    sources_root = str(base_dir / ".kanon-data" / "sources") + os.sep
+    sources_root = str(sources_root_dir(base_dir)) + os.sep
     if not target.startswith(sources_root):
         return
     other_address = target[len(sources_root) :].split(os.sep, 1)[0]
-    raise ValueError(
-        f"Package collision for '{pkg_name}' in the shared aggregation directory "
-        f"{link_path.parent}: it is already published by a different project "
-        f"(address {other_address}). Installing would repoint that project's "
-        f"'.packages/{pkg_name}' at this project's content. Rename the package, or "
-        f"give the two projects separate KANON_HOME values."
+    print(
+        f"WARN: '{pkg_name}' in the shared aggregation directory {link_path.parent} was "
+        f"published by a different project (address {other_address}); repointing it at this "
+        f"project's content. That project's '.packages/{pkg_name}' now resolves here. "
+        f"Rename the package, or give the two projects separate KANON_HOME values.",
+        file=sys.stderr,
     )
 
 
@@ -2119,12 +2171,12 @@ def aggregate_symlinks(
     directory downstream tooling references, so its path is part of the contract.
 
     That leaves one shared surface. If another project on this machine already
-    published a link under the same package name, silently replacing it would
+    published a link under the same package name, replacing it silently would
     repoint that project's tooling at this project's content -- the same
-    silent-wrong-content class the keyed workspace was introduced to close. A link
-    owned by another project is therefore refused rather than overwritten, so the
-    collision is loud and the operator can rename the package or separate the
-    ``KANON_HOME``. Fully isolating the farm is tracked separately (issue #115).
+    silent-wrong-content class the keyed workspace was introduced to close. The
+    replacement is therefore announced on stderr naming both projects, so the
+    collision is visible without making two projects sharing a package name unable
+    to coexist. Fully isolating the farm is tracked separately (issue #115).
 
     Args:
         source_names: Ordered list of source names.
@@ -2138,8 +2190,7 @@ def aggregate_symlinks(
         Dict mapping package name to source name.
 
     Raises:
-        ValueError: If two sources produce the same package name, or if a package
-            name is already published in the shared farm by a different project.
+        ValueError: If two sources produce the same package name.
     """
     packages_dir = base_dir / ".packages"
     packages_dir.mkdir(exist_ok=True)
@@ -2147,7 +2198,7 @@ def aggregate_symlinks(
     package_owners: dict[str, str] = {}
 
     for name in source_names:
-        source_packages = base_dir / ".kanon-data" / "sources" / project_address / name / ".packages"
+        source_packages = source_workspace_dir(base_dir, project_address, name) / ".packages"
         if not source_packages.exists():
             continue
         for pkg in source_packages.iterdir():
@@ -2158,7 +2209,7 @@ def aggregate_symlinks(
                 )
             package_owners[pkg_name] = name
             link_path = packages_dir / pkg_name
-            _assert_package_link_not_owned_elsewhere(link_path, base_dir, project_address, pkg_name)
+            _warn_if_package_link_owned_elsewhere(link_path, base_dir, project_address, pkg_name)
             if link_path.exists() or link_path.is_symlink():
                 link_path.unlink()
             create_dirsymlink(link_path, pkg.resolve())

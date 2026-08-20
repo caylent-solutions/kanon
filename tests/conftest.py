@@ -46,7 +46,8 @@ not tell "processes leaked" from "the command line was wrong".
 _PROCESS_KILL_GRACE_ENV = "KANON_TEST_PROCESS_KILL_GRACE"
 _PROCESS_KILL_GRACE_DEFAULT = "5"
 _PROCESS_KILL_POLL_SECONDS = 0.05
-_PROCESS_SCAN_TIMEOUT_SECONDS = 30.0
+_PROCESS_SCAN_TIMEOUT_ENV = "KANON_TEST_PROCESS_SCAN_TIMEOUT"
+_PROCESS_SCAN_TIMEOUT_DEFAULT = "30"
 _PS_SCAN_COMMAND = ("ps", "-ww", "-eo", "pid=,pgid=,command=")
 
 
@@ -227,7 +228,7 @@ def _leaked_kanon_processes(pgid: int) -> list[tuple[int, str]]:
             capture_output=True,
             text=True,
             check=True,
-            timeout=_PROCESS_SCAN_TIMEOUT_SECONDS,
+            timeout=_positive_int_env(_PROCESS_SCAN_TIMEOUT_ENV, _PROCESS_SCAN_TIMEOUT_DEFAULT),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(f"Unable to scan for leaked kanon processes: {exc}") from exc

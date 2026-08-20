@@ -659,7 +659,7 @@ KANON_CATALOG_AUDIT_STRICT_SUMMARY_TEMPLATE = "strict mode: {count} warning(s) t
 KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE = (
     "Legacy catalog/ directory detected; this directory is unused by "
     "kanon >= {version} and should be deleted; "
-    "see docs/migration-to-add.md"
+    "see docs/archive/upgrading-from-2x.md"
 )
 
 

@@ -574,5 +574,5 @@ kanon add <entry> --catalog-source <git-url>@<ref>   # add an entry to .kanon
 kanon install                                    # fetch added entries
 ```
 
-See [docs/migration-to-add.md](migration-to-add.md)
+See [docs/archive/upgrading-from-2x.md](archive/upgrading-from-2x.md)
 for the full migration guide.

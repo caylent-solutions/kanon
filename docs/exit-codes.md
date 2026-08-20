@@ -40,7 +40,7 @@ required positional is missing, an unknown flag is supplied, a flag
 value fails type conversion, or a removed/unknown subcommand (such as
 `kanon bootstrap` or `kanon list`) is named. Correct the invocation and
 retry. For removed commands, see
-[docs/migration-to-add.md](migration-to-add.md).
+[docs/archive/upgrading-from-2x.md](archive/upgrading-from-2x.md).
 
 ## Per-subcommand reference
 
@@ -95,7 +95,7 @@ filesystem and manifest repo are never read.
 catalog-discovery and add functionality is replaced by `kanon search` +
 `kanon add` + `kanon install`.
 
-See [docs/migration-to-add.md](migration-to-add.md)
+See [docs/archive/upgrading-from-2x.md](archive/upgrading-from-2x.md)
 for the full migration guide.
 
 ## Using this table in CI
@@ -110,7 +110,7 @@ so a script that calls either fails immediately with the argparse
 If your CI pipeline surfaces this error, update the script to use the
 replacement command (`kanon add` / `kanon search`). Follow the migration
 guide at
-[docs/migration-to-add.md](migration-to-add.md).
+[docs/archive/upgrading-from-2x.md](archive/upgrading-from-2x.md).
 
 ### Distinguish argparse errors from runtime errors
 
@@ -181,5 +181,5 @@ to stderr.
 - [docs/cli/validate.md](cli/validate.md) -- `kanon validate`
 - [docs/lockfile.md](lockfile.md) -- lockfile format consumed by
   `kanon install`, `kanon doctor`, `kanon outdated`, `kanon why`
-- [docs/migration-to-add.md](migration-to-add.md)
+- [docs/archive/upgrading-from-2x.md](archive/upgrading-from-2x.md)
   -- full migration guide for `kanon bootstrap` users

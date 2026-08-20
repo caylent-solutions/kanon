@@ -90,6 +90,17 @@ Stat probes outside their error handler let an `OSError` escape as a traceback.
 
 ### Changed
 
+* Major-version migration notes moved to `docs/archive/`
+
+`docs/migration-to-add.md` and `docs/migrating-existing-kanon-files.md` cover
+upgrading from 2.x and are not needed on a current installation. They now live
+under `docs/archive/` (the first renamed to `upgrading-from-2x.md`) and are no
+longer linked from the main documentation. Upgrading between 3.x releases
+requires no operator action: `kanon doctor` reports anything left behind by an
+older store layout and `kanon clean` reclaims it.
+
+The `kanon catalog audit` legacy-directory warning now cites the archived path.
+
 * `kanon clean` is now scoped to the project you run it in
 
 It removed the shared store's entire `.packages/` and `.kanon-data/` trees plus

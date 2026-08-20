@@ -200,7 +200,7 @@ persistent installation and advanced options, see
 | `kanon repo` | Low-level manifest-driven repo sync subsystem | [docs/repo/README.md](docs/repo/README.md) |
 | `kanon marketplace` | Manage the per-dependency Claude marketplace install flag in `.kanon` (`enable` / `disable` / `status`) | [docs/configuration.md](docs/configuration.md) |
 | `kanon completion` | Emit a shell completion script for bash, zsh, or powershell | [docs/shell-completion.md](docs/shell-completion.md) |
-| `kanon bootstrap` | **removed in 3.0.0** -- not a registered subcommand (argparse `invalid choice`, exit 2); use `kanon search` / `kanon add` instead | [docs/migration-to-add.md](docs/migration-to-add.md) |
+| `kanon bootstrap` | **removed in 3.0.0** -- not a registered subcommand (argparse `invalid choice`, exit 2); use `kanon search` / `kanon add` instead | [docs/archive/upgrading-from-2x.md](docs/archive/upgrading-from-2x.md) |
 
 ---
 
@@ -224,7 +224,7 @@ catalog-discovery and project-scaffolding responsibilities have been
 replaced by `kanon search` (discover and inspect packages) and `kanon add`
 (add a pinned dependency to `.kanon`). If your workflow currently uses
 `kanon bootstrap <entry>`, the
-[docs/migration-to-add.md](docs/migration-to-add.md)
+[docs/archive/upgrading-from-2x.md](docs/archive/upgrading-from-2x.md)
 guide walks through the equivalent `kanon search` + `kanon add` + `kanon
 install` steps and explains the lockfile model that replaces hand-editing
 `.kanon`.
@@ -734,7 +734,7 @@ so `kanon bootstrap` (with any args or flags) exits non-zero with an argparse
 catalog model changed: a manifest repo no longer has a separate
 `catalog/<name>/` location and the kanon wheel no longer bundles a catalog.
 Use `kanon search` to discover entries and `kanon add` to add them. See
-[docs/migration-to-add.md](docs/migration-to-add.md).
+[docs/archive/upgrading-from-2x.md](docs/archive/upgrading-from-2x.md).
 
 ---
 

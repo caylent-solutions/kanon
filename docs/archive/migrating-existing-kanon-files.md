@@ -11,7 +11,7 @@ was created before the `kanon search`, `kanon add`, `kanon remove`, and lockfile
 features existed. You want to know what changes with a fresh `kanon install`, and
 how to bring the file fully into compliance with the current standard.
 
-If you are starting from scratch, see [list-and-add.md](list-and-add.md) instead.
+If you are starting from scratch, see [list-and-add.md](../list-and-add.md) instead.
 
 ## First install: lockfile generation
 
@@ -56,7 +56,7 @@ run:
 kanon install --refresh-lock
 ```
 
-See [lockfile.md](lockfile.md) for the full lockfile format, conflict-resolution
+See [lockfile.md](../lockfile.md) for the full lockfile format, conflict-resolution
 rules, and refresh options.
 
 ## Source-name compliance
@@ -106,7 +106,7 @@ WARNING: source name 'Package-A' in .kanon does not match the normalized form
     kanon remove 'Package-A' && kanon add 'Package-A@<your-spec>'
   Or hand-edit the KANON_SOURCE_Package-A_* keys to use the prefix
   KANON_SOURCE_package_a_*.
-  See docs/migrating-existing-kanon-files.md#source-name-compliance.
+  See docs/archive/migrating-existing-kanon-files.md#source-name-compliance.
 ```
 
 Install continues after the warning. The warning is printed to stderr so it does
@@ -124,7 +124,7 @@ kanon add 'Package-A@<your-spec>'
 ```
 
 After `kanon add`, the `.kanon` file contains `KANON_SOURCE_package_a_*` keys
-with the correctly normalized alias. See [list-and-add.md](list-and-add.md) for
+with the correctly normalized alias. See [list-and-add.md](../list-and-add.md) for
 the full `kanon remove` and `kanon add` reference.
 
 ### Remediation path B -- hand-edit KANON_SOURCE_* keys
@@ -256,7 +256,7 @@ To migrate:
 
    Or add the block by hand using the `KANON_SOURCE_<name>_*` format shown above.
 
-See [troubleshooting.md](troubleshooting.md) for the full entry on this warning.
+See [troubleshooting.md](../troubleshooting.md) for the full entry on this warning.
 
 ### Mixed line endings
 
@@ -304,10 +304,10 @@ Verify with `cat -A .kanon | tail -1` -- the last line should end with `$`, not
 
 ## See also
 
-- [list-and-add.md](list-and-add.md) -- full reference for `kanon search`,
+- [list-and-add.md](../list-and-add.md) -- full reference for `kanon search`,
   `kanon add`, and `kanon remove`; every flag, env var, and error scenario.
-- [lockfile.md](lockfile.md) -- `.kanon.lock` format, refresh flow, conflict
+- [lockfile.md](../lockfile.md) -- `.kanon.lock` format, refresh flow, conflict
   resolution, and schema migration policy.
-- [troubleshooting.md](troubleshooting.md) -- top errors with reproducer and fix,
+- [troubleshooting.md](../troubleshooting.md) -- top errors with reproducer and fix,
   including the `REPO_URL`/`REPO_REV` legacy-variable warning and partial-clone
   recovery.

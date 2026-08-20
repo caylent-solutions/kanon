@@ -44,7 +44,7 @@ fails with an argparse "invalid choice" error and a non-zero exit code.
 Use `kanon search` to search a catalog, `kanon add <entry>
 --catalog-source <git-url>@<ref>` to add an entry to `.kanon`, and
 `kanon install` to fetch it. See
-[docs/migration-to-add.md](migration-to-add.md) for
+[docs/archive/upgrading-from-2x.md](archive/upgrading-from-2x.md) for
 the full migration guide.
 
 ## Install Lifecycle

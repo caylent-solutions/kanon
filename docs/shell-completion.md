@@ -175,7 +175,7 @@ command performs an inline network fetch bounded by
 
 Used for completing the `<name>[@<spec>]` positional argument of
 `kanon add`. (`kanon bootstrap` was removed in 3.0.0 with no shim; see
-[docs/migration-to-add.md](migration-to-add.md).)
+[docs/archive/upgrading-from-2x.md](archive/upgrading-from-2x.md).)
 
 ### `__complete_source_names_in_kanon`
 

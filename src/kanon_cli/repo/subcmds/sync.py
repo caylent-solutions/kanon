@@ -74,6 +74,7 @@ from ..progress import elapsed_str
 from ..progress import jobs_str
 from ..progress import Progress
 from ..project import DeleteWorktreeError
+from ..project import _is_within_permitted_abs_roots
 from ..project import Project
 from ..project import RemoteSpec
 from ..project import SyncBuffer
@@ -1481,10 +1482,22 @@ later is required to fix a server side protocol bug.
             for need_remove_file in need_remove_files:
                 # Try to remove the updated copyfile or linkfile.
                 # So, if the file is not exist, nothing need to do.
-                platform_utils.remove(
-                    os.path.join(self.client.topdir, need_remove_file),
-                    missing_ok=True,
-                )
+                #
+                # os.path.join returns an absolute second argument unchanged, so a
+                # dest that was absolute is deleted at that absolute path -- inside
+                # the consumer's own project, not the repo client. Removal is
+                # confined to the same permitted roots that governed writing it;
+                # dropping a dest from a manifest must not reach further than
+                # creating it could.
+                removal_target = os.path.join(self.client.topdir, need_remove_file)
+                if os.path.isabs(need_remove_file) and not _is_within_permitted_abs_roots(removal_target):
+                    logger.warning(
+                        "warning: not removing %s: it resolves outside every permitted root, "
+                        "so it is not a path this sync is allowed to have written",
+                        removal_target,
+                    )
+                    continue
+                platform_utils.remove(removal_target, missing_ok=True)
 
         # Create copy-link-files.json, save dest path of "copyfile" and
         # "linkfile".

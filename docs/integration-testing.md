@@ -877,6 +877,26 @@ cd "${MP01_A}" && kanon clean .kanon
 rm -rf "${MP01_A}" "${MP01_B}"
 ```
 
+### MP-02: Install over a pre-keying workspace
+
+An operator upgrading from a kanon that stored workspaces at
+`sources/<alias>/` has one of those directories on disk. It is never read again.
+Install must ignore it, and must leave it in place -- `kanon doctor` reports it so
+the operator decides when to reclaim the space.
+
+**Pass criteria:**
+
+- `kanon install` exits 0 with the alias-named directory present
+- The content delivered is the project's own, from its keyed workspace
+- The alias-named directory and its contents are untouched
+
+### MP-03: Re-install after an interrupted install
+
+**Pass criteria:**
+
+- With part of a synced workspace removed, `kanon install` exits 0
+- The removed content is restored
+
 ---
 
 ## 7. Category 6: Collision Detection (2 tests)
@@ -996,6 +1016,25 @@ rm -rf "${LF01_DIR}"
 ---
 
 ## 9. Category 8: Error Cases (9 tests)
+
+### LF-02: copyfile with an absolute dest delivers a real file into the project
+
+`<copyfile>` writes a real, editable file where `<linkfile>` creates a symlink.
+This is how a manifest delivers content that cannot be a symlink -- a CI workflow,
+for instance -- into the consuming project rather than into the repo client
+checkout.
+
+The destination is confined: it must resolve under the consumer project root, the
+resolved `CLAUDE_MARKETPLACES_DIR`, or a root added with `--allow-abs-root` /
+`KANON_ALLOWED_ABS_ROOTS`.
+
+**Pass criteria:**
+
+- `kanon install` exits 0
+- The declared absolute destination exists inside the consumer project
+- It is a regular file, not a symlink, and its content matches the source
+- A destination outside every permitted root aborts the install, naming the
+  destination and how to widen the boundary
 
 ### EC-01: Missing .kanon file
 

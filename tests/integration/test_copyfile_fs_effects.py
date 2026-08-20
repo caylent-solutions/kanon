@@ -10,6 +10,9 @@ AC-FUNC-001: copyfile produces an actual filesystem copy (bytes on disk).
 AC-CHANNEL-001: no stdout leakage on success paths.
 """
 
+import contextlib
+import io
+import logging
 import os
 import pathlib
 import stat
@@ -17,6 +20,7 @@ import stat
 import pytest
 
 from kanon_cli.repo.error import ManifestInvalidPathError
+from kanon_cli.repo import project as project_module
 from kanon_cli.repo.project import _CopyFile
 
 
@@ -825,3 +829,82 @@ def test_copyfile_absolute_dest_symlink_inside_permitted_root_is_still_rejected(
     assert not (real_dir / "out.txt").exists(), (
         "Expected no write through a symlinked component even inside the permitted root."
     )
+
+
+@contextlib.contextmanager
+def _captured_repo_warnings():
+    """Capture what the vendored tree's logger emits.
+
+    ``RepoLogger`` is constructed directly rather than through
+    ``logging.getLogger``, so it sits outside the logging hierarchy and its
+    ``StreamHandler`` holds the ``sys.stderr`` object from import time. Neither
+    ``capsys`` nor ``caplog`` sees it. Attaching a handler to the logger itself
+    tests the message the code actually emits, without depending on how pytest
+    happens to be capturing.
+
+    Yields:
+        A buffer holding everything the logger emitted inside the block.
+    """
+    buffer = io.StringIO()
+    handler = logging.StreamHandler(buffer)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    project_module.logger.addHandler(handler)
+    try:
+        yield buffer
+    finally:
+        project_module.logger.removeHandler(handler)
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_overwrite_warns(tmp_path: pathlib.Path, permit_abs_roots) -> None:
+    """Destroying an existing file at an absolute dest must not be silent.
+
+    An absolute dest resolves into the consumer's own project, so a file already
+    there may be theirs rather than repo-managed. A copy is irreversible where a
+    symlink replacement is not, yet `_LinkFile` warned and `_CopyFile` did not --
+    the destructive operation was the quiet one.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    permit_abs_roots(project_root)
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+    (worktree / "payload.txt").write_text("from the manifest\n", encoding="utf-8")
+
+    dest = project_root / "existing.txt"
+    dest.write_text("the operator's own content\n", encoding="utf-8")
+
+    cf = _make_copyfile(worktree, "payload.txt", topdir, str(dest))
+    with _captured_repo_warnings() as emitted:
+        cf._Copy()
+
+    warning = emitted.getvalue()
+    assert dest.read_text(encoding="utf-8") == "from the manifest\n"
+    assert "Overwriting existing file" in warning, (
+        f"expected a warning before destroying the operator's file; got {warning!r}"
+    )
+    assert str(dest) in warning, "the warning must name the file that was destroyed"
+
+
+@pytest.mark.integration
+def test_copyfile_relative_dest_overwrite_is_quiet(tmp_path: pathlib.Path) -> None:
+    """A relative dest is repo-managed, so replacing it is routine, not notable.
+
+    Warning there would make every ordinary sync noisy and train operators to
+    ignore the warning that matters.
+    """
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+    (worktree / "payload.txt").write_text("from the manifest\n", encoding="utf-8")
+    (topdir / "managed.txt").write_text("previous sync\n", encoding="utf-8")
+
+    cf = _make_copyfile(worktree, "payload.txt", topdir, "managed.txt")
+    with _captured_repo_warnings() as emitted:
+        cf._Copy()
+
+    assert "Overwriting existing file" not in emitted.getvalue()

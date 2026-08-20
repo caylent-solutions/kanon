@@ -12,6 +12,8 @@ from unittest import mock
 
 import pytest
 
+from kanon_cli.repo.project import _is_within_permitted_abs_roots
+
 from kanon_cli.repo import command
 from kanon_cli.repo.error import GitError
 from kanon_cli.repo.error import RepoExitError
@@ -1800,3 +1802,63 @@ class TestLocalSyncStateEdgeCases:
 
         state_file = repodir / ".repo_localsyncstate.json"
         assert not state_file.exists()
+
+
+@pytest.mark.unit
+class TestAbsoluteDestRemovalBoundary:
+    """Dropping a dest from a manifest must not reach further than writing it could.
+
+    `UpdateCopyLinkfileList` removes every dest a previous sync recorded that the
+    new manifest no longer declares, via `os.path.join(topdir, dest)`. `os.path.join`
+    returns an absolute second argument unchanged, so once absolute dests became
+    legal, a catalog author could delete a file inside the consumer's own project
+    by dropping it from the manifest.
+
+    Removal is confined to the same permitted roots that governed writing.
+    """
+
+    def test_a_dest_inside_a_permitted_root_is_removable(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        monkeypatch.setenv("KANON_PERMITTED_ABS_ROOTS", str(project_root))
+
+        assert _is_within_permitted_abs_roots(str(project_root / ".github" / "ci.yml"))
+
+    @pytest.mark.parametrize(
+        "target",
+        ["/etc/cron.d/x", "/home/victim/.ssh/authorized_keys"],
+        ids=["system-path", "home-path"],
+    )
+    def test_a_dest_outside_every_root_is_not_removable(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, target: str
+    ) -> None:
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        monkeypatch.setenv("KANON_PERMITTED_ABS_ROOTS", str(project_root))
+
+        assert not _is_within_permitted_abs_roots(target), (
+            f"{target} is outside every permitted root, so dropping it from a manifest must not delete it"
+        )
+
+    def test_removal_fails_closed_when_no_root_is_configured(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Unconfigured means refuse, not allow -- the same default as writing."""
+        monkeypatch.delenv("KANON_PERMITTED_ABS_ROOTS", raising=False)
+
+        assert not _is_within_permitted_abs_roots(str(tmp_path / "anything.txt"))
+
+    def test_a_symlinked_component_cannot_redirect_a_removal(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Containment resolves the parent, so a link out of the root is refused."""
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (project_root / "alias").symlink_to(outside)
+        monkeypatch.setenv("KANON_PERMITTED_ABS_ROOTS", str(project_root))
+
+        assert not _is_within_permitted_abs_roots(str(project_root / "alias" / "victim.txt"))

@@ -371,6 +371,41 @@ flag reference see [docs/list-and-add.md](list-and-add.md).
 
 ---
 
+## kanon install -- absolute destination boundary
+
+A `<linkfile>` or `<copyfile>` may declare an absolute `dest`, and the manifest
+declaring it is fetched from a remote repository. `kanon install` therefore
+confines an absolute destination to a permitted root rather than writing wherever
+the manifest asks.
+
+Permitted roots, highest precedence first:
+
+1. `--allow-abs-root <path>`, a repeatable global flag. When given,
+   `KANON_ALLOWED_ABS_ROOTS` is ignored for that invocation.
+2. `KANON_ALLOWED_ABS_ROOTS`, path-separator-delimited absolute paths.
+3. The consumer project root and the resolved `CLAUDE_MARKETPLACES_DIR`. These
+   are unconditional and cannot be removed, so the setting only ever widens the
+   boundary -- it can never lock an operator out of their own project.
+
+Every component of the destination is also checked, so a symlinked directory
+cannot redirect the write to somewhere the boundary would otherwise refuse.
+
+A destination outside every permitted root aborts the install non-interactively,
+naming the destination, the roots, and both ways to widen them:
+
+```text
+ERROR: source 'dev-lint' declares <copyfile dest="/etc/cron.d/x">, which resolves
+       outside every permitted root:
+         /home/you/myproject                    (project root)
+         /home/you/.claude-marketplaces         (CLAUDE_MARKETPLACES_DIR)
+       Widen with --allow-abs-root <path> or KANON_ALLOWED_ABS_ROOTS=<path>[:<path>].
+```
+
+Widening the boundary grants a manifest write access to that path, so treat
+`--allow-abs-root` as you would any other grant. See
+[docs/security-model.md](security-model.md) and
+[docs/configuration.md](configuration.md#absolute-manifest-destinations).
+
 ## kanon install -- refresh-lock-source exact-pin contract
 
 `kanon install --refresh-lock-source <name>` re-resolves exactly one

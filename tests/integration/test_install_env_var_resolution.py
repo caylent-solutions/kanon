@@ -30,7 +30,12 @@ from kanon_cli.core.manifest_vars import (
 
 
 from kanon_cli.constants import KANON_ALLOW_INSECURE_REMOTES
-from kanon_cli.core.install import UnresolvedManifestVarError, compute_project_address, install
+from kanon_cli.core.install import (
+    _RefResolution,
+    UnresolvedManifestVarError,
+    compute_project_address,
+    install,
+)
 
 
 _GIT_USER_NAME = "Env Var Install Test"
@@ -506,3 +511,70 @@ class TestFunctionalElementCoverage:
             "</manifest>",
         )
         assert "SUPFETCH" in detected
+
+
+@pytest.mark.integration
+class TestPlainReinstallReResolves:
+    """A changed variable takes effect on a plain `kanon install`.
+
+    The `.repo/manifests` reset moved out of the `--refresh-lock` branch to run
+    before *every* `repo init`. That is the entire justification for the move: a
+    keyed workspace belongs to one project, so resetting is always safe, and it
+    lets envsubst re-resolve when a variable changed since the last install.
+
+    Nothing asserted it. Moving the call back inside `if _is_reresolve:` would
+    have broken no test, so the behaviour this branch introduced was unprotected.
+
+    The shared autouse mock returns a placeholder SHA. The second install pins it
+    from the lockfile and hands it to a real `repo init`, which cannot find it, so
+    this test overrides the mock with the bare repo's actual HEAD -- keeping every
+    other part of the install real, which is the point.
+    """
+
+    def test_changed_variable_re_resolves_without_refresh_lock(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        _no_network_sync,
+    ) -> None:
+        monkeypatch.delenv("GITBASE", raising=False)
+        monkeypatch.delenv("KITROOT", raising=False)
+        monkeypatch.setenv(KANON_ALLOW_INSECURE_REMOTES, "1")
+
+        repos = tmp_path / "repos"
+        repos.mkdir()
+        bare = _make_manifest_bare_repo(repos, "linkvar", _LINKFILE_VAR_MANIFEST)
+
+        real_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=str(bare), capture_output=True, text=True, check=True
+        ).stdout.strip()
+        monkeypatch.setattr(
+            "kanon_cli.core.install._resolve_ref_to_sha",
+            lambda *args, **kwargs: _RefResolution(sha=real_head, resolved_ref="refs/heads/main"),
+        )
+
+        first_root = tmp_path / "first-root"
+        second_root = tmp_path / "second-root"
+        for root in (first_root, second_root):
+            root.mkdir()
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanonenv = workspace / ".kanon"
+        lock = workspace / ".kanon.lock"
+
+        kanonenv.write_text(_block("linkvar", bare, env_lines=f"KANON_SOURCE_linkvar_KITROOT={first_root}\n"))
+        install(kanonenv.resolve(), lock_file_path=lock)
+        assert f'dest="{first_root}/.claude/rules"' in _substituted_manifest_path(kanonenv, "linkvar").read_text(
+            encoding="utf-8"
+        )
+
+        kanonenv.write_text(_block("linkvar", bare, env_lines=f"KANON_SOURCE_linkvar_KITROOT={second_root}\n"))
+        install(kanonenv.resolve(), lock_file_path=lock)
+
+        substituted = _substituted_manifest_path(kanonenv, "linkvar").read_text(encoding="utf-8")
+        assert f'dest="{second_root}/.claude/rules"' in substituted, (
+            "a plain 'kanon install' did not re-resolve the changed variable; the manifests "
+            f"reset must run before every repo init, not only under --refresh-lock. Got: {substituted!r}"
+        )
+        assert str(first_root) not in substituted, "the previous substitution survived the re-install"

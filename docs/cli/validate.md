@@ -87,6 +87,14 @@ manifest correctness.
   (`[[sources.content_pins]]`), so a branch revision does not pin a moving
   target.
 
+`kanon validate marketplace` checks the *declared* dest as an author-side gate.
+The install-time boundary is separate and stricter: it resolves the destination
+after variable expansion and confines it to the permitted roots, which
+`--allow-abs-root` and `KANON_ALLOWED_ABS_ROOTS` control. A catalog entry that
+passes this command can still be refused at install time if the consumer's roots
+do not cover where its dest expands to. See
+[docs/cli.md](../cli.md#kanon-install----absolute-destination-boundary).
+
 **Exit codes:**
 
 | Code | Meaning |

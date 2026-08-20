@@ -10,6 +10,15 @@ Covers:
 - the leaked-process matcher, against both a live process and a false-positive
   command line
 
+On `time.sleep` in the probe scripts: CLAUDE.md forbids sleep as a
+*synchronization mechanism*, and none of these use it that way. Nothing waits on
+the duration -- the probe simply has to stay alive long enough to be found, and
+readiness is detected by blocking on the child's own announcement. A stdin-based
+hold was tried and is worse: under pytest the child inherits a closed stdin and
+exits immediately, so the probe cannot hold at all. The one place this suite did
+use sleep for synchronization -- polling a process group for death -- is now an
+event-driven wait on the child's exit.
+
 Tier: functional, not unit. These tests spawn real subprocesses and shell out to
 ``ps``. ``pyproject.toml`` defines ``unit`` as "fast, isolated, no external
 dependencies" and ``functional`` as "exercise CLI via subprocess", and the unit

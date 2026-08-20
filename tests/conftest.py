@@ -11,7 +11,6 @@ import signal
 import subprocess
 import sys
 import tempfile
-import time
 import xml.etree.ElementTree as ET
 from collections.abc import Generator
 
@@ -45,7 +44,6 @@ not tell "processes leaked" from "the command line was wrong".
 
 _PROCESS_KILL_GRACE_ENV = "KANON_TEST_PROCESS_KILL_GRACE"
 _PROCESS_KILL_GRACE_DEFAULT = "5"
-_PROCESS_KILL_POLL_SECONDS = 0.05
 _PROCESS_SCAN_TIMEOUT_ENV = "KANON_TEST_PROCESS_SCAN_TIMEOUT"
 _PROCESS_SCAN_TIMEOUT_DEFAULT = "30"
 _PS_SCAN_COMMAND = ("ps", "-ww", "-eo", "pid=,pgid=,command=")
@@ -155,30 +153,34 @@ def run_owned_subprocess(argv: "list[str]", **kwargs: object) -> "subprocess.Com
         try:
             stdout, stderr = child.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
-            _terminate_process_group(child.pid)
+            _terminate_process_group(child, child.pid)
             child.kill()
             stdout, stderr = child.communicate()
             raise
         return subprocess.CompletedProcess(argv, child.returncode, stdout, stderr)
 
 
-def _terminate_process_group(pgid: int) -> None:
+def _terminate_process_group(child: "subprocess.Popen", pgid: int) -> None:
     """Signal a whole process group, escalating only if it does not go quietly.
 
+    SIGTERM first, so a process with a handler can exit cleanly, then SIGKILL.
+
+    The wait between them is event-driven rather than timed: it blocks on the
+    direct child's own exit via ``waitpid`` and returns the moment it happens.
+    The deadline only bounds the failure case. Polling the group on a sleep
+    interval would have been a time-based wait, which this suite forbids.
+
     Args:
+        child: The direct child, used as the readiness signal for its group.
         pgid: The group to signal.
     """
-    deadline = _positive_int_env(_PROCESS_KILL_GRACE_ENV, _PROCESS_KILL_GRACE_DEFAULT)
+    grace = _positive_int_env(_PROCESS_KILL_GRACE_ENV, _PROCESS_KILL_GRACE_DEFAULT)
     with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(pgid, signal.SIGTERM)
-    waited = 0.0
-    while waited < deadline:
-        try:
-            os.killpg(pgid, 0)
-        except (ProcessLookupError, PermissionError):
-            return
-        time.sleep(_PROCESS_KILL_POLL_SECONDS)
-        waited += _PROCESS_KILL_POLL_SECONDS
+    try:
+        child.wait(timeout=grace)
+    except subprocess.TimeoutExpired:
+        pass
     with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(pgid, signal.SIGKILL)
 

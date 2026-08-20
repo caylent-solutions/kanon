@@ -460,6 +460,24 @@ def _PermittedAbsRoots():
     return [entry for entry in raw.split(os.pathsep) if entry]
 
 
+def _is_within_permitted_abs_roots(path):
+    """Return whether *path* sits under a root an absolute dest may resolve to.
+
+    Shared with the removal path in ``subcmds/sync.py``: dropping a dest from a
+    manifest must not reach anywhere that creating it could not.
+    """
+    roots = _PermittedAbsRoots()
+    if not roots:
+        return False
+    real = os.path.realpath(os.path.dirname(os.path.normpath(path)))
+    real = os.path.join(real, os.path.basename(os.path.normpath(path)))
+    for root in roots:
+        root_real = os.path.realpath(root)
+        if real == root_real or real.startswith(root_real + os.path.sep):
+            return True
+    return False
+
+
 def _ResolveAbsDest(dest, skipfinal=False):
     """Resolve and contain an absolute manifest dest.
 
@@ -541,7 +559,8 @@ class _CopyFile:
     def _Copy(self):
         src = _SafeExpandPath(self.git_worktree, self.src)
 
-        if os.path.isabs(self.dest):
+        is_absolute_dest = os.path.isabs(self.dest)
+        if is_absolute_dest:
             dest = _ResolveAbsDest(self.dest)
         else:
             # Relative dest: resolve under topdir via _SafeExpandPath.
@@ -554,6 +573,17 @@ class _CopyFile:
 
         # Copy file if it does not exist or is out of date.
         if not os.path.exists(dest) or not filecmp.cmp(src, dest, shallow=False):
+            # An absolute dest resolves outside the repo client checkout, into the
+            # consumer's own project, so an existing file there may be theirs
+            # rather than repo-managed. A copy is irreversible where a symlink
+            # replacement is not, so the destructive case must not be the quiet
+            # one -- _LinkFile already warns for its equivalent.
+            if is_absolute_dest and os.path.exists(dest):
+                logger.warning(
+                    "warning: Overwriting existing file %s with %s declared by the manifest",
+                    dest,
+                    src,
+                )
             try:
                 # Remove existing file first, since it might be read-only.
                 if os.path.exists(dest):

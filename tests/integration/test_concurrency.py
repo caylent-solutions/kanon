@@ -23,7 +23,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.core.install import compute_project_address, install
+from kanon_cli.core.install import resolve_workspace_base_dir, compute_project_address, install
 
 
 fcntl = pytest.importorskip("fcntl")
@@ -916,3 +916,66 @@ class TestCLIConcurrentInstallDeterminism:
         assert "kanon install: parsing" not in result.stderr, (
             f"Progress message leaked to stderr. stderr={result.stderr!r}"
         )
+
+
+@pytest.mark.integration
+class TestParallelInstallsDifferentProjects:
+    """Two *different* projects installing at once must both complete.
+
+    Every existing concurrency test races two installs of the **same** project,
+    which the store-wide workspace lock serialises. Two different projects is the
+    case per-project keying created: their workspaces are now disjoint, but they
+    still write into the shared, unkeyed `.packages/` farm with a non-atomic
+    `exists() -> unlink() -> symlink()` sequence, and `create_dirsymlink` uses a
+    plain `os.symlink` with no handling. An interleave there is the failure this
+    covers.
+    """
+
+    def test_two_projects_install_concurrently_without_error(self, tmp_path: pathlib.Path) -> None:
+        """Both installs finish cleanly and each keeps its own keyed workspace."""
+        project_a = tmp_path / "project-a"
+        project_b = tmp_path / "project-b"
+        for project in (project_a, project_b):
+            project.mkdir()
+        kanonenv_a = _write_kanonenv(project_a)
+        kanonenv_b = _write_kanonenv(project_b)
+
+        ctx = multiprocessing.get_context("fork")
+        go_event = ctx.Event()
+        ready_events = [ctx.Event() for _ in range(2)]
+        error_queue: "multiprocessing.Queue[str]" = ctx.Queue()
+
+        procs = [
+            ctx.Process(
+                target=_install_worker,
+                args=(str(kanonenv), ready_events[i], go_event, error_queue),
+                daemon=True,
+            )
+            for i, kanonenv in enumerate((kanonenv_a, kanonenv_b))
+        ]
+        for proc in procs:
+            proc.start()
+
+        for i, ready in enumerate(ready_events):
+            assert ready.wait(timeout=_PROC_READY_TIMEOUT), (
+                f"Install worker {i} did not become ready within {_PROC_READY_TIMEOUT}s"
+            )
+        go_event.set()
+
+        for i, proc in enumerate(procs):
+            proc.join(timeout=_PROC_JOIN_TIMEOUT)
+            assert not proc.is_alive(), f"Install worker {i} did not finish within {_PROC_JOIN_TIMEOUT}s"
+
+        errors: list[str] = []
+        while not error_queue.empty():
+            errors.append(error_queue.get_nowait())
+        assert errors == [], f"concurrent installs of two different projects reported: {errors!r}"
+
+        store = resolve_workspace_base_dir()
+        address_a = compute_project_address(kanonenv_a)
+        address_b = compute_project_address(kanonenv_b)
+        assert address_a != address_b, "two projects at different paths must have different addresses"
+        for address in (address_a, address_b):
+            assert (store / ".kanon-data" / "sources" / address).is_dir(), (
+                f"project address {address} has no workspace after a concurrent install"
+            )

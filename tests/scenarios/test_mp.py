@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import shutil
 
 import pytest
 
@@ -208,3 +209,81 @@ class TestMP:
         assert address_a != address_b
         assert all(len(a) == _PROJECT_ADDRESS_LENGTH for a in (address_a, address_b))
         assert all(all(c in "0123456789abcdef" for c in a) for a in (address_a, address_b))
+
+
+@pytest.mark.scenario
+class TestMPRecovery:
+    """MP-02 / MP-03: the workspace survives interruption and an older layout.
+
+    Both are states an operator reaches without doing anything unusual -- killing
+    an install, or upgrading kanon -- and neither had coverage.
+    """
+
+    def test_install_over_a_pre_keying_workspace_succeeds(
+        self, tmp_path: pathlib.Path, scenario_workspace: pathlib.Path
+    ) -> None:
+        """An alias-named workspace from before keying must not break the install.
+
+        Workspaces used to live at `sources/<alias>/`. After keying, that directory
+        is never read again. Install must ignore it rather than trip over it, and
+        it must be left in place rather than silently deleted -- `kanon doctor`
+        reports it so the operator decides.
+        """
+        content_repos = tmp_path / "content-repos"
+        manifest_repos = tmp_path / "manifest-repos"
+        content_repos.mkdir(parents=True)
+        manifest_repos.mkdir(parents=True)
+        _make_content_repos(content_repos)
+        manifest_bare = _make_manifest_repo(manifest_repos, f"{content_repos.as_uri()}/")
+
+        project = scenario_workspace / "upgraded"
+        project.mkdir(parents=True)
+        write_kanonenv(project, [(_SHARED_ALIAS, f"file://{manifest_bare}", "v1", "repo-specs/shared.xml")])
+
+        store = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        stale = store / ".kanon-data" / "sources" / _SHARED_ALIAS
+        stale.mkdir(parents=True)
+        (stale / "leftover.txt").write_text("pre-keying workspace\n", encoding="utf-8")
+
+        result = kanon_install(project, extra_env=_INSECURE_LOCAL_REMOTES)
+        assert result.returncode == 0, f"install over a pre-keying workspace failed: {result.stderr!r}"
+
+        assert _delivered_payload(store, project, _PACKAGE_NAME_BY_TAG["v1"]) == _CONTENT_BY_TAG["v1"]
+        assert (stale / "leftover.txt").is_file(), (
+            "the pre-keying workspace must be left for the operator to reclaim, not silently deleted by an install"
+        )
+
+    def test_reinstall_after_an_interrupted_install_recovers(
+        self, tmp_path: pathlib.Path, scenario_workspace: pathlib.Path
+    ) -> None:
+        """A half-built workspace must not wedge the next install.
+
+        The manifests reset now runs before every `repo init`, so a re-run after a
+        kill is the first thing to touch a partially-initialised tree. Simulated by
+        truncating the synced workspace rather than by raising in-process, which
+        leaves no on-disk damage.
+        """
+        content_repos = tmp_path / "content-repos"
+        manifest_repos = tmp_path / "manifest-repos"
+        content_repos.mkdir(parents=True)
+        manifest_repos.mkdir(parents=True)
+        _make_content_repos(content_repos)
+        manifest_bare = _make_manifest_repo(manifest_repos, f"{content_repos.as_uri()}/")
+
+        project = scenario_workspace / "interrupted"
+        project.mkdir(parents=True)
+        write_kanonenv(project, [(_SHARED_ALIAS, f"file://{manifest_bare}", "v1", "repo-specs/shared.xml")])
+
+        first = kanon_install(project, extra_env=_INSECURE_LOCAL_REMOTES)
+        assert first.returncode == 0, f"initial install failed: {first.stderr!r}"
+
+        store = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        workspace = store / ".kanon-data" / "sources" / project_address_for(project) / _SHARED_ALIAS
+        delivered = workspace / ".packages" / _PACKAGE_NAME_BY_TAG["v1"]
+        shutil.rmtree(delivered)
+
+        second = kanon_install(project, extra_env=_INSECURE_LOCAL_REMOTES)
+        assert second.returncode == 0, f"re-install after interruption failed: {second.stderr!r}"
+        assert _delivered_payload(store, project, _PACKAGE_NAME_BY_TAG["v1"]) == _CONTENT_BY_TAG["v1"], (
+            "the re-install did not restore the content the interruption removed"
+        )

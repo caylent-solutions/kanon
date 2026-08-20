@@ -187,7 +187,7 @@ def _run_validate_help(args) -> None:
     """Show help when no validate sub-subcommand is given."""
     if args.validate_command is None:
         print(
-            "Error: Must specify a validation target: xml, marketplace, metadata, or lockfile",
+            "ERROR: Must specify a validation target: xml, marketplace, metadata, or lockfile",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -210,7 +210,7 @@ def _resolve_repo_root(provided: Path | None) -> Path:
     if provided is not None:
         resolved = provided.resolve()
         if not resolved.is_dir():
-            print(f"Error: --repo-root directory not found: {resolved}", file=sys.stderr)
+            print(f"ERROR: --repo-root directory not found: {resolved}", file=sys.stderr)
             sys.exit(1)
         return resolved
 
@@ -222,7 +222,7 @@ def _resolve_repo_root(provided: Path | None) -> Path:
     )
     if result.returncode != 0:
         print(
-            "Error: Could not auto-detect repo root. Run from within a git repository or use --repo-root.",
+            "ERROR: Could not auto-detect repo root. Run from within a git repository or use --repo-root.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -330,12 +330,12 @@ def _resolve_kanonenv_path(provided: Path | None) -> Path:
         try:
             return find_kanonenv()
         except FileNotFoundError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
+            print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
 
     resolved = provided.resolve()
     if not resolved.is_file():
-        print(f"Error: .kanon file not found: {resolved}", file=sys.stderr)
+        print(f"ERROR: .kanon file not found: {resolved}", file=sys.stderr)
         sys.exit(1)
     return resolved
 
@@ -373,12 +373,12 @@ def validate_lockfile_command(args) -> None:
     try:
         parsed = parse_kanonenv(kanonenv_path)
     except (FileNotFoundError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
     if not lock_file_path.is_file():
         print(
-            f"Error: .kanon.lock file not found: {lock_file_path}\n"
+            f"ERROR: .kanon.lock file not found: {lock_file_path}\n"
             f"  Run 'kanon install' to generate the lock for {kanonenv_path}.",
             file=sys.stderr,
         )
@@ -387,7 +387,7 @@ def validate_lockfile_command(args) -> None:
     try:
         lockfile = read_lockfile(lock_file_path)
     except (LockfileSchemaError, LockfileValidationError, OSError, KeyError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
     kanon_aliases = list(parsed["KANON_SOURCES"])

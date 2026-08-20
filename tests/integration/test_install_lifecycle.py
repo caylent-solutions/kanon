@@ -898,9 +898,9 @@ class TestInstallChannelDiscipline:
                 _install_run(args)
 
         captured = capsys.readouterr()
-        assert "Error" in captured.err, f"stderr must contain 'Error' when install fails; got stderr={captured.err!r}"
-        assert "Error" not in captured.out, (
-            f"stdout must not contain 'Error' when install fails; got stdout={captured.out!r}"
+        assert "ERROR" in captured.err, f"stderr must contain 'ERROR' when install fails; got stderr={captured.err!r}"
+        assert "ERROR" not in captured.out, (
+            f"stdout must not contain 'ERROR' when install fails; got stdout={captured.out!r}"
         )
 
     def test_collision_error_written_to_stderr_not_stdout(

@@ -901,7 +901,7 @@ When a `KANON_SOURCE_<alias>_MARKETPLACE=true` dependency is declared and the
 code 1. The exact text written to stderr is:
 
 ```text
-Error: claude binary not found on $PATH. Ensure claude is installed and available.
+ERROR: claude binary not found on $PATH. Ensure claude is installed and available.
 ```
 
 This replaces the previous silent-skip behaviour (DEFECT-004). The install

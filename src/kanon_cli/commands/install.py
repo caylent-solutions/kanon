@@ -189,19 +189,19 @@ def _run(args) -> int | None:
         try:
             args.kanonenv_path = find_kanonenv()
         except FileNotFoundError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
+            print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
         print(f"kanon install: found {args.kanonenv_path}")
 
     args.kanonenv_path = args.kanonenv_path.resolve()
     if not args.kanonenv_path.is_file():
-        print(f"Error: .kanon file not found: {args.kanonenv_path}", file=sys.stderr)
+        print(f"ERROR: .kanon file not found: {args.kanonenv_path}", file=sys.stderr)
         sys.exit(1)
 
     try:
         parse_kanonenv(args.kanonenv_path)
     except (FileNotFoundError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
     lock_file_path = derive_lock_file_path(
@@ -224,6 +224,6 @@ def _run(args) -> int | None:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
     except (OSError, ValueError, RepoCommandError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
     return None

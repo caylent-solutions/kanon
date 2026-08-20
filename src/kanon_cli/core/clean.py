@@ -117,7 +117,7 @@ def remove_kanon_home_store() -> None:
     cwd = pathlib.Path.cwd().resolve()
     if home == pathlib.Path(home.anchor) or home == user_home or home in user_home.parents or home in cwd.parents:
         print(
-            f"Error: refusing to remove the kanon home store at {home}: it resolves to the "
+            f"ERROR: refusing to remove the kanon home store at {home}: it resolves to the "
             "filesystem root, your home directory, or a parent of your home or current "
             "directory. Check the KANON_HOME environment variable.",
             file=sys.stderr,
@@ -316,7 +316,7 @@ def clean(
 
     if effective_marketplace_install and not effective_marketplace_dir_str:
         print(
-            "Error: a KANON_SOURCE_<alias>_MARKETPLACE=true dependency is declared "
+            "ERROR: a KANON_SOURCE_<alias>_MARKETPLACE=true dependency is declared "
             "but CLAUDE_MARKETPLACES_DIR is not defined in .kanon",
             file=sys.stderr,
         )

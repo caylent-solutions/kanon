@@ -333,7 +333,7 @@ conflicting sources and the duplicate package name.
 ### Example Error
 
 ```text
-Error: Package collision for 'kanon-shared-utils':
+ERROR: Package collision for 'kanon-shared-utils':
   provided by source 'build-core' and source 'build-infra'
 ```
 

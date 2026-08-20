@@ -804,7 +804,7 @@ def validate_marketplace(
 
     if not marketplace_files:
         print(
-            "Error: No catalog entry manifests (*.xml with a <catalog-metadata> block) found under repo-specs/",
+            "ERROR: No catalog entry manifests (*.xml with a <catalog-metadata> block) found under repo-specs/",
             file=sys.stderr,
         )
         return 1

@@ -142,8 +142,8 @@ class TestParseFailureExitsOne:
             f"install must exit 1 when no sources are defined; got code {exc_info.value.code}"
         )
         captured = capsys.readouterr()
-        assert "Error" in captured.err, f"stderr must contain 'Error' for a parse failure; got stderr={captured.err!r}"
-        assert captured.out == "" or "Error" not in captured.out, (
+        assert "ERROR" in captured.err, f"stderr must contain 'ERROR' for a parse failure; got stderr={captured.err!r}"
+        assert captured.out == "" or "ERROR" not in captured.out, (
             f"parse error must not appear on stdout; got stdout={captured.out!r}"
         )
 
@@ -172,7 +172,7 @@ class TestParseFailureExitsOne:
             f"install must exit 1 when source REF is missing; got code {exc_info.value.code}"
         )
         captured = capsys.readouterr()
-        assert "Error" in captured.err, f"stderr must contain 'Error' for a missing REF; got stderr={captured.err!r}"
+        assert "ERROR" in captured.err, f"stderr must contain 'ERROR' for a missing REF; got stderr={captured.err!r}"
 
     def test_missing_path_variable_exits_1_with_parse_error(
         self,
@@ -198,7 +198,7 @@ class TestParseFailureExitsOne:
             f"install must exit 1 when source PATH is missing; got code {exc_info.value.code}"
         )
         captured = capsys.readouterr()
-        assert "Error" in captured.err, f"stderr must contain 'Error' for a missing PATH; got stderr={captured.err!r}"
+        assert "ERROR" in captured.err, f"stderr must contain 'ERROR' for a missing PATH; got stderr={captured.err!r}"
 
     @pytest.mark.parametrize(
         "missing_suffix,kept_suffixes",
@@ -234,8 +234,8 @@ class TestParseFailureExitsOne:
 
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
-        assert "Error" in captured.err, f"Error must appear on stderr; got stderr={captured.err!r}"
-        assert "Error" not in captured.out, (
+        assert "ERROR" in captured.err, f"Error must appear on stderr; got stderr={captured.err!r}"
+        assert "ERROR" not in captured.out, (
             f"Error must not appear on stdout (AC-CHANNEL-001); got stdout={captured.out!r}"
         )
 
@@ -282,7 +282,7 @@ class TestGitSyncFailureExitsOne:
     ) -> None:
         """repo_sync failure writes an actionable error message to stderr.
 
-        The error message must contain 'Error' so operators can distinguish
+        The error message must contain 'ERROR' so operators can distinguish
         it from normal progress output and must not appear on stdout.
         """
         kanonenv = _write_kanonenv(tmp_path, _valid_single_source_content("primary"))
@@ -299,7 +299,7 @@ class TestGitSyncFailureExitsOne:
                 main(["install", str(kanonenv)])
 
         captured = capsys.readouterr()
-        assert "Error" in captured.err, f"stderr must contain 'Error' when repo_sync fails; got stderr={captured.err!r}"
+        assert "ERROR" in captured.err, f"stderr must contain 'ERROR' when repo_sync fails; got stderr={captured.err!r}"
 
     def test_repo_sync_failure_error_not_on_stdout(
         self,
@@ -325,7 +325,7 @@ class TestGitSyncFailureExitsOne:
                 main(["install", str(kanonenv)])
 
         captured = capsys.readouterr()
-        assert "Error" not in captured.out, (
+        assert "ERROR" not in captured.out, (
             f"repo_sync failure error must not appear on stdout (AC-CHANNEL-001); got stdout={captured.out!r}"
         )
 
@@ -355,8 +355,8 @@ class TestGitSyncFailureExitsOne:
 
         assert exc_info.value.code == 1, f"install must exit 1 on repo_init failure; got code {exc_info.value.code}"
         captured = capsys.readouterr()
-        assert "Error" in captured.err, f"stderr must contain 'Error' when repo_init fails; got stderr={captured.err!r}"
-        assert "Error" not in captured.out, (
+        assert "ERROR" in captured.err, f"stderr must contain 'ERROR' when repo_init fails; got stderr={captured.err!r}"
+        assert "ERROR" not in captured.out, (
             f"repo_init failure error must not appear on stdout; got stdout={captured.out!r}"
         )
 

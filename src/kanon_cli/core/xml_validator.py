@@ -73,7 +73,7 @@ def validate_xml(repo_root: Path) -> int:
 
     if not xml_files:
         print(
-            "Error: No XML files found in repo-specs/",
+            "ERROR: No XML files found in repo-specs/",
             file=sys.stderr,
         )
         return 1

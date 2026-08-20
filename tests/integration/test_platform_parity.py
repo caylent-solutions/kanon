@@ -259,7 +259,7 @@ class TestDevNullAndTmpfsScenarios:
 
     Platform notes:
     - /dev/null is a character device (not a regular file) on both Linux and macOS.
-      Passing it as a .kanon path must result in a clean 'Error:' message and exit 1
+      Passing it as a .kanon path must result in a clean 'ERROR:' message and exit 1
       -- the CLI must not crash with an unhandled exception or produce a traceback.
     - tmpfs (Linux /tmp) behaves identically to disk-backed filesystems for the
       operations kanon performs (mkdir, open, read, write, symlink, unlink). No
@@ -294,7 +294,7 @@ class TestDevNullAndTmpfsScenarios:
         )
 
     def test_dev_null_as_kanonenv_path_has_error_on_stderr(self) -> None:
-        """An 'Error:' message appears on stderr when /dev/null is passed as .kanon path.
+        """An 'ERROR:' message appears on stderr when /dev/null is passed as .kanon path.
 
         The CLI must emit a clean, actionable error message to stderr. No raw
         Python traceback should appear; the error format is 'Error: <message>'.
@@ -305,8 +305,8 @@ class TestDevNullAndTmpfsScenarios:
 
         result = _run_kanon_subprocess("install", str(dev_null))
 
-        assert "Error:" in result.stderr, (
-            f"Expected 'Error:' message on stderr for /dev/null path. Got stderr={result.stderr!r}"
+        assert "ERROR:" in result.stderr, (
+            f"Expected 'ERROR:' message on stderr for /dev/null path. Got stderr={result.stderr!r}"
         )
 
     def test_dev_null_as_kanonenv_path_no_traceback(self) -> None:
@@ -334,7 +334,7 @@ class TestDevNullAndTmpfsScenarios:
 
         result = _run_kanon_subprocess("install", str(dev_null))
 
-        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("Error:")]
+        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("ERROR:")]
         assert not stdout_error_lines, (
             f"Error text leaked to stdout for /dev/null path. stdout={result.stdout!r}, stderr={result.stderr!r}"
         )
@@ -562,10 +562,10 @@ class TestSymlinkSemanticsParity:
             f"Expected exit 1 for dangling symlink path, got {result.returncode}.\n"
             f"stdout={result.stdout!r}\nstderr={result.stderr!r}"
         )
-        assert "Error:" in result.stderr, (
-            f"Expected 'Error:' on stderr for dangling symlink path. Got stderr={result.stderr!r}"
+        assert "ERROR:" in result.stderr, (
+            f"Expected 'ERROR:' on stderr for dangling symlink path. Got stderr={result.stderr!r}"
         )
-        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("Error:")]
+        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("ERROR:")]
         assert not stdout_error_lines, f"Error text must not appear on stdout. stdout={result.stdout!r}"
 
     def test_install_via_absolute_symlink_resolves_and_writes_to_store(

@@ -84,6 +84,13 @@ Stat probes outside their error handler let an `OSError` escape as a traceback.
 
 ### Changed
 
+* All kanon diagnostics now use a single `ERROR:` prefix on stderr
+
+kanon emitted two prefixes for the same thing: `ERROR:` at 140 call sites and
+`Error:` at 39, both hand-written. The 39 are normalised to `ERROR:`. This is a
+user-visible stderr change -- a script matching `^Error:` on kanon's output needs
+updating to `^ERROR:`. Messages emitted by the vendored `repo` tool are unchanged.
+
 * `RefreshRepoInitError` now reads `ERROR: repo re-init failed for source '<name>'`
   where it previously read `ERROR: refresh failed for source '<name>'`. Scripts
   matching the old text need updating.

@@ -115,6 +115,6 @@ def _run(args) -> None:
     try:
         exit_code = repo_run(args.repo_args, repo_dir=repo_dir)
     except RepoCommandError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(exc.exit_code if exc.exit_code is not None else 1)
     sys.exit(exit_code)

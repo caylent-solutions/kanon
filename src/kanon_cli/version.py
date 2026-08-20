@@ -118,13 +118,13 @@ def resolve_version(url: str, rev_spec: str) -> str:
 
     tags = _list_tags(url)
     if not tags:
-        print(f"Error: No tags found for {url}", file=sys.stderr)
+        print(f"ERROR: No tags found for {url}", file=sys.stderr)
         sys.exit(1)
 
     try:
         return _resolve_constraint_from_tags(rev_spec, tags)
     except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -568,13 +568,13 @@ def _list_tags(url: str) -> list[str]:
         )
     except FileNotFoundError:
         print(
-            "Error: git binary not found. Install git and ensure it is on PATH.",
+            "ERROR: git binary not found. Install git and ensure it is on PATH.",
             file=sys.stderr,
         )
         sys.exit(1)
     if result.returncode != 0:
         print(
-            f"Error: git ls-remote failed for {url}: {result.stderr}",
+            f"ERROR: git ls-remote failed for {url}: {result.stderr}",
             file=sys.stderr,
         )
         sys.exit(1)

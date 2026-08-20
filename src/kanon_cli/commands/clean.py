@@ -106,7 +106,7 @@ def _run(args) -> None:
             if args.purge_all:
                 _purge_home_only()
                 return
-            print(f"Error: {exc}", file=sys.stderr)
+            print(f"ERROR: {exc}", file=sys.stderr)
             sys.exit(1)
         print(f"kanon clean: found {args.kanonenv_path}")
 
@@ -115,7 +115,7 @@ def _run(args) -> None:
         if args.purge_all:
             _purge_home_only()
             return
-        print(f"Error: .kanon file not found: {args.kanonenv_path}", file=sys.stderr)
+        print(f"ERROR: .kanon file not found: {args.kanonenv_path}", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -126,5 +126,5 @@ def _run(args) -> None:
             purge_home=args.purge_all,
         )
     except (FileNotFoundError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

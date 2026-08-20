@@ -483,7 +483,14 @@ def _ResolveAbsDest(dest, skipfinal=False):
         )
 
     normalized = os.path.normpath(dest)
-    real = os.path.realpath(normalized)
+    # Resolve the PARENT, not the dest itself. A dest is routinely an existing
+    # symlink that this sync replaces -- repo materializes every <linkfile> that
+    # way -- so resolving through it would measure containment against the link's
+    # target and reject a destination that is plainly inside the project. The
+    # component walk below is what refuses a symlinked component; containment only
+    # has to establish where the dest sits.
+    parent_real = os.path.realpath(os.path.dirname(normalized))
+    real = os.path.join(parent_real, os.path.basename(normalized))
     contained = False
     for root in roots:
         root_real = os.path.realpath(root)

@@ -299,6 +299,7 @@ _STATIC_ROWS: list[tuple[str, str, list[str], int, list[str], bool]] = [
             "--verbose",
             "--no-color",
             "--no-update-check",
+            "--allow-abs-root",
             "--home",
             "--store-dir",
             "--telemetry-debug",

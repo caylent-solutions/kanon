@@ -64,6 +64,7 @@ _shtab_kanon_options=(
   "--no-color[Disable ANSI color output. Takes precedence over the NO_COLOR environment variable and TTY auto-detection.]"
   "--no-update-check[Skip the best-effort \'update available\' PyPI lookup for this invocation. Equivalent to setting KANON_SKIP_UPDATE_CHECK\=1.]"
   {--home,--store-dir}"[Use \<path\> as the shared kanon home root (the content-addressed store and caches live under it). Takes precedence over the KANON_HOME environment variable and the \~\/.kanon-home default. --store-dir is an accepted alias.]:home:"
+  "*--allow-abs-root[Permit an absolute \<linkfile\>\/\<copyfile\> dest to resolve under \<path\>. Repeatable. Takes precedence over the KANON_ALLOWED_ABS_ROOTS environment variable. The consumer project root and CLAUDE_MARKETPLACES_DIR are always permitted and cannot be removed, so this can only widen the boundary.]:allow_abs_root:"
   "--telemetry-debug[Print the exact usage-telemetry JSON that would be sent to stderr for this invocation (still non-blocking). Equivalent to setting KANON_TELEMETRY_DEBUG\=1. Telemetry is on by default\; disable it entirely with KANON_TELEMETRY_DISABLED\=1.]"
   "--telemetry-endpoint[Override the usage-telemetry collector endpoint (https\:\/\/ only) for this invocation. Takes precedence over the KANON_TELEMETRY_ENDPOINT environment variable.]:telemetry_endpoint:"
 )

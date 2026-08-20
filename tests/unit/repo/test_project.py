@@ -107,7 +107,17 @@ class CopyLinkTestCase(unittest.TestCase):
       topdir: The top of a project checkout.
     """
 
+    ROOTS_ENV_VAR = "KANON_PERMITTED_ABS_ROOTS"
+
     def setUp(self):
+        """Build the stub checkout and publish it as a permitted root.
+
+        An absolute dest is confined to the roots kanon publishes in
+        ``KANON_PERMITTED_ABS_ROOTS``. Outside a real install that variable is
+        unset and the resolver fails closed, so a test exercising an absolute
+        dest has to declare the boundary that makes its destination legal --
+        exactly as ``install`` does for the consumer project root.
+        """
         self.tempdirobj = tempfile.TemporaryDirectory(prefix="repo_tests")
         self.tempdir = self.tempdirobj.name
         self.topdir = os.path.join(self.tempdir, "checkout")
@@ -115,7 +125,14 @@ class CopyLinkTestCase(unittest.TestCase):
         os.makedirs(self.topdir)
         os.makedirs(self.worktree)
 
+        self.orig_roots = os.environ.get(self.ROOTS_ENV_VAR)
+        os.environ[self.ROOTS_ENV_VAR] = self.tempdir
+
     def tearDown(self):
+        if self.orig_roots is None:
+            os.environ.pop(self.ROOTS_ENV_VAR, None)
+        else:
+            os.environ[self.ROOTS_ENV_VAR] = self.orig_roots
         self.tempdirobj.cleanup()
 
     @staticmethod
@@ -1278,8 +1295,14 @@ class TestCopyFileClassExtended:
         assert cf.topdir == "/topdir"
         assert cf.dest == "dest.txt"
 
-    def test_copy_handles_ioerror(self):
-        """Test _Copy handles IOError gracefully."""
+    def test_copy_raises_oserror_with_context(self):
+        """_Copy propagates an OSError with source and destination context.
+
+        The old behaviour logged and returned, so `repo sync` reported success
+        having delivered nothing -- the silent-failure mode kanon forbids. This
+        matters more now that a dest can sit outside the workspace, where
+        permission failure is the common case rather than the rare one.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             worktree = os.path.join(tmpdir, "worktree")
             topdir = os.path.join(tmpdir, "topdir")
@@ -1293,7 +1316,8 @@ class TestCopyFileClassExtended:
             cf = project._CopyFile(worktree, "src.txt", topdir, "dest.txt")
 
             with mock.patch("shutil.copy", side_effect=IOError("Copy failed")):
-                cf._Copy()
+                with pytest.raises(OSError, match="Cannot copy file"):
+                    cf._Copy()
 
     def test_copy_creates_dest_directory(self):
         """Test _Copy creates destination directory if it doesn't exist."""
@@ -1451,7 +1475,8 @@ class TestLinkFileClassExtended:
             abs_dest = os.path.join(tmpdir, "absolute", "nested", "dest.txt")
 
             lf = project._LinkFile(worktree, "src.txt", "/unused", abs_dest)
-            lf._Link()
+            with mock.patch.dict(os.environ, {"KANON_PERMITTED_ABS_ROOTS": tmpdir}):
+                lf._Link()
 
             assert os.path.islink(abs_dest)
 

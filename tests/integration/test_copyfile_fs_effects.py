@@ -703,7 +703,7 @@ def test_copyfile_absolute_dest_dangling_symlink_does_not_write_through(
     dest_link.symlink_to(target)
 
     cf = _make_copyfile(worktree, "payload.txt", topdir, str(dest_link))
-    with pytest.raises(ManifestInvalidPathError, match="outside every permitted root"):
+    with pytest.raises(ManifestInvalidPathError, match="traversing symlinks"):
         cf._Copy()
 
     assert not target.exists(), (

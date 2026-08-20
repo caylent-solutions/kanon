@@ -290,8 +290,8 @@ class TestLinkFile:
         link = topdir / "link"
         assert link.is_symlink()
 
-    def test_linkfile_absolute_dest(self, tmp_path):
-        """Test linking with absolute destination."""
+    def test_linkfile_absolute_dest(self, tmp_path, permit_abs_roots):
+        """Test linking with absolute destination inside a permitted root."""
         git_worktree = tmp_path / "git"
         git_worktree.mkdir()
         src_file = git_worktree / "source.txt"
@@ -303,6 +303,7 @@ class TestLinkFile:
         dest_dir.mkdir()
         abs_dest = dest_dir / "link.txt"
 
+        permit_abs_roots(tmp_path)
         lf = project._LinkFile(str(git_worktree), "source.txt", str(topdir), str(abs_dest))
         lf._Link()
 

@@ -623,22 +623,46 @@ class RefreshRepoInitError(InstallError):
     offending source name and a remediation hint so the operator receives a
     structured diagnostic instead of a raw traceback.
 
+    The remediation prints the workspace path rather than describing it. Since
+    workspaces are keyed by a sha256 of the consuming project's resolved ``.kanon``
+    path, "remove the source's .kanon-data directory entry" is not something an
+    operator can act on without computing a digest by hand.
+
+    It also branches on how the failure was reached. The manifests reset now runs
+    before *every* ``repo init``, so this surfaces on a plain ``kanon install``
+    too, and telling that operator to re-run with ``--refresh-lock`` sends them to
+    a different and much broader operation than the one that failed.
+
     Args:
         source_name: The KANON_SOURCE_<name> key of the source that failed.
         cause: The underlying exception that caused the failure.
+        source_dir: The source workspace that could not be prepared.
+        during_reresolve: Whether the failure happened on a re-resolve path
+            (``--refresh-lock``, ``--refresh-lock-source``, or a non-replay
+            ``--reconcile``) rather than a plain install.
     """
 
-    def __init__(self, source_name: str, cause: BaseException) -> None:
+    def __init__(
+        self,
+        source_name: str,
+        cause: BaseException,
+        source_dir: pathlib.Path | None = None,
+        during_reresolve: bool = False,
+    ) -> None:
         self.source_name = source_name
         self.cause = cause
+        self.source_dir = source_dir
+        self.during_reresolve = during_reresolve
         super().__init__(str(self))
 
     def __str__(self) -> str:
+        location = f"rm -rf {self.source_dir}" if self.source_dir is not None else "remove the source's workspace"
+        retry = "kanon install --refresh-lock" if self.during_reresolve else "kanon install"
         return (
             f"ERROR: repo re-init failed for source '{self.source_name}': "
             f"{self.cause}\n"
-            "  Remediation: remove the source's .kanon-data directory entry and "
-            "re-run 'kanon install --refresh-lock'."
+            f"  Remediation: {location}\n"
+            f"  then re-run '{retry}'."
         )
 
 
@@ -2905,7 +2929,7 @@ def _run_install(
         try:
             _reset_manifests_working_tree(source_dir)
         except OSError as exc:
-            raise RefreshRepoInitError(source_name=name, cause=exc) from exc
+            raise RefreshRepoInitError(source_name=name, cause=exc, source_dir=source_dir) from exc
 
         _is_reresolve = install_state in (
             InstallState.REFRESH_LOCK,
@@ -2921,7 +2945,9 @@ def _run_install(
                     repo_rev,
                 )
             except GitCommandError as exc:
-                raise RefreshRepoInitError(source_name=name, cause=exc) from exc
+                raise RefreshRepoInitError(
+                    source_name=name, cause=exc, source_dir=source_dir, during_reresolve=True
+                ) from exc
         else:
             run_repo_init(
                 source_dir,

@@ -1206,8 +1206,10 @@ specialized plugins at each level.
 
 ### Key Requirements
 
-- All `<linkfile dest>` attributes must start with
-  `${CLAUDE_MARKETPLACES_DIR}/`
+- Every `<linkfile dest>` must stay inside the consumer workspace: no literal
+  absolute path, no `..` component. A marketplace-type entry that declares
+  linkfiles must point at least one at `${CLAUDE_MARKETPLACES_DIR}/`; an entry
+  declaring none is exempt
 - Each `<project path>` must be unique across all manifests
 - The per-source `KANON_SOURCE_<alias>_MARKETPLACE` flag in `.kanon` must be
   set to `true` for the marketplace source

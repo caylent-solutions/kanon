@@ -70,8 +70,10 @@ manifest correctness.
 
 **Checks:**
 
-- `<linkfile dest="...">` attributes use the `${CLAUDE_MARKETPLACES_DIR}/` prefix
-  and are not absolute paths.
+- `<linkfile dest="...">` and `<copyfile dest="...">` attributes stay inside the
+  consumer workspace (no literal absolute path, no `..`), and a
+  marketplace-type entry declaring linkfiles points at least one at
+  `${CLAUDE_MARKETPLACES_DIR}/`.
 - Include chains are intact (all `<include name="...">` files exist).
 - Project path values (`<project path="...">`) are unique across all marketplace
   files.

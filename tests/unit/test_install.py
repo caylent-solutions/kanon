@@ -1522,3 +1522,43 @@ class TestProjectKeyedWorkspaces:
 
         entries = list(store_entries_dir(store).iterdir())
         assert len(entries) == 1, f"expected exactly one deduped store entry; got {entries}"
+
+
+@pytest.mark.unit
+class TestRefreshRepoInitErrorMessage:
+    """The remediation must be actionable without a prompt or a hand-computed digest.
+
+    Workspaces are keyed by a sha256 of the consuming project's resolved `.kanon`
+    path, so "remove the source's .kanon-data directory entry" named a directory
+    the operator could not locate. The reset also runs before every `repo init`
+    now, so this reaches a plain `kanon install`, where recommending
+    `--refresh-lock` sends the operator to a broader operation than the one that
+    failed.
+    """
+
+    def test_remediation_prints_the_workspace_path(self) -> None:
+        workspace = pathlib.Path("/store/.kanon-data/sources/" + "a" * 64 + "/build")
+        message = str(RefreshRepoInitError("build", OSError("denied"), source_dir=workspace))
+        assert str(workspace) in message, (
+            f"the remediation must print the path; after keying it holds a sha256 the operator "
+            f"cannot derive. Got: {message!r}"
+        )
+
+    def test_plain_install_is_not_told_to_use_refresh_lock(self) -> None:
+        message = str(RefreshRepoInitError("build", OSError("denied"), source_dir=pathlib.Path("/x")))
+        assert "--refresh-lock" not in message, (
+            f"a plain install used no refresh flag; recommending one sends the operator to a "
+            f"different operation. Got: {message!r}"
+        )
+        assert "kanon install" in message
+
+    def test_reresolve_failure_recommends_the_flag_it_was_run_with(self) -> None:
+        message = str(
+            RefreshRepoInitError("build", OSError("denied"), source_dir=pathlib.Path("/x"), during_reresolve=True)
+        )
+        assert "--refresh-lock" in message
+
+    def test_message_names_the_source_and_the_cause(self) -> None:
+        message = str(RefreshRepoInitError("build", OSError("permission denied")))
+        assert "build" in message and "permission denied" in message
+        assert message.startswith("ERROR:")

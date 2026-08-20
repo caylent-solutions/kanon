@@ -818,6 +818,67 @@ rm -rf "${MS01_DIR}"
 
 ---
 
+## 6a. Category 5a: Multi-Project Isolation (1 test)
+
+### MP-01: Two projects declaring the same source alias each receive their own content
+
+Two unrelated projects share one `KANON_HOME` and both declare a source under the
+same alias, pinned to different revisions. Before per-project keying they shared a
+single mutable `repo` workspace: the second install either delivered nothing while
+reporting success, or raised an unhandled `GitCommandError` that wedged the
+workspace for both. Each project now gets a workspace keyed by a stable address
+derived from its own `.kanon` path.
+
+The third step matters as much as the first two: re-installing project A *after*
+project B has installed is what proves B did not disturb A's workspace.
+
+```bash
+export MP01_A="${KANON_TEST_ROOT}/test-mp01-a"
+export MP01_B="${KANON_TEST_ROOT}/test-mp01-b"
+mkdir -p "${MP01_A}" "${MP01_B}"
+
+# Both .kanon files use the SAME alias `shared`, pinned to different tags.
+cat > "${MP01_A}/.kanon" << KANONEOF
+KANON_SOURCE_shared_URL=file://${MP01_MANIFEST_DIR}
+KANON_SOURCE_shared_REF=v1
+KANON_SOURCE_shared_PATH=repo-specs/shared.xml
+KANON_SOURCE_shared_NAME=shared
+KANON_SOURCE_shared_GITBASE=https://example.com
+KANONEOF
+
+cat > "${MP01_B}/.kanon" << KANONEOF
+KANON_SOURCE_shared_URL=file://${MP01_MANIFEST_DIR}
+KANON_SOURCE_shared_REF=v2
+KANON_SOURCE_shared_PATH=repo-specs/shared.xml
+KANON_SOURCE_shared_NAME=shared
+KANON_SOURCE_shared_GITBASE=https://example.com
+KANONEOF
+
+cd "${MP01_A}" && kanon install .kanon
+cd "${MP01_B}" && kanon install .kanon
+cd "${MP01_A}" && kanon install .kanon
+```
+
+**Pass criteria:**
+
+- All three `kanon install` runs exit 0
+- `${KANON_HOME}/store/.kanon-data/sources/` contains two distinct project-address
+  directories, each a 64-character hex name
+- Each project address directory contains its own `shared/` source workspace
+- Project A's delivered package content is the `v1` content, and project B's is the
+  `v2` content -- verified by reading the files, not by checking that a directory
+  exists
+- Re-installing A after B leaves A's content unchanged
+
+**Cleanup:**
+
+```bash
+cd "${MP01_A}" && kanon clean .kanon
+rm -rf "${MP01_A}" "${MP01_B}"
+```
+
+---
+
 ## 7. Category 6: Collision Detection (2 tests)
 
 ### CD-01: Two sources resolving the same destination path to different content

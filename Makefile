@@ -2,11 +2,18 @@ SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-dev lint lint-check lint-no-comments lint-markdown format format-check check test test-unit test-unit-cov test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
+.PHONY: help install install-dev lint lint-check lint-no-comments lint-markdown format format-check check test test-unit test-unit-cov test-unit-vendored test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
 
 # Minimum total coverage enforced by `test-unit-cov`. Overridable so the
-# threshold is not hard-coded at its only call site.
+# threshold is not hard-coded at its only call site. It is measured over kanon's
+# own source; the vendored tree is omitted in [tool.coverage.run].
 COVERAGE_MIN ?= 90
+
+# The vendored repo tool's tests. 6,666 of the suite's 17,285 tests cover a tree
+# that changed in 3 of the last 184 commits, so they are their own tier and CI
+# runs them only when that tree is touched. Referenced by more than one target,
+# so the path lives here rather than being repeated.
+VENDORED_TESTS := tests/unit/repo
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -41,11 +48,15 @@ validate: check test-unit ## Run per-unit validation (lint + unit tests). Full s
 test: ## Run full test suite with coverage
 	uv run pytest -n auto --dist loadscope --cov=kanon_cli --cov-report=term-missing
 
-test-unit: ## Run unit tests only
+test-unit: ## Run every unit test, first-party and vendored
 	uv run pytest -n auto --dist loadscope -m "unit"
 
-test-unit-cov: ## Run unit tests with coverage and enforce the COVERAGE_MIN gate (CI's unit job)
-	uv run pytest -n auto --dist loadscope -m "unit" --cov=kanon_cli --cov-report=term-missing --cov-fail-under=$(COVERAGE_MIN)
+test-unit-cov: ## Run first-party unit tests with coverage and enforce the COVERAGE_MIN gate (CI's unit job)
+	uv run pytest -n auto --dist loadscope -m "unit" --ignore=$(VENDORED_TESTS) tests/unit \
+		--cov=kanon_cli --cov-report=term-missing --cov-fail-under=$(COVERAGE_MIN)
+
+test-unit-vendored: ## Run the vendored repo tool's unit tests (gated in CI on that tree changing)
+	uv run pytest -n auto --dist loadscope -m "unit" $(VENDORED_TESTS)
 
 test-integration: ## Run integration tests only
 	uv run pytest -n auto --dist loadscope -m "integration"

@@ -15,32 +15,32 @@ if ! make security-scan; then
   exit 1
 fi
 
+# Same target, and therefore the same COVERAGE_MIN threshold, that CI's unit
+# job runs. This previously re-implemented the gate here: `make coverage-json`
+# followed by a hand-rolled `bc` comparison against a literal 90, reading the
+# report with a bare `python` resolved from PATH rather than from uv.lock. That
+# left two thresholds to keep in step and a third interpreter deciding whether
+# a push was allowed.
 echo "Running unit tests with coverage check..."
-if ! make coverage-json; then
-  echo "Unit tests failed. Please fix the issues before pushing."
+if ! make test-unit-cov; then
+  echo "Unit tests or the coverage threshold failed. Please fix the issues before pushing."
   exit 1
 fi
 
-coverage_percent=$(python -c "import json; print(json.load(open('coverage.json'))['totals']['percent_covered'])")
-echo "Coverage: $coverage_percent%"
-if (( $(echo "$coverage_percent < 90" | bc -l) )); then
-  echo "Code coverage is below 90% threshold ($coverage_percent%). Please add more tests."
-  exit 1
-else
-  echo "Coverage meets 90% threshold."
-fi
-
-echo "Running integration tests..."
-if ! make test-integration; then
-  echo "Integration tests failed. Please fix the issues before pushing."
-  exit 1
-fi
-
-echo "Running functional tests..."
-if ! make test-functional; then
-  echo "Functional tests failed. Please fix the issues before pushing."
-  exit 1
-fi
-
-echo "All tests, linting, and security scan passed!"
+# The integration and functional tiers used to run here too, which put roughly
+# twenty minutes between deciding to push and the push happening. A gate that
+# slow gets worked around rather than waited for, and it duplicates jobs CI runs
+# on every pull request anyway -- the value it added over CI was catching a
+# failure a few minutes earlier, at the cost of making every push a coffee break.
+#
+# What stays is what is both fast and local-only in value: lint, the security
+# scan, and kanon's own unit tests with the coverage gate. The vendored repo
+# tree's tests are excluded for the same reason CI gates them -- they cover code
+# this push almost certainly did not touch.
+#
+# Run `make test-integration` and `make test-functional` before opening a pull
+# request if a change touches subprocess or filesystem behaviour; CI enforces
+# both regardless.
+echo "All local gates passed (lint, security scan, first-party unit tests + coverage)."
+echo "Integration, functional and scenario tiers run in CI on this branch's pull request."
 exit 0

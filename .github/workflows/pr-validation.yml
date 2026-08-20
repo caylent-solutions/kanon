@@ -117,105 +117,173 @@ jobs:
   # fails the job on a non-zero exit, so there is no fallback or silent skip.
   # ---------------------------------------------------------------------------
 
-  unit-tests-linux:
-    name: Unit tests (Linux, with coverage gate)
+  changes:
+    name: Detect affected paths
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+      vendored: ${{ steps.detect.outputs.vendored }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Classify the changed paths
+        id: detect
+        shell: bash
+        # Fails closed in every direction. Both outputs start true and are only
+        # narrowed by a positive match on a known-inert path set, so an empty
+        # diff, a missing merge base, an unrecognised path, or any error leaves
+        # the full suite running. The failure this must never produce is a green
+        # pull request whose tests were skipped by mistake.
+        #
+        # `code=false` requires that every changed file is documentation or
+        # repository metadata. `vendored=false` requires that nothing touched the
+        # vendored tree, its tests, or anything global enough to change how they
+        # run (shared conftest, dependencies, Make targets, CI itself).
+        run: |
+          set -euo pipefail
+          code=true
+          vendored=true
+          if base_sha=$(git merge-base "origin/${{ github.base_ref }}" HEAD 2>/dev/null); then
+            files=$(git diff --name-only "$base_sha" HEAD)
+            if [ -n "$files" ]; then
+              if ! grep -qvE '^(docs/|\.github/CODEOWNERS$|LICENSE$|.*\.md$)' <<<"$files"; then
+                code=false
+              fi
+              if ! grep -qE '^(src/kanon_cli/repo/|tests/unit/repo/|tests/conftest\.py$|pyproject\.toml$|uv\.lock$|Makefile$|\.tool-versions$|\.github/)' <<<"$files"; then
+                vendored=false
+              fi
+            fi
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "vendored=$vendored" >> "$GITHUB_OUTPUT"
+          echo "code=$code vendored=$vendored"
+          echo "### Affected paths" >> "$GITHUB_STEP_SUMMARY"
+          echo "- test tiers: \`$code\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- vendored repo tier: \`$vendored\`" >> "$GITHUB_STEP_SUMMARY"
+
+  unit-tests-linux:
+    name: Unit tests (Linux, with coverage gate)
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    needs: changes
+    runs-on: ubuntu-24.04
+    steps:
+      # Every tiered job below keeps running even when its tier is skipped, and
+      # gates the work at step level instead. A job skipped with a job-level `if`
+      # reports no status at all, which leaves a required check permanently
+      # pending and blocks the pull request it was meant to speed up.
+      - name: Checkout code
+        if: ${{ needs.changes.outputs.code == 'true' }}
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
+        if: ${{ needs.changes.outputs.code == 'true' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run unit tests with coverage gate
+        if: ${{ needs.changes.outputs.code == 'true' }}
         shell: bash
         # Delegates to the Make target so the threshold lives in one place
         # (Makefile: COVERAGE_MIN) instead of being duplicated across both
         # workflow files, and so the run resolves from uv.lock like every other
         # job. pytest-cov's own --cov-fail-under replaces the hand-rolled
-        # coverage-json + bc comparison.
+        # coverage-json + bc comparison. Covers kanon's own source; the vendored
+        # tree has its own job below.
         run: make test-unit-cov
 
-  integration-tests-linux:
-    name: Integration tests (Linux)
+  vendored-tests-linux:
+    name: Vendored repo tool tests (Linux)
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    needs: changes
     runs-on: ubuntu-24.04
     steps:
+      # 6,666 of the suite's 17,285 tests cover a vendored tree that changed in
+      # 3 of the last 184 commits. Running them on every pull request spends the
+      # largest single block of test time in the repository re-proving code the
+      # change could not have touched.
       - name: Checkout code
+        if: ${{ needs.changes.outputs.vendored == 'true' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
+        if: ${{ needs.changes.outputs.vendored == 'true' }}
+        with:
+          base-ref: ${{ github.base_ref }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+      - name: Run vendored repo tool tests
+        if: ${{ needs.changes.outputs.vendored == 'true' }}
+        shell: bash
+        run: make test-unit-vendored
+
+  integration-tests-linux:
+    name: Integration tests (Linux)
+    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    needs: changes
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        if: ${{ needs.changes.outputs.code == 'true' }}
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+        if: ${{ needs.changes.outputs.code == 'true' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run integration tests
+        if: ${{ needs.changes.outputs.code == 'true' }}
         shell: bash
         run: make test-integration
 
   functional-tests-linux:
     name: Functional tests (Linux)
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    needs: changes
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
+        if: ${{ needs.changes.outputs.code == 'true' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
+        if: ${{ needs.changes.outputs.code == 'true' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run functional tests
+        if: ${{ needs.changes.outputs.code == 'true' }}
         shell: bash
         run: make test-functional
 
   scenario-tests-linux:
     name: Scenario tests (Linux, docs/integration-testing.md)
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    needs: changes
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
+        if: ${{ needs.changes.outputs.code == 'true' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
+        if: ${{ needs.changes.outputs.code == 'true' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run scenario tests
+        if: ${{ needs.changes.outputs.code == 'true' }}
         shell: bash
         # Invokes the make target (operator-path guard E50-F1-S1-T2 requires it).
         # The recipe runs `pytest -m "scenario"` with no platform filter.
         run: make test-scenarios
-
-  full-suite-regression:
-    name: Full suite regression (cross-suite isolation guard)
-    # Runs `make test` -- the same `pytest --cov=kanon_cli` invocation
-    # that exercises unit + integration + functional + scenarios in a
-    # single process. The singular jobs above pass individually but
-    # this job catches the class of cross-suite isolation regressions
-    # documented in `git log --grep cross-suite` (e.g. session-scoped
-    # autouse fixtures leaking env state into later suites). It runs
-    # in parallel with the singular jobs so the wall-clock impact on
-    # PR feedback is bounded by the slowest single job, not summed.
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/setup-kanon
-        with:
-          base-ref: ${{ github.base_ref }}
-          head-sha: ${{ github.event.pull_request.head.sha }}
-      - name: Run the full suite together
-        shell: bash
-        run: make test
 
   code-owners:
     name: Code owners

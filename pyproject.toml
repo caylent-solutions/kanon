@@ -97,6 +97,14 @@ source = ["src/kanon_cli"]
 data_file = ".coverage-data/.coverage"
 parallel = true
 concurrency = ["multiprocessing"]
+# The vendored repo tool is third-party code kanon embeds, not code kanon writes.
+# It is 10,873 of the 18,768 measured statements, so including it made the project
+# gate mostly a measure of how well someone else's tree is exercised: the same
+# threshold read 92% across both trees and 94% across kanon's own. Its tests live
+# in tests/unit/repo and run as their own tier (`make test-unit-vendored`), which
+# is gated on that tree actually changing -- so measuring it here would report a
+# collapse in coverage every time the tier is correctly skipped.
+omit = ["*/kanon_cli/repo/*"]
 
 [tool.coverage.report]
 show_missing = true

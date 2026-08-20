@@ -49,7 +49,7 @@ For each source listed in the resolved lockfile, `core/install.py` calls the
 fork in three steps:
 
 1. **`repo_init`** -- initialises a repo workspace inside
-   `.kanon-data/sources/<name>/` using the manifest XML URL and the resolved
+   `.kanon-data/sources/<project-address>/<name>/` using the manifest XML URL and the resolved
    revision. Raises `RepoCommandError` on non-zero exit.
 
 2. **`repo_envsubst`** -- expands `${GITBASE}` and `${CLAUDE_MARKETPLACES_DIR}`
@@ -66,27 +66,37 @@ exclusively from `core/install.py::_run_install`.
 
 ## Directory layout
 
-After `kanon install` completes, the project directory contains the following
-layout. Operators must treat `.kanon-data/` as opaque; use `.kanon.lock` as
-the source of truth for which clones exist.
+After `kanon install` completes, the project directory holds only the two
+committed files; everything else lives in the shared `KANON_HOME` store.
+Operators must treat `.kanon-data/` as opaque; use `.kanon.lock` as the source of
+truth for which clones exist.
 
 ```text
 <project-root>/
-  .kanon                        # operator-authored config file
-  .kanon.lock                   # generated lockfile (commit this)
+  .kanon                          # operator-authored config file
+  .kanon.lock                     # generated lockfile (commit this)
+
+<KANON_HOME>/store/               # shared store (default ~/.kanon-home)
   .kanon-data/
-    .kanon-install.lock         # flock-managed concurrency lock
+    .kanon-install.lock           # flock-managed concurrency lock (store-global)
     sources/
-      <source-name>/            # one directory per top-level source
-        .repo/                  # managed by the embedded repo fork
-        <project-dir>/          # cloned project directories
-        .packages/              # per-source package symlinks
-  .packages/                    # aggregated symlinks (operator-facing)
+      <project-address>/          # sha256 of this project's resolved .kanon path
+        <source-name>/            # one directory per top-level source
+          .repo/                  # managed by the embedded repo fork
+          <project-dir>/          # cloned project directories
+          .packages/              # per-source package symlinks
+  .packages/                      # aggregated symlinks (operator-facing, shared)
 ```
+
+Each consuming project gets its own `<project-address>` directory, so two
+projects declaring the same source alias never share a mutable workspace. The
+aggregated `.packages/` farm is shared across projects and keyed only by package
+name; a name already published there by a different project is refused rather
+than overwritten.
 
 Key paths:
 
-- **`.kanon-data/sources/<name>/`** -- per-source workspace holding the
+- **`.kanon-data/sources/<project-address>/<name>/`** -- per-source, per-consumer-project workspace holding the
   manifest XML, transitive includes, and repo state. One directory per
   top-level source declared in `.kanon`.
 - **`.kanon-data/.kanon-install.lock`** -- `fcntl.flock(LOCK_EX)` file.
@@ -112,13 +122,14 @@ a SIGTERM mid-clone), run `kanon clean` to prune and recover.
 For each `[[sources]]` entry in `.kanon.lock`, the install engine:
 
 1. Reads the locked SHA from `lockfile.sources[n].resolved_sha`.
-2. Creates `.kanon-data/sources/<name>/` if it does not exist.
+2. Computes the consumer project's address via `compute_project_address(.kanon)`
+   and creates `.kanon-data/sources/<project-address>/<name>/` if it does not exist.
 3. Calls `repo_init` with the manifest URL and the locked SHA, initialising
-   a repo workspace inside `.kanon-data/sources/<name>/`.
+   a repo workspace inside `.kanon-data/sources/<project-address>/<name>/`.
 4. Calls `repo_sync` to clone every `<project>` referenced by the manifest
    XML at exactly the locked SHA. Transitive `<include>` chains are walked
    fully.
-5. Symlinks from `.kanon-data/sources/<name>/.packages/*` are aggregated
+5. Symlinks from `.kanon-data/sources/<project-address>/<name>/.packages/*` are aggregated
    into the top-level `.packages/` directory by `aggregate_symlinks` in
    `core/install.py`. A `ValueError` is raised immediately on package name
    collision.

@@ -149,7 +149,7 @@ kanon install
 
 `kanon install` is hermetic: it resolves the declared packages from the
 committed `.kanon` (it does not re-read the catalog), clones them into the
-shared `KANON_HOME` store under `.kanon-data/sources/`, aggregates symlinks
+shared `KANON_HOME` store under `.kanon-data/sources/<project-address>/`, aggregates symlinks
 under `.packages/` in that store, and writes `.kanon.lock` with exact
 resolved versions so every subsequent install is reproducible.
 
@@ -357,7 +357,7 @@ kanon install
 `KANON_CATALOG_SOURCES`). It reconciles `.kanon` against `.kanon.lock`,
 runs the repo init/envsubst/sync lifecycle for every source, aggregates
 packages into `.packages/` via symlinks under the shared `KANON_HOME`
-store, creates source workspaces under `.kanon-data/sources/` in that
+store, creates source workspaces under `.kanon-data/sources/<project-address>/` in that
 store, and writes `.kanon.lock` with the exact resolved SHAs.
 
 **4. Clean (full teardown):**
@@ -949,7 +949,8 @@ committed.
 ### Multi-Source Isolation
 
 Each source is initialized and synced in its own isolated directory under
-`.kanon-data/sources/<name>/`. Sources cannot interfere with each other --
+`.kanon-data/sources/<project-address>/<name>/`. Neither two sources within a
+project, nor two projects declaring the same source alias, can interfere --
 each gets its own `kanon repo init` / `kanon repo sync` cycle. If two sources
 produce a package with the same name, Kanon detects the collision and fails
 immediately with an actionable error message.

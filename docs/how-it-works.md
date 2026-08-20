@@ -58,11 +58,12 @@ The command performs these steps:
 3. **Pre-sync marketplace setup** -- If any source sets `KANON_SOURCE_<alias>_MARKETPLACE=true`: creates `CLAUDE_MARKETPLACES_DIR` and cleans its contents for a fresh sync
 4. **For each source in alphabetical order:**
    `kanonenv_path` is resolved via `Path.resolve()` before its parent is used, so a symlinked `.kanon` file will cause source directories to be created under the real project directory rather than the symlink's containing directory.
-   - Creates `.kanon-data/sources/<name>/` directory
+   - Creates `.kanon-data/sources/<project-address>/<name>/` directory, where
+     `<project-address>` is a sha256 of the resolved `.kanon` path
    - Calls `kanon_cli.repo.repo_init(source_dir, url, revision, manifest_path)` -- direct Python API call
    - Calls `kanon_cli.repo.repo_envsubst(source_dir, env_vars)` with `GITBASE` and `CLAUDE_MARKETPLACES_DIR` -- direct Python API call
    - Calls `kanon_cli.repo.repo_sync(source_dir)` -- aborts immediately on `RepoCommandError`
-5. **Aggregate symlinks** -- For each `.kanon-data/sources/<name>/.packages/*`, creates a symlink in `.packages/`
+5. **Aggregate symlinks** -- For each `.kanon-data/sources/<project-address>/<name>/.packages/*`, creates a symlink in `.packages/`
 6. **Collision detection** -- If two sources produce the same package name, fails fast with error identifying both sources
 7. **Conditional store `.gitignore` safety net** -- Only when the shared `KANON_HOME` store sits inside a git working tree, writes `<KANON_HOME>/store/.gitignore` containing `*` so the fetched-artifact cache is never committed. When the store is not inside a git repo (the default `~/.kanon-home`), no `.gitignore` is written
 8. **Post-sync marketplace install** -- If any source sets `KANON_SOURCE_<alias>_MARKETPLACE=true`: locates the `claude` binary, discovers marketplace entries and plugins, registers marketplaces, and installs plugins via the Claude Code CLI

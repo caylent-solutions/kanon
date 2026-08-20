@@ -234,12 +234,14 @@ to work across environments.
 ## Source Isolation
 
 Each source is initialized and synced in its own isolated directory
-under `.kanon-data/sources/<name>/`. This prevents sources from interfering
+under `.kanon-data/sources/<project-address>/<name>/`. This prevents sources from interfering
 with each other.
 
 ### Directory Structure
 
-Each source name becomes a directory under `.kanon-data/sources/`:
+Each source name becomes a directory under `.kanon-data/sources/<project-address>/`,
+where `<project-address>` is a sha256 of the consuming project's resolved `.kanon`
+path, so two projects declaring the same source alias never share a workspace:
 
 ```text
 .kanon-data/
@@ -281,11 +283,11 @@ provided them.
 ### Aggregation Process
 
 1. For each source in alphabetical order, scan
-   `.kanon-data/sources/<name>/.packages/`
+   `.kanon-data/sources/<project-address>/<name>/.packages/`
 2. For each package directory found, create a symlink in the top-level
    `.packages/`
 3. The symlink points from `.packages/<pkg-name>` to
-   `.kanon-data/sources/<name>/.packages/<pkg-name>`
+   `.kanon-data/sources/<project-address>/<name>/.packages/<pkg-name>`
 
 ### Result
 

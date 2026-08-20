@@ -392,14 +392,13 @@ retry auth failures.
 
 A `kanon install` that was interrupted (SIGTERM, SIGINT, or power
 loss) leaves a partially-cloned project directory under
-`.kanon-data/sources/<name>/`. Subsequent `kanon install` runs may
-report:
+`.kanon-data/sources/<project-address>/<name>/`. Subsequent `kanon install`
+runs surface the underlying git failure, for example:
 
 ```text
-ERROR: clone directory .kanon-data/sources/my-service/.repo is
-incomplete; the previous install was interrupted. Run
-'kanon clean --orphans' to remove partial clones, then re-run
-'kanon install'.
+ERROR: repo re-init failed for source 'my-service': <git error>
+  Remediation: remove the source's .kanon-data directory entry and
+  re-run 'kanon install --refresh-lock'.
 ```
 
 ### Reproducer
@@ -417,15 +416,18 @@ kanon install
 Remove partial project clones and re-run install:
 
 ```bash
-kanon clean --orphans
+kanon clean
 kanon install
 ```
 
-`kanon clean --orphans` removes per-project clone directories that
-are not referenced by the current `.kanon` or `.kanon.lock`. The
-lockfile itself is atomic (write-temp-then-rename), so it is either
-complete or absent; only the per-project clone directories may be
-partial.
+`kanon clean` removes this project's source workspace under the shared store,
+along with the aggregated package links it created. Other projects sharing the
+same `KANON_HOME` keep theirs.
+
+`--orphans` does **not** do this. It unregisters the Claude marketplaces of
+sources dropped from `.kanon`; it removes no clone directories. The lockfile
+itself is atomic (write-temp-then-rename), so it is either complete or absent;
+only the clone directories under the store may be partial.
 
 ### See also
 

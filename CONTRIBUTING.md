@@ -28,11 +28,15 @@ Thank you for your interest in contributing to the Kanon CLI! This document prov
 
    This will:
    - Install pre-commit hooks (secrets detection, formatting, YAML validation)
-   - Set up a pre-push hook that runs lint + tests before pushing
+   - Set up a pre-push hook that runs lint, the security scan, and kanon's own
+     unit tests with the coverage gate. The vendored, integration, functional and
+     scenario tiers are not run locally; CI runs them on the pull request.
 
-4. Run tests to verify your setup:
+4. Verify your setup with the gates CI runs:
    ```bash
-   make test
+   make lint
+   make security-scan
+   make test-unit-cov
    ```
 
 ## Code Style and Quality
@@ -207,10 +211,15 @@ A coverage meta test (`tests/scenarios/test_scenario_coverage_meta.py`) fails CI
 
 ### Test Requirements
 
-- **Unit Tests**: Must maintain at least 90% code coverage (CI threshold)
+- **Unit Tests**: Must maintain at least `COVERAGE_MIN` (default 90%) coverage
+  of kanon's own source. The vendored `src/kanon_cli/repo` tree is measured by
+  its own tier and omitted from this gate.
 - **Functional Tests**: Must test all CLI commands and common error scenarios
 - **Scenario Tests**: Every in-scope scenario from `docs/integration-testing.md` must have a matching pytest test (enforced by the coverage meta test)
-- All tests must pass before merging
+- Every test tier a change can affect must pass before merging. Pull request
+  validation runs the tiers selected by the changed paths; the full suite and the
+  vendored tier are covered on merge to main and by the nightly regression
+  workflow.
 
 ### Running All Tests
 

@@ -1469,13 +1469,17 @@ and how the automated release pipeline works.
 
 This project uses a fully automated SDLC pipeline:
 
-1. **PR Validation** -- Lint, build, test (90% coverage), security scan on
-   every PR
+1. **PR Validation** -- Lint, format, build and security scan on every PR. Test
+   tiers (unit with the coverage gate, integration, functional, scenario) run
+   only when a change touches non-documentation paths; the vendored repo tool's
+   tier runs only when that tree or a global input changes.
 2. **Main Branch Validation** -- Full validation + CodeQL on merge to main
-3. **Manual QA Approval** -- Human gate before release
-4. **Automated Release** -- Semantic versioning from conventional commit
+3. **Nightly Regression** -- The full suite in one session plus the vendored
+   tier, on a daily schedule
+4. **Manual QA Approval** -- Human gate before release
+5. **Automated Release** -- Semantic versioning from conventional commit
    prefixes, changelog generation, tagging
-5. **PyPI Publishing** -- Automated publish via OIDC trusted publishing
+6. **PyPI Publishing** -- Automated publish via OIDC trusted publishing
 
 PR titles must follow
 [Conventional Commits](https://www.conventionalcommits.org/) format

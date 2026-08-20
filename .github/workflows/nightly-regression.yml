@@ -9,10 +9,10 @@ name: Nightly Regression
 # process (see `git log --grep cross-suite`), and the vendored tier, which a pull
 # request skips whenever it did not touch that tree.
 #
-# Neither needs to gate a pull request. Across 90 measured runs the full-suite job
-# produced exactly one unique failure that the per-tier jobs did not already
-# report, at a median of 20 minutes and a p90 of 48 -- it set the worst-case
-# feedback time for every pull request in exchange for a signal that arrives just
+# Neither needs to gate a pull request. The full-suite job guards cross-suite
+# isolation regressions, which only surface when every tier shares one session,
+# and it is the slowest job in the matrix -- so it set the worst-case feedback
+# time for every pull request while duplicating what the per-tier jobs report.
 # as usefully the next morning. It still runs on every push to main
 # (main-validation.yml); this adds the scheduled sweep so a regression cannot sit
 # unnoticed through a quiet day.

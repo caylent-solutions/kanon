@@ -38,9 +38,11 @@ fi
 # tree's tests are excluded for the same reason CI gates them -- they cover code
 # this push almost certainly did not touch.
 #
-# Run `make test-integration` and `make test-functional` before opening a pull
-# request if a change touches subprocess or filesystem behaviour; CI enforces
-# both regardless.
+# Run `make test-integration` and `make test-functional` locally before opening a
+# pull request if a change touches subprocess or filesystem behaviour. CI runs
+# them on the pull request whenever the change is classified as touching code --
+# not unconditionally, so a change the classifier reads as inert runs them in
+# neither place.
 echo "All local gates passed (lint, security scan, first-party unit tests + coverage)."
 echo "Integration, functional and scenario tiers run in CI on this branch's pull request."
 exit 0

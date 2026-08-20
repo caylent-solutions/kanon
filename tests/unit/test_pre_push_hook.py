@@ -4,7 +4,7 @@ Validates that the git-hooks/pre-push script includes all required checks
 according to E0-F9-S1-T2 requirements:
 
 - AC-FUNC-001: Pre-push hook runs unit tests including repo module
-- AC-FUNC-002: Pre-push hook runs integration tests
+- AC-FUNC-002: Pre-push hook runs the local gates and not the tiers CI owns
 - AC-FUNC-003: Pre-push hook runs ruff lint check
 - AC-FUNC-004: Pre-push hook runs security scan
 - AC-FUNC-005: Pre-push hook fails on any check failure
@@ -31,6 +31,26 @@ def _hook_content() -> str:
 def _makefile_content() -> str:
     """Read and return the Makefile contents."""
     return MAKEFILE.read_text(encoding="utf-8")
+
+
+def _executed_make_targets() -> set[str]:
+    """Return the make targets the hook actually invokes.
+
+    Comment lines are dropped before matching. A test that greps the whole file
+    can be satisfied by prose describing a target the hook no longer runs, which
+    is exactly how two tests here outlived the behaviour they asserted.
+
+    Returns:
+        The target names appearing in executed ``make`` invocations.
+    """
+    targets: set[str] = set()
+    for line in _hook_content().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        for match in re.finditer(r"\bmake\s+([A-Za-z0-9_-]+)", stripped):
+            targets.add(match.group(1))
+    return targets
 
 
 @pytest.mark.unit
@@ -95,21 +115,34 @@ def test_pre_push_hook_runs_unit_tests():
 
 
 @pytest.mark.unit
-def test_pre_push_hook_runs_integration_tests():
-    """Validate that the pre-push hook runs integration tests.
+def test_pre_push_hook_does_not_run_the_deferred_tiers():
+    """The hook must not reintroduce the integration or functional tiers.
 
-    Given: The pre-push hook script
-    When: Its contents are inspected
-    Then: It invokes the integration test target (make test-integration or pytest -m integration)
+    Those tiers were removed deliberately: they took roughly twenty minutes and
+    duplicated jobs CI runs anyway. This asserts on the hook's *executed* lines,
+    not on its text -- the tests this replaces matched a substring that a prose
+    comment in the hook also contained, so they kept passing after the targets
+    they checked for had been deleted.
 
     AC-FUNC-002
     """
-    content = _hook_content()
-    has_integration_tests = "make test-integration" in content or "pytest -m integration" in content
-    assert has_integration_tests, (
-        "Pre-push hook must run integration tests via 'make test-integration' or "
-        f"'pytest -m integration'. Hook content:\n{content}"
+    executed = _executed_make_targets()
+    deferred = sorted(target for target in ("test-integration", "test-functional") if target in executed)
+    assert not deferred, (
+        f"Pre-push hook invokes {deferred}, which CI already runs on the pull request. "
+        f"Executed targets: {sorted(executed)}"
     )
+
+
+@pytest.mark.unit
+def test_pre_push_hook_runs_the_local_gates():
+    """The hook runs lint, the security scan, and unit tests with the coverage gate.
+
+    AC-FUNC-002
+    """
+    executed = _executed_make_targets()
+    for target in ("lint", "security-scan", "test-unit-cov"):
+        assert target in executed, f"Pre-push hook must invoke 'make {target}'. Executed targets: {sorted(executed)}"
 
 
 @pytest.mark.unit
@@ -163,24 +196,6 @@ def test_pre_push_hook_fails_on_unit_test_failure():
     )
     assert has_failure_check, (
         f"Pre-push hook must exit with non-zero status when unit tests fail. Hook content:\n{content}"
-    )
-
-
-@pytest.mark.unit
-def test_pre_push_hook_fails_on_integration_test_failure():
-    """Validate that the pre-push hook exits non-zero on integration test failure.
-
-    Given: The pre-push hook script
-    When: Its control flow for integration tests is inspected
-    Then: A failing integration test check causes the script to exit with non-zero
-
-    AC-FUNC-005
-    """
-    content = _hook_content()
-    has_integration = "make test-integration" in content or "pytest -m integration" in content
-    has_exit = "exit 1" in content
-    assert has_integration and has_exit, (
-        f"Pre-push hook must exit with non-zero status when integration tests fail. Hook content:\n{content}"
     )
 
 

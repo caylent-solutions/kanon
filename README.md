@@ -73,7 +73,7 @@ via declarative manifests.
 - [Manifest Features (PEP 440 Constraints)](#manifest-features-pep-440-constraints)
   - [PEP 440 Version Constraints in Manifests](#pep-440-version-constraints-in-manifests)
   - [PEP 440 Version Resolution in .kanon](#pep-440-version-resolution-in-kanon)
-  - [Absolute Linkfile Destinations](#absolute-linkfile-destinations)
+  - [Absolute Linkfile and Copyfile Destinations](#absolute-linkfile-and-copyfile-destinations)
 - [SSH Authentication Setup](#ssh-authentication-setup)
 - [Developer Setup](#developer-setup)
   - [Prerequisites](#prerequisites-1)
@@ -1339,11 +1339,29 @@ KANON_SOURCE_build_REF=~=1.1.0
 
 For full details, see [docs/version-resolution.md](docs/version-resolution.md).
 
-### Absolute Linkfile Destinations
+### Absolute Linkfile and Copyfile Destinations
 
-`<linkfile dest>` accepts absolute paths after `envsubst` expansion, enabling
-marketplace symlinks to directories outside the project (e.g.,
-`${CLAUDE_MARKETPLACES_DIR}/...`).
+Both `<linkfile dest>` and `<copyfile dest>` accept absolute paths after
+`envsubst` expansion. `<linkfile>` creates a symlink there -- this is how
+marketplace entries land under `${CLAUDE_MARKETPLACES_DIR}/...`. `<copyfile>`
+writes a real, editable file, which is how a manifest delivers content that
+cannot be a symlink, such as a CI workflow, into the consuming project:
+
+```xml
+<project name="my-ci-config" path=".packages/my-ci-config"
+         remote="origin" revision="refs/tags/1.0.0">
+  <copyfile src="workflows/ci.yml"
+            dest="${MY_PROJECT_ROOT}/.github/workflows/ci.yml" />
+</project>
+```
+
+An absolute destination is **not** unrestricted. Because the manifest declaring
+it is fetched from a remote repository, the destination must resolve under a
+permitted root: the consumer project root, the resolved
+`CLAUDE_MARKETPLACES_DIR`, or a root you added with `--allow-abs-root` or
+`KANON_ALLOWED_ABS_ROOTS`. Anything else aborts the install. See
+[docs/security-model.md](docs/security-model.md) and
+[docs/configuration.md](docs/configuration.md#absolute-manifest-destinations).
 
 ---
 

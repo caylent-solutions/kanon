@@ -429,6 +429,51 @@ kanon --home /tmp/my-kanon-home install
 
 ---
 
+### Absolute manifest destinations
+
+**`CLAUDE_MARKETPLACES_DIR`** -- unlike every other setting on this page, this is
+not an environment variable kanon reads from your shell. It is a line in the
+`.kanon` file itself. `kanon add` inserts
+`CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces` as the first non-comment
+line the first time you add a marketplace entry, never overwrites a value you
+have changed, and prunes the line when the last marketplace entry is removed. The
+`${HOME}` in it is expanded at install time. A `.kanon` declaring a marketplace
+source with no such line fails the install.
+
+**`KANON_ALLOWED_ABS_ROOTS`** (default: unset) -- extra roots an absolute
+`<linkfile dest>` or `<copyfile dest>` may resolve under, separated by the
+platform path separator (`:` on POSIX). A manifest is fetched from a remote
+repository, so an absolute destination is confined rather than trusted; see
+[Security model](security-model.md). Entries must be absolute paths, and an empty
+entry or a relative one aborts with a non-zero exit.
+
+**Permitted-root resolution order (highest wins):**
+
+1. `--allow-abs-root <path>` global CLI flag, repeatable (when supplied). When
+   given, `KANON_ALLOWED_ABS_ROOTS` is ignored for that invocation.
+2. `KANON_ALLOWED_ABS_ROOTS` environment variable (when non-empty).
+3. No extra roots -- the default.
+
+Two roots are **always** permitted and cannot be removed by either mechanism: the
+consumer project root (the directory holding `.kanon`) and the resolved
+`CLAUDE_MARKETPLACES_DIR`. The setting can therefore only widen the boundary,
+never narrow it below the project being installed into. Nothing is added to
+`.kanon`, and existing `.kanon` files need no change.
+
+A destination outside every permitted root aborts the install, naming the
+destination, the roots, and how to widen them -- there is no prompt, so kanon
+stays usable in CI, containers, and cron.
+
+```bash
+# Allow a manifest to deliver into a shared tooling directory
+export KANON_ALLOWED_ABS_ROOTS=/opt/org-tooling
+
+# Or per-invocation, overriding the env var; repeat for several roots
+kanon --allow-abs-root /opt/org-tooling --allow-abs-root /srv/shared install
+```
+
+---
+
 ### Lockfile
 
 These variables control lockfile-related behaviour. See

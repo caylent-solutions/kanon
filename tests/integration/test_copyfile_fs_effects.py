@@ -16,6 +16,7 @@ import stat
 
 import pytest
 
+from kanon_cli.repo.error import ManifestInvalidPathError
 from kanon_cli.repo.project import _CopyFile
 
 
@@ -578,4 +579,249 @@ def test_copyfile_absolute_dest_creates_parent_dirs(tmp_path: pathlib.Path, perm
     assert os.path.isfile(abs_dest), (
         f"Expected a regular file at {abs_dest!r} after _Copy() with nested absolute dest, "
         f"but the path does not exist or is not a file."
+    )
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_outside_permitted_roots_is_rejected(tmp_path: pathlib.Path, permit_abs_roots) -> None:
+    """An absolute dest outside every permitted root raises and writes nothing.
+
+    A manifest is fetched from a remote repository, so an unconfined absolute dest
+    is an arbitrary-file-write primitive. Only paths under a permitted root may be
+    written; everything else is refused before any filesystem effect occurs.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    permit_abs_roots(project_root)
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+    (worktree / "payload.txt").write_text("payload\n", encoding="utf-8")
+
+    outside = tmp_path / "outside" / "authorized_keys"
+
+    cf = _make_copyfile(worktree, "payload.txt", topdir, str(outside))
+    with pytest.raises(ManifestInvalidPathError, match="outside every permitted root"):
+        cf._Copy()
+
+    assert not outside.exists(), (
+        f"Expected no filesystem effect at {str(outside)!r} for a dest outside the permitted "
+        f"roots, but the file was created."
+    )
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_error_names_the_dest_and_how_to_widen(tmp_path: pathlib.Path, permit_abs_roots) -> None:
+    """The refusal is actionable without a prompt: dest, roots, and the remedy.
+
+    kanon must stay usable non-interactively, so a refused destination cannot fall
+    back to asking. The message therefore has to carry everything an operator needs.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    permit_abs_roots(project_root)
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+    (worktree / "payload.txt").write_text("payload\n", encoding="utf-8")
+
+    outside = str(tmp_path / "elsewhere" / "file.txt")
+    cf = _make_copyfile(worktree, "payload.txt", topdir, outside)
+
+    with pytest.raises(ManifestInvalidPathError) as excinfo:
+        cf._Copy()
+
+    message = str(excinfo.value)
+    assert outside in message, f"Expected the refusal to name the offending dest, got {message!r}."
+    assert str(project_root) in message, f"Expected the refusal to list the permitted roots, got {message!r}."
+    assert "--allow-abs-root" in message and "KANON_ALLOWED_ABS_ROOTS" in message, (
+        f"Expected the refusal to name both ways to widen the boundary, got {message!r}."
+    )
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_through_intermediate_symlink_is_rejected(
+    tmp_path: pathlib.Path, permit_abs_roots
+) -> None:
+    """A symlinked path component cannot be used to escape the permitted root.
+
+    The checked-out tree is attacker-controlled, so a manifest can ship a symlink
+    and a copyfile that traverses it. Containment on the literal path alone would
+    not stop that, which is why every component is walked.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    permit_abs_roots(project_root)
+
+    secret_dir = tmp_path / "outside-target"
+    secret_dir.mkdir()
+    (project_root / "innocent").symlink_to(secret_dir)
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+    (worktree / "hook").write_text("payload\n", encoding="utf-8")
+
+    through_link = str(project_root / "innocent" / "pre-commit")
+
+    cf = _make_copyfile(worktree, "hook", topdir, through_link)
+    with pytest.raises(ManifestInvalidPathError, match="outside every permitted root"):
+        cf._Copy()
+
+    assert not (secret_dir / "pre-commit").exists(), (
+        "Expected no write through the symlinked component, but the target was created."
+    )
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_dangling_symlink_does_not_write_through(
+    tmp_path: pathlib.Path, permit_abs_roots
+) -> None:
+    """A dangling symlink at dest must not become a write to its target.
+
+    ``os.path.exists`` follows symlinks and is False for a dangling one, so an
+    unguarded copy would open through the link and create the target instead of
+    replacing the link.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    permit_abs_roots(project_root)
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+    (worktree / "payload.txt").write_text("payload\n", encoding="utf-8")
+
+    target = tmp_path / "outside-target" / "victim.txt"
+    dest_link = project_root / "dangling.txt"
+    dest_link.symlink_to(target)
+
+    cf = _make_copyfile(worktree, "payload.txt", topdir, str(dest_link))
+    with pytest.raises(ManifestInvalidPathError, match="outside every permitted root"):
+        cf._Copy()
+
+    assert not target.exists(), (
+        f"Expected no write through the dangling symlink to {str(target)!r}, but it was created."
+    )
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_permission_denied_raises(tmp_path: pathlib.Path, permit_abs_roots) -> None:
+    """An unwritable destination fails loudly rather than reporting success.
+
+    A swallowed copy failure let the sync report success having delivered nothing,
+    which is the silent-failure mode kanon forbids. Permission failure is the common
+    case once a destination can sit outside the workspace.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root bypasses directory permissions, so the denial cannot be provoked")
+
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    permit_abs_roots(project_root)
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+    (worktree / "payload.txt").write_text("payload\n", encoding="utf-8")
+
+    locked = project_root / "locked"
+    locked.mkdir()
+    locked.chmod(0o555)
+    try:
+        cf = _make_copyfile(worktree, "payload.txt", topdir, str(locked / "out.txt"))
+        with pytest.raises(OSError, match="Cannot copy file"):
+            cf._Copy()
+    finally:
+        locked.chmod(0o755)
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_special_file_is_rejected(tmp_path: pathlib.Path, permit_abs_roots) -> None:
+    """A fifo on the destination path is refused, matching the relative-dest rule.
+
+    ``_SafeExpandPath`` refuses a non-regular file on a relative dest; an absolute
+    dest must not be the weaker of the two.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    permit_abs_roots(project_root)
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+    (worktree / "payload.txt").write_text("payload\n", encoding="utf-8")
+
+    fifo_dir = project_root / "pipe"
+    os.mkfifo(str(fifo_dir))
+
+    cf = _make_copyfile(worktree, "payload.txt", topdir, str(fifo_dir / "out.txt"))
+    with pytest.raises(ManifestInvalidPathError, match="only regular files"):
+        cf._Copy()
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_fails_closed_when_no_root_configured(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no permitted root published, every absolute dest is refused.
+
+    Driving the vendored tool without kanon leaves the boundary unset. Defaulting
+    to "anything goes" there would reopen the hole, so the unset case refuses.
+    """
+    monkeypatch.delenv("KANON_PERMITTED_ABS_ROOTS", raising=False)
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+    (worktree / "payload.txt").write_text("payload\n", encoding="utf-8")
+
+    dest = tmp_path / "anywhere.txt"
+    cf = _make_copyfile(worktree, "payload.txt", topdir, str(dest))
+
+    with pytest.raises(ManifestInvalidPathError, match="no permitted root is configured"):
+        cf._Copy()
+
+    assert not dest.exists(), "Expected no filesystem effect when the boundary is unconfigured."
+
+
+@pytest.mark.integration
+def test_copyfile_absolute_dest_symlink_inside_permitted_root_is_still_rejected(
+    tmp_path: pathlib.Path, permit_abs_roots
+) -> None:
+    """A symlinked component is refused even when it stays inside the boundary.
+
+    Containment alone cannot catch this: the link resolves to a permitted location,
+    so only the component walk refuses it. Without that walk a manifest could still
+    redirect a write within the project -- into ``.git/hooks``, for instance.
+    """
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    permit_abs_roots(project_root)
+
+    real_dir = project_root / "real"
+    real_dir.mkdir()
+    (project_root / "alias").symlink_to(real_dir)
+
+    worktree = tmp_path / "worktree"
+    worktree.mkdir()
+    topdir = tmp_path / "workspace"
+    topdir.mkdir()
+    (worktree / "payload.txt").write_text("payload\n", encoding="utf-8")
+
+    cf = _make_copyfile(worktree, "payload.txt", topdir, str(project_root / "alias" / "out.txt"))
+    with pytest.raises(ManifestInvalidPathError, match="traversing symlinks"):
+        cf._Copy()
+
+    assert not (real_dir / "out.txt").exists(), (
+        "Expected no write through a symlinked component even inside the permitted root."
     )

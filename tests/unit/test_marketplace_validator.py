@@ -78,6 +78,56 @@ class TestLinkfileDest:
         assert "proj" in errors[0]
         assert "absolute path" in errors[0]
 
+    def test_absolute_copyfile_dest_rejected(self, tmp_path: Path) -> None:
+        """<copyfile> dest is held to the same containment rule as <linkfile>.
+
+        The validator previously inspected linkfile only, so a copyfile could
+        declare any destination and pass author-side validation -- the more
+        destructive of the two elements being the less checked one.
+        """
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <copyfile src="s" dest="/home/victim/.ssh/authorized_keys" />\n'
+                "  </project>"
+            ),
+        )
+        errors = validate_linkfile_dest(xml, tmp_path)
+        assert len(errors) == 1, f"Expected exactly one containment error, got {errors!r}."
+        assert "proj" in errors[0]
+        assert "copyfile" in errors[0], f"Expected the error to name the element, got {errors[0]!r}."
+        assert "absolute path" in errors[0]
+
+    def test_traversal_copyfile_dest_rejected(self, tmp_path: Path) -> None:
+        """A '..' component in a <copyfile> dest escapes the workspace and is refused."""
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <copyfile src="s" dest="../outside/ci.yml" />\n'
+                "  </project>"
+            ),
+        )
+        errors = validate_linkfile_dest(xml, tmp_path)
+        assert len(errors) == 1, f"Expected exactly one containment error, got {errors!r}."
+        assert "copyfile" in errors[0]
+
+    def test_contained_copyfile_dest_accepted(self, tmp_path: Path) -> None:
+        """A workspace-relative <copyfile> dest remains legal.
+
+        Containment must not break the delivery case copyfile exists for.
+        """
+        xml = _write_xml(
+            tmp_path / "m.xml",
+            _entry_xml(
+                '  <project name="proj" path=".packages/proj" remote="r" revision="main">\n'
+                '    <copyfile src="s" dest=".github/workflows/ci.yml" />\n'
+                "  </project>"
+            ),
+        )
+        assert validate_linkfile_dest(xml, tmp_path) == []
+
     def test_traversal_dest_rejected(self, tmp_path: Path) -> None:
         xml = _write_xml(
             tmp_path / "m.xml",

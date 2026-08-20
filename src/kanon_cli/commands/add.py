@@ -37,6 +37,7 @@ from packaging.version import InvalidVersion, Version
 
 from kanon_cli.constants import (
     CATALOG_TYPE_CLAUDE_MARKETPLACE,
+    GLOBALLY_SUPPLIED_MANIFEST_VARS,
     KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
@@ -394,6 +395,15 @@ def _detect_manifest_env_vars(xml_path: pathlib.Path, manifest_root: pathlib.Pat
     (``assert_manifest_vars_resolved``) calls the SAME helper against the
     resolved manifest, so detection and verification agree by construction.
 
+    Vars in ``GLOBALLY_SUPPLIED_MANIFEST_VARS`` are excluded from the returned
+    list. ``CLAUDE_MARKETPLACES_DIR`` is supplied to every source's substitution
+    from the auto-managed global ``.kanon`` header
+    (:func:`kanon_cli.core.install.build_source_envsubst_vars` seeds it into
+    ``base_env_vars``), and a per-source line would OVERLAY that global with an
+    empty value and break marketplace registration. The install-side guard needs
+    no matching exclusion: a globally supplied var is always resolved by envsubst
+    and so never reaches the guard as an unresolved placeholder.
+
     Args:
         xml_path: Absolute path to the entry's root manifest XML file.
         manifest_root: Absolute path to the cloned manifest repo root (used to
@@ -407,7 +417,8 @@ def _detect_manifest_env_vars(xml_path: pathlib.Path, manifest_root: pathlib.Pat
         MalformedIncludeError: If an ``<include>`` element lacks a ``name``.
         xml.etree.ElementTree.ParseError: If any manifest file is malformed.
     """
-    return sorted(detect_functional_manifest_vars(xml_path, manifest_root))
+    detected = detect_functional_manifest_vars(xml_path, manifest_root)
+    return sorted(detected - GLOBALLY_SUPPLIED_MANIFEST_VARS)
 
 
 def _build_env_var_lines(source_name: str, env_vars: list[str], gitbase: str) -> list[str]:

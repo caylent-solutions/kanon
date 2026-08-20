@@ -53,6 +53,17 @@ _CUSTOM_VAR_MANIFEST = """\
 </manifest>
 """
 
+_LINKFILE_VAR_MANIFEST = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="origin" fetch="https://example.com/repos" />
+  <default revision="main" remote="origin" />
+  <project name="pkg" path="pkg">
+    <linkfile src="rules" dest="${KITROOT}/.claude/rules" />
+  </project>
+</manifest>
+"""
+
 _PROSE_VAR_MANIFEST = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <manifest>
@@ -197,6 +208,73 @@ class TestInstallEnvVarResolution:
         assert "custom" in message, message
         assert "${MYBASE}" in message, message
         assert "KANON_SOURCE_custom_MYBASE" in message, message
+
+    def test_linkfile_dest_var_install_fails_cleanly_when_value_missing(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        _no_network_sync,
+    ) -> None:
+        """Install of a manifest whose ONLY ${VAR} is a <linkfile dest> fails fast.
+
+        ``repo sync`` materializes ``<linkfile dest>`` on disk, so an unresolved
+        ${VAR} there is not prose: it produces a literal ``${KITROOT}`` directory
+        in the store while the consumer's intended destination stays empty.
+
+        Falsifiability: before the fix the guard scanned only each <project>'s OWN
+        attributes, so ${KITROOT} was invisible, the repo tool's envsubst merely
+        warned, and install exited 0 with the content linked to the wrong path.
+        """
+        monkeypatch.delenv("GITBASE", raising=False)
+        monkeypatch.delenv("KITROOT", raising=False)
+        monkeypatch.setenv(KANON_ALLOW_INSECURE_REMOTES, "1")
+
+        repos = tmp_path / "repos"
+        repos.mkdir()
+        bare = _make_manifest_bare_repo(repos, "linkvar", _LINKFILE_VAR_MANIFEST)
+
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanonenv = workspace / ".kanon"
+        kanonenv.write_text(_block("linkvar", bare))
+
+        with pytest.raises(UnresolvedManifestVarError) as exc_info:
+            install(kanonenv.resolve(), lock_file_path=workspace / ".kanon.lock")
+
+        message = str(exc_info.value)
+        assert "linkvar" in message, message
+        assert "${KITROOT}" in message, message
+        assert "KANON_SOURCE_linkvar_KITROOT" in message, message
+
+    def test_linkfile_dest_var_installs_when_value_provided(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        _no_network_sync,
+    ) -> None:
+        """The same manifest installs cleanly once the linkfile ${VAR} has a value."""
+        monkeypatch.delenv("GITBASE", raising=False)
+        monkeypatch.delenv("KITROOT", raising=False)
+        monkeypatch.setenv(KANON_ALLOW_INSECURE_REMOTES, "1")
+
+        repos = tmp_path / "repos"
+        repos.mkdir()
+        bare = _make_manifest_bare_repo(repos, "linkvar", _LINKFILE_VAR_MANIFEST)
+
+        project_root = tmp_path / "project-root"
+        project_root.mkdir()
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+        kanonenv = workspace / ".kanon"
+        kanonenv.write_text(_block("linkvar", bare, env_lines=f"KANON_SOURCE_linkvar_KITROOT={project_root}\n"))
+
+        install(kanonenv.resolve(), lock_file_path=workspace / ".kanon.lock")
+
+        manifest_text = _substituted_manifest_path("linkvar").read_text(encoding="utf-8")
+        assert "${KITROOT}" not in manifest_text, f"${{KITROOT}} must be substituted; got {manifest_text!r}"
+        assert f'dest="{project_root}/.claude/rules"' in manifest_text, (
+            f"<linkfile dest> must resolve to {project_root!r}; got {manifest_text!r}"
+        )
 
     def test_prose_var_in_comment_and_cdata_is_ignored(
         self,

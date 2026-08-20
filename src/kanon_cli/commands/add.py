@@ -45,6 +45,7 @@ from kanon_cli.constants import (
     MARKETPLACE_FLAG_TRUE,
     MISSING_CATALOG_ERROR_TEMPLATE,
     SOURCE_GITBASE_VAR,
+    UNFILLED_VAR_SENTINEL,
     SOURCE_MARKETPLACE_SUFFIX,
     SOURCE_PATH_SUFFIX,
     SOURCE_PREFIX,
@@ -426,8 +427,12 @@ def _build_env_var_lines(source_name: str, env_vars: list[str], gitbase: str) ->
 
     For each detected ``${VAR}`` name, emits ``KANON_SOURCE_<alias>_<VAR>=...``.
     The value is auto-derived for the variable named exactly ``GITBASE`` (the
-    org base derived from the entry's catalog-source URL) and empty for every
-    other variable name (a placeholder the operator fills in). When ``env_vars``
+    org base derived from the entry's catalog-source URL) and
+    :data:`~kanon_cli.constants.UNFILLED_VAR_SENTINEL` for every other variable
+    name, for the operator to replace. The sentinel is written rather than an
+    empty value because an empty one substitutes as the empty string, collapsing
+    a ``dest="${VAR}/rules"`` to ``/rules`` at the filesystem root while leaving
+    nothing for the install-time guard to catch. When ``env_vars``
     is empty, no lines are emitted.
 
     Args:
@@ -442,7 +447,7 @@ def _build_env_var_lines(source_name: str, env_vars: list[str], gitbase: str) ->
     prefix = f"{SOURCE_PREFIX}{source_name}"
     lines: list[str] = []
     for var in env_vars:
-        value = gitbase if var == SOURCE_GITBASE_VAR else ""
+        value = gitbase if var == SOURCE_GITBASE_VAR else UNFILLED_VAR_SENTINEL
         lines.append(f"{prefix}_{var}={value}")
     return lines
 

@@ -23,6 +23,8 @@ from urllib.parse import urlparse
 
 import pytest
 
+from kanon_cli.constants import UNFILLED_VAR_SENTINEL
+
 from tests.integration.test_add_core import (
     _git,
     _init_git_work_dir,
@@ -126,7 +128,7 @@ class TestAddEnvVarDetection:
         assert _env_var_lines(content, "noenv") == {}, f"a literal remote must yield no env-var line; got:\n{content}"
         assert "KANON_SOURCE_noenv_URL=" in content
 
-    def test_custom_var_remote_writes_empty_placeholder(self, tmp_path: pathlib.Path) -> None:
+    def test_custom_var_remote_writes_unfilled_sentinel(self, tmp_path: pathlib.Path) -> None:
         """Case (b): a custom ${MYBASE} remote writes an EMPTY KANON_SOURCE_<alias>_MYBASE= line."""
         body = textwrap.dedent("""\
               <remote name="origin" fetch="${MYBASE}/repos" />
@@ -145,7 +147,7 @@ class TestAddEnvVarDetection:
 
         content = (workspace / ".kanon").read_text()
         env = _env_var_lines(content, "custom")
-        assert env == {"MYBASE": ""}, (
+        assert env == {"MYBASE": UNFILLED_VAR_SENTINEL}, (
             f"a custom ${{MYBASE}} remote must write an empty MYBASE placeholder; got:\n{content}"
         )
 
@@ -231,8 +233,8 @@ class TestAddEnvVarDetection:
 
         content = (workspace / ".kanon").read_text()
         env = _env_var_lines(content, "projvar")
-        assert env == {"SUBPATH": ""}, (
-            f"a ${{SUBPATH}} project attribute must be detected and written empty; got:\n{content}"
+        assert env == {"SUBPATH": UNFILLED_VAR_SENTINEL}, (
+            f"a ${{SUBPATH}} project attribute must be detected and written as the unfilled sentinel; got:\n{content}"
         )
 
     def test_linkfile_dest_var_is_detected(self, tmp_path: pathlib.Path) -> None:
@@ -266,8 +268,8 @@ class TestAddEnvVarDetection:
 
         content = (workspace / ".kanon").read_text()
         env = _env_var_lines(content, "linkvar")
-        assert env == {"KITROOT": ""}, (
-            f"a ${{KITROOT}} in a <linkfile dest> must be detected and written empty; got:\n{content}"
+        assert env == {"KITROOT": UNFILLED_VAR_SENTINEL}, (
+            f"a ${{KITROOT}} in a <linkfile dest> must be detected and written as the unfilled sentinel; got:\n{content}"
         )
 
     def test_marketplace_dir_var_in_linkfile_writes_no_per_source_line(self, tmp_path: pathlib.Path) -> None:
@@ -298,7 +300,7 @@ class TestAddEnvVarDetection:
 
         content = (workspace / ".kanon").read_text()
         env = _env_var_lines(content, "mktvar")
-        assert env == {"KITROOT": ""}, (
+        assert env == {"KITROOT": UNFILLED_VAR_SENTINEL}, (
             f"only ${{KITROOT}} may get a per-source line; CLAUDE_MARKETPLACES_DIR is global; got:\n{content}"
         )
 
@@ -327,6 +329,6 @@ class TestAddEnvVarDetection:
 
         content = (workspace / ".kanon").read_text()
         env = _env_var_lines(content, "copyvar")
-        assert env == {"KITROOT": ""}, (
-            f"a ${{KITROOT}} in a <copyfile dest> must be detected and written empty; got:\n{content}"
+        assert env == {"KITROOT": UNFILLED_VAR_SENTINEL}, (
+            f"a ${{KITROOT}} in a <copyfile dest> must be detected and written as the unfilled sentinel; got:\n{content}"
         )

@@ -27,15 +27,57 @@ from __future__ import annotations
 import pathlib
 import xml.etree.ElementTree as ET
 
-from kanon_cli.constants import MANIFEST_PROJECT_FUNCTIONAL_CHILD_TAGS, SHELL_VAR_PATTERN
+from kanon_cli.constants import (
+    MANIFEST_BRACED_VAR_BODY_PATTERN,
+    MANIFEST_PROJECT_FUNCTIONAL_CHILD_TAGS,
+    MANIFEST_VAR_PATTERN,
+)
 from kanon_cli.core.include_walker import IncludeTree, _walk_includes
+
+
+class MalformedManifestVarError(ValueError):
+    """Raised when a manifest carries a ``${...}`` reference nothing can resolve.
+
+    ``repo envsubst`` substitutes through :func:`os.path.expandvars`, which only
+    resolves a body that is a valid identifier. A body such as ``VAR:-default``,
+    ``A${B`` or ``  VAR  `` is left in the manifest verbatim, and writing it into
+    ``.kanon`` as a key produces a source that can never install however many
+    times the operator follows the remediation. Failing at detection names the
+    real problem instead.
+
+    Attributes:
+        element_tag: The manifest element the reference was found on.
+        value: The full attribute value containing it.
+        body: The offending text between ``${`` and ``}``.
+    """
+
+    def __init__(self, *, element_tag: str, value: str, body: str) -> None:
+        """Store the offending reference and build the operator-facing message.
+
+        Args:
+            element_tag: The manifest element the reference was found on.
+            value: The full attribute value containing it.
+            body: The offending text between ``${`` and ``}``.
+        """
+        self.element_tag = element_tag
+        self.value = value
+        self.body = body
+        super().__init__(
+            f"ERROR: <{element_tag}> contains ${{{body}}}, which is not a variable reference "
+            f"'repo envsubst' can resolve; only ${{NAME}} or $NAME with NAME matching "
+            f"[A-Za-z_][A-Za-z0-9_]* is substituted. Offending value: {value!r}"
+        )
 
 
 def _vars_in_attributes(element: ET.Element) -> set[str]:
     """Return the ``${VAR}`` names referenced in an element's attribute values.
 
-    Scans every attribute value of ``element`` for ``${VAR}`` placeholders and
-    returns the bare ``VAR`` names (without the ``${...}`` wrapper). Because
+    Scans every attribute value of ``element`` for the variable references
+    ``repo envsubst`` will expand -- ``${VAR}`` and bare ``$VAR`` alike, since it
+    substitutes through :func:`os.path.expandvars` -- and returns the bare names.
+    Detecting only the braced spelling left the unbraced one substituted but
+    unannounced, which is the silent no-delivery this module exists to prevent.
+    Because
     ``Element.attrib`` exposes only attribute values -- never comments, CDATA,
     or element text -- this is inherently scoped to functional positions.
 
@@ -47,8 +89,11 @@ def _vars_in_attributes(element: ET.Element) -> set[str]:
     """
     found: set[str] = set()
     for value in element.attrib.values():
-        for match in SHELL_VAR_PATTERN.finditer(value):
-            found.add(match.group(1))
+        for body in MANIFEST_BRACED_VAR_BODY_PATTERN.findall(value):
+            if body and not body.isidentifier():
+                raise MalformedManifestVarError(element_tag=element.tag, value=value, body=body)
+        for match in MANIFEST_VAR_PATTERN.finditer(value):
+            found.add(match.group("braced") or match.group("bare"))
     return found
 
 

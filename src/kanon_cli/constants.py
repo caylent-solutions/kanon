@@ -79,6 +79,37 @@ MARKETPLACE_FLAG_TRUE = "true"
 CATALOG_TYPE_CLAUDE_MARKETPLACE = "claude-marketplace"
 SHELL_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
+MANIFEST_VAR_PATTERN = re.compile(r"\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))")
+"""Variable references ``repo envsubst`` will actually expand in a manifest.
+
+``repo envsubst`` substitutes through :func:`os.path.expandvars`, which expands
+``$VAR`` and ``${VAR}`` alike. Detection has to match that grammar exactly: a
+spelling the substituter expands but the detector misses is invisible to both
+``kanon add`` and the install-time guard, so install exits 0 with the variable
+unset and delivers nothing. This is deliberately *not*
+:data:`SHELL_VAR_PATTERN`, which governs substitution inside ``.kanon`` values
+and has its own, braces-only contract.
+"""
+
+UNFILLED_VAR_SENTINEL = "<SET_ME>"
+"""Placeholder ``kanon add`` writes for a manifest variable the operator must set.
+
+Deliberately shaped to match the unresolved-placeholder scanner, so an unfilled
+value fails the install with a diagnostic naming the key. An empty value would
+not: it substitutes as the empty string, so ``dest="${VAR}/rules"`` becomes
+``/rules`` at the filesystem root and the guard sees a fully resolved manifest.
+"""
+
+MANIFEST_BRACED_VAR_BODY_PATTERN = re.compile(r"\$\{([^}]*)\}")
+"""Any ``${...}`` body in a manifest, valid identifier or not.
+
+Used to reject a malformed reference rather than let it through: a body such as
+``VAR:-default`` or ``A${B`` is not something ``expandvars`` can ever resolve, so
+writing it into ``.kanon`` as a key produces a source that can never install. An
+*empty* body is not malformed -- ``expandvars`` leaves a literal ``${}`` alone,
+and it can appear legitimately in text -- so callers skip it.
+"""
+
 
 MANIFEST_PROJECT_FUNCTIONAL_CHILD_TAGS = ("linkfile", "copyfile")
 

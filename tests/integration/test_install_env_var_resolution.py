@@ -18,6 +18,13 @@ import subprocess
 
 import pytest
 
+import xml.etree.ElementTree as ET
+
+from kanon_cli.constants import UNFILLED_VAR_SENTINEL
+from kanon_cli.core.install import _UNRESOLVED_PLACEHOLDER_PATTERN, _is_unfilled_source_var
+from kanon_cli.core.manifest_vars import MalformedManifestVarError, _vars_in_attributes
+
+
 from kanon_cli.constants import KANON_ALLOW_INSECURE_REMOTES
 from kanon_cli.core.install import UnresolvedManifestVarError, compute_project_address, install
 
@@ -346,3 +353,76 @@ class TestInstallEnvVarResolution:
         assert f'fetch="{org_base}/repos"' in gb_text, f"gb manifest must use {org_base!r}; got {gb_text!r}"
         assert "${GITBASE}" not in gb_text, f"${{GITBASE}} must be substituted; got {gb_text!r}"
         assert "${" not in plain_text, f"no-var manifest must carry no placeholder; got {plain_text!r}"
+
+
+@pytest.mark.integration
+class TestManifestVarGrammar:
+    """The detector must cover exactly what ``repo envsubst`` expands.
+
+    ``repo envsubst`` substitutes through :func:`os.path.expandvars`, which
+    expands ``$VAR`` and ``${VAR}`` alike. A spelling the substituter expands but
+    the detector misses is invisible to both ``kanon add`` and the install-time
+    guard, so install exits 0 with the variable unset and delivers nothing.
+    """
+
+    def test_unbraced_var_in_linkfile_dest_is_detected(self) -> None:
+        """A bare ``$VAR`` in a dest is detected, not only the braced spelling."""
+        element = ET.fromstring('<linkfile src="rules" dest="$KITROOT/.claude/rules" />')
+        assert _vars_in_attributes(element) == {"KITROOT"}
+
+    def test_braced_and_unbraced_agree(self) -> None:
+        """Both spellings yield the same name, because envsubst treats them alike."""
+        braced = _vars_in_attributes(ET.fromstring('<linkfile src="s" dest="${V}/x" />'))
+        bare = _vars_in_attributes(ET.fromstring('<linkfile src="s" dest="$V/x" />'))
+        assert braced == bare == {"V"}
+
+    @pytest.mark.parametrize(
+        "dest",
+        ["${VAR:-default}/x", "${ VAR }/x", "${A${B}}/x", "${MY-VAR}/x"],
+        ids=["default-expansion", "padded", "nested", "hyphen"],
+    )
+    def test_malformed_reference_is_rejected(self, dest: str) -> None:
+        """A body envsubst can never resolve fails at detection.
+
+        Left to pass, it becomes a ``.kanon`` key that no value can satisfy, so
+        the source is permanently uninstallable however many times the operator
+        follows the remediation.
+        """
+        element = ET.fromstring(f'<linkfile src="s" dest="{dest}" />')
+        with pytest.raises(MalformedManifestVarError, match="not a variable reference"):
+            _vars_in_attributes(element)
+
+    @pytest.mark.parametrize("dest", ["${V", "${}", "plain/path"], ids=["unclosed", "empty", "literal"])
+    def test_non_references_are_ignored(self, dest: str) -> None:
+        """Text envsubst leaves alone is not treated as a variable."""
+        element = ET.fromstring(f'<linkfile src="s" dest="{dest}" />')
+        assert _vars_in_attributes(element) == set()
+
+
+@pytest.mark.integration
+class TestUnfilledSourceVariable:
+    """An unfilled per-source variable must not reach ``repo sync``.
+
+    ``kanon add`` writes one line per variable for the operator to fill in. An
+    empty value substitutes as the empty string, so ``dest="${VAR}/.claude/rules"``
+    collapses to ``/.claude/rules`` -- an absolute path at the filesystem root --
+    while leaving no placeholder for the guard to catch.
+    """
+
+    def test_empty_per_source_value_is_flagged_as_unfilled(self) -> None:
+        assert _is_unfilled_source_var("KANON_SOURCE_pkg_KITROOT", "")
+
+    def test_whitespace_only_value_is_flagged_as_unfilled(self) -> None:
+        assert _is_unfilled_source_var("KANON_SOURCE_pkg_KITROOT", "   ")
+
+    def test_filled_value_is_accepted(self) -> None:
+        assert not _is_unfilled_source_var("KANON_SOURCE_pkg_KITROOT", "/opt/kit")
+
+    @pytest.mark.parametrize("suffix", ["URL", "REF", "PATH", "NAME"])
+    def test_structural_suffixes_are_not_flagged(self, suffix: str) -> None:
+        """Structural keys are validated elsewhere; ``_PATH`` is legitimately empty."""
+        assert not _is_unfilled_source_var(f"KANON_SOURCE_pkg_{suffix}", "")
+
+    def test_sentinel_is_caught_by_the_placeholder_scanner(self) -> None:
+        """The value ``kanon add`` writes is one the install-time scanner rejects."""
+        assert _UNRESOLVED_PLACEHOLDER_PATTERN.search(UNFILLED_VAR_SENTINEL) is not None

@@ -90,6 +90,7 @@ from kanon_cli.constants import (
     SOURCE_ENV_KEY,
     SOURCE_MARKETPLACE_KEY,
     SOURCE_PREFIX,
+    SOURCE_RESERVED_SUFFIXES,
     resolve_kanon_home,
     KANON_PERMITTED_ABS_ROOTS_ENV,
     format_permitted_abs_roots,
@@ -158,6 +159,33 @@ __all__ = [
 _UNRESOLVED_PLACEHOLDER_PATTERN: re.Pattern[str] = re.compile(r"<[A-Z_|]+>")
 
 
+def _is_unfilled_source_var(key: str, value: str) -> bool:
+    """Return whether *key* is a per-source variable left without a value.
+
+    ``kanon add`` writes one ``KANON_SOURCE_<alias>_<VAR>=`` line per variable a
+    manifest references, for the operator to fill in. An empty value is not a
+    valid setting: it substitutes as the empty string, so a
+    ``dest="${VAR}/.claude/rules"`` collapses to ``/.claude/rules`` -- an absolute
+    path at the filesystem root -- while leaving no placeholder for the
+    install-time guard to catch. Treating empty as unfilled turns that silent
+    misdelivery into a diagnostic naming the key.
+
+    The four structural suffixes are excluded: they are written by ``kanon add``
+    with real values and are validated elsewhere, and ``_PATH`` is legitimately
+    empty for a source that installs at the workspace root.
+
+    Args:
+        key: The ``.kanon`` key, already stripped.
+        value: The raw text after the first ``=``.
+
+    Returns:
+        ``True`` when this is a per-source variable line with no value.
+    """
+    if not key.startswith(SOURCE_PREFIX) or value.strip():
+        return False
+    return not any(key.endswith(suffix) for suffix in SOURCE_RESERVED_SUFFIXES)
+
+
 def _scan_kanonenv_for_unresolved_placeholders(
     kanonenv_path: pathlib.Path,
 ) -> list[tuple[int, str]]:
@@ -182,9 +210,11 @@ def _scan_kanonenv_for_unresolved_placeholders(
     for line_number, line in enumerate(kanonenv_path.read_text(encoding="utf-8-sig").splitlines(), start=1):
         if "=" not in line or line.lstrip().startswith("#"):
             continue
-        _, _, value = line.partition("=")
+        key, _, value = line.partition("=")
         for match in _UNRESOLVED_PLACEHOLDER_PATTERN.finditer(value):
             findings.append((line_number, match.group(0)))
+        if _is_unfilled_source_var(key.strip(), value):
+            findings.append((line_number, f"{key.strip()}= (no value)"))
     return findings
 
 

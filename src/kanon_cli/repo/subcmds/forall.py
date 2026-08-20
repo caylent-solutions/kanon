@@ -297,6 +297,12 @@ without iterating through the remaining projects.
             # Restore all signal handlers to their pre-execution state so that
             # the calling process is not left with altered signal handling.
             for sig, handler in saved_handlers.items():
+                if handler is None:
+                    # getsignal() returns None when the previously installed
+                    # handler was not set through Python (e.g. SIGCHLD left
+                    # to a C-level default by the runtime). There is no
+                    # Python-representable value to restore it to.
+                    continue
                 try:
                     signal.signal(sig, handler)
                 except (OSError, ValueError):

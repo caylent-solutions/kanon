@@ -271,6 +271,16 @@ each `git ls-remote` call in `kanon install`, `kanon outdated`,
 `kanon why`, and `kanon doctor`. Bounded per call; not a global wall
 clock. Defined in `src/kanon_cli/constants.py`.
 
+**`KANON_SYNC_JOBS`** (default: unset) -- Number of parallel jobs
+`kanon install` passes to `repo sync` for network fetch and local
+checkout. When unset, `repo sync` uses its own default
+(`min(cpu_count, 8)`). Set it to `1` to run the sync in a single process
+with no worker pool; that is worth doing when many `kanon` processes
+share one machine (a parallel test run, or a CI runner executing several
+installs at once), because the pools then contend for the same POSIX
+semaphores and can wedge. Must be a positive integer; any other value
+exits non-zero. Defined in `src/kanon_cli/constants.py`.
+
 **`KANON_KANON_FILE`** (default: `./.kanon`) -- Default `.kanon` file
 path. It supplies the default target for `kanon add` / `kanon remove`
 writes and the default `--kanon-file` value for the commands that accept

@@ -1392,9 +1392,9 @@ def _prune_cache(
     total_bytes = 0
 
     for child in list(cache_dir.rglob("*")):
-        if not child.is_file():
-            continue
         try:
+            if not child.is_file():
+                continue
             file_stat = child.stat()
         except OSError as exc:
             print(f"WARN: Cannot stat {child}: {exc}", file=sys.stderr)
@@ -1450,13 +1450,13 @@ def _scan_stale_install_locks(
             Stale lock file paths.
         """
         candidate = directory / ".kanon-data" / INSTALL_LOCK_FILENAME
-        if candidate.is_file():
-            try:
+        try:
+            if candidate.is_file():
                 mtime = datetime.datetime.fromtimestamp(candidate.stat().st_mtime, tz=datetime.timezone.utc)
                 if mtime < cutoff:
                     yield candidate
-            except OSError as exc:
-                print(f"WARN: Cannot stat {candidate}: {exc}", file=sys.stderr)
+        except OSError as exc:
+            print(f"WARN: Cannot stat {candidate}: {exc}", file=sys.stderr)
 
         if current_depth >= max_depth:
             return
@@ -1468,7 +1468,12 @@ def _scan_stale_install_locks(
             return
 
         for child in children:
-            if child.is_dir():
+            try:
+                is_dir = child.is_dir()
+            except OSError as exc:
+                print(f"WARN: Cannot stat {child}: {exc}", file=sys.stderr)
+                continue
+            if is_dir:
                 yield from _walk(child, current_depth + 1)
 
     yield from _walk(root, 0)

@@ -28,7 +28,7 @@ from typing import Iterable
 import pytest
 
 from kanon_cli.core.install import compute_project_address
-from tests.conftest import _isolation_env, strip_subprocess_coverage_env
+from tests.conftest import _isolation_env, strip_subprocess_coverage_env, subprocess_timeout
 
 
 INTEGRATION_DOC = pathlib.Path(__file__).resolve().parents[2] / "docs" / "integration-testing.md"
@@ -65,7 +65,14 @@ def run_kanon(
     """Invoke `python -m kanon_cli <args>` and return the completed process.
 
     Mirrors `tests/functional/conftest._run_kanon` but lives in the scenarios
-    package so it stays importable without sys.path tricks.
+    package so it stays importable without sys.path tricks. Like that helper, the
+    child is bounded by `subprocess_timeout()` so a wedged `kanon` is killed and
+    reported instead of hanging its pytest worker.
+
+    Raises:
+        ValueError: When both `env` and `extra_env` are provided at once.
+        subprocess.TimeoutExpired: When the child does not exit within
+            `KANON_TEST_SUBPROCESS_TIMEOUT` seconds.
     """
     if env is not None and extra_env is not None:
         raise ValueError("Provide either 'env' or 'extra_env', not both.")
@@ -88,6 +95,7 @@ def run_kanon(
         check=False,
         cwd=resolved_cwd,
         env=resolved_env,
+        timeout=subprocess_timeout(),
     )
 
 

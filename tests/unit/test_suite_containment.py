@@ -1,0 +1,229 @@
+"""Tests for the deadlines and leak detection that bound this test suite.
+
+Nothing here tests kanon behaviour; it tests the guards that stop a wedged
+``kanon`` subprocess from hanging a pytest worker until CI's own limit expires,
+and that stop such a subprocess from outliving the session unnoticed.
+
+Covers:
+- KANON_TEST_SUBPROCESS_TIMEOUT parsing and its fail-fast rejection of bad values
+- the per-test pytest-timeout deadline actually being in effect
+- the leaked-process matcher, against both a live process and a false-positive
+  command line
+"""
+
+from __future__ import annotations
+
+import os
+import pathlib
+import subprocess
+import sys
+from unittest import mock
+
+import pytest
+
+from tests.conftest import (
+    _is_kanon_command,
+    _leaked_kanon_processes,
+    _positive_int_env,
+    _PS_SCAN_COMMAND,
+    _SUBPROCESS_TIMEOUT_ENV,
+    subprocess_timeout,
+)
+
+
+_HOLD_SCRIPT = "import sys, time\nsys.stdout.write('up\\n')\nsys.stdout.flush()\ntime.sleep(600)\n"
+
+_WIDTH_PADDING = "pad" * 80
+
+
+def _spawn_leak_probe(tmp_path: pathlib.Path) -> subprocess.Popen:
+    """Start a child that presents the command line of a leaked ``kanon`` install.
+
+    The child does no install work; it only needs an argument vector ``ps`` will
+    report as ``-m kanon_cli``. A long padding argument precedes that marker so the
+    marker sits far beyond column 80: procps truncates its command column to the
+    terminal width when stdout is not a tty, which once cut the marker off every
+    candidate in CI and made the scan report a clean session. Without the padding
+    this probe passes on a short path and hides that regression.
+
+    The caller is responsible for killing and reaping the returned process.
+    """
+    script = tmp_path / "hold.py"
+    script.write_text(_HOLD_SCRIPT, encoding="utf-8")
+    child = subprocess.Popen(
+        [sys.executable, str(script), _WIDTH_PADDING, "-m", "kanon_cli"],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert child.stdout is not None
+    assert child.stdout.readline() == "up\n", "child did not reach a running state"
+    return child
+
+
+@pytest.mark.unit
+class TestSubprocessTimeout:
+    def test_uses_env_value_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An operator-supplied deadline overrides the suite default."""
+        monkeypatch.setenv(_SUBPROCESS_TIMEOUT_ENV, "45")
+        assert subprocess_timeout() == 45
+
+    def test_defaults_to_a_positive_deadline_when_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A bare pytest run is still bounded, not left to block forever."""
+        monkeypatch.delenv(_SUBPROCESS_TIMEOUT_ENV, raising=False)
+        assert subprocess_timeout() > 0
+
+    @pytest.mark.parametrize("raw", ["0", "-5"])
+    def test_rejects_non_positive(self, monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+        """A non-positive deadline would disable containment, so it is refused."""
+        monkeypatch.setenv(_SUBPROCESS_TIMEOUT_ENV, raw)
+        with pytest.raises(RuntimeError, match=_SUBPROCESS_TIMEOUT_ENV):
+            subprocess_timeout()
+
+    @pytest.mark.parametrize("raw", ["", "none", "5s"])
+    def test_rejects_unparseable(self, monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+        """A malformed deadline names the offending variable rather than being ignored."""
+        monkeypatch.setenv(_SUBPROCESS_TIMEOUT_ENV, raw)
+        with pytest.raises(RuntimeError, match=_SUBPROCESS_TIMEOUT_ENV):
+            subprocess_timeout()
+
+    def test_positive_int_env_prefers_environment_over_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The shared parser reads the environment and falls back only when absent."""
+        monkeypatch.setenv("KANON_TEST_CONTAINMENT_PROBE", "7")
+        assert _positive_int_env("KANON_TEST_CONTAINMENT_PROBE", "99") == 7
+        monkeypatch.delenv("KANON_TEST_CONTAINMENT_PROBE")
+        assert _positive_int_env("KANON_TEST_CONTAINMENT_PROBE", "99") == 99
+
+
+@pytest.mark.unit
+class TestSubprocessDeadlineIsEnforced:
+    def test_a_wedged_child_is_killed_and_reported(self, tmp_path: pathlib.Path) -> None:
+        """subprocess.run with the suite's timeout kills a hung child instead of blocking."""
+        script = tmp_path / "hold.py"
+        script.write_text(_HOLD_SCRIPT, encoding="utf-8")
+        with pytest.raises(subprocess.TimeoutExpired) as exc_info:
+            subprocess.run(
+                [sys.executable, str(script)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=1,
+            )
+        assert str(script) in " ".join(exc_info.value.cmd)
+
+
+@pytest.mark.unit
+class TestPerTestDeadline:
+    def test_timeout_plugin_is_loaded(self, request: pytest.FixtureRequest) -> None:
+        """Without pytest-timeout there is no backstop for a hang outside a helper."""
+        assert request.config.pluginmanager.hasplugin("timeout"), (
+            "pytest-timeout must be installed; tests/conftest.py refuses to run without it"
+        )
+
+    def test_deadline_matches_the_configured_value(self, request: pytest.FixtureRequest) -> None:
+        """The deadline pytest-timeout resolved is the one tests/conftest.py exported."""
+        configured = os.environ.get("PYTEST_TIMEOUT")
+        assert configured is not None, "tests/conftest.py must export PYTEST_TIMEOUT for pytest-timeout to read"
+        effective = getattr(request.config, "_env_timeout", None)
+        assert effective == pytest.approx(float(configured)), (
+            f"pytest-timeout resolved a deadline of {effective!r}, but PYTEST_TIMEOUT is {configured!r}"
+        )
+
+
+@pytest.mark.unit
+class TestLeakedProcessMatching:
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "/usr/bin/python3 -m kanon_cli install .kanon",
+            "/opt/venv/bin/kanon doctor",
+            "kanon install",
+        ],
+    )
+    def test_matches_kanon_invocations(self, command: str) -> None:
+        """Both module and console-script invocations count as kanon processes."""
+        assert _is_kanon_command(command)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "python -m pytest -n auto --cov=kanon_cli --cov-report=term-missing",
+            "uv run pytest -n auto --dist loadscope -m unit",
+            "/usr/bin/git -C /tmp/kanon_cli fetch",
+            "",
+        ],
+    )
+    def test_does_not_match_test_runners(self, command: str) -> None:
+        """A runner that merely mentions kanon_cli must not be reported as a leak.
+
+        ``--cov=kanon_cli`` appears in the CI pytest command line; a substring match
+        would flag the test session itself and fail every run.
+        """
+        assert not _is_kanon_command(command)
+
+
+@pytest.mark.unit
+class TestLeakedProcessDetection:
+    def test_finds_a_live_process_in_this_process_group(self, tmp_path: pathlib.Path) -> None:
+        """A surviving kanon-shaped child is found by a scan of our own process group.
+
+        The probe's marker sits past column 80, so this also covers the command-column
+        truncation that made the scan blind on Linux.
+        """
+        child = _spawn_leak_probe(tmp_path)
+        try:
+            leaked = _leaked_kanon_processes(os.getpgrp())
+            assert child.pid in [pid for pid, _command in leaked], (
+                f"pid {child.pid} is alive in process group {os.getpgrp()} but was not detected; got {leaked!r}"
+            )
+        finally:
+            child.kill()
+            child.wait(timeout=subprocess_timeout())
+
+    def test_reports_nothing_once_the_child_is_gone(self, tmp_path: pathlib.Path) -> None:
+        """A reaped child is no longer reported, so a clean session stays green."""
+        child = _spawn_leak_probe(tmp_path)
+        child.kill()
+        child.wait(timeout=subprocess_timeout())
+        leaked = _leaked_kanon_processes(os.getpgrp())
+        assert child.pid not in [pid for pid, _command in leaked]
+
+    def test_scan_command_disables_command_column_truncation(self) -> None:
+        """The ps invocation must ask for untruncated output.
+
+        procps truncates the command column to the terminal width (80 when stdout is
+        not a tty). Dropping the wide flag reintroduces a scan that silently sees no
+        leaks on Linux while passing on macOS, where ps does not truncate a non-tty.
+        """
+        assert "-ww" in _PS_SCAN_COMMAND, (
+            f"{_PS_SCAN_COMMAND!r} must pass -ww; without it procps truncates the command "
+            f"column and the trailing '-m kanon_cli' marker is cut off in CI."
+        )
+
+
+@pytest.mark.unit
+class TestLeakScanFailsClosed:
+    def test_raises_when_the_listing_does_not_contain_this_process(self) -> None:
+        """An unparseable ps listing raises instead of reporting a clean session.
+
+        Every process listing contains the process doing the listing. If this one does
+        not, the output is not in the assumed 'pid pgid command' form, and an empty
+        result would mean 'cannot see' rather than 'nothing leaked' -- the exact
+        fail-open behaviour that hid the truncation defect.
+        """
+        bogus = subprocess.CompletedProcess(args=list(_PS_SCAN_COMMAND), returncode=0, stdout="garbage\n", stderr="")
+        with mock.patch("tests.conftest.subprocess.run", return_value=bogus):
+            with pytest.raises(RuntimeError, match="did not find this process"):
+                _leaked_kanon_processes(os.getpgrp())
+
+    def test_raises_when_ps_is_unavailable(self) -> None:
+        """A missing or failing ps is surfaced, not swallowed."""
+        with mock.patch("tests.conftest.subprocess.run", side_effect=FileNotFoundError("ps")):
+            with pytest.raises(RuntimeError, match="Unable to scan"):
+                _leaked_kanon_processes(os.getpgrp())
+
+    def test_own_process_alone_is_not_reported_as_a_leak(self) -> None:
+        """The scanning process must never report itself, however it is named."""
+        listing = f"{os.getpid()} {os.getpgrp()} python -m kanon_cli install\n"
+        completed = subprocess.CompletedProcess(args=list(_PS_SCAN_COMMAND), returncode=0, stdout=listing, stderr="")
+        with mock.patch("tests.conftest.subprocess.run", return_value=completed):
+            assert _leaked_kanon_processes(os.getpgrp()) == []

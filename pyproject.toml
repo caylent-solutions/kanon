@@ -76,6 +76,14 @@ indent-style = "space"
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "--ignore=tests/unit/repo/test_harness_smoke.py"
+# Per-test deadline (pytest-timeout). The number of seconds comes from
+# KANON_TEST_TIMEOUT via PYTEST_TIMEOUT, which tests/conftest.py exports before
+# pytest-timeout configures itself; only the method is fixed here. "thread" is used
+# rather than "signal" because the hang this guards against parks the main thread in
+# waitpid() around a deadlocked repo-sync pool, and the thread method both fires
+# unconditionally and dumps every thread's stack, which is the diagnostic that
+# identifies such a hang.
+timeout_method = "thread"
 markers = [
     "unit: Unit tests -- fast, isolated, no external dependencies",
     "functional: Functional tests -- exercise CLI via subprocess",
@@ -163,6 +171,7 @@ dev = [
     "pymarkdownlnt>=0.9.38",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
+    "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6",
     "python-semantic-release~=8.0.0",
     "ruff~=0.11.0",

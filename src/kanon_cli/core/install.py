@@ -91,6 +91,7 @@ from kanon_cli.constants import (
     SOURCE_MARKETPLACE_KEY,
     SOURCE_PREFIX,
     resolve_kanon_home,
+    resolve_sync_jobs,
 )
 from kanon_cli.core.git_runner import run_git_ls_remote
 from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
@@ -1946,13 +1947,19 @@ def assert_manifest_vars_resolved(
 def run_repo_sync(source_dir: pathlib.Path) -> None:
     """Run ``repo sync`` in source directory.
 
+    The job count is taken from :func:`resolve_sync_jobs`, so an operator (or the
+    test suite, which pins it to ``1``) can bound how many worker processes the
+    sync fans out to. When ``KANON_SYNC_JOBS`` is unset this passes no ``--jobs``
+    and ``repo sync`` keeps its own default.
+
     Args:
         source_dir: Path to ``.kanon-data/sources/<name>/``.
 
     Raises:
         RepoCommandError: If repo sync exits non-zero.
+        SystemExit: If ``KANON_SYNC_JOBS`` is set to a non-positive-integer value.
     """
-    _repo.repo_sync(str(source_dir))
+    _repo.repo_sync(str(source_dir), jobs=resolve_sync_jobs())
 
 
 def aggregate_symlinks(

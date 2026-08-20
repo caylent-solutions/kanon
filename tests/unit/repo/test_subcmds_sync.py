@@ -894,6 +894,10 @@ class TestPostRepoUpgrade:
         import itself succeeds. Point the wrapper module's homedir globals at a
         short path under KANON_TEST_TMP_ROOT so the agent socket stays well
         within the limit and the agent starts reliably under contention.
+
+        Teardown only calls gpgconf when it is actually installed: no
+        gpg-agent could have started under gpg_dir without the gpgconf/gpg
+        binaries present.
         """
         wrapper = Wrapper()
         tmp_root = pathlib.Path(os.environ.get(_GNUPG_TMP_ROOT_ENV, _GNUPG_TMP_ROOT_DEFAULT))
@@ -917,11 +921,12 @@ class TestPostRepoUpgrade:
             wrapper.repo_config_dir = saved["repo_config_dir"]
             wrapper.home_dot_repo = saved["home_dot_repo"]
             wrapper.gpg_dir = saved["gpg_dir"]
-            subprocess.run(
-                ["gpgconf", "--homedir", str(gpg_dir), "--kill", "all"],
-                capture_output=True,
-                check=False,
-            )
+            if shutil.which("gpgconf"):
+                subprocess.run(
+                    ["gpgconf", "--homedir", str(gpg_dir), "--kill", "all"],
+                    capture_output=True,
+                    check=False,
+                )
             shutil.rmtree(base, ignore_errors=True)
 
     def test_creates_symlink_if_not_exists(self, tmp_path):

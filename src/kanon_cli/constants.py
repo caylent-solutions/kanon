@@ -768,3 +768,41 @@ if KANON_TELEMETRY_GRAPH_SIZE_CAP <= 0:
     raise SystemExit(
         f"ERROR: KANON_TELEMETRY_GRAPH_SIZE_CAP must be a positive integer; got {KANON_TELEMETRY_GRAPH_SIZE_CAP}"
     )
+
+
+KANON_SYNC_JOBS_ENV = "KANON_SYNC_JOBS"
+
+
+def resolve_sync_jobs() -> int | None:
+    """Return the operator-requested ``repo sync`` job count, or ``None`` when unset.
+
+    ``repo sync`` fans out over a :class:`multiprocessing.Pool` sized from
+    ``min(os.cpu_count(), 8)`` unless an explicit ``--jobs`` is supplied. When many
+    ``kanon`` processes run concurrently on one machine -- most acutely a
+    ``pytest-xdist`` run, where every worker drives its own ``kanon install`` --
+    each of those pools contends for the same POSIX semaphores, and the pool
+    workers can block in ``sem_wait()`` while the parent blocks in ``waitpid()``,
+    deadlocking both indefinitely. Setting this variable to ``1`` takes the
+    single-process short-circuit in ``repo.command`` and builds no pool at all.
+
+    Unlike the other tunables in this module this is resolved per call rather than
+    at import, because callers (and the test suite) set it through the process
+    environment after ``kanon_cli`` has already been imported.
+
+    Returns:
+        The positive integer job count when ``KANON_SYNC_JOBS`` is set, otherwise
+        ``None`` so ``repo sync`` keeps its own default.
+
+    Raises:
+        SystemExit: When the variable is set to anything but a positive integer.
+    """
+    raw = os.environ.get(KANON_SYNC_JOBS_ENV)
+    if raw is None:
+        return None
+    try:
+        jobs = int(raw)
+    except ValueError:
+        raise SystemExit(f"ERROR: {KANON_SYNC_JOBS_ENV} must be a positive integer; got {raw!r}")
+    if jobs <= 0:
+        raise SystemExit(f"ERROR: {KANON_SYNC_JOBS_ENV} must be a positive integer; got {jobs}")
+    return jobs

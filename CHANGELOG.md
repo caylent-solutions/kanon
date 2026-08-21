@@ -2,157 +2,1251 @@
 
 
 
-## [Unreleased]
+## v3.4.0 (2026-08-21)
 
-### Added
+### Feature
 
-* feat: confine an absolute `<linkfile>`/`<copyfile>` dest to permitted roots
+* feat: multi project installs, safer file delivery, and faster validation (#117)
 
-A `<linkfile dest>` or `<copyfile dest>` may be an absolute path. Because the
-manifest declaring it is fetched from a remote repository, such a destination is
-now confined to a permitted root rather than being written anywhere the invoking
-user can write. The permitted roots are the consumer project root and the
-resolved `CLAUDE_MARKETPLACES_DIR`, plus anything an operator opts into with the
-new repeatable `--allow-abs-root <path>` flag or the `KANON_ALLOWED_ABS_ROOTS`
-environment variable (flag wins, matching `--home` / `KANON_HOME`). The two
-built-in roots are unconditional, so the setting can only widen the boundary. No
-new `.kanon` key is required and nothing is added to existing files. A
-destination outside every permitted root exits non-zero naming the destination,
-the roots, and how to widen them.
+* fix: skip linkfile copy when dest already resolves to src
 
-* feat: `KANON_SYNC_JOBS` caps `repo sync`'s fan-out
+repo sync materializes every &lt;linkfile&gt; as a symlink before
+_process_manifest_linkfiles runs. For a file-level src the helper then
+called shutil.copy2 on the same inode pair, raising SameFileError and
+aborting the install with exit 1.
 
-An upper bound on worker processes during `kanon install`. It can lower fan-out,
-never raise it: `repo sync` resolves separate network and checkout job counts
-whose defaults differ (1 and `min(cpu_count, 8)`), so each is capped against its
-own default rather than both being set from one value. The cap takes precedence
-over a manifest's `<default sync-j>`. Validated at CLI entry, so a bad value
-cannot abort an install part-way. Unset, `repo sync` resolves its own defaults
-and behaviour is unchanged.
+Closes #93
 
-### Fixed
+* fix: scope marketplace linkfile dest rule to claude-marketplace entries
 
-* fix: `kanon clean --purge-all` no longer refuses a `.kanon` with no sources
+validate_linkfile_dest required every &lt;linkfile dest&gt; in every catalog
+entry to start with ${CLAUDE_MARKETPLACES_DIR}/, ignoring the declared
+&lt;catalog-metadata&gt;&lt;type&gt;. Non-marketplace entries that install correctly
+could not pass validation.
 
-`--purge-all` is the machine-wide teardown and already fell back to a store-only
-clean when no `.kanon` was discoverable at all. A `.kanon` that existed but
-declared no sources took a different path and exited non-zero with "No sources
-found. Define at least one source...", which is the opposite of what an operator
-asking to remove everything wants, and left the escape hatch unusable in exactly
-the broken state it exists for. Such a project is now torn down: its config files
-and the shared home store are removed, and there is no per-source work to do.
-Plain `kanon clean` still treats a sourceless `.kanon` as a fail-fast error.
+Closes #94
 
-* fix: `--allow-abs-root` is listed in `kanon --help`
+* fix: detect ${VAR} in linkfile and copyfile dest attributes
 
-The flag appeared in the usage line argparse prints on an error but was missing
-from the hand-written global-options block that `kanon --help` shows, so the only
-place it surfaced was a failure. A guard now asserts every global option the
-parser accepts appears in that block; the help snapshot fixture could not catch
-this, because adding a flag without editing the block leaves the snapshot
-byte-identical.
+Variable detection walked only &lt;project&gt; and &lt;remote&gt; own attributes, so
+a var used solely in a &lt;linkfile dest&gt; was invisible to both kanon add
+and assert_manifest_vars_resolved. Install then exited 0 with the var
+unset and delivered nothing.
 
-* fix: key per-source install workspaces by consumer project (#96)
+Closes #95
 
-Per-source install workspaces (`<KANON_HOME>/store/.kanon-data/sources/...`) are
-now keyed by a stable per-project address (`compute_project_address`), not just
-the source alias. Previously, two unrelated projects declaring the same source
-alias shared one mutable `repo` workspace: the second project's install would
-silently deliver no content (while reporting success), or -- if the two projects
-pinned different refs -- raise an unhandled `GitCommandError` and wedge the
-shared workspace for both projects.
+* fix: key per-source install workspaces and aggregated packages by consumer project (#96)
 
-The aggregated `.packages/` symlink tree is deliberately **not** keyed: keying it
-broke roughly 140 end-to-end tests for no behavioural gain, and its path is part
-of the operator-facing contract. Instead, replacing a link published there by a
-*different* project now prints a warning naming both projects and the remedy,
-where it was previously silent. It warns rather than failing so that two projects
-sharing a package name can still coexist. Full isolation of the aggregation
-directory is tracked in issue #115.
+Two unrelated projects declaring the same source alias shared one mutable
+.repo workspace under &lt;KANON_HOME&gt;/store/.kanon-data/sources/&lt;alias&gt;. The
+second project&#39;s install would silently deliver no content while reporting
+success, or -- with a different pinned ref -- raise an unhandled
+GitCommandError and wedge the shared workspace for both projects.
 
-Workspaces written before this change are left under the old alias-only path and
-are never read again. Nothing needs to be done about them: `kanon doctor` reports
-them, and `kanon clean` reclaims them along with the rest of the store. Note that
-`kanon clean` removes the store's `.kanon-data/` for **every** project sharing
-that `KANON_HOME`, not only the current one -- each of those projects re-clones
-on its next install.
+Key both the per-source repo workspace and the aggregated .packages/ symlink
+tree by a stable per-project address (compute_project_address, mirroring
+resolve_kanon_lock_root), so two projects never share a mutable workspace or
+collide on a package name. Also run the manifests working-tree reset before
+every repo init, not just on refresh/reconcile, now that it&#39;s safe to do so
+unconditionally.
 
-* fix: detect `${VAR}` and `$VAR` in `<linkfile>`/`<copyfile>` src and dest (#95)
+* fix(test): move inline comments into docstrings in new project-keying tests
 
-Variable detection walked only `<project>` and `<remote>` attributes, so a
-variable used solely in a `<linkfile dest>` was invisible to both `kanon add` and
-the install-time guard, and install exited 0 with the variable unset having
-delivered nothing. Detection now covers those elements, and matches the grammar
-`repo envsubst` actually expands -- `$VAR` as well as `${VAR}`. A `${...}` body
-that is not a valid identifier (`${VAR:-default}`, for example) is rejected at
-detection rather than written into `.kanon` as a key no value can satisfy.
+The no-comments hook (kanon-owned Python may not contain &#39;#&#39; comments) failed
+on the previous commit&#39;s new tests. Fold the same explanations into the
+enclosing docstrings, which the check exempts.
 
-`kanon add` now writes `<SET_ME>` for a variable it cannot derive, instead of an
-empty value. An empty value substituted as the empty string, so a
-`dest="${VAR}/rules"` collapsed to `/rules` at the filesystem root while leaving
-no placeholder for the guard to catch.
+* fix: allow &lt;copyfile&gt; to deliver a real file via absolute dest
 
-* fix: `<copyfile>` dest is validated by `kanon validate marketplace`
+&lt;copyfile&gt; dest could only resolve inside the repo client store, never
+into the consuming project, because abs_ok was gated to linkfile only
+in _ValidateFilePaths, and _CopyFile._Copy had no absolute-dest branch.
+This made it impossible to deliver files (e.g. GitHub Actions workflow
+files) that cannot be symlinks into a consumer&#39;s working tree.
 
-The validator applied its containment rule to `<linkfile>` only, so a
-`<copyfile>` could declare any destination and still pass.
+Give &lt;copyfile&gt; the same absolute-dest handling &lt;linkfile&gt; already has
+(spec 17.1): abs_ok=True for dest validation, and a _Copy() branch that
+uses an absolute dest directly (with the same &#34;..&#34; traversal guard)
+instead of resolving it under topdir. Relative dest is unchanged.
 
-* fix: a failed `<copyfile>` copy raises instead of being logged and ignored
+Closes #102
 
-`repo sync` could report success having delivered nothing.
+* fix: scope project-keying to the source workspace only, not .packages/
 
-* fix: `kanon doctor` no longer aborts on an unreadable cache or lock entry
+The .packages/ aggregation farm is write-only bookkeeping consumed only
+within the same install() call (in-memory collision detection, and the
+human-readable install summary) -- nothing reads it back across projects
+or across installs, unlike the mutable per-source .repo workspace, which
+genuinely corrupts across projects without keying. Keying .packages/ too
+was unwarranted scope beyond the reported bug and untested against the
+existing suite: it broke ~140 real end-to-end tests that assert on the
+literal store layout for the common single-project case.
 
-Stat probes outside their error handler let an `OSError` escape as a traceback.
+Revert aggregate_symlinks&#39;s .packages/ destination to unkeyed, keeping the
+project_address parameter only for locating the (still keyed) per-source
+read side. Update every real end-to-end/scenario/integration test whose
+fixtures or assertions depended on the old, unkeyed .kanon-data/sources/&lt;name&gt;
+path so they account for the new &lt;project_address&gt; segment.
 
-* fix: `kanon repo forall` no longer raises when restoring a signal handler that
-  was not installed from Python
+* fix(test): key the remaining unkeyed source-workspace assertion post-merge
 
-### Changed
+test_linkfile_dest_var_installs_when_value_provided was added on
+fix/issue-95-manifest-vars after fix/issue-96 branched, so #96&#39;s project-address
+keying fix never touched it. Update its _substituted_manifest_path() call to
+pass kanonenv, matching every other call site in this file.
 
-* Major-version migration notes moved to `docs/archive/`
+* fix(test): update stale linkfile-dest test cases to match the containment rule
 
-`docs/migration-to-add.md` and `docs/migrating-existing-kanon-files.md` cover
-upgrading from 2.x and are not needed on a current installation. They now live
-under `docs/archive/` (the first renamed to `upgrading-from-2x.md`) and are no
-longer linked from the main documentation. Upgrading between 3.x releases
-requires no operator action: `kanon doctor` reports anything left behind by an
-older store layout and `kanon clean` reclaims it.
+TestLinkfileDestValidation still asserted the pre-existing-in-this-branch
+blanket ${CLAUDE_MARKETPLACES_DIR}/ prefix requirement, but
+validate_linkfile_dest&#39;s containment rule (this same branch) intentionally
+accepts a plain relative path or any other ${VAR} root -- only an empty,
+absolute, or ..-containing dest escapes the workspace. Replace the three
+now-valid cases with dest values that actually violate containment.
 
-The `kanon catalog audit` legacy-directory warning now cites the archived path.
+* fix: handle OSError from stat probes and unrestorable signal handlers
 
-* The unit-coverage gate is raised from 90% to 93%
+Eighteen unit tests fail on macOS. The causes are independent but all come
+down to code assuming a probe cannot fail, or a test assuming a platform
+detail that does not hold.
 
-`COVERAGE_MIN` measured 90% against a surface that included the vendored repo
-tree. That tree is now its own tier and omitted from this gate, so the same
-threshold was a looser bar against a smaller denominator. 93% restores real
-stringency against kanon's own source, which currently measures 93.75%.
+- doctor.py: _prune_cache and _scan_stale_install_locks called is_file() /
+  is_dir() outside the try that guards the following stat(). Those calls
+  stat the path themselves, so an unreadable entry raised OSError past the
+  handler that exists precisely to warn and skip it. Both probes move
+  inside the try.
+- forall.py: signal.getsignal() returns None when the installed handler was
+  not set through Python, and signal.signal(sig, None) then raises. Skip
+  restoring those; there is no Python-representable value to restore to.
+- test_conftest_fixtures.py: tmp_path_factory resolves symlinks when it
+  creates temp dirs but tempfile.gettempdir() does not, so the prefix
+  assertion compared /private/var against /var. Resolve both sides.
+- test_mkdtemp_cleanup.py: the atexit registration test read the private
+  atexit._ncallbacks(), which does not decrement on unregister() on every
+  CPython build. Assert against a mocked atexit.register instead.
+- test_fs_fault_extended.py: the CLI emits &#34;ERROR:&#34;, not &#34;Error:&#34;.
+- test_subcmds_sync.py: only run the gpgconf teardown when gpgconf is
+  installed; without it no agent could have started.
 
-* `kanon clean` is now scoped to the project you run it in
+* fix: bound test-suite subprocesses and cap repo-sync parallelism
 
-It removed the shared store's entire `.packages/` and `.kanon-data/` trees plus
-every content-addressed entry, so cleaning one project destroyed the installed
-state of every other project sharing that `KANON_HOME`. It now removes only this
-project's source workspace and the aggregated package links this project created.
-Other projects' workspaces, their links, and the shared store entries survive.
-`--purge-all` is unchanged and remains the machine-wide teardown.
+The functional tier could hang indefinitely. Root cause: run_repo_sync
+passed no jobs argument, so repo sync built a multiprocessing.Pool of
+min(cpu_count, 8) workers per kanon install. Under pytest-xdist every
+worker drives its own install, so 100+ processes contended for the same
+POSIX semaphores; pool workers parked in sem_wait() while their parent
+parked in waitpid(), both at 0% CPU, forever. Nothing bounded them
+because the shared subprocess helpers passed no timeout, so a wedged
+child blocked its pytest worker until CI&#39;s own limit expired and then
+survived as an orphan reparented to init.
 
-One consequence worth noting: plain `kanon clean` no longer prunes
-content-addressed store entries, because they are shared cache. `--purge-all`
-still reclaims them.
+- KANON_SYNC_JOBS lets a caller bound repo sync&#39;s fan-out. The test
+  suite pins it to 1, which takes the existing single-process
+  short-circuit in repo.command so no pool is built at all. Unset in
+  production, behaviour is unchanged.
+- The shared kanon subprocess helpers in tests/functional/conftest.py
+  and tests/scenarios/conftest.py now pass timeout=, tuned with
+  KANON_TEST_SUBPROCESS_TIMEOUT.
+- pytest-timeout provides a per-test backstop via KANON_TEST_TIMEOUT,
+  using the thread method so it fires even when the main thread is
+  parked in waitpid() and dumps every thread&#39;s stack. pytest_configure
+  now refuses to run when the plugin is absent.
+- A session-finish check scans the process group for kanon processes
+  that outlived the tests that spawned them, kills them, and exits
+  non-zero rather than leaving them to accumulate.
+- A completion-snapshots pre-commit hook regenerates the golden shell
+  fixtures, which were the single largest deterministic source of CI
+  red.
 
-* All kanon diagnostics now use a single `ERROR:` prefix on stderr
+Verified: unit 11767, integration 1954, functional 3089, scenarios 413,
+all passing with zero leaked processes; the functional tier now
+completes in ~9 minutes where it previously hung.
 
-kanon emitted two prefixes for the same thing: `ERROR:` at 140 call sites and
-`Error:` at 39, both hand-written. The 39 are normalised to `ERROR:`. This is a
-user-visible stderr change -- a script matching `^Error:` on kanon's output needs
-updating to `^ERROR:`. Messages emitted by the vendored `repo` tool are unchanged.
+* fix: stop the leaked-process scan from failing open on Linux
 
-* `RefreshRepoInitError` now reads `ERROR: repo re-init failed for source '<name>'`
-  where it previously read `ERROR: refresh failed for source '<name>'`. Scripts
-  matching the old text need updating.
+`ps -eo command=` is truncated by procps to the terminal width, which is 80
+when stdout is not a tty as it is in CI. On the runner&#39;s paths that cut the
+trailing `-m kanon_cli` off every candidate, so the scan matched nothing and
+reported a clean session for a process group that still held leaked children.
+BSD ps does not truncate a non-tty, so the defect was invisible on macOS and
+only surfaced once the check ran on Linux.
+
+- Pass -ww so the command column is never truncated.
+- Fail closed. The scan now verifies it can see its own process in the
+  listing and raises otherwise, because an empty result from an unreadable
+  listing is indistinguishable from success. Reporting &#34;no leaks&#34; when the
+  scan cannot see is the failure mode that let this ship.
+- The live-process probe now pads its command line so the `-m kanon_cli`
+  marker sits past column 80, which is what the previous probe was too short
+  to exercise.
+
+* test: require every test to declare its tier
+
+CI selects by tier marker. Seven tests carried none, so no tiered job collected
+them -- six ordinary-looking unit tests sitting beside marked siblings in the
+same file, plus one functional test. They ran only because the full-suite job
+executes the whole tree with no marker filter, which is precisely what made the
+omission invisible.
+
+That is survivable today and silent once tiers are gated on which paths a change
+touches: an unmarked test would stop running anywhere and report nothing, and its
+absence would be indistinguishable from success.
+
+Mark the seven, and add a guard that collects the tree with every tier excluded
+and requires the result to be empty. A second guard rejects a test carrying two
+tier markers, which would charge its cost to a tier it does not belong to.
+
+Collection runs in a subprocess so the invariant is asserted through pytest&#39;s own
+marker selection rather than a collection hook, which would have to observe items
+before the mark plugin deselects them and so depend on hook ordering.
+
+* perf(ci): run only the tests a change can affect
+
+Pull request validation ran every tier on every change. Measured over the last
+184 commits on main: 63 of them (34%) touched neither src/ nor tests/, and the
+vendored repo tool -- 6,666 of the suite&#39;s 17,285 tests -- changed in 3.
+
+- A `changes` job classifies the diff and the tiered jobs gate on it. It fails
+  closed in every direction: both outputs start true and are narrowed only by a
+  positive match on a known-inert path set, so an empty diff, a missing merge
+  base, or an unrecognised path runs everything. The jobs themselves always run
+  and gate at step level, because a job skipped with a job-level `if` reports no
+  status and leaves a required check pending forever.
+- The vendored tests become their own tier and job, run only when that tree, its
+  tests, or something global (shared conftest, dependencies, Makefile, CI) is
+  touched.
+- Coverage now measures kanon&#39;s own source. The vendored tree is 10,873 of
+  18,768 measured statements, so including it made the gate largely a measure of
+  someone else&#39;s code: the same threshold reads 92% across both trees and 94%
+  across kanon&#39;s. Omitting it also stops the number collapsing whenever the
+  vendored tier is correctly skipped. The unit job drops from 84s to 35s.
+- The full-suite regression job leaves pull request validation for a nightly
+  schedule. It still runs on every push to main. Across 90 measured runs it
+  produced one unique failure the per-tier jobs had not already reported, at a
+  median of 20 minutes and a p90 of 48 -- it set the worst-case feedback time
+  for every pull request.
+- pre-push drops the integration and functional tiers, which took roughly twenty
+  minutes and duplicated jobs CI runs anyway. Lint, the security scan, and
+  first-party unit tests with the coverage gate remain.
+
+* fix(repo): confine absolute linkfile/copyfile dest to permitted roots (A1, A2, A26, B1, B2, B4)
+
+A &lt;linkfile&gt;/&lt;copyfile&gt; may declare an absolute dest, and the manifest declaring
+it is fetched from a remote repository. The absolute branch checked only for a
+&#34;..&#34; component, so a manifest could write any file the invoking user could write
+-- verified against ~/.ssh/authorized_keys and /etc/cron.d.
+
+Confine an absolute dest to a permitted root, resolved with precedence
+--allow-abs-root &gt; KANON_ALLOWED_ABS_ROOTS &gt; (project root + resolved
+CLAUDE_MARKETPLACES_DIR). The last tier is unconditional, so the setting can only
+widen the boundary and never lock an operator out of their own project. No new
+.kanon key is required and nothing is auto-added; both defaults are derived from
+state kanon already has, so every existing .kanon and manifest keeps working.
+
+Enforcement is non-interactive: a destination outside every permitted root exits
+non-zero naming the destination and the roots, and how to widen them.
+
+- A1/A2: new _ResolveAbsDest() applies the containment check plus the same
+  component walk _SafeExpandPath gives a relative dest, so an intermediate
+  symlink no longer escapes. Fails closed when no root is configured.
+- A26: _CopyFile._Copy and _LinkFile._Link now share that one helper instead of
+  each carrying a copy-pasted guard that could drift apart.
+- B1: marketplace_validator now applies the dest containment rule to &lt;copyfile&gt;,
+  which it previously never inspected at all.
+- B2: a failed copy raises instead of being logged and swallowed, so repo sync
+  can no longer report success having delivered nothing.
+- B4: sync&#39;s removal of a dropped dest is confined by the same boundary.
+
+Test consumers updated in the same change: a new permit_abs_roots fixture
+declares the boundary a test&#39;s absolute destination relies on, and the missing-
+source copyfile test now asserts the raise rather than the swallowed failure.
+
+* test(repo): add the adversarial coverage for absolute copyfile dest (A11)
+
+The commit that introduced absolute &lt;copyfile dest&gt; deleted or inverted three of
+the four tests that would have caught the containment hole. This restores the
+security guarantee those tests existed to protect, expressed against the
+boundary that now enforces it.
+
+Enforcement layer (tests/integration/test_copyfile_fs_effects.py):
+- dest outside every permitted root is refused, with no filesystem effect
+- the refusal names the dest, the permitted roots, and both ways to widen them,
+  since kanon has no prompt to fall back on
+- a symlinked component that leaves the boundary is refused
+- a symlinked component that stays inside the boundary is also refused -- only
+  the component walk catches this one, so it pins that the walk still runs
+- a dangling symlink at dest does not become a write to its target
+- an unwritable dest raises rather than reporting success
+- a fifo on the dest path is refused, matching the relative-dest rule
+- with no permitted root published, every absolute dest is refused
+
+Validator layer (tests/unit/test_marketplace_validator.py):
+- an absolute &lt;copyfile&gt; dest is rejected, and the error names the element
+- a &#39;..&#39; component in a &lt;copyfile&gt; dest is rejected
+- a workspace-relative &lt;copyfile&gt; dest still passes, so the delivery case
+  copyfile exists for is not broken by containment
+
+Note on the parse-time tests this does not restore: &lt;copyfile dest&gt; being
+absolute is now legal by design and contained at the point of use, so
+re-asserting a parse-time rejection would contradict the fix rather than
+protect it. The guarantee is asserted where it is now enforced.
+
+* fix(ci): restore the 193 unit tests that ran in no pull-request job (A3)
+
+test-unit-cov selected by marker AND took a positional `tests/unit` argument.
+The positional narrowed collection to that directory, silently dropping every
+unit-marked test living elsewhere: tests/security (all 32 security-hardening
+tests), tests/regression (159 across 16 files), and tests/test_wheel_layout.py.
+
+No pull-request job ran them. The other tiers filter by their own markers and no
+PR job runs `make test-unit`, so those 193 tests executed only in `make test` on
+main and in the nightly -- that is, after merge. A change breaking a security
+assertion merged green.
+
+The coverage gate could not backstop it either: the dropped tests move the
+measured total by 4 statements, far inside the gate&#39;s headroom.
+
+Dropping the positional restores marker-based selection. Measured:
+
+  -m unit                            11790
+  -m unit --ignore=tests/unit/repo    5135   (test-unit-cov)
+  -m unit tests/unit/repo             6655   (test-unit-vendored)
+                                     -----
+                                     11790   exact partition
+
+The guard added alongside asserts that partition directly. test_marker_completeness
+previously proved only that every test carries a tier marker, which all 193 did --
+the property that was actually missing is that the tiers a job runs sum to the
+whole. Verified to fail with &#34;193 unit-marked test(s) are collected by neither CI
+unit job&#34; when the positional is put back, and to pass once it is removed.
+
+* fix(ci): stop classifying documentation the tests read as inert (A4)
+
+A pull request touching only `docs/` or any `.md` file set `code=false`, which
+skips the unit, integration, functional and scenario tiers.
+
+Documentation is not inert in this repository. tests/scenarios/conftest.py parses
+docs/integration-testing.md at import to derive scenario ids, and 14 further
+documentation paths plus README.md are asserted against from the test tree.
+Renaming a heading in that file turns the suite red -- while the change that did
+it runs no tests, merges green, and breaks main. Deleting the file is worse: the
+scenario conftest raises at import, erroring the tier that would have caught it.
+
+The classifier now requires both conditions for `code=false`: every changed file
+is documentation or repository metadata, AND none of it is a documentation file
+the suite reads. The exempt set is TEST_INPUT_DOCS, listed in the step itself.
+
+Keeping a list in a workflow invites exactly the drift this branch is full of, so
+it is guarded rather than trusted: test_classifier_exempts_every_doc_the_suite_reads
+reads the regex out of the YAML, scans the test tree for documentation
+references, and fails when one is not covered. Adding a doc-driven test without
+updating the carve-out is therefore a red build, not a silent hole.
+
+Verified falsifiable: removing docs/integration-testing.md from TEST_INPUT_DOCS
+fails the guard naming that file; restoring it passes.
+
+* fix(ci): make the path classifier robust to renames, unicode and shared inputs (A7, A32)
+
+Three ways the classifier could switch off a tier that a change can break, and
+one swallowed failure.
+
+Renames: `git diff --name-only` prints only the destination for a rename, so
+moving a file out of src/kanon_cli/repo/ left no vendored-tree path in the diff
+and the vendored tier turned itself off. `--no-renames` lists both sides.
+
+Unicode: git quotes non-ASCII paths by default, and the leading `&#34;` defeats every
+`^`-anchored pattern, so such a path matched no vendored trigger.
+`core.quotePath=false` returns them unquoted.
+
+Shared test inputs: tests/unit/conftest.py loads for tests/unit/repo/, and
+tests/unit/repo/test_ruff_config.py and test_yamllint_config.py read
+tests/fixtures/repo/ and .yamllint -- none of which triggered the vendored tier.
+Added those, plus tests/integration/repo/ and .pre-commit-config.yaml.
+
+Markdown under src/ or tests/: the `.md` inert rule is not anchored to a
+directory, so a markdown fixture under tests/ read as documentation and switched
+off the tiers that consume it. Nothing under src/ or tests/ is ever inert now.
+
+A32: the merge-base failure was swallowed by `2&gt;/dev/null` inside an `if`, which
+also defeated `set -euo pipefail` on the line above -- a broken classifier
+degraded to &#34;run everything&#34; instead of surfacing. It now runs unguarded, so a
+failure aborts the step with git&#39;s own message. The run-everything default still
+covers the cases that are genuinely benign, such as an empty diff.
+
+Both refs now come from `env:` rather than being interpolated into the script
+body, and the head is the pull request&#39;s own head sha, so the classifier and the
+tiered jobs describe the same tree.
+
+Verified by running the extracted script against fixture diffs: docs-only -&gt;
+code=false; docs/integration-testing.md -&gt; code=true; a vendored rename, a
+unicode path, tests/unit/conftest.py, tests/fixtures/, .yamllint -&gt; vendored=true;
+tests/fixtures/anything.md -&gt; code=true; empty diff -&gt; everything runs.
+
+* fix(ci): stop the tier jobs failing open when the classifier does (A6)
+
+Two ways a pull request could report five green required checks with no test
+executed.
+
+Gate polarity. Every step gated on `needs.changes.outputs.code == &#39;true&#39;`, so any
+value that is not literally `true` -- an empty output, a renamed output key, a
+typo&#39;d step id -- skipped the tests while the job still reported success. The
+gates are now `!= &#39;false&#39;`: only a classifier that positively decided a tier is
+unaffected may skip it, and everything else runs the tests. 15 gates inverted.
+
+Failed classifier. The five tier jobs declare `needs: changes` with no
+`always()`, so a failure in that job -- a transient checkout error, a runner
+eviction -- left all five *skipped*, and branch protection treats a skipped
+required check as satisfied. They now run regardless and gate at step level as
+intended.
+
+The rationale comment recorded for the step-level design was also wrong, and is
+corrected rather than left to mislead the next maintainer: a job skipped by a
+job-level `if` does post a check run with conclusion `skipped`, which branch
+protection accepts. It does not leave a required check pending. The real reason
+to keep the jobs running is that a skipped job&#39;s steps cannot report which tier
+was gated out, not that the check would hang.
+
+Both invariants are now asserted:
+- test_tier_gates_run_unless_positively_told_otherwise
+- test_tier_jobs_still_run_when_the_classifier_job_fails
+
+Verified falsifiable: restoring one `== &#39;true&#39;` gate fails the first naming the
+offending gate, and dropping one `always()` fails the second naming the job.
+
+* test(hooks): assert what pre-push runs, not what its comments mention (A9)
+
+The hook stopped running the integration and functional tiers, but the tests
+asserting it runs them were never updated. They kept passing -- because a prose
+comment left in the hook contains the literal string `make test-integration`,
+which is what those tests grepped for. The module docstring still declared
+&#34;AC-FUNC-002: Pre-push hook runs integration tests&#34;.
+
+That is the anti-pattern of a test surviving the behaviour it covers: it could no
+longer fail for the reason it claimed, so it protected nothing.
+
+Both tests are replaced by assertions over the hook&#39;s *executed* lines, with
+comments stripped before matching:
+
+- test_pre_push_hook_does_not_run_the_deferred_tiers, pinning the removal itself
+  so the twenty minutes are not silently added back
+- test_pre_push_hook_runs_the_local_gates, pinning lint, security-scan and
+  test-unit-cov as the gates that do run
+
+Verified to discriminate: adding a comment mentioning `make test-integration`
+leaves them passing, while an actual `make test-integration` line fails with
+&#34;Pre-push hook invokes [&#39;test-integration&#39;]&#34;. The old tests could not tell those
+two cases apart.
+
+Also corrects the hook&#39;s own trailing note, which claimed CI enforces the
+integration and functional tiers &#34;regardless&#34;. Since the path gating landed it
+runs them only when a change is classified as touching code, and the comment was
+written in the same change that made it untrue.
+
+* test: revert the PATH_MAX stderr assertion to the prefix kanon emits (A8)
+
+PR #112 changed this assertion from `Error:` to `ERROR:`, listing it among
+&#34;test-side platform assumptions&#34;. It is not one: the code emits `Error:` here, so
+the change turned a passing test red. Verified the test passes on `main` and
+fails on `pr/112` standalone, so this was a defect in that PR rather than an
+artifact of combining it with the others on this branch.
+
+This restores the assertion. It does not attempt to unify the two prefixes -- see
+the note below, which is a separate decision.
+
+* fix: close the two remaining silent-failure paths in manifest variables (B7, B6)
+
+Issue #95 was &#34;install exits 0 with the variable unset and delivers nothing&#34;.
+PR #100 extended detection to &lt;linkfile&gt;/&lt;copyfile&gt; dest, but two ways to reach
+that same outcome survived.
+
+B7 -- unbraced $VAR. Detection required braces; `repo envsubst` substitutes
+through os.path.expandvars, which expands `$VAR` and `${VAR}` alike. A dest of
+`$KITROOT/.claude/rules` was therefore substituted but never announced by
+`kanon add` and never caught by the guard: issue #95 verbatim, for the spelling
+the fix did not cover.
+
+Detection now uses MANIFEST_VAR_PATTERN, which matches expandvars&#39; grammar --
+either spelling, name anchored to [A-Za-z_][A-Za-z0-9_]*. This is deliberately a
+new pattern rather than a widening of SHELL_VAR_PATTERN: that one governs
+substitution inside .kanon values and has its own braces-only contract, and
+changing it would alter unrelated parsing.
+
+A `${...}` body that is not an identifier is now rejected outright rather than
+laundered into a .kanon key. `${VAR:-default}` is not something expandvars can
+ever resolve, so writing `KANON_SOURCE_x_VAR:-default=` produced a source that
+could never install however many times the operator followed the remediation. An
+empty `${}` is not malformed -- expandvars leaves it literal -- so it is ignored.
+
+B6 -- empty values. `kanon add` wrote each detected variable with an empty value.
+An empty value is not an unset one: it substitutes as the empty string, so
+`dest=&#34;${KITROOT}/.claude/rules&#34;` collapsed to `/.claude/rules`, an absolute path
+at the filesystem root, while leaving no placeholder for the guard to find. That
+was the default outcome of `kanon add` followed by `kanon install` without
+hand-editing .kanon.
+
+`kanon add` now writes UNFILLED_VAR_SENTINEL (`&lt;SET_ME&gt;`), shaped to match the
+existing unresolved-placeholder scanner so an unfilled value fails the install
+naming the key. Files written by earlier versions are covered too: a per-source
+variable with an empty value is now reported as unfilled. The four structural
+suffixes are excluded, since `_PATH` is legitimately empty for a source that
+installs at the workspace root.
+
+Both remedies are non-interactive: they exit non-zero naming the key to set.
+
+* test(scenarios): prove the multi-project fix end to end (A5, MP-01)
+
+Issue #96 was: two projects sharing one KANON_HOME and declaring the same source
+alias shared one mutable repo workspace, so the second install either delivered
+nothing while reporting success, or wedged the workspace for both.
+
+Nothing on this branch proved that fix. The four tests in TestProjectKeyedWorkspaces
+patch repo_init, repo_envsubst and repo_sync, so no content is ever written and
+their only assertions are is_dir() on paths create_source_dirs mkdir&#39;d moments
+earlier. Delete that function&#39;s body down to the mkdir and all four still pass --
+they cannot fail for the reason the fix exists.
+
+MP-01 drives real git repositories through real `kanon install` subprocesses:
+
+- one content repo whose v1 and v2 tags carry different bytes
+- one manifest repo whose v1 and v2 tags pin the corresponding revision
+- two projects declaring the SAME alias `shared`, pinned to different tags
+- install A, install B, then re-install A
+
+and asserts on the delivered bytes, not on directory existence. The re-install is
+the step that would have caught the original defect: a shared workspace only
+reveals itself once the second project has moved it.
+
+Verified falsifiable, which is the whole point of this finding: removing the
+project_address segment from create_source_dirs fails the test on A&#39;s delivered
+payload. The four existing unit tests stay green through that same change.
+
+Documented as §6a MP-01 in docs/integration-testing.md, which the scenario
+conftest parses to derive scenario ids -- a scenario test without its doc block
+raises LookupError at collection.
+
+* fix: correct the CHANGELOG and make orphaned workspaces need no user action (A13, A12)
+
+A13 -- the entry claimed a fix that was reverted. It said per-source workspaces
+&#34;and the aggregated `.packages/` symlink tree are now keyed by a stable
+per-project address&#34;. Commit 730da7b reverted the `.packages/` half before this
+branch was cut, and `aggregate_symlinks` writes to an unkeyed `base_dir /
+&#34;.packages&#34;`. A reader concluded two projects can no longer collide on a package
+name. They still can.
+
+The entry now claims only the workspace keying, states that `.packages/` is
+deliberately unkeyed, and names the consequence for anyone whose downstream
+tooling reads `.packages/` for more than one project. The four PRs that had no
+entry at all now have one, including the new `KANON_SYNC_JOBS` variable, the
+containment boundary and its flag, and -- under Changed -- the
+`RefreshRepoInitError` wording change that would silently break a script
+grepping for the old text.
+
+A12 -- the migration advice was destructive and the orphan was invisible.
+Keying leaves every pre-upgrade workspace under the old alias-only path, never
+read again, often hundreds of megabytes. Nothing detected it, nothing mentioned
+it outside one CHANGELOG line, and that line said to run `kanon clean` -- which
+removes the store&#39;s `.kanon-data/` for every project sharing the KANON_HOME. A
+developer with five projects was being told to destroy the other four.
+
+`kanon doctor` now reports each orphan by exact path. That matters specifically
+because the new layout contains a 64-character sha256 an operator cannot derive
+by hand, so a remediation that does not print the path is unusable. It reports
+rather than removes, so it stays safe under --quiet and in CI, and its
+remediation states plainly that `kanon clean` is store-wide.
+
+No migration document is added, deliberately: the standing decision is that no
+upgrade should ever be required, and writing one would institutionalise a manual
+step instead of removing it.
+
+* docs: document the absolute-destination boundary and its controls (A15, §9)
+
+The branch gave `&lt;copyfile&gt;` the ability to write a real file at an absolute
+path, and this change confined it -- neither was documented anywhere a user or a
+security reviewer would look.
+
+docs/security-model.md carried zero mentions of linkfile, copyfile or symlink
+across its 177 lines, so &#34;What manifest repos can do to you&#34; omitted the two
+capabilities that matter most: a manifest delivers files to destinations it
+declares, and `repo sync` deletes destinations a later revision drops. Both are
+now listed with the boundary that contains them, and the mitigations say to
+review an entry&#39;s dest attributes before adding it and to keep the permitted-root
+set as narrow as the entry needs.
+
+docs/configuration.md documents `KANON_ALLOWED_ABS_ROOTS` and `--allow-abs-root`
+with a resolution-order block matching the existing `KANON_HOME` one, and states
+that the two built-in roots cannot be removed, so the setting only ever widens.
+It also documents `CLAUDE_MARKETPLACES_DIR` for the first time -- it was not on
+this page at all, and it is not an environment variable kanon reads from the
+shell but a line `kanon add` writes into `.kanon`, which is worth saying plainly.
+
+docs/repo/manifest-format.md replaces &#34;path components such as `..`, `.git`, and
+other unsafe patterns are rejected&#34; -- which is not a specification -- with the
+enforced set, and corrects the claim that intermediate paths must not be
+symlinks: that was true of a relative dest only, and is now true of both.
+
+README.md mentioned `copyfile` zero times. The absolute-destinations section now
+covers both elements, with the CI-workflow delivery example the feature exists
+for, and states the boundary rather than implying an absolute dest is free.
+
+* fix(repo): measure containment from the dest&#39;s parent, and repair the suite (Gate 1)
+
+One production fix and the deferred test-suite repair.
+
+The production fix is a real defect in the containment check, found by
+tests/regression/test_linkfile_samefile_regression.py rather than by reading:
+containment resolved the destination itself with realpath, so when the dest was
+already a symlink -- which is routine, since repo materializes every &lt;linkfile&gt;
+that way before this code runs -- it measured containment against the link&#39;s
+target and rejected a destination plainly inside the consumer project. It now
+resolves the dest&#39;s parent and appends the final component. The component walk is
+what refuses a symlinked component; containment only has to establish where the
+destination sits. Verified the write-through case is still refused with no
+filesystem effect, now by the walk rather than by containment, which is the more
+precise reason.
+
+Suite repair, all consequences of the containment boundary:
+
+- tests/unit/repo/test_project.py: the shared CopyLinkTestCase now publishes its
+  stub checkout as a permitted root, covering 21 tests at once
+- test_copy_handles_ioerror renamed and re-specified: a failed copy now raises
+  rather than being logged, so the test asserts the raise
+- tests/unit/repo/functional/test_features.py, test_project_coverage_boost.py,
+  test_linkfile_fs_effects.py, test_linkfile_exclude_journey.py: declare the
+  boundary their absolute destinations rely on, via the permit_abs_roots fixture
+
+Completion output changed because --allow-abs-root is a new global flag. The bash
+expectation list is updated and the golden fixtures regenerated deliberately; the
+diff is the new flag and nothing else, which is the reviewable property A22 asks
+the regeneration hook to preserve.
+
+Full gate on the tip:
+
+  lint / markdown / bandit      pass, High: 0
+  unit + coverage               5144 passed, 93.96% (gate 90)
+  vendored                      6655 passed
+  integration                   1984 passed, 7 skipped
+  functional                    3092 passed, 3 skipped
+  scenarios                     442 passed, 19 skipped
+
+* refactor: unify kanon&#39;s stderr diagnostics on a single ERROR: prefix
+
+kanon emitted two prefixes for the same thing: `ERROR:` at 140 first-party call
+sites and `Error:` at 39. Both are hand-written -- neither comes from a framework
+-- so the inconsistency was entirely self-inflicted, and the docs quoted both
+forms. It also produced a concrete defect on this branch: PR #112 flipped a test
+assertion to the prefix it assumed kanon used, turning a passing test red.
+
+The 39 minority sites are normalised to `ERROR:`, across commands/clean.py,
+commands/install.py, commands/repo.py, commands/validate.py, core/catalog.py,
+core/clean.py, core/marketplace.py, core/marketplace_validator.py,
+core/xml_validator.py and version.py.
+
+BREAKING: this changes kanon&#39;s stderr output. A script matching `^Error:` needs
+updating to `^ERROR:`. Messages emitted by the vendored repo tool keep their own
+formatting and are untouched, so `kanon repo` output is unaffected.
+
+Consumers updated in the same change: 7 test modules across the integration and
+functional tiers that asserted the old prefix -- including several matching bare
+`&#34;Error&#34;` without the colon, which is case-sensitive and would otherwise have
+passed silently against the new text -- plus the two documents quoting sample
+output (docs/multi-source-guide.md, docs/troubleshooting.md).
+
+Full gate: lint pass, bandit High 0, unit 5144 passed 93.96%, integration 1984
+passed, functional 3092 passed, scenarios 442 passed.
+
+* feat: scope `kanon clean` to the project you run it in (B3)
+
+`kanon clean` removed the shared store&#39;s entire `.packages/` and `.kanon-data/`
+trees plus every content-addressed entry. On a machine with several projects
+sharing a `KANON_HOME`, cleaning one destroyed the installed state of all the
+others -- and until this branch the CHANGELOG recommended exactly that as the way
+to reclaim orphaned workspaces, so a developer with five projects was being told
+to destroy the other four.
+
+Plain `kanon clean` now removes only:
+
+- this project&#39;s keyed source workspace, `sources/&lt;project-address&gt;/`
+- the aggregated `.packages/` links this project created
+
+Ownership of an aggregated link is read off its target, since the farm is shared
+and keyed only by package name. A link resolving into another project&#39;s
+workspace is not ours to remove.
+
+Shared parents are pruned only when they are genuinely empty, so a
+single-project machine still ends up with a pristine store while a multi-project
+machine keeps everything else. `.kanon-data/` itself survives because it holds
+the store-global install lock, which a concurrent install in another project may
+be holding -- deleting it would break mutual exclusion.
+
+BREAKING: plain `kanon clean` no longer prunes content-addressed store entries.
+They are shared cache; removing them forced every other project on the machine
+to re-fetch. `--purge-all` is unchanged and remains the machine-wide teardown.
+
+remove_packages_dir and remove_kanon_dir are deleted rather than left behind:
+both were superseded and had no production caller after this change.
+
+Test fixtures updated to model what install actually produces -- a keyed
+workspace and real symlinks. Several built plain directories under an
+alias-named `sources/primary`, which is the pre-keying layout; they passed only
+because clean used to delete everything regardless. One of them is now exactly
+the orphaned pre-upgrade workspace that `kanon doctor` reports.
+
+New TestCleanIsProjectScoped proves the invariant directly, and is verified
+falsifiable: restoring the store-wide rmtree fails it on the other project&#39;s
+workspace.
+
+Full gate: lint, markdown, bandit High 0, unit 5145 passed 93.88%, vendored 6655,
+integration 1980, functional 3091, scenarios 442.
+
+* fix(tests): scan only the process groups the suite created (A10, A20, A21)
+
+The leaked-process scan judged `os.getpgrp()` -- every process sharing the
+running process&#39;s group -- and decided membership from argv alone. Under a
+non-interactive shell, `make`, or a CI step no new process groups are created, so
+that group is everything on the machine. And the argv matcher is satisfied by any
+command line that merely *mentions* a kanon invocation.
+
+This is not hypothetical. While developing this branch, regenerating a help
+fixture caused the scan to flag and SIGKILL the shell running the command,
+because its argv contained `python -m kanon_cli clean --help`.
+
+Ownership replaces guesswork. Each spawned command now runs in its own process
+group and registers it, and the scan looks only at registered groups. A
+developer&#39;s unrelated `kanon`, a second concurrent pytest session, and the shell
+running the tests are all outside it by construction. Detection is unchanged: a
+registered group holding a kanon process is still found.
+
+Running each command in its own group also fixes what the timeout could not
+reach. `subprocess.run(timeout=)` kills the direct child only, but the processes
+this suite actually leaks are grandchildren -- `repo sync` pool workers parked in
+`sem_wait()`. The group is now signalled, so the subtree goes with it.
+
+A21: survivors get SIGTERM, then SIGKILL after KANON_TEST_PROCESS_KILL_GRACE
+seconds, so a process with a handler can exit cleanly. A kill that fails is
+reported by pid and reason instead of being suppressed -- the old code swallowed
+PermissionError while still printing that the processes &#34;were killed&#34;, which is
+the silent failure this check exists to prevent.
+
+A20: the leak status moves from 4 to 70. 4 is pytest&#39;s own USAGE_ERROR, and the
+same PR made a missing plugin exit 4, so CI could not tell a leaked process from
+a broken command line. The status is also only set when the session is otherwise
+OK, so a run with real test failures keeps reporting them.
+
+Tests assert the ownership property directly, including that the argv matcher is
+still satisfied by a bare mention -- which is why ownership, not matching, is
+what makes the scan safe.
+
+* fix: make KANON_SYNC_JOBS a genuine cap and validate it at startup (A17, A19)
+
+A17. The variable was documented as bounding `repo sync`&#39;s fan-out, and its
+commit called it a cap, but it was an override that could raise fan-out.
+
+`repo sync` resolves two independent job counts whose defaults differ: network
+fetch is 1, local checkout is `min(cpu_count, 8)`. A single `--jobs=N` sets both.
+So `KANON_SYNC_JOBS=8` on a four-core host took network fetch from 1 to 8 --
+increasing exactly the contention the variable exists to reduce, while its own
+documentation said otherwise. Setting it to 1 happened to work, which is why the
+test suite never noticed.
+
+Each phase is now capped against its own default and passed separately via
+`--jobs-network` / `--jobs-checkout`. A large request no longer raises anything;
+a small one still bounds, which is the actual use case. Capping this way also
+takes precedence over a manifest&#39;s `&lt;default sync-j&gt;`, which is right: an
+operator bounding fan-out on their own machine should not be overridden by a
+value a remote manifest chose. Unset, no job arguments are passed at all and
+`repo sync` resolves its own defaults, so production behaviour is unchanged.
+
+A19. The value was resolved inside `run_repo_sync`, so an invalid one aborted
+part-way through an install -- after `repo init` and `repo envsubst` had already
+built a workspace on disk, and on a multi-source install after earlier sources
+had synced. It is now validated once at CLI entry, before any command does work.
+
+Documentation corrected along with it. `docs/configuration.md` and the constant&#39;s
+own docstring both claimed `repo sync` fans out over a pool sized from
+`min(cpu_count, 8)`; that is the checkout default only, and stating it as the
+whole story is what made the override look like a cap.
+
+Full gate: lint, bandit High 0, unit 5154 passed 93.89%, integration 1980,
+functional 3092, scenarios 442.
+
+* fix: refuse to overwrite an aggregated package link owned by another project (B5)
+
+`.packages/` is shared by every project using a `KANON_HOME` and keyed only by
+package name, so two projects shipping a package of the same name resolved to
+whichever installed last. `aggregate_symlinks` detected collisions only *within*
+one install; across projects it unlinked and re-pointed silently.
+
+That is the same silent-wrong-content class the keyed source workspace closed.
+`docs/architecture.md` calls `.packages/` the directory downstream tooling
+references, so the loser&#39;s tooling silently reads the winner&#39;s content while the
+install reports success.
+
+A link whose target resolves into a different project&#39;s workspace is now refused.
+Ownership is read off the existing link&#39;s target, which is the only place the
+project address survives. The diagnostic names the package, both projects, and
+the two ways out, since there is no prompt to fall back on.
+
+This is the cheaper half of the fix. Fully keying the aggregation directory is
+tracked in issue #115: it is the real isolation, and it is deliberately not done
+here because keying broke roughly 140 end-to-end tests and `.packages/`&#39;s path is
+part of the operator-facing contract.
+
+NOTE -- pending decision. This makes the collision *fatal*. Two projects sharing
+a `KANON_HOME` that both install a package of the same name can no longer both
+install, which is a restriction `main` does not have. Whether &#34;detectable&#34; should
+mean fatal or merely loud is with the user; if the answer is loud, this becomes a
+warning and the refusal is dropped. Raised before committing, not after.
+
+MP-01 is rescoped to distinct package names per project. Its purpose is source
+workspace isolation; the shared package name was an incidental fixture choice
+that made it fail for the collision instead, and the collision now has dedicated
+coverage. Re-verified that MP-01 still fails when the workspace keying is removed.
+
+Also exempts docs/architecture.md from the CI-inert path set, which the A4 guard
+correctly flagged once a test began referencing it.
+
+* fix: detect ${VAR} in every manifest position repo consumes (B8)
+
+Detection walked `&lt;project&gt;` and the `&lt;remote&gt;` elements projects reference. A
+variable anywhere else was substituted by `repo envsubst` but announced by
+nothing: `kanon add` wrote no line for it, and the install-time guard -- which
+shares the same walk by design -- saw nothing to complain about. That is the
+silent no-delivery of issue #95 again, in a different element.
+
+Eight positions were invisible. Now covered:
+
+  &lt;default revision&gt;      decides which commit every unpinned project checks out
+  nested &lt;project&gt;        fully resolved by the vendored parser, including its
+                          own &lt;linkfile&gt;/&lt;copyfile&gt; delivery destinations
+  &lt;extend-project dest-path&gt;   a delivery destination, exactly like linkfile dest
+  &lt;remove-project&gt;, &lt;manifest-server url&gt;, &lt;superproject&gt;, &lt;contactinfo bugurl&gt;,
+  &lt;repo-hooks&gt;, &lt;submanifest&gt;
+
+A remote referenced only by one of those elements -- a `&lt;superproject remote&gt;`,
+say -- now counts as referenced, which it did not before.
+
+Deliberately NOT a blanket walk of every element. Scanning indiscriminately would
+pull in `&lt;remote&gt;` elements no project references, and since an unfilled variable
+now fails the install, a manifest carrying an unused remote would stop installing
+altogether. Under-detection is a silent failure and over-detection is a broken
+install; neither is acceptable, so remotes stay scoped to the ones actually
+referenced and the reasoning is recorded next to the constant.
+
+Verified against the production catalog at caylent/caylent-private-kanon: 31
+manifests, and the broadened walk detects exactly `CLAUDE_MARKETPLACES_DIR`
+(globally supplied) and `GITBASE` (auto-derived by `kanon add`) -- zero new
+operator-facing lines, so no existing `.kanon` needs a change.
+
+Full gate: lint, bandit High 0, unit 5154 passed 93.75%, integration 1994,
+functional 3092, scenarios 442.
+
+* docs: correct the store layout and delete the fabricated error message (A14, B9)
+
+A14. Six documents still drew the pre-keying layout, so anyone following them
+looked in a path that no longer exists. The trees were wrong twice over: they
+rooted the store under `&lt;project-root&gt;/` when it lives under `&lt;KANON_HOME&gt;/store`,
+and omitted the `&lt;project-address&gt;` segment entirely.
+
+Corrected in README.md, docs/architecture.md, docs/lifecycle.md,
+docs/how-it-works.md, docs/multi-source-guide.md and docs/troubleshooting.md.
+`docs/architecture.md`&#39;s layout block is rewritten to show both roots and to say
+plainly what the address is for, and that the aggregated `.packages/` farm is
+shared -- with a name already published there by another project now refused
+rather than overwritten.
+
+`docs/integration-testing.md` is an executable procedure, so its steps were wrong
+rather than merely stale. §16.4 asserted &#34;one directory per source&#34; under
+`sources/`, which now lists exactly one directory: the project address. It checks
+both levels. Twelve further hard-coded alias paths gained the address level.
+
+B9. `docs/troubleshooting.md` quoted an error message that exists nowhere in the
+codebase -- `grep -rn &#34;clone directory&#34; src/` returns nothing -- so an operator
+hitting an interrupted install saw text they could not match, and could not grep
+for. Replaced with the message the code actually emits, verified present in
+`src/kanon_cli/core/install.py`.
+
+The same section prescribed `kanon clean --orphans` to remove partial clones.
+That flag removes no clone directories at all: it unregisters the Claude
+marketplaces of sources dropped from `.kanon`. The remedy is now plain
+`kanon clean`, with a note that it is project-scoped and what `--orphans`
+actually does.
+
+Full gate: lint, markdown, unit 5154 passed 93.75%, integration 1994, functional
+3092, scenarios 442.
+
+* docs: correct the contributor and CI documentation (A16, A29)
+
+A16. The contributor docs described the CI model that existed before path
+gating, and their setup instructions no longer worked.
+
+- `CONTRIBUTING.md` said the pre-push hook &#34;runs lint + tests&#34;. It runs lint, the
+  bandit security scan, and kanon&#39;s own unit tests with the coverage gate; the
+  vendored, integration, functional and scenario tiers are not run locally.
+- &#34;All tests must pass before merging&#34; is no longer what happens. Pull request
+  validation runs the tiers the changed paths select.
+- The coverage requirement now names `COVERAGE_MIN` and its scope, since the
+  vendored tree is measured by its own tier and omitted from this gate.
+- `docs/contributing.md` told contributors to `cp git-hooks/pre-push
+  .git/hooks/`. `make install-hooks` sets `core.hooksPath`, after which git
+  ignores `.git/hooks/` entirely, so the copy was dead. It now says what to run
+  and why the copy does not work.
+- Its verification block ran `pytest tests/ -v` (now the nightly workload),
+  `bandit -r src -ll` (different severity and confidence from the gate, and
+  without the vendored exclusion, so it reports findings CI never gates on) and
+  `mypy src` -- which corresponds to no make target and no CI job at all.
+  Replaced with the three targets CI actually runs.
+- The &#34;Running tests&#34; block invoked pytest directly, which loses the marker
+  selection, the vendored split and the coverage gate. A bare `pytest
+  tests/unit` silently includes the vendored tier.
+- `README.md`&#39;s pipeline list still said tests run &#34;on every PR&#34; and omitted the
+  nightly workflow entirely.
+
+A29. &#34;Across 90 measured runs the full-suite job produced one unique failure at a
+median of 20 minutes and a p90 of 48&#34; appeared in both `docs/contributing.md` and
+`nightly-regression.yml` with no artifact, log or query behind it. Nobody can
+re-derive or refute it. Replaced with what is actually true and checkable: the
+full-suite job guards cross-suite isolation regressions, a class the per-tier
+jobs cannot see by construction.
+
+The vendored-tier figures are restated as approximate with the command that
+produces the exact commit count, so the claim can be verified rather than trusted.
+
+* fix(hooks): verify the completion fixtures instead of rewriting them (A22, A33)
+
+A22. The completion-snapshots pre-commit hook ran `make
+update-completion-snapshots`, regenerating the golden fixtures on any change to
+`src/kanon_cli/**.py` or `pyproject.toml`.
+
+A hook that rewrites a golden file destroys what the golden is for. The diff that
+would have shown a reviewer the generated output changed gets authored
+automatically; pre-commit then reports &#34;files were modified by this hook&#34;, and
+the documented recovery -- stage them and retry -- commits the regenerated
+output. The golden stops being an assertion and becomes a transcript.
+
+That matters most for the case this hook triggers on. Its file set includes
+`pyproject.toml`, which is exactly where a `shtab` version bump lives, and shtab
+is what generates this output. `tests/unit/test_toolchain_isolation.py` records
+why the fixtures exist: a shtab release once changed the output and broke CI with
+no change to this repository, and the upper bound makes such a break &#34;a
+deliberate, reviewable edit that arrives with regenerated fixtures&#34;. The hook
+made it neither deliberate nor reviewable.
+
+The hook now runs a new `make check-completion-snapshots`, which regenerates into
+scratch files, diffs, and fails with the regeneration command and an instruction
+to review the diff. Regeneration stays available as an explicit human command --
+which is how the two legitimate regenerations on this branch were done, both
+landing as reviewed diffs.
+
+A33. `make update-completion-snapshots` redirected straight onto the fixtures, so
+`&gt;` truncated them before `kanon completion` ran. A failing generator -- a syntax
+error in the very change being committed, a stale venv -- left 0-byte goldens in
+the working tree, which the completion tests then compare real output against.
+It now writes to a temp file and `mv`s on success.
+
+Guarded by a test asserting the hook runs the verifier and not the regenerator,
+verified falsifiable by swapping the entry back.
+
+* docs: archive the major-version migration notes (§10)
+
+Standing decision: assume every consumer is on the current major release, and no
+upgrade of any kind should be required. Migration notes are retained only so the
+path is not lost, and nothing in the current documentation should route a reader
+to them.
+
+`docs/migration-to-add.md` (renamed `upgrading-from-2x.md`) and
+`docs/migrating-existing-kanon-files.md` both cover upgrading from 2.x. Both move
+under `docs/archive/`, with a short index stating plainly that nothing there is
+needed on a current installation, and that upgrading between 3.x releases
+requires no operator action -- `kanon doctor` reports anything an older store
+layout left behind and `kanon clean` reclaims it.
+
+`docs/migration-to-add.md` was not purely documentation: `kanon catalog audit`
+emits its path in the legacy-directory warning, asserted by six tests and a
+constant. That reference is updated rather than dropped, so the one live feature
+that legitimately points at a migration note still resolves -- buried, not
+broken.
+
+Moving the files also broke their own relative links, which pointed at siblings
+in `docs/`. All 19 were repaired and every markdown link in the tree is verified
+to resolve.
+
+The A4 classifier guard caught the archived path immediately, since tests assert
+on it; exempted, which is the guard doing its job for the second time on this
+branch.
+
+* refactor: apply the Gate 3 decisions (B5, A23, A24, A27, A30, A31, B11, DRY, timeouts)
+
+B5 becomes a warning rather than a refusal, per decision. Refusing meant two
+projects sharing a `KANON_HOME` and a package name could not both install, which
+kanon has never required and which this branch&#39;s own MP-01 scenario hit. The
+collision needs to be visible, not fatal: the replacement is announced on stderr
+naming both projects and the remedy. Isolating the farm is issue #115.
+
+A23 deletes the three tests in TestProjectKeyedWorkspaces that mocked repo_init,
+repo_envsubst and repo_sync. Nothing was ever written, so their only assertions
+were is_dir() on paths create_source_dirs had just made -- they could not fail for
+the reason their names claimed, which is worse than absent coverage because it
+reads as present. MP-01 proves the same claim against real git.
+
+A24 moves test_suite_containment.py and test_marker_completeness.py to the
+functional tier. Both spawn subprocesses -- one shells out to `ps`, the other runs
+a 17,000-item collection twice -- against a `unit` marker defined as &#34;fast,
+isolated, no external dependencies&#34;. The unit tier is what `git push` runs.
+
+A27 raises COVERAGE_MIN from 90 to 93. The 90 was set against a surface that
+included the vendored tree; that tree is now its own tier and omitted, so the same
+number was a looser bar against a smaller denominator. First-party coverage is
+93.75%.
+
+A30 corrects a docstring in tests/scenarios/conftest.py that documented a
+`.packages/&lt;project_address&gt;/` path which does not exist, contradicting
+aggregate_symlinks in the same branch.
+
+A31 deletes the orphaned `coverage-json` Make target. pre-push was its only
+consumer, and it still encoded the old unscoped `-m unit` selection -- a second,
+divergent definition of the coverage gate. Two pre-push tests accepted it as a
+substitute for the real target and now assert on executed targets instead.
+
+B11 adds src/kanon_cli/repo/VENDOR.md. It does not resolve the missing upstream
+base -- no SHA, tag, REPO_REV or NOTICE exists anywhere, so the fork still cannot
+be diffed against upstream, and the file says so plainly rather than implying
+otherwise. It records the deviations that are established from the tree and git
+history: absolute dest, the containment helper, the envsubst subcommand, PEP 440
+constraints, the forall signal guard. Every claim was verified against the tree
+before writing. It also records that this directory is excluded from bandit,
+coverage, ruff&#39;s hook and the no-comments gate -- so first-party logic written
+here is covered by none of them.
+
+DRY: sources_root_dir / project_sources_dir / source_workspace_dir replace four
+hand-composed copies of the keyed path across install.py, clean.py and doctor.py,
+and resolve_kanon_lock_root now calls compute_project_address instead of repeating
+its hash expression. Those two agreeing was previously a coincidence.
+
+Timeouts: _PROCESS_SCAN_TIMEOUT_SECONDS and the probe&#39;s `timeout=1` are now
+env-driven (KANON_TEST_PROCESS_SCAN_TIMEOUT, KANON_TEST_WEDGE_PROBE_TIMEOUT), and
+the bare 80 in the width padding is named for what it is.
+
+Full gate: lint, markdown, bandit High 0, unit 5120 passed 93.75% (gate now 93),
+vendored 6655, integration 1994, functional 3124, scenarios 442.
+
+* test(ci): test the shell that decides whether any test runs (A25)
+
+The path classifier was the only untested thing in the pipeline that can turn a
+pull request green without running anything. Its failure mode is invisible by
+construction: a green PR whose tiers were skipped looks exactly like a green PR
+whose tiers passed. Four ways it silently skipped a tier were found by reading
+it during A4 and A7; nothing stopped them coming back.
+
+Twelve parametrized cases pin the decisions, including every fix this branch
+made: an empty diff runs everything, `docs/integration-testing.md` is not inert
+because the scenario suite is generated from it, `tests/unit/conftest.py` and
+`tests/fixtures/` trigger the vendored tier, markdown under `tests/` is not
+documentation, and one live path defeats an otherwise-inert diff. Two structural
+tests assert the defaults start `true` and that the merge-base failure is not
+swallowed back into an `if`.
+
+The model reads its patterns out of the YAML rather than restating them, so the
+test cannot drift away from the shell it describes.
+
+That was not enough on its own, and the first version of this test proved it. It
+hardcoded the `^(src/|tests/)` condition, so deleting that condition from the
+workflow left all twelve cases passing -- the model applied a rule the classifier
+no longer had. This is the same &#34;cannot fail for its stated reason&#34; defect A23
+deleted three tests for, and I nearly shipped it in a test written to catch that
+class. The guard is now read from the workflow too, and verified: removing it
+fails with `[&#39;tests/fixtures/anything.md&#39;] classified as code=false, expected
+code=true`.
+
+Also narrows the doc-drift guard added in A4, which false-positived on this
+module&#39;s own fixtures. A classifier fixture naming `docs/a.md` is describing a
+path shape, not reading a file, so the guard now skips this module and any path
+that does not exist. Re-verified it still catches a real unexempt doc.
+
+* fix: make the re-init remediation actionable, correct the marketplace rule (A28, B10)
+
+A28. `RefreshRepoInitError` told the operator to &#34;remove the source&#39;s .kanon-data
+directory entry&#34;. Since workspaces are keyed by a sha256 of the consuming
+project&#39;s resolved `.kanon` path, that named a directory they could not locate
+without computing a digest by hand. It now prints the path.
+
+It also always recommended `kanon install --refresh-lock`. The manifests reset
+moved to before *every* `repo init`, so this error now reaches a plain `kanon
+install` -- and sending that operator to `--refresh-lock` points them at a
+different and much broader operation than the one that failed. The retry command
+now matches how the failure was reached.
+
+Four tests assert the message text, not just the exception type. An untested
+error message rots, and this one had already drifted twice: its wording changed
+in #103 with nothing pinning it, and the remediation outlived the path shape it
+described.
+
+B10. Three documents still stated the pre-#109 rule that every marketplace
+linkfile `dest` must start with `${CLAUDE_MARKETPLACES_DIR}/`, and that relative
+paths are rejected. Merged PR #109 replaced that: a dest must stay inside the
+consumer workspace, and the `${CLAUDE_MARKETPLACES_DIR}/` requirement applies
+only to a `claude-marketplace`-typed entry that declares at least one
+`&lt;linkfile&gt;` -- an entry declaring none is the direct-checkout shape and is
+exempt. Corrected in docs/claude-marketplaces-guide.md, docs/cli/validate.md and
+README.md, and extended to name `&lt;copyfile&gt;`, which the validator now checks too.
+
+Full gate: lint, markdown, bandit High 0, unit 5139 passed 93.76% (gate 93),
+vendored 6655, integration 1994, functional 3124, scenarios 442.
+
+* test: bound the probe readiness handshake (Gate 3)
+
+`_spawn_leak_probe` waited on a bare `child.stdout.readline()` with no deadline.
+If the probe never started -- a bad interpreter path, a syntax error in the
+generated script -- it blocked until pytest&#39;s own 600-second per-test timeout
+killed the worker. That is precisely the hang class this module exists to detect,
+so the guard could wedge the suite it guards.
+
+Readiness stays event-driven: the wait returns the instant the child announces
+itself, and the deadline only bounds the failure case, configurable through
+KANON_TEST_WEDGE_PROBE_TIMEOUT. On timeout the probe is killed and reaped and the
+failure names what was expected, what arrived, and which variable to raise.
+
+Verified to fire rather than hang: a child that never announces readiness fails
+in 1.0s against a 1s bound.
+
+* fix: close the remaining spec items and a CLAUDE.md violation I introduced (§9, §11)
+
+The audit that prompted this found six outstanding items and, following them,
+two real defects.
+
+**A defect my own commit message had claimed was fixed.** The B5/A1 commit said
+&#34;B4: sync&#39;s removal of a dropped dest is confined by the same boundary&#34;. It was
+not. `UpdateCopyLinkfileList` removes dests through
+`os.path.join(topdir, dest)`, which returns an absolute second argument
+unchanged, and that path never went near `_ResolveAbsDest`. A catalog author could
+delete a file inside a consumer&#39;s project by dropping it from the manifest.
+Removal now shares one containment predicate with writing: dropping a dest must
+not reach anywhere creating it could not.
+
+**copyfile destroyed an operator&#39;s file in silence.** `_LinkFile` warns before
+replacing something it did not create; `_CopyFile` did not -- so the irreversible
+operation was the quiet one, while the reversible one warned. It now warns for an
+absolute dest, which is the case that resolves into the consumer&#39;s own project. A
+relative dest stays quiet: that file is repo-managed and replacing it is routine,
+and warning there would train operators to ignore the warning that matters.
+
+§9 documentation: `--allow-abs-root` and `KANON_ALLOWED_ABS_ROOTS` documented in
+docs/cli-reference.md (both the flag and env tables), and a boundary section in
+docs/cli.md with the failure message and the precedence order. docs/cli/validate.md
+now distinguishes its author-side check from the stricter install-time boundary.
+`docs/cli/install.md` from the spec&#39;s checklist does not exist.
+
+§11 tests, all of which pin behaviour nothing covered:
+- tests/unit/test_manifest_vars.py -- the module had no unit tests at all, which
+  is why its grammar surface went untested through two regressions
+- the absolute-dest removal boundary (B4 above)
+- copyfile overwrite warning, and the relative-dest case staying quiet
+- MP-02 install over a pre-keying workspace, MP-03 recovery after interruption
+- two different projects installing concurrently -- every existing concurrency
+  test races the *same* project, which the workspace lock serialises
+- a plain `kanon install` re-resolving a changed variable, verified to fail when
+  the manifests reset is moved back inside the refresh branch
+- LF-02 driving an absolute copyfile dest through a real install, and the
+  boundary refusing one outside the project
+
+**A CLAUDE.md violation I introduced and had to fix.** `_terminate_process_group`
+polled a process group for death on a `time.sleep` interval -- sleep used as
+synchronization, which the standard forbids outright. It now blocks on the child&#39;s
+own exit and returns the moment it happens; the deadline only bounds the failure
+case. Four `#` comments in first-party test code also went in and are moved to a
+docstring.
+
+I also tried replacing the probe scripts&#39; `time.sleep` with a blocking stdin read
+and reverted it: under pytest the child inherits a closed stdin and exits
+immediately, so the probe cannot hold at all. Those sleeps are not
+synchronization -- nothing waits on the duration -- and the reasoning is now
+recorded in the module rather than left to be rediscovered.
+
+Full gate: lint, markdown, bandit High 0, unit 5161 passed 93.84%, vendored 6660,
+integration 1998, functional 3124, scenarios 446.
+
+* fix: repair the two CI jobs nobody had run, and state the fork&#39;s intent
+
+Running the full CI matrix rather than the per-tier subset found two failures.
+
+`make test` -- the full-suite regression job that main-validation runs on every
+push to main -- failed three tests in GitCommandWaitTest. `_build_env` reads
+`user_agent.git`, which probes `git --version` once per process and memoizes it
+on module-level globals. The class mocks subprocess.Popen with a double that
+models only what .Wait() needs and has no returncode, so with the globals cold
+the probe reaches the double and raises. The class passed only when a sibling
+test had already warmed them.
+
+It is latent on main: a clean origin/main worktree runs the full suite green but
+fails the same three tests when the class runs alone. The tests added here
+shifted xdist&#39;s loadscope assignment and surfaced it. Fixed by stubbing the user
+agent, and guarded by a test that runs the class in a cold interpreter.
+
+`make publish` -- the Build wheel required check -- fails identically on a clean
+origin/main. The build backend is unpinned, so python -m build resolves the
+newest hatchling, which emits Metadata-Version 2.5; twine caps its accepted list
+at 2.4. It last passed in CI on 2026-08-05 and has not run since. twine 6.2
+does not fix it (it monkeypatches packaging&#39;s table with its own list, still
+capped at 2.4); 7.0 does. This touches a dependency manifest and is flagged for
+review.
+
+VENDOR.md no longer describes the missing upstream base revision as an
+unresolved gap. The tree is a permanent hard fork with no intent to pull from
+git-repo again, so the deviations are what a reviewer needs and the base
+revision is not. The spec&#39;s B11 entry is updated to match.
+
+* fix: list --allow-abs-root in kanon --help
+
+The flag this branch adds appeared only in the usage line argparse prints on an
+error, not in the hand-written global-options block that `kanon --help` shows. A
+user looking for it found it by failing, which is a poor place to discover a
+feature, and every other global option was already listed there.
+
+The help snapshot fixture could not catch this. Adding a flag without editing the
+block leaves the snapshot byte-identical, so it passes. A guard now asserts every
+global option the parser accepts appears in the block, which is the check that
+would have caught the omission when the flag was added.
+
+Verified falsifiable: the snapshot test fails before the fixture is regenerated
+and passes after, and the new guard fails when the help line is removed.
+
+* fix: kanon clean --purge-all no longer refuses a sourceless .kanon
+
+Reported from a real machine: `kanon clean --purge-all` against an empty `.kanon`
+exited 1 with &#34;No sources found. Define at least one source...&#34;. That is the
+opposite of what an operator asking to remove everything wants, and it left the
+machine-wide escape hatch unusable in exactly the broken state it exists for.
+
+`--purge-all` already fell back to a store-only teardown in two &#34;no project&#34;
+cases: no discoverable `.kanon`, and a `.kanon` path that is not a file. A
+`.kanon` that exists but declares nothing is the same situation for teardown, and
+`_purge_home_only`&#39;s own docstring states the intent -- it &#34;must still tear down
+the shared KANON_HOME store even when there is no discoverable project .kanon&#34;.
+That third case now takes the same route: config files and home store removed,
+no per-source work to do. Plain `kanon clean` still fails fast on it.
+
+The catch is narrow. `NoSourcesError` is a dedicated `ValueError` subclass for
+the zero-source case and is raised during parse, before any teardown work, so no
+other failure is swallowed and nothing is half-done when it fires.
+
+This is pre-existing on main, not introduced by this branch; the only thing this
+branch changed in that file was the description text and the `Error:` prefix.
+
+One existing test needed its intent stated. `test_clean_error_exits` built its
+args with `MagicMock()`, whose attributes are all truthy, so `purge_all` read as
+true. Nothing consulted that flag on this path until now, at which point the
+accidental truthiness sent the test down the purge branch and it stopped
+asserting what its name says. It now sets `purge_all = False` explicitly.
+
+---------
+
+Co-authored-by: Ryan Gross &lt;ryan.gross@caylent.com&gt; ([`f22fe03`](https://github.com/caylent-solutions/kanon/commit/f22fe03f77e3cabfe10822242ed689a8f11e7b73))
+
 
 ## v3.3.3 (2026-08-06)
+
+### Chore
+
+* chore(release): 3.3.3 ([`ef2668f`](https://github.com/caylent-solutions/kanon/commit/ef2668f6f9f190b377a2b07091e40e22494ca35d))
 
 ### Fix
 
@@ -275,6 +1369,12 @@ tokenizer returns in single-digit milliseconds on 40k adversarial tokens.
 ---------
 
 Co-authored-by: Ryan Gross &lt;ryan.gross@caylent.com&gt; ([`ccfdfec`](https://github.com/caylent-solutions/kanon/commit/ccfdfecdbd7b3e366e1ca9c0579bd84aa70e66ae))
+
+### Unknown
+
+* Merge pull request #110 from caylent-solutions/release-3.3.3
+
+Release 3.3.3 ([`6f8d5a1`](https://github.com/caylent-solutions/kanon/commit/6f8d5a1192f3ad7ad9846ce7acc362d2c3aefa57))
 
 
 ## v3.3.2 (2026-08-05)

@@ -1,3 +1,3 @@
 """Kanon CLI -- Kanon Package Manager."""
 
-__version__ = "3.3.3"
+__version__ = "3.4.0"

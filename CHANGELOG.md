@@ -2,37 +2,55 @@
 
 
 
-## [Unreleased]
+## v3.4.1 (2026-08-21)
 
-### Fixed
+### Fix
 
-* fix: `kanon clean --purge-all` no longer orphans the marketplace it registered
+* fix: kanon clean --purge-all no longer orphans the marketplace it registered (#120)
 
-`--purge-all` removed the shared store without first unregistering what kanon had
-put into Claude. Claude was left holding a marketplace whose content no longer
-existed, reported as `failed to load: cache-miss`, and kanon could not clean it up
-afterwards: the marketplace is normally located by enumerating the marketplace
-directory, which the teardown had already deleted. Recovering meant
+Reported from a real machine, reproduced verbatim.
+
+`kanon clean --purge-all` removed the shared store without first unregistering
+what kanon had put into Claude. Claude was left holding a marketplace whose
+content no longer existed and reported it as `failed to load: cache-miss`.
+
+The state was unrecoverable through kanon. `kanon clean` locates the marketplace
+by enumerating the marketplace directory, which the teardown had already deleted,
+so a follow-up clean reports &#34;Broken symlink detected and skipped&#34; then &#34;No
+marketplace entries found. Nothing to uninstall.&#34; and gives up. Fixing it meant
 `claude plugin uninstall` and `claude plugin marketplace remove` by hand.
 
 `.kanon.lock` survives a deleted `.kanon` and records `registered_marketplaces`
-per source, so the information was always there. Both machine-wide teardown paths
-now read that ledger and unregister **before** removing anything: the
-no-project-found path discovers the lockfile by the same upward walk
-`find_kanonenv` uses, and the sourceless-project path reads its sibling. The
-ordering is asserted by test, because unregistering after the delete is what
-produced the orphan.
+per source. kanon always had the marketplace name, the directory, and the fact it
+had registered it; the teardown simply never read them.
+
+Both machine-wide paths now unregister from that ledger BEFORE removing anything.
+The no-project-found path discovers the lockfile by the same upward walk
+`find_kanonenv` uses; the sourceless-project path reads its sibling. Ordering is
+asserted by test, since unregistering after the delete is precisely what produced
+the orphan.
+
+One of the two paths was mine. `_purge_sourceless_project` shipped in 3.4.0 and
+delegated to the same incomplete teardown, so closing the &#34;cannot purge&#34; bug
+extended this defect to a new path rather than merely inheriting it. It also
+deleted `.kanon.lock`, destroying the only record of what to unregister.
 
 Candidates come only from the lockfile ledger, never from enumerating the
-directory, matching the existing safety invariant in `--orphans`: a marketplace
-kanon did not register was never written to a ledger and cannot be unregistered
-here. A missing lockfile or an empty ledger is not an error and does not require
-the claude binary on PATH.
+directory, matching the safety invariant `_prune_orphaned_marketplaces` already
+documents: a marketplace kanon did not register was never written to a ledger and
+cannot be unregistered here. A missing lockfile or empty ledger is not an error
+and does not require claude on PATH.
 
-
+Verified end to end in a container against a 3.4.0 build: the reported sequence
+now leaves zero marketplaces, zero plugins and no stale lockfile. Guards proven
+falsifiable by reintroducing the defect in both paths. ([`6edc65a`](https://github.com/caylent-solutions/kanon/commit/6edc65a9c5cbe09fc057c370e867abaaf63136f7))
 
 
 ## v3.4.0 (2026-08-21)
+
+### Chore
+
+* chore(release): 3.4.0 ([`b361799`](https://github.com/caylent-solutions/kanon/commit/b36179978257a41a2a633de80393ac6a33735dd2))
 
 ### Feature
 
@@ -1270,6 +1288,12 @@ asserting what its name says. It now sets `purge_all = False` explicitly.
 ---------
 
 Co-authored-by: Ryan Gross &lt;ryan.gross@caylent.com&gt; ([`f22fe03`](https://github.com/caylent-solutions/kanon/commit/f22fe03f77e3cabfe10822242ed689a8f11e7b73))
+
+### Unknown
+
+* Merge pull request #119 from caylent-solutions/release-3.4.0
+
+Release 3.4.0 ([`cc2e38d`](https://github.com/caylent-solutions/kanon/commit/cc2e38d528fd779ba770b451a8efc114c6c003ef))
 
 
 ## v3.3.3 (2026-08-06)

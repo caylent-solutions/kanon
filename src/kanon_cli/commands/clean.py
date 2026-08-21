@@ -3,8 +3,9 @@
 import pathlib
 import sys
 
-from kanon_cli.core.clean import clean, remove_kanon_home_store
+from kanon_cli.core.clean import clean, remove_kanon_home_store, remove_project_config
 from kanon_cli.core.discover import find_kanonenv
+from kanon_cli.core.kanonenv import NoSourcesError
 
 
 def register(subparsers) -> None:
@@ -97,6 +98,27 @@ def _purge_home_only() -> None:
     remove_kanon_home_store()
 
 
+def _purge_sourceless_project(kanonenv_path: pathlib.Path) -> None:
+    """Tear down when ``--purge-all`` meets a ``.kanon`` that declares no sources.
+
+    ``--purge-all`` already falls back to a store-only teardown when no ``.kanon``
+    is discoverable at all. A ``.kanon`` that exists but declares nothing is the
+    same situation for teardown purposes: there is no source to uninstall, so
+    refusing would leave the machine-wide escape hatch unusable in exactly the
+    state an operator reaches for it, and the "define at least one source"
+    diagnostic tells them the opposite of what they asked for.
+
+    Removes what a normal ``--purge-all`` would still remove: this project's
+    config files and the shared home store. There is no per-source work to do.
+
+    Args:
+        kanonenv_path: Path to the sourceless ``.kanon`` file.
+    """
+    print("kanon clean --purge-all: .kanon declares no sources; nothing to uninstall.")
+    remove_project_config(kanonenv_path, kanonenv_path.parent / ".kanon.lock")
+    remove_kanon_home_store()
+
+
 def _run(args) -> None:
     """Execute the clean command.
 
@@ -129,6 +151,11 @@ def _run(args) -> None:
             purge=(args.purge or args.purge_all),
             purge_home=args.purge_all,
         )
+    except NoSourcesError as exc:
+        if not args.purge_all:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
+        _purge_sourceless_project(args.kanonenv_path)
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

@@ -32,6 +32,26 @@ and behaviour is unchanged.
 
 ### Fixed
 
+* fix: `kanon clean --purge-all` no longer refuses a `.kanon` with no sources
+
+`--purge-all` is the machine-wide teardown and already fell back to a store-only
+clean when no `.kanon` was discoverable at all. A `.kanon` that existed but
+declared no sources took a different path and exited non-zero with "No sources
+found. Define at least one source...", which is the opposite of what an operator
+asking to remove everything wants, and left the escape hatch unusable in exactly
+the broken state it exists for. Such a project is now torn down: its config files
+and the shared home store are removed, and there is no per-source work to do.
+Plain `kanon clean` still treats a sourceless `.kanon` as a fail-fast error.
+
+* fix: `--allow-abs-root` is listed in `kanon --help`
+
+The flag appeared in the usage line argparse prints on an error but was missing
+from the hand-written global-options block that `kanon --help` shows, so the only
+place it surfaced was a failure. A guard now asserts every global option the
+parser accepts appears in that block; the help snapshot fixture could not catch
+this, because adding a flag without editing the block leaves the snapshot
+byte-identical.
+
 * fix: key per-source install workspaces by consumer project (#96)
 
 Per-source install workspaces (`<KANON_HOME>/store/.kanon-data/sources/...`) are

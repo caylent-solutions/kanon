@@ -3,7 +3,14 @@
 import pathlib
 import sys
 
-from kanon_cli.core.clean import clean, remove_kanon_home_store, remove_project_config
+from kanon_cli.core.clean import (
+    clean,
+    find_lockfile,
+    remove_kanon_home_store,
+    remove_project_config,
+    unregister_marketplaces_from_lockfile,
+)
+from kanon_cli.constants import LOCKFILE_FILENAME
 from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.kanonenv import NoSourcesError
 
@@ -95,7 +102,13 @@ def _purge_home_only() -> None:
     preserved exactly as in the in-``clean()`` path.
     """
     print("kanon clean --purge-all: no .kanon project found; removing only the shared kanon home store...")
+    lockfile_path = find_lockfile()
+    if lockfile_path is not None:
+        unregister_marketplaces_from_lockfile(lockfile_path)
     remove_kanon_home_store()
+    if lockfile_path is not None and lockfile_path.is_file():
+        print(f"kanon clean: removing {lockfile_path}...")
+        lockfile_path.unlink()
 
 
 def _purge_sourceless_project(kanonenv_path: pathlib.Path) -> None:
@@ -115,7 +128,9 @@ def _purge_sourceless_project(kanonenv_path: pathlib.Path) -> None:
         kanonenv_path: Path to the sourceless ``.kanon`` file.
     """
     print("kanon clean --purge-all: .kanon declares no sources; nothing to uninstall.")
-    remove_project_config(kanonenv_path, kanonenv_path.parent / ".kanon.lock")
+    lockfile_path = kanonenv_path.parent / LOCKFILE_FILENAME
+    unregister_marketplaces_from_lockfile(lockfile_path)
+    remove_project_config(kanonenv_path, lockfile_path)
     remove_kanon_home_store()
 
 

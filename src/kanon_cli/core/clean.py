@@ -24,6 +24,7 @@ import sys
 from kanon_cli.constants import (
     KANON_HOME_CACHE_SUBDIR,
     KANON_HOME_STORE_SUBDIR,
+    LOCKFILE_FILENAME,
     SOURCE_MARKETPLACE_KEY,
     resolve_kanon_home,
 )
@@ -321,6 +322,75 @@ def _prune_orphaned_marketplaces(lockfile: Lockfile | None, current_source_names
         remove_marketplace(claude_bin, name)
 
 
+def unregister_marketplaces_from_lockfile(lockfile_path: pathlib.Path) -> int:
+    """Unregister every marketplace a lockfile records kanon as having registered.
+
+    A teardown that deletes kanon's store without first unregistering what kanon
+    put into Claude leaves Claude holding a marketplace whose content no longer
+    exists. Claude reports that as ``failed to load: cache-miss``, and kanon can
+    no longer clean it up: the marketplace is normally located by enumerating the
+    marketplace directory, which the teardown has already removed.
+
+    The lockfile is the only record that survives the project's ``.kanon``, and it
+    carries what is needed: ``registered_marketplaces`` per source. This reads
+    that ledger and unregisters from it directly, so it works even when the
+    directory is gone or its symlinks are broken.
+
+    SAFETY INVARIANT, matching ``_prune_orphaned_marketplaces``: candidates come
+    ONLY from the per-source ``registered_marketplaces`` ledgers, never from
+    enumerating the directory. A marketplace kanon did not register was never
+    written to a ledger and so can never be unregistered here.
+
+    Args:
+        lockfile_path: Path to the ``.kanon.lock`` to read.
+
+    Returns:
+        The number of marketplaces unregistered.
+    """
+    lockfile = _read_lockfile_if_present(lockfile_path)
+    if lockfile is None:
+        return 0
+
+    registered: set[str] = set()
+    for source in lockfile.sources:
+        registered.update(source.registered_marketplaces)
+    names = sorted(registered)
+    if not names:
+        return 0
+
+    print(f"kanon clean: unregistering {len(names)} marketplace(s) recorded in {lockfile_path.name}...")
+    claude_bin = locate_claude_binary()
+    for name in names:
+        print(f"  - unregistering marketplace: {name}")
+        remove_marketplace(claude_bin, name)
+    return len(names)
+
+
+def find_lockfile(start_dir: pathlib.Path | None = None) -> pathlib.Path | None:
+    """Walk up from *start_dir* looking for a ``.kanon.lock``.
+
+    ``--purge-all`` runs in the situation where ``.kanon`` may already be gone,
+    which is exactly when the lockfile is the only surviving record of what kanon
+    registered. Discovery mirrors ``find_kanonenv``'s upward walk so the lock
+    found is the one belonging to the project the operator is standing in.
+
+    Args:
+        start_dir: Directory to start from. Defaults to the working directory.
+
+    Returns:
+        Path to the nearest ``.kanon.lock``, or None when there is none.
+    """
+    current = (start_dir or pathlib.Path.cwd()).resolve()
+    while True:
+        candidate = current / LOCKFILE_FILENAME
+        if candidate.is_file():
+            return candidate
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
+
+
 def clean(
     kanonenv_path: pathlib.Path,
     orphans: bool = False,
@@ -381,7 +451,7 @@ def clean(
 
     marketplace_dir_str = globals_dict.get("CLAUDE_MARKETPLACES_DIR", "")
 
-    lockfile_path = kanonenv_path.parent / ".kanon.lock"
+    lockfile_path = kanonenv_path.parent / LOCKFILE_FILENAME
     lockfile = _read_lockfile_if_present(lockfile_path)
 
     if orphans:

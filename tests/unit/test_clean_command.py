@@ -91,6 +91,77 @@ class TestPurgeAllWithASourcelessKanon:
 
 
 @pytest.mark.unit
+class TestPurgeAllUnregistersBeforeDeleting:
+    """A teardown that deletes kanon's store must first undo what kanon put in Claude.
+
+    Removing the store without unregistering leaves Claude holding a marketplace
+    whose content is gone, which it reports as ``failed to load: cache-miss``. It
+    is unrecoverable through kanon, because the marketplace is normally found by
+    enumerating the marketplace directory the teardown already deleted.
+
+    ``.kanon.lock`` survives ``rm .kanon`` and records ``registered_marketplaces``,
+    so kanon always had what it needed. These assert it is used, and used *before*
+    anything is removed.
+    """
+
+    def test_no_project_path_unregisters_from_the_discovered_lockfile(self, tmp_path: pathlib.Path) -> None:
+        """With no .kanon, --purge-all still unregisters via the lockfile it finds."""
+        lock = tmp_path / ".kanon.lock"
+        lock.write_text("")
+        args = types.SimpleNamespace(kanonenv_path=None, orphans=False, purge=False, purge_all=True)
+        order: list[str] = []
+        with (
+            patch("kanon_cli.commands.clean.find_kanonenv", side_effect=FileNotFoundError("none")),
+            patch("kanon_cli.commands.clean.find_lockfile", return_value=lock),
+            patch(
+                "kanon_cli.commands.clean.unregister_marketplaces_from_lockfile",
+                side_effect=lambda p: order.append("unregister"),
+            ) as mock_unreg,
+            patch(
+                "kanon_cli.commands.clean.remove_kanon_home_store", side_effect=lambda: order.append("remove_store")
+            ) as mock_store,
+        ):
+            _run(args)
+        mock_unreg.assert_called_once_with(lock)
+        mock_store.assert_called_once_with()
+        assert order == ["unregister", "remove_store"], f"unregister must precede removal, got {order}"
+
+    def test_sourceless_project_unregisters_before_removing(self, tmp_path: pathlib.Path) -> None:
+        """A sourceless .kanon under --purge-all unregisters before deleting anything."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text("")
+        lock = tmp_path / ".kanon.lock"
+        args = types.SimpleNamespace(kanonenv_path=kanonenv, orphans=False, purge=False, purge_all=True)
+        order: list[str] = []
+        with (
+            patch(
+                "kanon_cli.commands.clean.unregister_marketplaces_from_lockfile",
+                side_effect=lambda p: order.append("unregister"),
+            ) as mock_unreg,
+            patch(
+                "kanon_cli.commands.clean.remove_project_config", side_effect=lambda a, b: order.append("remove_config")
+            ),
+            patch("kanon_cli.commands.clean.remove_kanon_home_store", side_effect=lambda: order.append("remove_store")),
+        ):
+            _run(args)
+        mock_unreg.assert_called_once_with(lock)
+        assert order == ["unregister", "remove_config", "remove_store"], f"unregister must come first, got {order}"
+
+    def test_no_lockfile_found_still_removes_the_store(self, tmp_path: pathlib.Path) -> None:
+        """A missing lockfile must not stop the teardown; there is simply nothing to undo."""
+        args = types.SimpleNamespace(kanonenv_path=None, orphans=False, purge=False, purge_all=True)
+        with (
+            patch("kanon_cli.commands.clean.find_kanonenv", side_effect=FileNotFoundError("none")),
+            patch("kanon_cli.commands.clean.find_lockfile", return_value=None),
+            patch("kanon_cli.commands.clean.unregister_marketplaces_from_lockfile") as mock_unreg,
+            patch("kanon_cli.commands.clean.remove_kanon_home_store") as mock_store,
+        ):
+            _run(args)
+        mock_unreg.assert_not_called()
+        mock_store.assert_called_once_with()
+
+
+@pytest.mark.unit
 class TestCleanRegister:
     def test_kanonenv_path_is_optional(self) -> None:
         parser = argparse.ArgumentParser()

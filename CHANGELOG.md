@@ -2,6 +2,36 @@
 
 
 
+## [Unreleased]
+
+### Fixed
+
+* fix: `kanon clean --purge-all` no longer orphans the marketplace it registered
+
+`--purge-all` removed the shared store without first unregistering what kanon had
+put into Claude. Claude was left holding a marketplace whose content no longer
+existed, reported as `failed to load: cache-miss`, and kanon could not clean it up
+afterwards: the marketplace is normally located by enumerating the marketplace
+directory, which the teardown had already deleted. Recovering meant
+`claude plugin uninstall` and `claude plugin marketplace remove` by hand.
+
+`.kanon.lock` survives a deleted `.kanon` and records `registered_marketplaces`
+per source, so the information was always there. Both machine-wide teardown paths
+now read that ledger and unregister **before** removing anything: the
+no-project-found path discovers the lockfile by the same upward walk
+`find_kanonenv` uses, and the sourceless-project path reads its sibling. The
+ordering is asserted by test, because unregistering after the delete is what
+produced the orphan.
+
+Candidates come only from the lockfile ledger, never from enumerating the
+directory, matching the existing safety invariant in `--orphans`: a marketplace
+kanon did not register was never written to a ledger and cannot be unregistered
+here. A missing lockfile or an empty ledger is not an error and does not require
+the claude binary on PATH.
+
+
+
+
 ## v3.4.0 (2026-08-21)
 
 ### Feature

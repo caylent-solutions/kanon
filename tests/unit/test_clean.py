@@ -2,6 +2,7 @@
 
 import datetime
 import pathlib
+import types
 from unittest.mock import patch
 
 import pytest
@@ -14,6 +15,8 @@ from kanon_cli.core.clean import (
     remove_kanon_home_store,
     remove_marketplace_dir,
     remove_project_config,
+    unregister_marketplaces_from_lockfile,
+    find_lockfile,
 )
 from kanon_cli.core.lockfile import (
     CURRENT_SCHEMA_VERSION,
@@ -742,3 +745,63 @@ class TestCleanIsProjectScoped:
             "the shared content-addressed store entry was pruned by a project-scoped clean, "
             "forcing every other project on the machine to re-fetch"
         )
+
+
+@pytest.mark.unit
+class TestUnregisterMarketplacesFromLockfile:
+    """The lock-driven unregister, which must work when the directory is already gone."""
+
+    def _lock(self, tmp_path, names):
+        lock = tmp_path / ".kanon.lock"
+        lock.write_text("")
+        source = types.SimpleNamespace(name="history", registered_marketplaces=names)
+        return lock, types.SimpleNamespace(sources=[source])
+
+    def test_unregisters_every_name_in_the_ledger(self, tmp_path: pathlib.Path) -> None:
+        """Each recorded marketplace is unregistered, by name, not by directory scan."""
+        lock, parsed = self._lock(tmp_path, ["claude-history", "other"])
+        with (
+            patch("kanon_cli.core.clean._read_lockfile_if_present", return_value=parsed),
+            patch("kanon_cli.core.clean.locate_claude_binary", return_value="claude"),
+            patch("kanon_cli.core.clean.remove_marketplace") as mock_remove,
+        ):
+            count = unregister_marketplaces_from_lockfile(lock)
+        assert count == 2
+        assert sorted(c.args[1] for c in mock_remove.call_args_list) == ["claude-history", "other"]
+
+    def test_absent_lockfile_is_not_an_error(self, tmp_path: pathlib.Path) -> None:
+        """No lockfile means nothing was recorded, so there is nothing to undo."""
+        with (
+            patch("kanon_cli.core.clean._read_lockfile_if_present", return_value=None),
+            patch("kanon_cli.core.clean.locate_claude_binary") as mock_locate,
+        ):
+            assert unregister_marketplaces_from_lockfile(tmp_path / ".kanon.lock") == 0
+        mock_locate.assert_not_called()
+
+    def test_empty_ledger_does_not_require_claude_on_path(self, tmp_path: pathlib.Path) -> None:
+        """A lockfile that registered nothing must not demand the claude binary."""
+        lock, parsed = self._lock(tmp_path, [])
+        with (
+            patch("kanon_cli.core.clean._read_lockfile_if_present", return_value=parsed),
+            patch("kanon_cli.core.clean.locate_claude_binary") as mock_locate,
+        ):
+            assert unregister_marketplaces_from_lockfile(lock) == 0
+        mock_locate.assert_not_called()
+
+
+@pytest.mark.unit
+class TestFindLockfile:
+    """Lockfile discovery, which must mirror find_kanonenv's upward walk."""
+
+    def test_finds_a_lockfile_in_a_parent_directory(self, tmp_path: pathlib.Path) -> None:
+        """The lock belonging to the project the operator stands in is the one found."""
+        (tmp_path / ".kanon.lock").write_text("")
+        nested = tmp_path / "a" / "b"
+        nested.mkdir(parents=True)
+        assert find_lockfile(nested) == tmp_path / ".kanon.lock"
+
+    def test_returns_none_when_there_is_no_lockfile(self, tmp_path: pathlib.Path) -> None:
+        """Absence is a normal outcome, not an error."""
+        nested = tmp_path / "a"
+        nested.mkdir()
+        assert find_lockfile(nested) is None

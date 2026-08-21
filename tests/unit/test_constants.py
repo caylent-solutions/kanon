@@ -2105,6 +2105,7 @@ class TestKanonCatalogAuditTagFormatSummaryTemplate:
         assert "tag-format" in rendered
 
 
+@pytest.mark.unit
 class TestKanonCatalogAuditLegacyDirWarningTemplate:
     """Tests for KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE (E5-F2-S1-T7 AC-FUNC-006)."""
 
@@ -2141,7 +2142,7 @@ class TestKanonCatalogAuditLegacyDirWarningTemplate:
         expected = (
             "Legacy catalog/ directory detected; this directory is unused by "
             "kanon >= 0.99.0 and should be deleted; "
-            "see docs/migration-to-add.md"
+            "see docs/archive/upgrading-from-2x.md"
         )
         assert rendered == expected
 
@@ -2150,7 +2151,7 @@ class TestKanonCatalogAuditLegacyDirWarningTemplate:
         from kanon_cli.constants import KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE
 
         rendered = KANON_CATALOG_AUDIT_LEGACY_DIR_WARNING_TEMPLATE.format(version="2.0.0")
-        assert "docs/migration-to-add.md" in rendered
+        assert "docs/archive/upgrading-from-2x.md" in rendered
 
 
 @pytest.mark.unit

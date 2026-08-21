@@ -96,10 +96,29 @@ following threat surface:
   can map a logical name to any fetch URL. This mapping can be changed by
   the catalog author in subsequent commits.
 
+- **File delivery to declared destinations.** A `<linkfile>` creates a symlink
+  and a `<copyfile>` writes a real file at the `dest` the manifest declares,
+  during `kanon install`, with no prompt. A `dest` may be an absolute path after
+  `repo envsubst` expansion. Destinations are **confined to a permitted root**:
+  the consumer project root, the resolved `CLAUDE_MARKETPLACES_DIR`, and any
+  root the operator added with `--allow-abs-root` or `KANON_ALLOWED_ABS_ROOTS`.
+  A destination resolving outside every permitted root aborts the install.
+  Widening that boundary widens what a manifest can write, so treat
+  `--allow-abs-root` as a grant of write access to that path.
+
+- **Deletion of destinations a manifest previously declared.** `repo sync`
+  records every delivered `dest` and removes the ones a later manifest revision
+  no longer declares, so a catalog author can delete a file they previously
+  delivered. The same permitted-root boundary applies, so the deletion cannot
+  reach outside it.
+
 Mitigations: pin catalog sources to a specific git SHA via
 `KANON_CATALOG_SOURCES=<url>@<sha>`, review lockfile diffs before applying
-them, and restrict write access to your manifest repo. See
-[`docs/configuration.md`](configuration.md) for catalog-source pinning.
+them, review a catalog entry's `<linkfile>` and `<copyfile>` `dest` attributes
+before adding it, keep the permitted-root set as narrow as the entry needs, and
+restrict write access to your manifest repo. See
+[`docs/configuration.md`](configuration.md) for catalog-source pinning and for
+the `KANON_ALLOWED_ABS_ROOTS` resolution order.
 
 ## What kanon does NOT do
 

@@ -130,7 +130,7 @@ In kanon 3.0.0 the install artifacts no longer live next to `.kanon`. All
 fetched data is content-addressed under a **shared store** rooted at
 `KANON_HOME` (precedence: `--home`/`--store-dir` flag > `KANON_HOME` env >
 `~/.kanon-home` default). A successful `kanon install` writes only `.kanon.lock`
-into the project directory; the `.packages/` and `.kanon-data/sources/<name>/`
+into the project directory; the `.packages/` and `.kanon-data/sources/<project-address>/<name>/`
 artifacts are created under `<KANON_HOME>/store/` (a store-level `.gitignore`
 containing `*` is written there only when the store sits inside a git repo).
 The removed per-project location variables (`KANON_WORKSPACE_DIR`,
@@ -149,7 +149,7 @@ export KANON_ALLOW_INSECURE_REMOTES=1
 Pass criteria throughout this plan refer to store artifacts via
 `${KANON_HOME}/store/...`. For example, `${KANON_HOME}/store/.packages/pkg-alpha`
 is the aggregated package symlink, and
-`${KANON_HOME}/store/.kanon-data/sources/<name>/` is a source's repo checkout.
+`${KANON_HOME}/store/.kanon-data/sources/<project-address>/<name>/` is a source's repo checkout.
 
 ### 1.4 Platform note
 
@@ -630,10 +630,10 @@ kanon install .kanon
 
 - Exit code 0
 - stdout contains `kanon install: done`
-- Directory `${KANON_HOME}/store/.kanon-data/sources/primary/` exists
+- Directory `${KANON_HOME}/store/.kanon-data/sources/<project-address>/primary/` exists
 - Directory `${KANON_HOME}/store/.packages/` exists
 - `${KANON_HOME}/store/.packages/pkg-alpha` is a symlink
-- Symlink target path contains `${KANON_HOME}/store/.kanon-data/sources/primary/.packages/pkg-alpha`
+- Symlink target path contains `${KANON_HOME}/store/.kanon-data/sources/*/primary/.packages/pkg-alpha`
 - `${KANON_HOME}/store/.gitignore` is NOT created (the throwaway store is not inside a git repo; the safety-net `.gitignore` containing `*` is written only when the store sits inside a git working tree)
 
 **Clean:**
@@ -798,8 +798,8 @@ kanon install .kanon
 **Pass criteria:**
 
 - Exit code 0
-- `${KANON_HOME}/store/.kanon-data/sources/alpha/` directory exists
-- `${KANON_HOME}/store/.kanon-data/sources/bravo/` directory exists
+- `${KANON_HOME}/store/.kanon-data/sources/<project-address>/alpha/` directory exists
+- `${KANON_HOME}/store/.kanon-data/sources/<project-address>/bravo/` directory exists
 - `${KANON_HOME}/store/.packages/` directory contains symlinks
 - stdout contains `kanon install: done`
 
@@ -815,6 +815,87 @@ cd "${MS01_DIR}"
 kanon clean .kanon
 rm -rf "${MS01_DIR}"
 ```
+
+---
+
+## 6a. Category 5a: Multi-Project Isolation (1 test)
+
+### MP-01: Two projects declaring the same source alias each receive their own content
+
+Two unrelated projects share one `KANON_HOME` and both declare a source under the
+same alias, pinned to different revisions. Before per-project keying they shared a
+single mutable `repo` workspace: the second install either delivered nothing while
+reporting success, or raised an unhandled `GitCommandError` that wedged the
+workspace for both. Each project now gets a workspace keyed by a stable address
+derived from its own `.kanon` path.
+
+The third step matters as much as the first two: re-installing project A *after*
+project B has installed is what proves B did not disturb A's workspace.
+
+```bash
+export MP01_A="${KANON_TEST_ROOT}/test-mp01-a"
+export MP01_B="${KANON_TEST_ROOT}/test-mp01-b"
+mkdir -p "${MP01_A}" "${MP01_B}"
+
+# Both .kanon files use the SAME alias `shared`, pinned to different tags.
+cat > "${MP01_A}/.kanon" << KANONEOF
+KANON_SOURCE_shared_URL=file://${MP01_MANIFEST_DIR}
+KANON_SOURCE_shared_REF=v1
+KANON_SOURCE_shared_PATH=repo-specs/shared.xml
+KANON_SOURCE_shared_NAME=shared
+KANON_SOURCE_shared_GITBASE=https://example.com
+KANONEOF
+
+cat > "${MP01_B}/.kanon" << KANONEOF
+KANON_SOURCE_shared_URL=file://${MP01_MANIFEST_DIR}
+KANON_SOURCE_shared_REF=v2
+KANON_SOURCE_shared_PATH=repo-specs/shared.xml
+KANON_SOURCE_shared_NAME=shared
+KANON_SOURCE_shared_GITBASE=https://example.com
+KANONEOF
+
+cd "${MP01_A}" && kanon install .kanon
+cd "${MP01_B}" && kanon install .kanon
+cd "${MP01_A}" && kanon install .kanon
+```
+
+**Pass criteria:**
+
+- All three `kanon install` runs exit 0
+- `${KANON_HOME}/store/.kanon-data/sources/` contains two distinct project-address
+  directories, each a 64-character hex name
+- Each project address directory contains its own `shared/` source workspace
+- Project A's delivered package content is the `v1` content, and project B's is the
+  `v2` content -- verified by reading the files, not by checking that a directory
+  exists
+- Re-installing A after B leaves A's content unchanged
+
+**Cleanup:**
+
+```bash
+cd "${MP01_A}" && kanon clean .kanon
+rm -rf "${MP01_A}" "${MP01_B}"
+```
+
+### MP-02: Install over a pre-keying workspace
+
+An operator upgrading from a kanon that stored workspaces at
+`sources/<alias>/` has one of those directories on disk. It is never read again.
+Install must ignore it, and must leave it in place -- `kanon doctor` reports it so
+the operator decides when to reclaim the space.
+
+**Pass criteria:**
+
+- `kanon install` exits 0 with the alias-named directory present
+- The content delivered is the project's own, from its keyed workspace
+- The alias-named directory and its contents are untouched
+
+### MP-03: Re-install after an interrupted install
+
+**Pass criteria:**
+
+- With part of a synced workspace removed, `kanon install` exits 0
+- The removed content is restored
 
 ---
 
@@ -920,8 +1001,8 @@ kanon install .kanon
 
 - Exit code 0
 - `${KANON_HOME}/store/.packages/pkg-linked` exists (symlink into `${KANON_HOME}/store/.kanon-data/sources/`)
-- `${KANON_HOME}/store/.kanon-data/sources/linked/app-config.json` exists as a symlink (created by the kanon repo linkfile element inside the source directory)
-- `${KANON_HOME}/store/.kanon-data/sources/linked/lint.toml` exists as a symlink
+- `${KANON_HOME}/store/.kanon-data/sources/*/linked/app-config.json` exists as a symlink (created by the kanon repo linkfile element inside the source directory)
+- `${KANON_HOME}/store/.kanon-data/sources/*/linked/lint.toml` exists as a symlink
 - Symlinks resolve to valid files
 
 **Cleanup:**
@@ -935,6 +1016,25 @@ rm -rf "${LF01_DIR}"
 ---
 
 ## 9. Category 8: Error Cases (9 tests)
+
+### LF-02: copyfile with an absolute dest delivers a real file into the project
+
+`<copyfile>` writes a real, editable file where `<linkfile>` creates a symlink.
+This is how a manifest delivers content that cannot be a symlink -- a CI workflow,
+for instance -- into the consuming project rather than into the repo client
+checkout.
+
+The destination is confined: it must resolve under the consumer project root, the
+resolved `CLAUDE_MARKETPLACES_DIR`, or a root added with `--allow-abs-root` /
+`KANON_ALLOWED_ABS_ROOTS`.
+
+**Pass criteria:**
+
+- `kanon install` exits 0
+- The declared absolute destination exists inside the consumer project
+- It is a regular file, not a symlink, and its content matches the source
+- A destination outside every permitted root aborts the install, naming the
+  destination and how to widen the boundary
 
 ### EC-01: Missing .kanon file
 
@@ -2359,7 +2459,7 @@ KANON_SOURCE_pep_NAME=pep
 KANON_SOURCE_pep_GITBASE=https://example.com
 KANONEOF
     kanon install .kanon
-    (cd ${KANON_HOME}/store/.kanon-data/sources/pep && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/${expected_tag}"
+    (cd ${KANON_HOME}/store/.kanon-data/sources/*/pep && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/${expected_tag}"
 }
 ```
 
@@ -2662,7 +2762,7 @@ KANON_SOURCE_pep_NAME=pep
 KANON_SOURCE_pep_GITBASE=https://example.com
 KANONEOF
     kanon install .kanon
-    (cd ${KANON_HOME}/store/.kanon-data/sources/pep && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/${expected_tag}"
+    (cd ${KANON_HOME}/store/.kanon-data/sources/*/pep && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/${expected_tag}"
 }
 ```
 
@@ -2863,7 +2963,7 @@ KANON_SOURCE_pep_NAME=pep
 KANON_SOURCE_pep_GITBASE=https://example.com
 KANONEOF
 KS_FIX="${KS_FIX}" KANON_SOURCE_pep_REF="refs/tags/~=1.0.0" kanon install .kanon
-(cd ${KANON_HOME}/store/.kanon-data/sources/pep && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/1.0.1"
+(cd ${KANON_HOME}/store/.kanon-data/sources/*/pep && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/1.0.1"
 ```
 
 **Pass criteria:** Exit code 0; resolved tag `1.0.1` (env override beat `.kanon` file value).
@@ -3569,7 +3669,7 @@ test ! -L ${KANON_HOME}/store/.packages/pk01 && test ! -d ${KANON_HOME}/store/.p
 
 ```bash
 pk_run pk02 "main"
-(cd ${KANON_HOME}/store/.kanon-data/sources/pk && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/1.0.1"
+(cd ${KANON_HOME}/store/.kanon-data/sources/*/pk && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/1.0.1"
 kanon clean .kanon
 ```
 
@@ -3638,7 +3738,7 @@ KANON_SOURCE_pk_NAME=pk
 KANON_SOURCE_pk_GITBASE=https://example.com
 KANONEOF
 KANON_SOURCE_pk_REF="refs/tags/~=2.0.0" kanon install .kanon
-(cd ${KANON_HOME}/store/.kanon-data/sources/pk && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/2.1.0"
+(cd ${KANON_HOME}/store/.kanon-data/sources/*/pk && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/2.1.0"
 kanon clean .kanon
 ```
 
@@ -3670,7 +3770,7 @@ kanon clean .kanon
 ```bash
 pk_run pk10 "main"
 test -L ${KANON_HOME}/store/.packages/pk10 && test -e ${KANON_HOME}/store/.packages/pk10-main.py && echo "PASS"
-(cd ${KANON_HOME}/store/.kanon-data/sources/pk && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/2.1.0"
+(cd ${KANON_HOME}/store/.kanon-data/sources/*/pk && kanon repo manifest --revision-as-tag) | grep -q "refs/tags/2.1.0"
 kanon clean .kanon
 ```
 
@@ -6273,15 +6373,19 @@ for entry in "${KANON_HOME}"/store/.packages/*; do
 done
 ```
 
-### 16.4 .kanon-data/sources/ has one directory per source
+### 16.4 .kanon-data/sources/ is keyed by project address
 
 ```bash
-source_count=$(ls -1d "${KANON_HOME}"/store/.kanon-data/sources/*/ 2>/dev/null | wc -l)
-echo "Source directories found: ${source_count}"
+address_count=$(ls -1d "${KANON_HOME}"/store/.kanon-data/sources/*/ 2>/dev/null | wc -l)
+echo "Project addresses found: ${address_count}"
 ls -1d "${KANON_HOME}"/store/.kanon-data/sources/*/
+
+source_count=$(ls -1d "${KANON_HOME}"/store/.kanon-data/sources/*/*/ 2>/dev/null | wc -l)
+echo "Source directories found: ${source_count}"
+ls -1d "${KANON_HOME}"/store/.kanon-data/sources/*/*/
 ```
 
-**Pass criteria:** The number of directories matches the number of `KANON_SOURCE_<alias>_URL` entries in the `.kanon` file. Each directory name matches the source's `KANON_SOURCE_<alias>_NAME` value.
+**Pass criteria:** `sources/` contains one directory per distinct consuming `.kanon`, each named with a 64-character hex project address. Within each address directory, the number of directories matches the number of `KANON_SOURCE_<alias>_URL` entries in that project's `.kanon` file, and each directory name matches the source's `KANON_SOURCE_<alias>_NAME` value.
 
 ---
 

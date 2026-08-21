@@ -2,11 +2,24 @@ SHELL := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-dev lint lint-check lint-no-comments lint-markdown format format-check check test test-unit test-unit-cov test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks coverage-json security-scan update-completion-snapshots
+.PHONY: check-completion-snapshots help install install-dev lint lint-check lint-no-comments lint-markdown format format-check check test test-unit test-unit-cov test-unit-vendored test-integration test-functional test-cov test-scenarios test-operator-path validate clean build distcheck publish pre-commit-check install-hooks security-scan update-completion-snapshots
 
 # Minimum total coverage enforced by `test-unit-cov`. Overridable so the
-# threshold is not hard-coded at its only call site.
-COVERAGE_MIN ?= 90
+# threshold is not hard-coded at its only call site. It is measured over kanon's
+# own source; the vendored tree is omitted in [tool.coverage.run].
+COVERAGE_MIN ?= 93
+
+# The vendored repo tool's tests. Roughly 6,700 of the suite's ~17,300 tests cover
+# a tree that changed in 3 of the last 184 commits, so they are their own tier and
+# CI runs them only when that tree is touched. Referenced by more than one target,
+# so the path lives here rather than being repeated.
+#
+# test-unit-cov selects by MARKER and excludes this path -- it must not also take a
+# positional path argument. A positional narrows collection to that directory and
+# silently drops every unit-marked test living elsewhere (tests/security,
+# tests/regression, tests/test_wheel_layout.py), which then run in no CI job at all.
+# tests/unit/test_marker_completeness.py asserts the two tiers still sum to the whole.
+VENDORED_TESTS := tests/unit/repo
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -41,11 +54,15 @@ validate: check test-unit ## Run per-unit validation (lint + unit tests). Full s
 test: ## Run full test suite with coverage
 	uv run pytest -n auto --dist loadscope --cov=kanon_cli --cov-report=term-missing
 
-test-unit: ## Run unit tests only
+test-unit: ## Run every unit test, first-party and vendored
 	uv run pytest -n auto --dist loadscope -m "unit"
 
-test-unit-cov: ## Run unit tests with coverage and enforce the COVERAGE_MIN gate (CI's unit job)
-	uv run pytest -n auto --dist loadscope -m "unit" --cov=kanon_cli --cov-report=term-missing --cov-fail-under=$(COVERAGE_MIN)
+test-unit-cov: ## Run first-party unit tests with coverage and enforce the COVERAGE_MIN gate (CI's unit job)
+	uv run pytest -n auto --dist loadscope -m "unit" --ignore=$(VENDORED_TESTS) \
+		--cov=kanon_cli --cov-report=term-missing --cov-fail-under=$(COVERAGE_MIN)
+
+test-unit-vendored: ## Run the vendored repo tool's unit tests (gated in CI on that tree changing)
+	uv run pytest -n auto --dist loadscope -m "unit" $(VENDORED_TESTS)
 
 test-integration: ## Run integration tests only
 	uv run pytest -n auto --dist loadscope -m "integration"
@@ -82,9 +99,6 @@ distcheck: ## Check the built distribution
 
 publish: clean build distcheck ## Build package (publishing is automated via CI pipeline)
 
-coverage-json: ## Generate JSON coverage report
-	uv run pytest -n auto --dist loadscope -m unit --cov=kanon_cli --cov-report=json
-	@echo "Coverage report generated in coverage.json"
 
 pre-commit-check: ## Run all pre-commit hooks
 	uv run pre-commit run --all-files
@@ -97,6 +111,24 @@ install-hooks: ## Install git hooks for pre-commit and pre-push
 	@chmod +x git-hooks/pre-commit git-hooks/pre-push
 	@echo "Git hooks installed successfully!"
 
-update-completion-snapshots: ## Regenerate bash + zsh completion fixture files
-	uv run kanon completion bash > tests/fixtures/completion/expected-bash.sh
-	uv run kanon completion zsh > tests/fixtures/completion/expected-zsh.sh
+update-completion-snapshots: ## Regenerate bash + zsh completion fixture files (deliberate, review the diff)
+	uv run kanon completion bash > tests/fixtures/completion/expected-bash.sh.tmp
+	mv tests/fixtures/completion/expected-bash.sh.tmp tests/fixtures/completion/expected-bash.sh
+	uv run kanon completion zsh > tests/fixtures/completion/expected-zsh.sh.tmp
+	mv tests/fixtures/completion/expected-zsh.sh.tmp tests/fixtures/completion/expected-zsh.sh
+
+check-completion-snapshots: ## Verify the completion fixtures match generated output
+	@uv run kanon completion bash > tests/fixtures/completion/expected-bash.sh.check
+	@uv run kanon completion zsh > tests/fixtures/completion/expected-zsh.sh.check
+	@status=0; \
+	for shell in bash zsh; do \
+		if ! diff -u "tests/fixtures/completion/expected-$$shell.sh" "tests/fixtures/completion/expected-$$shell.sh.check"; then \
+			status=1; \
+		fi; \
+	done; \
+	rm -f tests/fixtures/completion/expected-bash.sh.check tests/fixtures/completion/expected-zsh.sh.check; \
+	if [ "$$status" -ne 0 ]; then \
+		echo "ERROR: completion fixtures are stale. Run 'make update-completion-snapshots' and review the diff before committing."; \
+		exit 1; \
+	fi; \
+	echo "completion fixtures match generated output"

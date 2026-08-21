@@ -12,6 +12,8 @@ from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.core.install import compute_project_address
+
 from kanon_cli.core.clean import clean
 from kanon_cli.core.install import resolve_workspace_base_dir
 
@@ -46,8 +48,11 @@ class TestCleanLifecycle:
                 "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
-        (store / ".packages" / "pkg").mkdir(parents=True)
-        (store / ".kanon-data" / "sources" / "build").mkdir(parents=True, exist_ok=True)
+        address = compute_project_address(kanonenv)
+        pkg = store / ".kanon-data" / "sources" / address / "build" / ".packages" / "pkg"
+        pkg.mkdir(parents=True)
+        (store / ".packages").mkdir(parents=True, exist_ok=True)
+        (store / ".packages" / "pkg").symlink_to(pkg)
 
         clean(kanonenv)
 
@@ -66,7 +71,11 @@ class TestCleanLifecycle:
                 "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
-        (store / ".packages" / "pkg").mkdir(parents=True)
+        address = compute_project_address(kanonenv)
+        pkg = store / ".kanon-data" / "sources" / address / "build" / ".packages" / "pkg"
+        pkg.mkdir(parents=True)
+        (store / ".packages").mkdir(parents=True, exist_ok=True)
+        (store / ".packages" / "pkg").symlink_to(pkg)
 
         clean(kanonenv, purge=True)
 
@@ -136,8 +145,11 @@ class TestCleanLifecycle:
                 "KANON_SOURCE_build_GITBASE=https://example.com\n"
             ),
         )
-        (store / ".packages" / "pkg").mkdir(parents=True)
-        (store / ".kanon-data" / "sources" / "build").mkdir(parents=True, exist_ok=True)
+        address = compute_project_address(kanonenv)
+        pkg = store / ".kanon-data" / "sources" / address / "build" / ".packages" / "pkg"
+        pkg.mkdir(parents=True)
+        (store / ".packages").mkdir(parents=True, exist_ok=True)
+        (store / ".packages" / "pkg").symlink_to(pkg)
 
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins") as mock_uninstall:
             clean(kanonenv)

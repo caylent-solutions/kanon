@@ -4,7 +4,7 @@ Validates that the git-hooks/pre-push script includes all required checks
 according to E0-F9-S1-T2 requirements:
 
 - AC-FUNC-001: Pre-push hook runs unit tests including repo module
-- AC-FUNC-002: Pre-push hook runs integration tests
+- AC-FUNC-002: Pre-push hook runs the local gates and not the tiers CI owns
 - AC-FUNC-003: Pre-push hook runs ruff lint check
 - AC-FUNC-004: Pre-push hook runs security scan
 - AC-FUNC-005: Pre-push hook fails on any check failure
@@ -31,6 +31,26 @@ def _hook_content() -> str:
 def _makefile_content() -> str:
     """Read and return the Makefile contents."""
     return MAKEFILE.read_text(encoding="utf-8")
+
+
+def _executed_make_targets() -> set[str]:
+    """Return the make targets the hook actually invokes.
+
+    Comment lines are dropped before matching. A test that greps the whole file
+    can be satisfied by prose describing a target the hook no longer runs, which
+    is exactly how two tests here outlived the behaviour they asserted.
+
+    Returns:
+        The target names appearing in executed ``make`` invocations.
+    """
+    targets: set[str] = set()
+    for line in _hook_content().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        for match in re.finditer(r"\bmake\s+([A-Za-z0-9_-]+)", stripped):
+            targets.add(match.group(1))
+    return targets
 
 
 @pytest.mark.unit
@@ -82,34 +102,46 @@ def test_pre_push_hook_runs_unit_tests():
 
     Given: The pre-push hook script
     When: Its contents are inspected
-    Then: It invokes the unit test target (make test-unit, make coverage-json, or pytest -m unit)
+    Then: It invokes make test-unit-cov, which carries the coverage gate
 
     AC-FUNC-001
     """
     content = _hook_content()
-    has_unit_tests = "make test-unit" in content or "pytest -m unit" in content or "make coverage-json" in content
+    has_unit_tests = "test-unit-cov" in _executed_make_targets()
     assert has_unit_tests, (
-        "Pre-push hook must run unit tests via 'make test-unit', 'make coverage-json', or "
-        f"'pytest -m unit'. Hook content:\n{content}"
+        f"Pre-push hook must run unit tests via 'make test-unit-cov'. 'pytest -m unit'. Hook content:\n{content}"
     )
 
 
 @pytest.mark.unit
-def test_pre_push_hook_runs_integration_tests():
-    """Validate that the pre-push hook runs integration tests.
+def test_pre_push_hook_does_not_run_the_deferred_tiers():
+    """The hook must not reintroduce the integration or functional tiers.
 
-    Given: The pre-push hook script
-    When: Its contents are inspected
-    Then: It invokes the integration test target (make test-integration or pytest -m integration)
+    Those tiers were removed deliberately: they took roughly twenty minutes and
+    duplicated jobs CI runs anyway. This asserts on the hook's *executed* lines,
+    not on its text -- the tests this replaces matched a substring that a prose
+    comment in the hook also contained, so they kept passing after the targets
+    they checked for had been deleted.
 
     AC-FUNC-002
     """
-    content = _hook_content()
-    has_integration_tests = "make test-integration" in content or "pytest -m integration" in content
-    assert has_integration_tests, (
-        "Pre-push hook must run integration tests via 'make test-integration' or "
-        f"'pytest -m integration'. Hook content:\n{content}"
+    executed = _executed_make_targets()
+    deferred = sorted(target for target in ("test-integration", "test-functional") if target in executed)
+    assert not deferred, (
+        f"Pre-push hook invokes {deferred}, which CI already runs on the pull request. "
+        f"Executed targets: {sorted(executed)}"
     )
+
+
+@pytest.mark.unit
+def test_pre_push_hook_runs_the_local_gates():
+    """The hook runs lint, the security scan, and unit tests with the coverage gate.
+
+    AC-FUNC-002
+    """
+    executed = _executed_make_targets()
+    for target in ("lint", "security-scan", "test-unit-cov"):
+        assert target in executed, f"Pre-push hook must invoke 'make {target}'. Executed targets: {sorted(executed)}"
 
 
 @pytest.mark.unit
@@ -155,32 +187,11 @@ def test_pre_push_hook_fails_on_unit_test_failure():
     AC-FUNC-005
     """
     content = _hook_content()
+    executed = _executed_make_targets()
 
-    has_failure_check = (
-        ("make test-unit" in content and "exit 1" in content)
-        or ("pytest -m unit" in content and "exit 1" in content)
-        or ("make coverage-json" in content and "exit 1" in content)
-    )
-    assert has_failure_check, (
-        f"Pre-push hook must exit with non-zero status when unit tests fail. Hook content:\n{content}"
-    )
-
-
-@pytest.mark.unit
-def test_pre_push_hook_fails_on_integration_test_failure():
-    """Validate that the pre-push hook exits non-zero on integration test failure.
-
-    Given: The pre-push hook script
-    When: Its control flow for integration tests is inspected
-    Then: A failing integration test check causes the script to exit with non-zero
-
-    AC-FUNC-005
-    """
-    content = _hook_content()
-    has_integration = "make test-integration" in content or "pytest -m integration" in content
-    has_exit = "exit 1" in content
-    assert has_integration and has_exit, (
-        f"Pre-push hook must exit with non-zero status when integration tests fail. Hook content:\n{content}"
+    assert "test-unit-cov" in executed and "exit 1" in content, (
+        f"Pre-push hook must run 'make test-unit-cov' and exit non-zero when it fails. "
+        f"Executed targets: {sorted(executed)}. Hook content:\n{content}"
     )
 
 
@@ -388,4 +399,34 @@ def test_makefile_lint_markdown_excludes_vendored_repo_docs():
     assert "docs/repo/" in recipe, f"lint-markdown recipe must exclude the vendored docs/repo/ tree. Recipe:\n{recipe}"
     assert "-e" in recipe.split() or "--exclude" in recipe, (
         f"lint-markdown recipe must use pymarkdownlnt's -e/--exclude option to scope out docs/repo/. Recipe:\n{recipe}"
+    )
+
+
+@pytest.mark.unit
+def test_completion_snapshot_hook_verifies_rather_than_regenerates():
+    """The completion hook must check the golden fixtures, not rewrite them.
+
+    A hook that regenerates a golden file destroys what the golden is for. The
+    diff that would have shown a reviewer the generated output changed gets
+    authored automatically, so the reviewer sees a regenerated fixture instead of
+    a failed check.
+
+    That matters most for the case this hook triggers on: its file set includes
+    `pyproject.toml`, which is exactly where a `shtab` version bump lives, and
+    `shtab` is what generates this output. The fixtures exist because a shtab
+    release once changed that output and broke CI with no change to this
+    repository -- so an unreviewed regeneration is the specific failure they were
+    added to prevent.
+
+    Regeneration stays available deliberately, as `make update-completion-snapshots`.
+    """
+    config = (REPO_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+
+    assert "entry: make check-completion-snapshots" in config, (
+        "the completion-snapshots hook must run the verifier; regenerating goldens in a "
+        "hook lands the change without review"
+    )
+    assert "entry: make update-completion-snapshots" not in config, (
+        "the completion-snapshots hook regenerates the golden fixtures again, which rewrites "
+        "the evidence a reviewer needs instead of failing the check"
     )

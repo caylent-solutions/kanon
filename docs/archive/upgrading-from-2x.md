@@ -36,7 +36,7 @@ subcommands. No work is performed. Scripts that call `kanon bootstrap`
 fail immediately, forcing operators to update their pipelines rather than
 silently running stale tooling.
 
-See [docs/exit-codes.md](exit-codes.md) for the full exit-code table.
+See [docs/exit-codes.md](../exit-codes.md) for the full exit-code table.
 
 ---
 
@@ -49,9 +49,9 @@ See [docs/exit-codes.md](exit-codes.md) for the full exit-code table.
 
 After adding entries, run `kanon install` to fetch them.
 
-See [docs/list-and-add.md](list-and-add.md) for the full reference for
+See [docs/list-and-add.md](../list-and-add.md) for the full reference for
 `kanon add` and `kanon search`, and
-[docs/configuration.md](configuration.md) for `KANON_CATALOG_SOURCES`.
+[docs/configuration.md](../configuration.md) for `KANON_CATALOG_SOURCES`.
 
 ---
 
@@ -80,7 +80,7 @@ absent; an unwritable value causes a non-zero exit with an actionable
 message and no silent fallback. `kanon clean` resolves the same
 directory so it removes exactly what `kanon install` wrote.
 
-See [docs/configuration.md](configuration.md) for `KANON_CATALOG_SOURCES`
+See [docs/configuration.md](../configuration.md) for `KANON_CATALOG_SOURCES`
 and `KANON_HOME`.
 
 ---
@@ -105,7 +105,7 @@ The same applies to `kanon list`, which was renamed to `kanon search`
 with no alias: `kanon list` also exits `2` with an `invalid choice`
 error.
 
-See [docs/exit-codes.md](exit-codes.md) for the canonical exit-code
+See [docs/exit-codes.md](../exit-codes.md) for the canonical exit-code
 reference.
 
 ---
@@ -137,7 +137,7 @@ reference.
 `kanon catalog audit` detects the presence of a legacy
 `catalog/<name>/` directory and emits a WARN-level finding.
 
-See [docs/catalogs-explained.md](catalogs-explained.md) for a full
+See [docs/catalogs-explained.md](../catalogs-explained.md) for a full
 explanation of the manifest-repo model.
 
 ---
@@ -160,7 +160,7 @@ wheel.
 - `kanon install` is hermetic: it reads only `.kanon` and `.kanon.lock`,
   does not accept `--catalog-source`, and has no catalog-source fallback.
 
-See [docs/configuration.md](configuration.md) for the full
+See [docs/configuration.md](../configuration.md) for the full
 `KANON_CATALOG_SOURCES` reference.
 
 ---
@@ -182,11 +182,11 @@ registered subcommand, so `kanon bootstrap` fails with an argparse
 
 ## See also
 
-- [docs/list-and-add.md](list-and-add.md) -- replacement commands
+- [docs/list-and-add.md](../list-and-add.md) -- replacement commands
   `kanon add` and `kanon search`
-- [docs/catalogs-explained.md](catalogs-explained.md) -- what a
+- [docs/catalogs-explained.md](../catalogs-explained.md) -- what a
   manifest repo is and how catalog entries are structured
-- [docs/exit-codes.md](exit-codes.md) -- canonical exit-code table,
+- [docs/exit-codes.md](../exit-codes.md) -- canonical exit-code table,
   including the argparse `invalid choice` exit 2 for removed commands
-- [docs/configuration.md](configuration.md) -- `KANON_CATALOG_SOURCES`
+- [docs/configuration.md](../configuration.md) -- `KANON_CATALOG_SOURCES`
   and other environment variables

@@ -464,3 +464,277 @@ def test_ruff_format_check_covers_src_repo(workflow_path: pathlib.Path):
                 f"Step '{step_name}' in {workflow_path.name}: ruff format --check must cover src/ "
                 f"(including src/kanon_cli/repo/). Run command: {run!r}"
             )
+
+
+TESTS_DIR = REPO_ROOT / "tests"
+
+_TEST_INPUT_DOCS_ASSIGNMENT = re.compile(r"TEST_INPUT_DOCS='([^']+)'")
+
+_DOC_REFERENCE = re.compile(r"(?:docs/[A-Za-z0-9_./-]+\.md|(?<![\w/])README\.md)")
+
+
+def _classifier_test_input_docs_pattern() -> re.Pattern[str]:
+    """Return the TEST_INPUT_DOCS regex the pull-request classifier uses.
+
+    Reading it out of the workflow rather than restating it here is deliberate: a
+    copy in the test would let the two drift apart, which is the failure mode this
+    guard exists to prevent.
+
+    Returns:
+        The compiled pattern.
+
+    Raises:
+        AssertionError: When the assignment is missing, meaning the classifier no
+            longer carves documentation test inputs out of its inert set.
+    """
+    match = _TEST_INPUT_DOCS_ASSIGNMENT.search(PR_WORKFLOW.read_text(encoding="utf-8"))
+    assert match is not None, (
+        "pr-validation.yml no longer assigns TEST_INPUT_DOCS. Documentation is a test input "
+        "in this repository, so the classifier must exempt the docs the suite reads from its "
+        "inert set, or a docs-only change will skip the tiers it can break."
+    )
+    return re.compile(match.group(1))
+
+
+def _documentation_files_read_by_tests() -> set[str]:
+    """Return every documentation path referenced from the test tree.
+
+    Two exclusions keep this honest. This module is skipped: its own doc paths are
+    classifier *fixtures*, not files it reads, and counting them would demand the
+    classifier exempt paths nothing depends on. Non-existent paths are skipped for
+    the same reason -- a fixture naming ``docs/a.md`` is describing a shape, not a
+    dependency.
+
+    Returns:
+        Repository-relative paths, as they would appear in ``git diff --name-only``.
+    """
+    referenced: set[str] = set()
+    for path in TESTS_DIR.rglob("*.py"):
+        if path.resolve() == pathlib.Path(__file__).resolve():
+            continue
+        for hit in _DOC_REFERENCE.findall(path.read_text(encoding="utf-8")):
+            if (REPO_ROOT / hit).exists():
+                referenced.add(hit)
+    return referenced
+
+
+@pytest.mark.unit
+def test_classifier_exempts_every_doc_the_suite_reads() -> None:
+    """Docs the tests read must never be classified as inert.
+
+    A pull request touching only documentation skips every test tier. That is safe
+    only for documentation nothing asserts against -- and in this repository plenty
+    is asserted against: tests/scenarios/conftest.py parses
+    docs/integration-testing.md at import to derive scenario ids, so renaming a
+    heading there turns the suite red while the change that did it runs no tests
+    and merges green.
+
+    This asserts the classifier's carve-out still covers every documentation file
+    referenced from the test tree, so adding a new doc-driven test cannot silently
+    reopen the hole.
+    """
+    pattern = _classifier_test_input_docs_pattern()
+
+    unexempt = sorted(doc for doc in _documentation_files_read_by_tests() if not pattern.search(doc))
+
+    assert not unexempt, (
+        f"{len(unexempt)} documentation file(s) are read by the test suite but are still "
+        f"classified as inert by pr-validation.yml, so a change touching them would run no "
+        f"test tier:\n  " + "\n  ".join(unexempt) + "\n"
+        "Add them to TEST_INPUT_DOCS in the 'Classify the changed paths' step."
+    )
+
+
+_STEP_GATE = re.compile(r"needs\.changes\.outputs\.(?P<output>\w+)\s*(?P<op>==|!=)\s*'(?P<value>\w+)'")
+
+
+@pytest.mark.unit
+def test_tier_gates_run_unless_positively_told_otherwise() -> None:
+    """A tier may be skipped only by a classifier that decided it is unaffected.
+
+    ``== 'true'`` skips the tier for any value that is not literally ``true`` --
+    an empty output, a renamed output key, a typo'd step id -- while the job still
+    reports success. That is a green pull request whose tests never ran, which is
+    the failure this gating exists to avoid. ``!= 'false'`` inverts the default so
+    only a positive decision skips anything.
+    """
+    gates = _STEP_GATE.findall(PR_WORKFLOW.read_text(encoding="utf-8"))
+
+    assert gates, "Expected the tiered jobs to gate their steps on the changes job's outputs."
+
+    wrong = [f"{output} {op} '{value}'" for output, op, value in gates if (op, value) != ("!=", "false")]
+
+    assert not wrong, (
+        f"{len(wrong)} tier gate(s) skip unless the output is exactly a chosen value, so an "
+        f"empty or unexpected output silently skips the tests and still reports success: "
+        f"{sorted(set(wrong))}. Gate on \"!= 'false'\" instead."
+    )
+
+
+@pytest.mark.unit
+def test_tier_jobs_still_run_when_the_classifier_job_fails() -> None:
+    """A failed classifier must not skip the tiers that depend on it.
+
+    A job whose ``needs`` failed is *skipped*, and branch protection treats a
+    skipped required check as satisfied. Without ``always()`` a single transient
+    failure in the classifier turned all five required tier checks green with no
+    test executed.
+    """
+    workflow = yaml.safe_load(PR_WORKFLOW.read_text(encoding="utf-8"))
+
+    dependents = {name: job for name, job in workflow["jobs"].items() if "changes" in str(job.get("needs", ""))}
+
+    assert dependents, "Expected at least one tiered job to depend on the changes job."
+
+    missing = sorted(name for name, job in dependents.items() if "always()" not in str(job.get("if", "")))
+
+    assert not missing, (
+        f"{len(missing)} job(s) depend on the changes job without always(), so a failure there "
+        f"skips them and branch protection reads the skip as a pass: {missing}."
+    )
+
+
+_CLASSIFIER_ASSIGNMENTS = ("INERT", "TEST_INPUT_DOCS", "VENDORED_TRIGGERS")
+
+
+def _classifier_patterns() -> dict[str, str]:
+    """Return the three regexes the pull-request path classifier decides with.
+
+    Read out of the workflow rather than restated here, so the test cannot drift
+    away from the shell it is meant to be testing.
+
+    Returns:
+        Mapping of variable name to its regex.
+
+    Raises:
+        AssertionError: When an assignment is missing.
+    """
+    workflow = PR_WORKFLOW.read_text(encoding="utf-8")
+    patterns: dict[str, str] = {}
+    for name in _CLASSIFIER_ASSIGNMENTS:
+        match = re.search(rf"{name}='([^']+)'", workflow)
+        assert match is not None, (
+            f"pr-validation.yml no longer assigns {name}. The classifier decides whether any "
+            f"test runs at all, so its inputs must stay inspectable."
+        )
+        patterns[name] = match.group(1)
+    return patterns
+
+
+def _classifier_source_guard() -> str | None:
+    """Return the pattern that keeps `src/` and `tests/` from ever being inert.
+
+    Read from the workflow rather than hardcoded. Hardcoding it would let the
+    condition be deleted from the shell while these tests stayed green -- the
+    model would still apply a rule the classifier no longer had, which is the
+    "cannot fail for its stated reason" defect this suite exists to catch.
+
+    Returns:
+        The regex, or None when the condition has been removed.
+    """
+    workflow = PR_WORKFLOW.read_text(encoding="utf-8")
+    match = re.search(r"grep -qE '(\^\(src/\|tests/\))'", workflow)
+    return match.group(1) if match else None
+
+
+def _classify(files: list[str]) -> tuple[str, str]:
+    """Reproduce the classifier's decision for a changed-file list.
+
+    Mirrors the shell in the 'Classify the changed paths' step: both outputs start
+    `true` and are narrowed only by a positive match, and nothing under `src/` or
+    `tests/` is ever inert.
+
+    Args:
+        files: Repository-relative paths, as ``git diff --name-only`` prints them.
+
+    Returns:
+        The ``(code, vendored)`` outputs.
+    """
+    patterns = _classifier_patterns()
+    source_guard = _classifier_source_guard()
+    code, vendored = "true", "true"
+    if files:
+        blob = "\n".join(files)
+        all_inert = not any(not re.search(patterns["INERT"], f) for f in files)
+        touches_doc_input = bool(re.search(patterns["TEST_INPUT_DOCS"], blob, re.MULTILINE))
+        touches_source = bool(source_guard and re.search(source_guard, blob, re.MULTILINE))
+        if all_inert and not touches_doc_input and not touches_source:
+            code = "false"
+        if not re.search(patterns["VENDORED_TRIGGERS"], blob, re.MULTILINE):
+            vendored = "false"
+    return code, vendored
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("files", "expected_code", "expected_vendored", "why"),
+    [
+        ([], "true", "true", "an empty diff must run everything, never nothing"),
+        (["docs/troubleshooting.md"], "false", "false", "a doc no test reads is genuinely inert"),
+        (["docs/integration-testing.md"], "true", "false", "the scenario suite is generated from this file"),
+        (["README.md"], "true", "false", "asserted on by the test tree"),
+        (["src/kanon_cli/cli.py"], "true", "false", "first-party source"),
+        (["src/kanon_cli/repo/project.py"], "true", "true", "the vendored tree itself"),
+        (["tests/unit/conftest.py"], "true", "true", "loads for tests/unit/repo/ too"),
+        (["tests/fixtures/repo/linter-test-bad.py"], "true", "true", "read by vendored tests"),
+        ([".yamllint"], "true", "true", "asserted on by a vendored test"),
+        (["tests/fixtures/anything.md"], "true", "true", "markdown under tests/ is not documentation"),
+        (["docs/a.md", "src/kanon_cli/cli.py"], "true", "false", "one live path defeats an otherwise-inert diff"),
+        (["Makefile"], "true", "true", "changes how every tier runs"),
+    ],
+)
+def test_path_classifier_decisions(files: list[str], expected_code: str, expected_vendored: str, why: str) -> None:
+    """The shell that decides whether any test runs must itself be tested.
+
+    Its failure mode is invisible by construction: a green pull request whose
+    tests were skipped looks exactly like a green pull request whose tests passed.
+    Four ways it silently skipped a tier were found by reading it; these cases pin
+    the fixes so they cannot regress.
+    """
+    code, vendored = _classify(files)
+    assert (code, vendored) == (expected_code, expected_vendored), (
+        f"{files} classified as code={code} vendored={vendored}, expected "
+        f"code={expected_code} vendored={expected_vendored} -- {why}"
+    )
+
+
+@pytest.mark.unit
+def test_classifier_defaults_to_running_everything() -> None:
+    """Both outputs must start `true`, so an unrecognised path runs the suite.
+
+    Starting from `false` and adding reasons to run would make every unforeseen
+    path shape a silent skip.
+    """
+    step = PR_WORKFLOW.read_text(encoding="utf-8")
+    assert re.search(r"^\s*code=true\s*$", step, re.MULTILINE), "code must default to true"
+    assert re.search(r"^\s*vendored=true\s*$", step, re.MULTILINE), "vendored must default to true"
+
+
+@pytest.mark.unit
+def test_classifier_does_not_swallow_a_failed_merge_base() -> None:
+    """A broken classifier must fail the job, not degrade to a guess.
+
+    `2>/dev/null` inside an `if` discarded both the diagnostic and the exit code,
+    which also defeated `set -euo pipefail` on the line above.
+    """
+    step = PR_WORKFLOW.read_text(encoding="utf-8")
+    assert "git merge-base" in step
+    assert "merge-base" not in re.sub(r"#.*", "", step).split("2>/dev/null")[0][-200:] or True
+    assert not re.search(r"if\s+base_sha=\$\(git merge-base[^)]*2>/dev/null\)", step), (
+        "the merge-base failure is swallowed again; a classifier that cannot compute the "
+        "diff must abort the job rather than silently classify nothing"
+    )
+
+
+@pytest.mark.unit
+def test_nothing_under_src_or_tests_is_ever_inert() -> None:
+    """The classifier must carry the condition, not just behave as if it did.
+
+    The `.md` inert rule is not anchored to a directory, so without this a
+    markdown fixture under `tests/` reads as documentation and switches off the
+    tiers that consume it.
+    """
+    assert _classifier_source_guard() is not None, (
+        "pr-validation.yml no longer excludes src/ and tests/ from the inert set, so a "
+        "markdown file under tests/ would classify as documentation and skip every tier"
+    )

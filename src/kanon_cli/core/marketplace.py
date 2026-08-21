@@ -49,7 +49,7 @@ def locate_claude_binary() -> str:
     path = shutil.which("claude")
     if path is None:
         print(
-            "Error: claude binary not found on $PATH. Ensure claude is installed and available.",
+            "ERROR: claude binary not found on $PATH. Ensure claude is installed and available.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -176,13 +176,13 @@ def _get_timeout(env_var: str, default: int = 30) -> int:
         value = int(timeout_str)
     except ValueError:
         print(
-            f"Error: {env_var} must be a positive integer, got: {timeout_str}",
+            f"ERROR: {env_var} must be a positive integer, got: {timeout_str}",
             file=sys.stderr,
         )
         sys.exit(1)
     if value <= 0:
         print(
-            f"Error: {env_var} must be a positive integer, got: {timeout_str}",
+            f"ERROR: {env_var} must be a positive integer, got: {timeout_str}",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -211,14 +211,14 @@ def register_marketplace(claude_bin: str, marketplace_path: pathlib.Path) -> boo
         )
     except subprocess.TimeoutExpired:
         print(
-            f"Error: Timed out after {timeout} seconds registering marketplace {marketplace_path}",
+            f"ERROR: Timed out after {timeout} seconds registering marketplace {marketplace_path}",
             file=sys.stderr,
         )
         return False
 
     if result.returncode != 0:
         print(
-            f"Error: Failed to register marketplace {marketplace_path}: {result.stderr}",
+            f"ERROR: Failed to register marketplace {marketplace_path}: {result.stderr}",
             file=sys.stderr,
         )
         return False
@@ -250,14 +250,14 @@ def install_plugin(claude_bin: str, plugin_name: str, marketplace_name: str) -> 
         )
     except subprocess.TimeoutExpired:
         print(
-            f"Error: Timed out after {timeout} seconds installing plugin {plugin_ref}",
+            f"ERROR: Timed out after {timeout} seconds installing plugin {plugin_ref}",
             file=sys.stderr,
         )
         return False
 
     if result.returncode != 0:
         print(
-            f"Error: Failed to install plugin {plugin_ref}: {result.stderr}",
+            f"ERROR: Failed to install plugin {plugin_ref}: {result.stderr}",
             file=sys.stderr,
         )
         return False
@@ -289,7 +289,7 @@ def uninstall_plugin(claude_bin: str, plugin_name: str, marketplace_name: str) -
         )
     except subprocess.TimeoutExpired:
         print(
-            f"Error: Timed out after {timeout} seconds uninstalling plugin {plugin_ref}",
+            f"ERROR: Timed out after {timeout} seconds uninstalling plugin {plugin_ref}",
             file=sys.stderr,
         )
         return False
@@ -300,7 +300,7 @@ def uninstall_plugin(claude_bin: str, plugin_name: str, marketplace_name: str) -
             print(f"Plugin already uninstalled (not found): {plugin_ref}")
             return True
         print(
-            f"Error: Failed to uninstall plugin {plugin_ref}: {stderr}",
+            f"ERROR: Failed to uninstall plugin {plugin_ref}: {stderr}",
             file=sys.stderr,
         )
         return False
@@ -329,7 +329,7 @@ def remove_marketplace(claude_bin: str, marketplace_name: str) -> bool:
         )
     except subprocess.TimeoutExpired:
         print(
-            f"Error: Timed out after {timeout} seconds removing marketplace {marketplace_name}",
+            f"ERROR: Timed out after {timeout} seconds removing marketplace {marketplace_name}",
             file=sys.stderr,
         )
         return False
@@ -340,7 +340,7 @@ def remove_marketplace(claude_bin: str, marketplace_name: str) -> bool:
             print(f"Marketplace already removed (not found): {marketplace_name}")
             return True
         print(
-            f"Error: Failed to remove marketplace {marketplace_name}: {stderr}",
+            f"ERROR: Failed to remove marketplace {marketplace_name}: {stderr}",
             file=sys.stderr,
         )
         return False
@@ -523,7 +523,7 @@ def install_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
 
     if any_failures:
         print(
-            "Error: Some marketplace operations failed (see errors above).",
+            "ERROR: Some marketplace operations failed (see errors above).",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -592,7 +592,7 @@ def uninstall_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
 
     if any_failures:
         print(
-            "Error: Some marketplace operations failed (see errors above).",
+            "ERROR: Some marketplace operations failed (see errors above).",
             file=sys.stderr,
         )
         sys.exit(1)

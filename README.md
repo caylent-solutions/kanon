@@ -73,7 +73,7 @@ via declarative manifests.
 - [Manifest Features (PEP 440 Constraints)](#manifest-features-pep-440-constraints)
   - [PEP 440 Version Constraints in Manifests](#pep-440-version-constraints-in-manifests)
   - [PEP 440 Version Resolution in .kanon](#pep-440-version-resolution-in-kanon)
-  - [Absolute Linkfile Destinations](#absolute-linkfile-destinations)
+  - [Absolute Linkfile and Copyfile Destinations](#absolute-linkfile-and-copyfile-destinations)
 - [SSH Authentication Setup](#ssh-authentication-setup)
 - [Developer Setup](#developer-setup)
   - [Prerequisites](#prerequisites-1)
@@ -149,7 +149,7 @@ kanon install
 
 `kanon install` is hermetic: it resolves the declared packages from the
 committed `.kanon` (it does not re-read the catalog), clones them into the
-shared `KANON_HOME` store under `.kanon-data/sources/`, aggregates symlinks
+shared `KANON_HOME` store under `.kanon-data/sources/<project-address>/`, aggregates symlinks
 under `.packages/` in that store, and writes `.kanon.lock` with exact
 resolved versions so every subsequent install is reproducible.
 
@@ -200,7 +200,7 @@ persistent installation and advanced options, see
 | `kanon repo` | Low-level manifest-driven repo sync subsystem | [docs/repo/README.md](docs/repo/README.md) |
 | `kanon marketplace` | Manage the per-dependency Claude marketplace install flag in `.kanon` (`enable` / `disable` / `status`) | [docs/configuration.md](docs/configuration.md) |
 | `kanon completion` | Emit a shell completion script for bash, zsh, or powershell | [docs/shell-completion.md](docs/shell-completion.md) |
-| `kanon bootstrap` | **removed in 3.0.0** -- not a registered subcommand (argparse `invalid choice`, exit 2); use `kanon search` / `kanon add` instead | [docs/migration-to-add.md](docs/migration-to-add.md) |
+| `kanon bootstrap` | **removed in 3.0.0** -- not a registered subcommand (argparse `invalid choice`, exit 2); use `kanon search` / `kanon add` instead | [docs/archive/upgrading-from-2x.md](docs/archive/upgrading-from-2x.md) |
 
 ---
 
@@ -224,7 +224,7 @@ catalog-discovery and project-scaffolding responsibilities have been
 replaced by `kanon search` (discover and inspect packages) and `kanon add`
 (add a pinned dependency to `.kanon`). If your workflow currently uses
 `kanon bootstrap <entry>`, the
-[docs/migration-to-add.md](docs/migration-to-add.md)
+[docs/archive/upgrading-from-2x.md](docs/archive/upgrading-from-2x.md)
 guide walks through the equivalent `kanon search` + `kanon add` + `kanon
 install` steps and explains the lockfile model that replaces hand-editing
 `.kanon`.
@@ -357,7 +357,7 @@ kanon install
 `KANON_CATALOG_SOURCES`). It reconciles `.kanon` against `.kanon.lock`,
 runs the repo init/envsubst/sync lifecycle for every source, aggregates
 packages into `.packages/` via symlinks under the shared `KANON_HOME`
-store, creates source workspaces under `.kanon-data/sources/` in that
+store, creates source workspaces under `.kanon-data/sources/<project-address>/` in that
 store, and writes `.kanon.lock` with the exact resolved SHAs.
 
 **4. Clean (full teardown):**
@@ -560,8 +560,12 @@ kanon clean --purge-all           # also remove the KANON_HOME store directory
 
 1. For any source with `KANON_SOURCE_<alias>_MARKETPLACE=true`: uninstalls
    plugins and removes the marketplace directory.
-2. Removes the `.packages/` and `.kanon-data/` directories and prunes this
-   project's content-addressed entries from the shared `KANON_HOME` store.
+2. Removes this project's source workspace under the shared `KANON_HOME`
+   store, and the aggregated `.packages/` links this project created.
+
+`kanon clean` is scoped to the project you run it in. Other projects sharing the
+same `KANON_HOME` keep their workspaces, their package links, and the shared
+content-addressed store entries. Use `--purge-all` for machine-wide teardown.
 
 With `--orphans`, before the normal teardown kanon also unregisters any
 kanon-owned marketplaces recorded in `.kanon.lock` that are no longer
@@ -730,7 +734,7 @@ so `kanon bootstrap` (with any args or flags) exits non-zero with an argparse
 catalog model changed: a manifest repo no longer has a separate
 `catalog/<name>/` location and the kanon wheel no longer bundles a catalog.
 Use `kanon search` to discover entries and `kanon add` to add them. See
-[docs/migration-to-add.md](docs/migration-to-add.md).
+[docs/archive/upgrading-from-2x.md](docs/archive/upgrading-from-2x.md).
 
 ---
 
@@ -945,7 +949,8 @@ committed.
 ### Multi-Source Isolation
 
 Each source is initialized and synced in its own isolated directory under
-`.kanon-data/sources/<name>/`. Sources cannot interfere with each other --
+`.kanon-data/sources/<project-address>/<name>/`. Neither two sources within a
+project, nor two projects declaring the same source alias, can interfere --
 each gets its own `kanon repo init` / `kanon repo sync` cycle. If two sources
 produce a package with the same name, Kanon detects the collision and fails
 immediately with an actionable error message.
@@ -1201,8 +1206,10 @@ specialized plugins at each level.
 
 ### Key Requirements
 
-- All `<linkfile dest>` attributes must start with
-  `${CLAUDE_MARKETPLACES_DIR}/`
+- Every `<linkfile dest>` must stay inside the consumer workspace: no literal
+  absolute path, no `..` component. A marketplace-type entry that declares
+  linkfiles must point at least one at `${CLAUDE_MARKETPLACES_DIR}/`; an entry
+  declaring none is exempt
 - Each `<project path>` must be unique across all manifests
 - The per-source `KANON_SOURCE_<alias>_MARKETPLACE` flag in `.kanon` must be
   set to `true` for the marketplace source
@@ -1339,11 +1346,29 @@ KANON_SOURCE_build_REF=~=1.1.0
 
 For full details, see [docs/version-resolution.md](docs/version-resolution.md).
 
-### Absolute Linkfile Destinations
+### Absolute Linkfile and Copyfile Destinations
 
-`<linkfile dest>` accepts absolute paths after `envsubst` expansion, enabling
-marketplace symlinks to directories outside the project (e.g.,
-`${CLAUDE_MARKETPLACES_DIR}/...`).
+Both `<linkfile dest>` and `<copyfile dest>` accept absolute paths after
+`envsubst` expansion. `<linkfile>` creates a symlink there -- this is how
+marketplace entries land under `${CLAUDE_MARKETPLACES_DIR}/...`. `<copyfile>`
+writes a real, editable file, which is how a manifest delivers content that
+cannot be a symlink, such as a CI workflow, into the consuming project:
+
+```xml
+<project name="my-ci-config" path=".packages/my-ci-config"
+         remote="origin" revision="refs/tags/1.0.0">
+  <copyfile src="workflows/ci.yml"
+            dest="${MY_PROJECT_ROOT}/.github/workflows/ci.yml" />
+</project>
+```
+
+An absolute destination is **not** unrestricted. Because the manifest declaring
+it is fetched from a remote repository, the destination must resolve under a
+permitted root: the consumer project root, the resolved
+`CLAUDE_MARKETPLACES_DIR`, or a root you added with `--allow-abs-root` or
+`KANON_ALLOWED_ABS_ROOTS`. Anything else aborts the install. See
+[docs/security-model.md](docs/security-model.md) and
+[docs/configuration.md](docs/configuration.md#absolute-manifest-destinations).
 
 ---
 
@@ -1446,13 +1471,17 @@ and how the automated release pipeline works.
 
 This project uses a fully automated SDLC pipeline:
 
-1. **PR Validation** -- Lint, build, test (90% coverage), security scan on
-   every PR
+1. **PR Validation** -- Lint, format, build and security scan on every PR. Test
+   tiers (unit with the coverage gate, integration, functional, scenario) run
+   only when a change touches non-documentation paths; the vendored repo tool's
+   tier runs only when that tree or a global input changes.
 2. **Main Branch Validation** -- Full validation + CodeQL on merge to main
-3. **Manual QA Approval** -- Human gate before release
-4. **Automated Release** -- Semantic versioning from conventional commit
+3. **Nightly Regression** -- The full suite in one session plus the vendored
+   tier, on a daily schedule
+4. **Manual QA Approval** -- Human gate before release
+5. **Automated Release** -- Semantic versioning from conventional commit
    prefixes, changelog generation, tagging
-5. **PyPI Publishing** -- Automated publish via OIDC trusted publishing
+6. **PyPI Publishing** -- Automated publish via OIDC trusted publishing
 
 PR titles must follow
 [Conventional Commits](https://www.conventionalcommits.org/) format

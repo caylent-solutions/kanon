@@ -23,7 +23,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.include_walker import IncludeCycleError
-from kanon_cli.core.install import install, resolve_workspace_base_dir
+from kanon_cli.core.install import compute_project_address, install, resolve_workspace_base_dir
 
 
 def _write_manifest(path: pathlib.Path, includes: list[str]) -> None:
@@ -98,7 +98,8 @@ class TestInstallIncludeCycleTriangle:
         monkeypatch.setenv("KANON_HOME", str(kanon_home))
         store = resolve_workspace_base_dir()
 
-        source_dir = store / ".kanon-data" / "sources" / "test"
+        project_address = compute_project_address(kanonenv)
+        source_dir = store / ".kanon-data" / "sources" / project_address / "test"
         manifest_repo = source_dir / ".repo" / "manifests"
         manifest_repo.mkdir(parents=True, exist_ok=True)
 
@@ -178,7 +179,8 @@ class TestInstallIncludeSelfCycle:
         kanon_home = tmp_path / "home"
         kanon_home.mkdir(parents=True, exist_ok=True)
         monkeypatch.setenv("KANON_HOME", str(kanon_home))
-        source_dir = resolve_workspace_base_dir() / ".kanon-data" / "sources" / "test"
+        project_address = compute_project_address(kanonenv)
+        source_dir = resolve_workspace_base_dir() / ".kanon-data" / "sources" / project_address / "test"
         manifest_repo = source_dir / ".repo" / "manifests"
         manifest_repo.mkdir(parents=True, exist_ok=True)
         _write_manifest(manifest_repo / "a.xml", includes=["a.xml"])

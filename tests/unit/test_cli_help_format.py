@@ -23,6 +23,45 @@ from kanon_cli.cli import (
 
 
 @pytest.mark.unit
+class TestEveryGlobalFlagIsDocumented:
+    """Every global option argparse accepts must appear in the hand-written help.
+
+    ``kanon --help`` prints ``_TOP_LEVEL_HELP``, a hand-maintained block, not
+    argparse's generated output. A flag added to the parser without a matching
+    line there is invisible to anyone reading the help, while still appearing in
+    the usage line argparse prints on an error, which is a confusing place to
+    discover a feature.
+
+    The help snapshot fixture does not catch this. Adding a flag and not touching
+    the help block leaves the snapshot byte-identical, so it passes. That is
+    exactly how ``--allow-abs-root`` shipped undocumented in this help block.
+    """
+
+    def _global_option_strings(self) -> list[str]:
+        """Return every long option declared on the top-level parser.
+
+        Returns:
+            The ``--flag`` strings, excluding argparse's own ``--help``.
+        """
+        parser = build_parser()
+        flags: list[str] = []
+        for action in parser._actions:
+            for option in action.option_strings:
+                if option.startswith("--") and option != "--help":
+                    flags.append(option)
+        return flags
+
+    def test_parser_declares_global_options(self) -> None:
+        """Guard the guard: an empty flag list would make the check vacuous."""
+        assert len(self._global_option_strings()) > 0
+
+    def test_every_global_flag_appears_in_the_help_text(self) -> None:
+        """A global flag missing from the help block is undiscoverable."""
+        missing = [flag for flag in self._global_option_strings() if flag not in _TOP_LEVEL_HELP]
+        assert not missing, f"global flags absent from the hand-written help block: {missing}"
+
+
+@pytest.mark.unit
 class TestTopLevelHelpConstant:
     """Verify the _TOP_LEVEL_HELP module-level constant."""
 

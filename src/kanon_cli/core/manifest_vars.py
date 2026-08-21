@@ -6,8 +6,9 @@ must agree on EXACTLY which ``${VAR}`` placeholders matter. A ``${VAR}`` matters
 only when it appears in a *functional* attribute value -- one the repo tool
 consumes during ``repo sync`` -- namely the attributes of the ``<remote>``
 elements a ``<project>`` references (explicitly via ``remote="NAME"`` or via the
-``<default>`` remote) and the attributes of the ``<project>`` elements
-themselves.
+``<default>`` remote), the attributes of the ``<project>`` elements themselves,
+and the attributes of each project's ``<linkfile>`` and ``<copyfile>`` children,
+whose ``dest`` decides where synced content is materialized on disk.
 
 A ``${VAR}`` that appears only in an XML comment, a ``<![CDATA[...]]>`` block,
 or element text is documentation prose: the repo tool never substitutes it and
@@ -26,15 +27,57 @@ from __future__ import annotations
 import pathlib
 import xml.etree.ElementTree as ET
 
-from kanon_cli.constants import SHELL_VAR_PATTERN
+from kanon_cli.constants import (
+    MANIFEST_BRACED_VAR_BODY_PATTERN,
+    MANIFEST_PROJECT_FUNCTIONAL_CHILD_TAGS,
+    MANIFEST_VAR_PATTERN,
+)
 from kanon_cli.core.include_walker import IncludeTree, _walk_includes
+
+
+class MalformedManifestVarError(ValueError):
+    """Raised when a manifest carries a ``${...}`` reference nothing can resolve.
+
+    ``repo envsubst`` substitutes through :func:`os.path.expandvars`, which only
+    resolves a body that is a valid identifier. A body such as ``VAR:-default``,
+    ``A${B`` or ``  VAR  `` is left in the manifest verbatim, and writing it into
+    ``.kanon`` as a key produces a source that can never install however many
+    times the operator follows the remediation. Failing at detection names the
+    real problem instead.
+
+    Attributes:
+        element_tag: The manifest element the reference was found on.
+        value: The full attribute value containing it.
+        body: The offending text between ``${`` and ``}``.
+    """
+
+    def __init__(self, *, element_tag: str, value: str, body: str) -> None:
+        """Store the offending reference and build the operator-facing message.
+
+        Args:
+            element_tag: The manifest element the reference was found on.
+            value: The full attribute value containing it.
+            body: The offending text between ``${`` and ``}``.
+        """
+        self.element_tag = element_tag
+        self.value = value
+        self.body = body
+        super().__init__(
+            f"ERROR: <{element_tag}> contains ${{{body}}}, which is not a variable reference "
+            f"'repo envsubst' can resolve; only ${{NAME}} or $NAME with NAME matching "
+            f"[A-Za-z_][A-Za-z0-9_]* is substituted. Offending value: {value!r}"
+        )
 
 
 def _vars_in_attributes(element: ET.Element) -> set[str]:
     """Return the ``${VAR}`` names referenced in an element's attribute values.
 
-    Scans every attribute value of ``element`` for ``${VAR}`` placeholders and
-    returns the bare ``VAR`` names (without the ``${...}`` wrapper). Because
+    Scans every attribute value of ``element`` for the variable references
+    ``repo envsubst`` will expand -- ``${VAR}`` and bare ``$VAR`` alike, since it
+    substitutes through :func:`os.path.expandvars` -- and returns the bare names.
+    Detecting only the braced spelling left the unbraced one substituted but
+    unannounced, which is the silent no-delivery this module exists to prevent.
+    Because
     ``Element.attrib`` exposes only attribute values -- never comments, CDATA,
     or element text -- this is inherently scoped to functional positions.
 
@@ -46,8 +89,70 @@ def _vars_in_attributes(element: ET.Element) -> set[str]:
     """
     found: set[str] = set()
     for value in element.attrib.values():
-        for match in SHELL_VAR_PATTERN.finditer(value):
-            found.add(match.group(1))
+        for body in MANIFEST_BRACED_VAR_BODY_PATTERN.findall(value):
+            if body and not body.isidentifier():
+                raise MalformedManifestVarError(element_tag=element.tag, value=value, body=body)
+        for match in MANIFEST_VAR_PATTERN.finditer(value):
+            found.add(match.group("braced") or match.group("bare"))
+    return found
+
+
+MANIFEST_FUNCTIONAL_ELEMENT_TAGS = (
+    "default",
+    "extend-project",
+    "remove-project",
+    "manifest-server",
+    "superproject",
+    "contactinfo",
+    "repo-hooks",
+    "submanifest",
+)
+"""Top-level elements whose attributes ``repo`` consumes.
+
+Detection previously walked ``<project>`` and the ``<remote>`` elements projects
+reference, so a ``${VAR}`` anywhere else was substituted but never announced --
+the same silent no-delivery for a different element. ``<default revision>`` is
+the sharpest example: every project without its own ``revision`` inherits it, so
+a variable there decides which commit is checked out.
+
+Scanning *every* element indiscriminately was considered and rejected. It would
+pull in ``<remote>`` elements no project references, and since an unfilled
+variable now fails the install, a manifest carrying an unused remote would stop
+installing altogether. Remotes stay scoped to the ones actually referenced.
+"""
+
+
+def _vars_in_project(project_element: ET.Element) -> set[str]:
+    """Return the ``${VAR}`` names a ``<project>`` references in functional positions.
+
+    A ``<project>``'s functional surface is not limited to its own attributes:
+    the ``src`` and ``dest`` attributes of its ``<linkfile>`` and ``<copyfile>``
+    children are consumed by ``repo sync``, which materializes ``dest`` as a
+    symlink or a copy on disk
+    (:class:`kanon_cli.repo.manifest_xml.XmlManifest._ParseProject` dispatches
+    both child tags). A ``${VAR}`` in a ``dest`` therefore decides where content
+    lands and must be treated exactly like a ``${VAR}`` in a project's own
+    ``path``.
+
+    Args:
+        project_element: A ``<project>`` element whose own attributes and
+            functional child elements are scanned.
+
+    A ``<project>`` may also nest sub-projects, which the vendored parser fully
+    resolves, so the walk recurses: a sub-project's own attributes and its own
+    delivery children are just as functional as the outer project's.
+
+    Returns:
+        The set of placeholder variable names found across the project's own
+        attributes, its ``<linkfile>`` / ``<copyfile>`` children, and any nested
+        ``<project>`` elements.
+    """
+    found = _vars_in_attributes(project_element)
+    for child_tag in MANIFEST_PROJECT_FUNCTIONAL_CHILD_TAGS:
+        for child_element in project_element.findall(child_tag):
+            found |= _vars_in_attributes(child_element)
+    for nested_project in project_element.findall("project"):
+        found |= _vars_in_project(nested_project)
     return found
 
 
@@ -88,7 +193,8 @@ def functional_vars_in_manifest_files(manifest_files: list[pathlib.Path]) -> set
     determines which remotes the projects reference (by explicit
     ``remote="NAME"`` or, when omitted, the ``<default>`` remote). The functional
     var set is the union of the ``${VAR}`` placeholders in those referenced
-    remotes' attributes plus any ``${VAR}`` in the projects' own attributes.
+    remotes' attributes plus any ``${VAR}`` in the projects' own attributes and
+    in their ``<linkfile>`` / ``<copyfile>`` children's attributes.
 
     Missing files are skipped (the install guard may be handed a path for a node
     that the include walker recorded but that does not exist on disk).
@@ -106,6 +212,8 @@ def functional_vars_in_manifest_files(manifest_files: list[pathlib.Path]) -> set
     remotes: dict[str, ET.Element] = {}
     default_remotes: set[str] = set()
     projects: list[ET.Element] = []
+    other_element_vars: set[str] = set()
+    extra_referenced_remotes: set[str] = set()
 
     for manifest_file in manifest_files:
         if not manifest_file.is_file():
@@ -120,11 +228,17 @@ def functional_vars_in_manifest_files(manifest_files: list[pathlib.Path]) -> set
             if default_remote:
                 default_remotes.add(default_remote)
         projects.extend(root.findall("project"))
+        for tag in MANIFEST_FUNCTIONAL_ELEMENT_TAGS:
+            for element in root.findall(tag):
+                other_element_vars |= _vars_in_attributes(element)
+                element_remote = element.get("remote")
+                if element_remote:
+                    extra_referenced_remotes.add(element_remote)
 
-    referenced_remotes: set[str] = set()
-    detected: set[str] = set()
+    referenced_remotes: set[str] = set(extra_referenced_remotes)
+    detected: set[str] = set(other_element_vars)
     for project_el in projects:
-        detected |= _vars_in_attributes(project_el)
+        detected |= _vars_in_project(project_el)
         project_remote = project_el.get("remote")
         if project_remote:
             referenced_remotes.add(project_remote)

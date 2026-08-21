@@ -141,7 +141,7 @@ class TestID:
         assert not (store_base / ".packages").exists(), (
             "ID-02: .packages/ should not exist after clean on never-installed dir"
         )
-        assert not (store_base / ".kanon-data").exists(), (
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
             "ID-02: .kanon-data/ should not exist after clean on never-installed dir"
         )
 
@@ -181,4 +181,6 @@ class TestID:
             f"stdout={second_clean.stdout!r}\nstderr={second_clean.stderr!r}"
         )
         assert not (store_base / ".packages").exists(), "ID-03: .packages/ should not exist after second clean"
-        assert not (store_base / ".kanon-data").exists(), "ID-03: .kanon-data/ should not exist after second clean"
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
+            "ID-03: .kanon-data/ should not exist after second clean"
+        )

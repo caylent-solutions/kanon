@@ -196,8 +196,9 @@ class TestMandatorySSH:
 class TestLinkFileExclude:
     """Functional tests for the linkfile exclude attribute."""
 
-    def test_linkfile_exclude_creates_individual_symlinks(self, tmp_path):
+    def test_linkfile_exclude_creates_individual_symlinks(self, tmp_path, permit_abs_roots):
         """End-to-end: exclude creates real dir with per-child symlinks."""
+        permit_abs_roots(tmp_path)
         from kanon_cli.repo import project
 
         worktree = tmp_path / "worktree"
@@ -223,8 +224,9 @@ class TestLinkFileExclude:
         assert (dest_path / "utils.py").is_symlink()
         assert not (dest_path / "tests").exists()
 
-    def test_linkfile_exclude_with_absolute_dest(self, tmp_path):
+    def test_linkfile_exclude_with_absolute_dest(self, tmp_path, permit_abs_roots):
         """End-to-end: exclude works with absolute dest path (spec 17.1)."""
+        permit_abs_roots(tmp_path)
         from kanon_cli.repo import project
 
         worktree = tmp_path / "worktree"

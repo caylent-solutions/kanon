@@ -518,7 +518,7 @@ def _clone_remote_catalog(source: str) -> pathlib.Path:
     )
     if result.returncode != 0:
         print(
-            f"Error: Failed to clone catalog from {url}@{ref}: {result.stderr}",
+            f"ERROR: Failed to clone catalog from {url}@{ref}: {result.stderr}",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -526,7 +526,7 @@ def _clone_remote_catalog(source: str) -> pathlib.Path:
     catalog_path = clone_dir / "repo" / "catalog"
     if not catalog_path.is_dir():
         print(
-            f"Error: Remote repo {url}@{ref} does not contain a 'catalog/' directory",
+            f"ERROR: Remote repo {url}@{ref} does not contain a 'catalog/' directory",
             file=sys.stderr,
         )
         sys.exit(1)

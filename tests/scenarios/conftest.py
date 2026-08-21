@@ -27,7 +27,13 @@ from typing import Iterable
 
 import pytest
 
-from tests.conftest import _isolation_env, strip_subprocess_coverage_env
+from kanon_cli.core.install import compute_project_address
+from tests.conftest import (
+    _isolation_env,
+    run_owned_subprocess,
+    strip_subprocess_coverage_env,
+    subprocess_timeout,
+)
 
 
 INTEGRATION_DOC = pathlib.Path(__file__).resolve().parents[2] / "docs" / "integration-testing.md"
@@ -64,7 +70,14 @@ def run_kanon(
     """Invoke `python -m kanon_cli <args>` and return the completed process.
 
     Mirrors `tests/functional/conftest._run_kanon` but lives in the scenarios
-    package so it stays importable without sys.path tricks.
+    package so it stays importable without sys.path tricks. Like that helper, the
+    child is bounded by `subprocess_timeout()` so a wedged `kanon` is killed and
+    reported instead of hanging its pytest worker.
+
+    Raises:
+        ValueError: When both `env` and `extra_env` are provided at once.
+        subprocess.TimeoutExpired: When the child does not exit within
+            `KANON_TEST_SUBPROCESS_TIMEOUT` seconds.
     """
     if env is not None and extra_env is not None:
         raise ValueError("Provide either 'env' or 'extra_env', not both.")
@@ -80,13 +93,13 @@ def run_kanon(
         resolved_env = dict(os.environ)
     resolved_env = strip_subprocess_coverage_env(resolved_env)
     resolved_cwd = str(cwd) if cwd is not None else None
-    return subprocess.run(
+    return run_owned_subprocess(
         [sys.executable, "-m", "kanon_cli", *args],
         capture_output=True,
         text=True,
-        check=False,
         cwd=resolved_cwd,
         env=resolved_env,
+        timeout=subprocess_timeout(),
     )
 
 
@@ -315,6 +328,20 @@ def write_kanonenv(
     target = target_dir / ".kanon"
     target.write_text("\n".join(lines) + "\n")
     return target
+
+
+def project_address_for(working_dir: pathlib.Path) -> str:
+    """Return the store project-address for the ``.kanon`` file in ``working_dir``.
+
+    Mirrors what ``kanon install`` computes internally (``compute_project_address``)
+    so scenario tests can assert on the resulting
+    ``.kanon-data/sources/<project_address>/<name>`` path under the shared store.
+
+    The aggregated ``.packages/`` farm is deliberately NOT keyed by project, so
+    there is no ``.packages/<project_address>/`` path; a name already published
+    there by a different project is refused rather than overwritten.
+    """
+    return compute_project_address(working_dir / ".kanon")
 
 
 def kanon_install(working_dir: pathlib.Path, **kwargs) -> subprocess.CompletedProcess:

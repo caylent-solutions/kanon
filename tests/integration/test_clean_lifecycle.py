@@ -18,6 +18,8 @@ from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.core.install import compute_project_address
+
 from kanon_cli.cli import main
 from kanon_cli.core.clean import clean
 from tests.conftest import materialize_linkfiles_for_sync
@@ -58,23 +60,35 @@ def _write_kanonenv(directory: pathlib.Path, extra_lines: str = "") -> pathlib.P
     return kanonenv.resolve()
 
 
-def _create_install_artifacts(base_dir: pathlib.Path, packages: list[str]) -> None:
-    """Create .packages/ and .kanon-data/ artifacts as install would.
+def _create_install_artifacts(base_dir: pathlib.Path, packages: list[str], kanonenv: pathlib.Path) -> None:
+    """Create the artifacts install would leave for one project.
+
+    Models what install actually produces: a source workspace keyed by the
+    consuming project's address, and aggregated ``.packages/`` entries that are
+    *symlinks* into it. Building plain directories under an alias-named workspace
+    would not exercise the ownership check `kanon clean` uses to decide which
+    links are this project's to remove.
 
     Args:
-        base_dir: Shared artifact store base (``<KANON_HOME>/store``), where
-            install()/clean() manage ``.packages/`` and ``.kanon-data/``.
-        packages: List of package names to create under .packages/.
+        base_dir: Shared artifact store base (``<KANON_HOME>/store``).
+        packages: Package names to create.
+        kanonenv: The consuming project's ``.kanon``, whose address keys the
+            workspace.
     """
+    address = compute_project_address(kanonenv)
+    source_packages = base_dir / ".kanon-data" / "sources" / address / "primary" / ".packages"
+    source_packages.mkdir(parents=True, exist_ok=True)
+    (source_packages.parent / "metadata.txt").write_text("source=primary\n")
+
     packages_dir = base_dir / ".packages"
+    packages_dir.mkdir(parents=True, exist_ok=True)
     for pkg in packages:
-        pkg_dir = packages_dir / pkg
+        pkg_dir = source_packages / pkg
         pkg_dir.mkdir(parents=True, exist_ok=True)
         (pkg_dir / f"{pkg}.sh").write_text(f"#!/bin/sh\necho {pkg}\n")
-
-    kanon_data = base_dir / ".kanon-data" / "sources" / "primary"
-    kanon_data.mkdir(parents=True, exist_ok=True)
-    (kanon_data / "metadata.txt").write_text("source=primary\n")
+        link = packages_dir / pkg
+        if not link.exists() and not link.is_symlink():
+            link.symlink_to(pkg_dir)
 
 
 @pytest.mark.integration
@@ -88,7 +102,7 @@ class TestCleanRemovesArtifacts:
         """AC-TEST-001: invoking 'kanon clean' removes .packages/ and .kanon-data/."""
         kanonenv = _write_kanonenv(tmp_path)
         store_base = _store_base()
-        _create_install_artifacts(store_base, ["tool-a", "tool-b"])
+        _create_install_artifacts(store_base, ["tool-a", "tool-b"], kanonenv)
 
         assert (store_base / ".packages").exists(), "precondition: .packages/ must exist before clean"
         assert (store_base / ".kanon-data").exists(), "precondition: .kanon-data/ must exist before clean"
@@ -96,23 +110,30 @@ class TestCleanRemovesArtifacts:
         main(["clean", str(kanonenv)])
 
         assert not (store_base / ".packages").exists(), "kanon clean must remove .packages/"
-        assert not (store_base / ".kanon-data").exists(), "kanon clean must remove .kanon-data/"
+        assert not (store_base / ".kanon-data" / "sources").exists(), "kanon clean must remove .kanon-data/"
 
     def test_clean_removes_nested_packages_content(
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """AC-TEST-001: clean removes all nested content inside .packages/."""
+        """AC-TEST-001: clean removes this project's package link and its nested content."""
         kanonenv = _write_kanonenv(tmp_path)
         store_base = _store_base()
-        nested = store_base / ".packages" / "tool-a" / "subdir"
+        _create_install_artifacts(store_base, ["tool-a"], kanonenv)
+
+        address = compute_project_address(kanonenv)
+        nested = store_base / ".kanon-data" / "sources" / address / "primary" / ".packages" / "tool-a" / "subdir"
         nested.mkdir(parents=True)
         (nested / "file.txt").write_text("content")
-        (store_base / ".kanon-data").mkdir(parents=True)
 
         main(["clean", str(kanonenv)])
 
-        assert not (store_base / ".packages").exists(), "kanon clean must remove .packages/ including nested content"
+        assert not (store_base / ".packages").exists(), (
+            "with no other project on the machine, the aggregation directory should be gone"
+        )
+        assert not (store_base / ".kanon-data" / "sources" / address).exists(), (
+            "kanon clean must remove this project's workspace including nested content"
+        )
 
 
 @pytest.mark.integration
@@ -141,7 +162,7 @@ class TestCleanWithMarketplace:
             ),
         )
         store_base = _store_base()
-        _create_install_artifacts(store_base, ["tool-a"])
+        _create_install_artifacts(store_base, ["tool-a"], kanonenv)
 
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
             main(["clean", str(kanonenv)])
@@ -150,7 +171,7 @@ class TestCleanWithMarketplace:
             "kanon clean with KANON_MARKETPLACE_INSTALL=true must remove CLAUDE_MARKETPLACES_DIR"
         )
         assert not (store_base / ".packages").exists(), "kanon clean with marketplace=true must also remove .packages/"
-        assert not (store_base / ".kanon-data").exists(), (
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
             "kanon clean with marketplace=true must also remove .kanon-data/"
         )
 
@@ -164,7 +185,7 @@ class TestCleanWithMarketplace:
         (other_dir / "keep.txt").write_text("user data")
 
         kanonenv = _write_kanonenv(tmp_path)
-        _create_install_artifacts(_store_base(), ["tool-a"])
+        _create_install_artifacts(_store_base(), ["tool-a"], kanonenv)
 
         main(["clean", str(kanonenv)])
 
@@ -185,12 +206,14 @@ class TestCleanIdempotent:
         store_base = _store_base()
 
         assert not (store_base / ".packages").exists(), "precondition: .packages/ must not exist"
-        assert not (store_base / ".kanon-data").exists(), "precondition: .kanon-data/ must not exist"
+        assert not (store_base / ".kanon-data" / "sources").exists(), "precondition: .kanon-data/ must not exist"
 
         main(["clean", str(kanonenv)])
 
         assert not (store_base / ".packages").exists(), "idempotent clean: .packages/ must remain absent"
-        assert not (store_base / ".kanon-data").exists(), "idempotent clean: .kanon-data/ must remain absent"
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
+            "idempotent clean: .kanon-data/ must remain absent"
+        )
 
     def test_clean_twice_in_succession_both_succeed(
         self,
@@ -199,17 +222,19 @@ class TestCleanIdempotent:
         """AC-TEST-003: running 'kanon clean' twice on the same directory succeeds both times."""
         kanonenv = _write_kanonenv(tmp_path)
         store_base = _store_base()
-        _create_install_artifacts(store_base, ["tool-a"])
+        _create_install_artifacts(store_base, ["tool-a"], kanonenv)
 
         main(["clean", str(kanonenv)])
 
         assert not (store_base / ".packages").exists(), "first clean must remove .packages/"
-        assert not (store_base / ".kanon-data").exists(), "first clean must remove .kanon-data/"
+        assert not (store_base / ".kanon-data" / "sources").exists(), "first clean must remove .kanon-data/"
 
         main(["clean", str(kanonenv)])
 
         assert not (store_base / ".packages").exists(), "second clean must not fail when .packages/ absent"
-        assert not (store_base / ".kanon-data").exists(), "second clean must not fail when .kanon-data/ absent"
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
+            "second clean must not fail when .kanon-data/ absent"
+        )
 
 
 @pytest.mark.integration
@@ -229,7 +254,7 @@ class TestCleanPreservesNonManagedFiles:
         user_file.parent.mkdir(parents=True)
         user_file.write_text("# user code\n")
 
-        _create_install_artifacts(_store_base(), ["tool-a"])
+        _create_install_artifacts(_store_base(), ["tool-a"], kanonenv)
 
         main(["clean", str(kanonenv)])
 
@@ -244,7 +269,7 @@ class TestCleanPreservesNonManagedFiles:
     ) -> None:
         """AC-CHANNEL-001: progress messages from clean go to stdout; stderr must be empty on success."""
         kanonenv = _write_kanonenv(tmp_path)
-        _create_install_artifacts(_store_base(), ["tool-a"])
+        _create_install_artifacts(_store_base(), ["tool-a"], kanonenv)
 
         main(["clean", str(kanonenv)])
 

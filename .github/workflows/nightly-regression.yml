@@ -1,0 +1,53 @@
+---
+name: Nightly Regression
+
+# The full suite in one process, plus the vendored repo tool's tests.
+#
+# Pull request validation runs each tier in its own job and gates the tiers on
+# which paths a change touches. Two things fall outside that by construction:
+# cross-suite isolation regressions, which only appear when every tier shares one
+# process (see `git log --grep cross-suite`), and the vendored tier, which a pull
+# request skips whenever it did not touch that tree.
+#
+# Neither needs to gate a pull request. The full-suite job guards cross-suite
+# isolation regressions, which only surface when every tier shares one session,
+# and it is the slowest job in the matrix -- so it set the worst-case feedback
+# time for every pull request while duplicating what the per-tier jobs report.
+# as usefully the next morning. It still runs on every push to main
+# (main-validation.yml); this adds the scheduled sweep so a regression cannot sit
+# unnoticed through a quiet day.
+
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-suite-regression:
+    name: Full suite regression (cross-suite isolation guard)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+      - name: Run the full suite together
+        shell: bash
+        run: make test
+
+  vendored-tests:
+    name: Vendored repo tool tests
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+      - name: Run vendored repo tool tests
+        shell: bash
+        run: make test-unit-vendored

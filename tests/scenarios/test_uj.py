@@ -565,7 +565,7 @@ class TestUJ:
         )
         assert "kanon clean: done" in clean_result.stdout
         assert not (store / ".packages").exists(), "store .packages/ still exists after clean"
-        assert not (store / ".kanon-data").exists(), "store .kanon-data/ still exists after clean"
+        assert not (store / ".kanon-data" / "sources").exists(), "store .kanon-data/ still exists after clean"
 
     def test_uj_09_shell_variable_expansion(self, tmp_path: pathlib.Path) -> None:
         """UJ-09: defined shell vars expand; undefined vars produce a named error."""

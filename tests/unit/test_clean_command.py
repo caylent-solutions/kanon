@@ -57,6 +57,40 @@ class TestCleanCommand:
 
 
 @pytest.mark.unit
+class TestPurgeAllWithASourcelessKanon:
+    """``--purge-all`` is the machine-wide escape hatch and must not need sources.
+
+    It already falls back to a store-only teardown when no ``.kanon`` is
+    discoverable. A ``.kanon`` that exists but declares nothing is the same
+    situation for teardown, and refusing there made the escape hatch unusable in
+    exactly the state an operator reaches for it: the diagnostic told them to
+    define a source when they had asked to remove everything.
+    """
+
+    def test_purge_all_tears_down_a_sourceless_project(self, tmp_path: pathlib.Path) -> None:
+        """An empty .kanon under --purge-all removes the config and the home store."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text("")
+        args = types.SimpleNamespace(kanonenv_path=kanonenv, orphans=False, purge=False, purge_all=True)
+        with (
+            patch("kanon_cli.commands.clean.remove_project_config") as mock_config,
+            patch("kanon_cli.commands.clean.remove_kanon_home_store") as mock_store,
+        ):
+            _run(args)
+        mock_config.assert_called_once_with(kanonenv, tmp_path / ".kanon.lock")
+        mock_store.assert_called_once_with()
+
+    def test_plain_clean_still_refuses_a_sourceless_project(self, tmp_path: pathlib.Path) -> None:
+        """Without --purge-all the zero-source case must remain a fail-fast error."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text("")
+        args = types.SimpleNamespace(kanonenv_path=kanonenv, orphans=False, purge=False, purge_all=False)
+        with pytest.raises(SystemExit) as excinfo:
+            _run(args)
+        assert excinfo.value.code == 1
+
+
+@pytest.mark.unit
 class TestCleanRegister:
     def test_kanonenv_path_is_optional(self) -> None:
         parser = argparse.ArgumentParser()
@@ -243,10 +277,19 @@ class TestCleanAutoDiscovery:
         mock_remove.assert_not_called()
 
     def test_clean_error_exits(self, tmp_path: pathlib.Path) -> None:
+        """A sourceless .kanon is a fail-fast error for plain ``kanon clean``.
+
+        ``purge_all`` is set explicitly rather than left to ``MagicMock``, whose
+        attributes are all truthy. Nothing read the flag on this path until
+        ``--purge-all`` learned to tear down a sourceless project, at which point
+        the accidental truthiness sent the test down the purge branch and it
+        stopped asserting what its name says.
+        """
         kanonenv = tmp_path / ".kanon"
         kanonenv.write_text("NO_SOURCES=true\n")
         args = MagicMock()
         args.kanonenv_path = kanonenv
+        args.purge_all = False
 
         with pytest.raises(SystemExit):
             _run(args)

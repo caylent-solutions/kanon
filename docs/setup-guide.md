@@ -41,7 +41,7 @@ full CLI documentation.
 > change). There is no compatibility shim: `bootstrap` is no longer a
 > registered subcommand, so `kanon bootstrap` exits non-zero with an
 > argparse `invalid choice: 'bootstrap'` error. Use the commands below
-> instead. See [docs/migration-to-add.md](migration-to-add.md).
+> instead. See [docs/archive/upgrading-from-2x.md](archive/upgrading-from-2x.md).
 
 Search the catalog and add an entry to your `.kanon` with `kanon search` and
 `kanon add`. A catalog source is required, supplied via `--catalog-source

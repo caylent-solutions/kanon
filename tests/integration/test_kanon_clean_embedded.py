@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.core.clean import clean
-from kanon_cli.core.install import install
+from kanon_cli.core.install import compute_project_address, install
 
 
 def _store_base() -> Path:
@@ -54,14 +54,18 @@ class TestCleanRemovesRepoManagedFiles:
         """
         kanonenv = _write_kanonenv(tmp_path, _minimal_kanonenv_content())
         store_base = _store_base()
-        (store_base / ".packages" / "some-pkg").mkdir(parents=True)
-        (store_base / ".kanon-data" / "sources" / "primary").mkdir(parents=True)
-        (store_base / ".kanon-data" / "sources" / "primary" / "metadata.txt").write_text("data")
+        address = compute_project_address(kanonenv)
+        workspace = store_base / ".kanon-data" / "sources" / address / "primary"
+        pkg = workspace / ".packages" / "some-pkg"
+        pkg.mkdir(parents=True)
+        (workspace / "metadata.txt").write_text("data")
+        (store_base / ".packages").mkdir(parents=True, exist_ok=True)
+        (store_base / ".packages" / "some-pkg").symlink_to(pkg)
 
         clean(kanonenv)
 
         assert not (store_base / ".packages").exists(), ".packages/ should be removed by clean()"
-        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ should be removed by clean()"
+        assert not (store_base / ".kanon-data" / "sources").exists(), ".kanon-data/ should be removed by clean()"
 
 
 @pytest.mark.integration
@@ -115,15 +119,16 @@ class TestInstallCleanRoundtrip:
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
         store_base = _store_base()
+        project_address = compute_project_address(kanonenv)
         assert (store_base / ".packages" / "tool-a").is_symlink(), "install() should create a symlink in .packages/"
-        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
-            "install() should create .kanon-data/sources/primary/"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "primary").is_dir(), (
+            "install() should create .kanon-data/sources/<project_address>/primary/"
         )
 
         clean(kanonenv)
 
         assert not (store_base / ".packages").exists(), "clean() should remove .packages/ after install"
-        assert not (store_base / ".kanon-data").exists(), "clean() should remove .kanon-data/ after install"
+        assert not (store_base / ".kanon-data" / "sources").exists(), "clean() should remove .kanon-data/ after install"
         assert kanonenv.is_file(), "clean() must not remove the .kanon configuration file"
 
 
@@ -154,13 +159,15 @@ class TestCleanErrorPaths:
         """
         kanonenv = _write_kanonenv(tmp_path, _minimal_kanonenv_content())
         store_base = _store_base()
-        corrupt_dir = store_base / ".kanon-data" / "sources" / "primary" / "unexpected-subdir"
+        corrupt_dir = (
+            store_base / ".kanon-data" / "sources" / compute_project_address(kanonenv) / "primary" / "unexpected-subdir"
+        )
         corrupt_dir.mkdir(parents=True)
         (corrupt_dir / "corrupt.bin").write_bytes(b"\x00\xff\xfe")
 
         clean(kanonenv)
 
-        assert not (store_base / ".kanon-data").exists(), (
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
             "clean() must remove .kanon-data/ even when contents are in unexpected state"
         )
 
@@ -172,12 +179,12 @@ class TestCleanErrorPaths:
         store_base = _store_base()
 
         assert not (store_base / ".packages").exists()
-        assert not (store_base / ".kanon-data").exists()
+        assert not (store_base / ".kanon-data" / "sources").exists()
 
         clean(kanonenv)
 
         assert not (store_base / ".packages").exists()
-        assert not (store_base / ".kanon-data").exists()
+        assert not (store_base / ".kanon-data" / "sources").exists()
 
 
 @pytest.mark.integration

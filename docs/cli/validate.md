@@ -70,8 +70,10 @@ manifest correctness.
 
 **Checks:**
 
-- `<linkfile dest="...">` attributes use the `${CLAUDE_MARKETPLACES_DIR}/` prefix
-  and are not absolute paths.
+- `<linkfile dest="...">` and `<copyfile dest="...">` attributes stay inside the
+  consumer workspace (no literal absolute path, no `..`), and a
+  marketplace-type entry declaring linkfiles points at least one at
+  `${CLAUDE_MARKETPLACES_DIR}/`.
 - Include chains are intact (all `<include name="...">` files exist).
 - Project path values (`<project path="...">`) are unique across all marketplace
   files.
@@ -84,6 +86,14 @@ manifest correctness.
   or branch revision resolves to a content SHA pinned in `.kanon.lock`
   (`[[sources.content_pins]]`), so a branch revision does not pin a moving
   target.
+
+`kanon validate marketplace` checks the *declared* dest as an author-side gate.
+The install-time boundary is separate and stricter: it resolves the destination
+after variable expansion and confines it to the permitted roots, which
+`--allow-abs-root` and `KANON_ALLOWED_ABS_ROOTS` control. A catalog entry that
+passes this command can still be refused at install time if the consumer's roots
+do not cover where its dest expands to. See
+[docs/cli.md](../cli.md#kanon-install----absolute-destination-boundary).
 
 **Exit codes:**
 

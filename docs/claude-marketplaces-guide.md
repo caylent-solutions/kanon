@@ -108,12 +108,22 @@ This allows Claude Code to discover and load marketplace plugins at runtime.
 
 ### Validation Rules
 
-All linkfile `dest` attributes must start with `${CLAUDE_MARKETPLACES_DIR}/`.
-The following patterns are rejected:
+Every linkfile and copyfile `dest` must stay inside the consumer workspace.
+Rejected for any entry:
 
-- Absolute paths (e.g., `/opt/marketplaces/...`)
-- Relative paths (e.g., `.packages/...`)
-- Bare names without the variable prefix
+- An empty `dest`
+- A literal absolute path (e.g., `/opt/marketplaces/...`)
+- Any `..` component
+
+A `dest` rooted at `${CLAUDE_MARKETPLACES_DIR}/`, at any other `${VAR}`, or at a
+plain workspace-relative path is accepted -- an entry may ship non-plugin content
+alongside a Claude plugin.
+
+Additionally, an entry declaring `<type>claude-marketplace</type>` **and** at
+least one `<linkfile>` must point one of those dests at
+`${CLAUDE_MARKETPLACES_DIR}/`; such an entry registers no marketplace otherwise.
+An entry declaring no `<linkfile>` is exempt: that is the direct-checkout shape,
+where the checkout itself carries `.claude-plugin/marketplace.json`.
 
 ---
 

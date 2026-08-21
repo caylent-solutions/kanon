@@ -8,14 +8,14 @@
 3. If any source sets KANON_SOURCE_<alias>_MARKETPLACE=true:
    mkdir -p CLAUDE_MARKETPLACES_DIR, clean contents
 4. For each source in alphabetical order:
-   a. mkdir -p .kanon-data/sources/<name>/
+   a. mkdir -p .kanon-data/sources/<project-address>/<name>/
    b. kanon_cli.repo.repo_init(source_dir, url, revision, manifest_path)
       -- direct Python API call, no subprocess
    c. kanon_cli.repo.repo_envsubst(source_dir, {GITBASE, CLAUDE_MARKETPLACES_DIR})
       -- direct Python API call, no subprocess
    d. kanon_cli.repo.repo_sync(source_dir)
       -- direct Python API call, fail-fast on RepoCommandError
-5. Aggregate: symlink .kanon-data/sources/<name>/.packages/* -> .packages/
+5. Aggregate: symlink .kanon-data/sources/<project-address>/<name>/.packages/* -> .packages/
 6. Collision check: fail-fast if duplicate package names
 7. Conditional store .gitignore safety net: only when the shared KANON_HOME
    store sits inside a git working tree, write <KANON_HOME>/store/.gitignore
@@ -53,8 +53,8 @@ touched. See
    else any source's .kanon KANON_SOURCE_<alias>_MARKETPLACE flag):
    a. Uninstall marketplace plugins via claude CLI
    b. rm -rf CLAUDE_MARKETPLACES_DIR
-5. rm -rf .packages/ (ignore_errors)
-6. rm -rf .kanon-data/ (ignore_errors)
+5. unlink this project's links under .packages/ (other projects' links kept)
+6. rm -rf .kanon-data/sources/<project-address>/ (other projects' workspaces kept)
 7. If --purge or --purge-all: delete this project's .kanon and .kanon.lock
 8. If --purge-all: remove the KANON_HOME store dir (store/, cache/, empty root)
 ```

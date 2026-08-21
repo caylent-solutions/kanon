@@ -474,12 +474,15 @@ project element. Each element describes a src-dest pair of files;
 the "src" file will be copied to the "dest" place during `repo sync`
 command.
 
-"src" is project relative, "dest" is relative to the top of the tree.
-Copying from paths outside of the project or to paths outside of the repo
-client is not allowed.
+"src" is project relative.  "dest" is relative to the top of the tree, or
+an absolute path (see [Absolute dest paths](#absolute-dest-paths) below).
+Copying from paths outside of the project is not allowed.
 
 "src" and "dest" must be files.  Directories or symlinks are not allowed.
-Intermediate paths must not be symlinks either.
+
+For a relative "dest", intermediate paths must not be symlinks either: each
+component is checked and a symlinked component is an error.  The same check is
+applied to an absolute "dest" -- see [Absolute dest paths](#absolute-dest-paths).
 
 Parent directories of "dest" will be automatically created if missing.
 
@@ -498,22 +501,36 @@ of the repo client.
 
 #### Absolute dest paths
 
-Unlike `copyfile`, `linkfile` permits absolute paths in the `dest` attribute.
+Both `linkfile` and `copyfile` permit absolute paths in the `dest` attribute.
 This is intended for use with `repo envsubst`, where an environment variable
-expands to an absolute filesystem path at sync time.  For example:
+expands to an absolute filesystem path at sync time -- for example, to
+deliver a file into the consuming project rather than into the repo client.
+For example:
 
     <linkfile src="config/settings.yml"
               dest="${CLAUDE_MARKETPLACES_DIR}/settings.yml" />
 
-After `repo envsubst` resolves `${CLAUDE_MARKETPLACES_DIR}`, the resulting
-absolute path is used directly.  Parent directories are created automatically.
+    <copyfile src="workflows/ci.yml"
+              dest="${KANON_SOURCE_PKG_TARGET}/.github/workflows/ci.yml" />
 
-Absolute dest paths are still validated: path components such as `..`, `.git`,
-and other unsafe patterns are rejected.  However, the path is not restricted
-to the repo client tree.
+After `repo envsubst` resolves the variable, the resulting absolute path is
+used directly.  Parent directories are created automatically.
 
-Note: `copyfile` dest remains relative-only.  Absolute dest paths are
-supported exclusively by `linkfile`.
+Absolute dest paths are validated at manifest-parse time.  Rejected: an empty
+dest; a `~`; Unicode codepoints filesystems may elide; newlines; any `.`, `..`,
+`.git`, or `.repo*` path component; and a trailing slash.
+
+An absolute dest is additionally confined at sync time.  It must resolve under a
+permitted root, and each of its path components is checked so a symlinked
+component cannot redirect the write.  kanon supplies the permitted roots: the
+consumer project root, the resolved `CLAUDE_MARKETPLACES_DIR`, and anything the
+operator added with `--allow-abs-root` or `KANON_ALLOWED_ABS_ROOTS`.  A dest
+resolving outside every permitted root is an error, as is any absolute dest when
+no permitted root has been supplied.
+
+Note that `kanon validate marketplace` is stricter than this for catalog entries:
+it rejects a *literal* absolute dest outright, so an absolute dest must come from
+a `${VAR}` the consumer sets.
 
 #### Exclude attribute
 

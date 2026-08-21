@@ -76,6 +76,14 @@ indent-style = "space"
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "--ignore=tests/unit/repo/test_harness_smoke.py"
+# Per-test deadline (pytest-timeout). The number of seconds comes from
+# KANON_TEST_TIMEOUT via PYTEST_TIMEOUT, which tests/conftest.py exports before
+# pytest-timeout configures itself; only the method is fixed here. "thread" is used
+# rather than "signal" because the hang this guards against parks the main thread in
+# waitpid() around a deadlocked repo-sync pool, and the thread method both fires
+# unconditionally and dumps every thread's stack, which is the diagnostic that
+# identifies such a hang.
+timeout_method = "thread"
 markers = [
     "unit: Unit tests -- fast, isolated, no external dependencies",
     "functional: Functional tests -- exercise CLI via subprocess",
@@ -89,6 +97,14 @@ source = ["src/kanon_cli"]
 data_file = ".coverage-data/.coverage"
 parallel = true
 concurrency = ["multiprocessing"]
+# The vendored repo tool is third-party code kanon embeds, not code kanon writes.
+# It is 10,873 of the 18,768 measured statements, so including it made the project
+# gate mostly a measure of how well someone else's tree is exercised: the same
+# threshold read 92% across both trees and 94% across kanon's own. Its tests live
+# in tests/unit/repo and run as their own tier (`make test-unit-vendored`), which
+# is gated on that tree actually changing -- so measuring it here would report a
+# collapse in coverage every time the tier is correctly skipped.
+omit = ["*/kanon_cli/repo/*"]
 
 [tool.coverage.report]
 show_missing = true
@@ -163,10 +179,11 @@ dev = [
     "pymarkdownlnt>=0.9.38",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
+    "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.6",
     "python-semantic-release~=8.0.0",
     "ruff~=0.11.0",
-    "twine~=6.1.0",
+    "twine~=7.0",
     "types-defusedxml>=0.7.0",
     "yamllint>=1.38.0",
 ]

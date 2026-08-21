@@ -2,6 +2,156 @@
 
 
 
+## [Unreleased]
+
+### Added
+
+* feat: confine an absolute `<linkfile>`/`<copyfile>` dest to permitted roots
+
+A `<linkfile dest>` or `<copyfile dest>` may be an absolute path. Because the
+manifest declaring it is fetched from a remote repository, such a destination is
+now confined to a permitted root rather than being written anywhere the invoking
+user can write. The permitted roots are the consumer project root and the
+resolved `CLAUDE_MARKETPLACES_DIR`, plus anything an operator opts into with the
+new repeatable `--allow-abs-root <path>` flag or the `KANON_ALLOWED_ABS_ROOTS`
+environment variable (flag wins, matching `--home` / `KANON_HOME`). The two
+built-in roots are unconditional, so the setting can only widen the boundary. No
+new `.kanon` key is required and nothing is added to existing files. A
+destination outside every permitted root exits non-zero naming the destination,
+the roots, and how to widen them.
+
+* feat: `KANON_SYNC_JOBS` caps `repo sync`'s fan-out
+
+An upper bound on worker processes during `kanon install`. It can lower fan-out,
+never raise it: `repo sync` resolves separate network and checkout job counts
+whose defaults differ (1 and `min(cpu_count, 8)`), so each is capped against its
+own default rather than both being set from one value. The cap takes precedence
+over a manifest's `<default sync-j>`. Validated at CLI entry, so a bad value
+cannot abort an install part-way. Unset, `repo sync` resolves its own defaults
+and behaviour is unchanged.
+
+### Fixed
+
+* fix: `kanon clean --purge-all` no longer refuses a `.kanon` with no sources
+
+`--purge-all` is the machine-wide teardown and already fell back to a store-only
+clean when no `.kanon` was discoverable at all. A `.kanon` that existed but
+declared no sources took a different path and exited non-zero with "No sources
+found. Define at least one source...", which is the opposite of what an operator
+asking to remove everything wants, and left the escape hatch unusable in exactly
+the broken state it exists for. Such a project is now torn down: its config files
+and the shared home store are removed, and there is no per-source work to do.
+Plain `kanon clean` still treats a sourceless `.kanon` as a fail-fast error.
+
+* fix: `--allow-abs-root` is listed in `kanon --help`
+
+The flag appeared in the usage line argparse prints on an error but was missing
+from the hand-written global-options block that `kanon --help` shows, so the only
+place it surfaced was a failure. A guard now asserts every global option the
+parser accepts appears in that block; the help snapshot fixture could not catch
+this, because adding a flag without editing the block leaves the snapshot
+byte-identical.
+
+* fix: key per-source install workspaces by consumer project (#96)
+
+Per-source install workspaces (`<KANON_HOME>/store/.kanon-data/sources/...`) are
+now keyed by a stable per-project address (`compute_project_address`), not just
+the source alias. Previously, two unrelated projects declaring the same source
+alias shared one mutable `repo` workspace: the second project's install would
+silently deliver no content (while reporting success), or -- if the two projects
+pinned different refs -- raise an unhandled `GitCommandError` and wedge the
+shared workspace for both projects.
+
+The aggregated `.packages/` symlink tree is deliberately **not** keyed: keying it
+broke roughly 140 end-to-end tests for no behavioural gain, and its path is part
+of the operator-facing contract. Instead, replacing a link published there by a
+*different* project now prints a warning naming both projects and the remedy,
+where it was previously silent. It warns rather than failing so that two projects
+sharing a package name can still coexist. Full isolation of the aggregation
+directory is tracked in issue #115.
+
+Workspaces written before this change are left under the old alias-only path and
+are never read again. Nothing needs to be done about them: `kanon doctor` reports
+them, and `kanon clean` reclaims them along with the rest of the store. Note that
+`kanon clean` removes the store's `.kanon-data/` for **every** project sharing
+that `KANON_HOME`, not only the current one -- each of those projects re-clones
+on its next install.
+
+* fix: detect `${VAR}` and `$VAR` in `<linkfile>`/`<copyfile>` src and dest (#95)
+
+Variable detection walked only `<project>` and `<remote>` attributes, so a
+variable used solely in a `<linkfile dest>` was invisible to both `kanon add` and
+the install-time guard, and install exited 0 with the variable unset having
+delivered nothing. Detection now covers those elements, and matches the grammar
+`repo envsubst` actually expands -- `$VAR` as well as `${VAR}`. A `${...}` body
+that is not a valid identifier (`${VAR:-default}`, for example) is rejected at
+detection rather than written into `.kanon` as a key no value can satisfy.
+
+`kanon add` now writes `<SET_ME>` for a variable it cannot derive, instead of an
+empty value. An empty value substituted as the empty string, so a
+`dest="${VAR}/rules"` collapsed to `/rules` at the filesystem root while leaving
+no placeholder for the guard to catch.
+
+* fix: `<copyfile>` dest is validated by `kanon validate marketplace`
+
+The validator applied its containment rule to `<linkfile>` only, so a
+`<copyfile>` could declare any destination and still pass.
+
+* fix: a failed `<copyfile>` copy raises instead of being logged and ignored
+
+`repo sync` could report success having delivered nothing.
+
+* fix: `kanon doctor` no longer aborts on an unreadable cache or lock entry
+
+Stat probes outside their error handler let an `OSError` escape as a traceback.
+
+* fix: `kanon repo forall` no longer raises when restoring a signal handler that
+  was not installed from Python
+
+### Changed
+
+* Major-version migration notes moved to `docs/archive/`
+
+`docs/migration-to-add.md` and `docs/migrating-existing-kanon-files.md` cover
+upgrading from 2.x and are not needed on a current installation. They now live
+under `docs/archive/` (the first renamed to `upgrading-from-2x.md`) and are no
+longer linked from the main documentation. Upgrading between 3.x releases
+requires no operator action: `kanon doctor` reports anything left behind by an
+older store layout and `kanon clean` reclaims it.
+
+The `kanon catalog audit` legacy-directory warning now cites the archived path.
+
+* The unit-coverage gate is raised from 90% to 93%
+
+`COVERAGE_MIN` measured 90% against a surface that included the vendored repo
+tree. That tree is now its own tier and omitted from this gate, so the same
+threshold was a looser bar against a smaller denominator. 93% restores real
+stringency against kanon's own source, which currently measures 93.75%.
+
+* `kanon clean` is now scoped to the project you run it in
+
+It removed the shared store's entire `.packages/` and `.kanon-data/` trees plus
+every content-addressed entry, so cleaning one project destroyed the installed
+state of every other project sharing that `KANON_HOME`. It now removes only this
+project's source workspace and the aggregated package links this project created.
+Other projects' workspaces, their links, and the shared store entries survive.
+`--purge-all` is unchanged and remains the machine-wide teardown.
+
+One consequence worth noting: plain `kanon clean` no longer prunes
+content-addressed store entries, because they are shared cache. `--purge-all`
+still reclaims them.
+
+* All kanon diagnostics now use a single `ERROR:` prefix on stderr
+
+kanon emitted two prefixes for the same thing: `ERROR:` at 140 call sites and
+`Error:` at 39, both hand-written. The 39 are normalised to `ERROR:`. This is a
+user-visible stderr change -- a script matching `^Error:` on kanon's output needs
+updating to `^ERROR:`. Messages emitted by the vendored `repo` tool are unchanged.
+
+* `RefreshRepoInitError` now reads `ERROR: repo re-init failed for source '<name>'`
+  where it previously read `ERROR: refresh failed for source '<name>'`. Scripts
+  matching the old text need updating.
+
 ## v3.3.3 (2026-08-06)
 
 ### Fix

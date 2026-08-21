@@ -1,11 +1,16 @@
 usage: kanon clean [-h] [--orphans] [--purge] [--purge-all] [kanonenv_path]
 
-Execute the full Kanon clean lifecycle.
+Execute the full Kanon clean lifecycle for THIS project.
 
 If any dependency set KANON_SOURCE_<alias>_MARKETPLACE=true, runs
 the uninstall script and removes the marketplace directory. Then
-removes .packages/ and .kanon-data/ directories and prunes the
-content-addressed entries from the shared KANON_HOME store.
+removes this project's source workspace under the shared store and
+the aggregated package links this project created.
+
+Other projects sharing the same KANON_HOME are left alone: their
+workspaces, their package links, and the shared content-addressed
+store entries all survive. Use --purge-all for machine-wide
+teardown.
 
 With --orphans, before the normal teardown kanon also unregisters
 any kanon-owned marketplaces recorded in .kanon.lock that are no

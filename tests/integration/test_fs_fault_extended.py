@@ -118,7 +118,7 @@ class TestNonUtf8PathError:
     that string to the CLI subprocess. The CLI must not crash with an
     unhandled UnicodeDecodeError; instead it must:
       - exit with code 1
-      - emit an actionable 'Error:' message on stderr
+      - emit an actionable 'ERROR:' message on stderr
       - produce no traceback on stderr
       - not leak error text to stdout
     """
@@ -149,7 +149,7 @@ class TestNonUtf8PathError:
         )
 
     def test_non_utf8_path_has_error_on_stderr(self, tmp_path: pathlib.Path) -> None:
-        """An 'Error:' message appears on stderr for non-UTF-8 path input."""
+        """An 'ERROR:' message appears on stderr for non-UTF-8 path input."""
         raw_name = b"bad\xff" + b"dir"
         try:
             nonexistent_dir = tmp_path / os.fsdecode(raw_name)
@@ -160,8 +160,8 @@ class TestNonUtf8PathError:
 
         result = _run_kanon_subprocess("install", str(nonexistent_kanon))
 
-        assert "Error:" in result.stderr, (
-            f"Expected 'Error:' on stderr for non-UTF-8 path. Got stderr={result.stderr!r}"
+        assert "ERROR:" in result.stderr, (
+            f"Expected 'ERROR:' on stderr for non-UTF-8 path. Got stderr={result.stderr!r}"
         )
 
     def test_non_utf8_path_no_traceback(self, tmp_path: pathlib.Path) -> None:
@@ -181,7 +181,7 @@ class TestNonUtf8PathError:
         )
 
     def test_non_utf8_path_no_cross_channel_leakage(self, tmp_path: pathlib.Path) -> None:
-        """AC-CHANNEL-001: error text is on stderr only; stdout must contain no 'Error:' text."""
+        """AC-CHANNEL-001: error text is on stderr only; stdout must contain no 'ERROR:' text."""
         raw_name = b"bad\xff" + b"dir"
         try:
             nonexistent_dir = tmp_path / os.fsdecode(raw_name)
@@ -192,7 +192,7 @@ class TestNonUtf8PathError:
 
         result = _run_kanon_subprocess("install", str(nonexistent_kanon))
 
-        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("Error:")]
+        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("ERROR:")]
         assert not stdout_error_lines, (
             f"Error text leaked to stdout. stdout={result.stdout!r}, stderr={result.stderr!r}"
         )
@@ -414,7 +414,7 @@ class TestPathMaxHandling:
         Constructs a path string that is provably longer than PATH_MAX by
         assembling a long string (without actually creating the directory), then
         passes it to the CLI. The OS will reject the path; the CLI must convert
-        that OS error to a clean exit-1 with an 'Error:' message on stderr.
+        that OS error to a clean exit-1 with an 'ERROR:' message on stderr.
         """
 
         excess = "b" * (_PATH_MAX + 100)
@@ -438,10 +438,10 @@ class TestPathMaxHandling:
 
         result = _run_kanon_subprocess("install", long_path_str)
 
-        assert "Error:" in result.stderr, (
-            f"Expected 'Error:' on stderr for PATH_MAX-exceeding path. Got stderr={result.stderr!r}"
+        assert "ERROR:" in result.stderr, (
+            f"Expected 'ERROR:' on stderr for PATH_MAX-exceeding path. Got stderr={result.stderr!r}"
         )
-        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("Error:")]
+        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("ERROR:")]
         assert not stdout_error_lines, f"Error text must not appear on stdout. stdout={result.stdout!r}"
 
 
@@ -449,7 +449,7 @@ class TestPathMaxHandling:
 class TestMidOperationDeletionRace:
     """AC-TEST-004: when a directory or file is deleted between the point at which
     the CLI checks for its existence and the point at which it attempts to use it,
-    the resulting OSError must surface as a clear 'Error:' message on stderr with
+    the resulting OSError must surface as a clear 'ERROR:' message on stderr with
     exit code 1 -- not as an unhandled exception traceback.
 
     The race is simulated by:
@@ -458,7 +458,7 @@ class TestMidOperationDeletionRace:
         read-only (so create_source_dirs raises OSError)
       - using subprocess tests where the project directory is made read-only before
         the subprocess runs, ensuring the install error path propagates through the
-        full CLI error-handling chain and surfaces a clean 'Error:' on stderr.
+        full CLI error-handling chain and surfaces a clean 'ERROR:' on stderr.
     """
 
     def test_source_dir_creation_fails_install_exits_1(
@@ -489,7 +489,7 @@ class TestMidOperationDeletionRace:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """An 'Error:' message appears on stderr when project dir is read-only during install."""
+        """An 'ERROR:' message appears on stderr when project dir is read-only during install."""
         kanonenv = _write_kanonenv(tmp_path)
         tmp_path.chmod(0o555)
         try:
@@ -497,8 +497,8 @@ class TestMidOperationDeletionRace:
         finally:
             tmp_path.chmod(0o755)
 
-        assert "Error:" in result.stderr, (
-            f"Expected 'Error:' on stderr when project dir is read-only. Got stderr={result.stderr!r}"
+        assert "ERROR:" in result.stderr, (
+            f"Expected 'ERROR:' on stderr when project dir is read-only. Got stderr={result.stderr!r}"
         )
 
     def test_source_dir_creation_fails_no_traceback(
@@ -529,7 +529,7 @@ class TestMidOperationDeletionRace:
         finally:
             tmp_path.chmod(0o755)
 
-        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("Error:")]
+        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("ERROR:")]
         assert not stdout_error_lines, (
             f"Error text leaked to stdout. stdout={result.stdout!r}, stderr={result.stderr!r}"
         )
@@ -550,7 +550,7 @@ class TestMidOperationDeletionRace:
         base_dir.chmod(0o555)
         try:
             with pytest.raises(OSError, match="Cannot create source directory"):
-                create_source_dirs(["src"], base_dir)
+                create_source_dirs(["src"], base_dir, "e" * 64)
         finally:
             base_dir.chmod(0o755)
 
@@ -562,7 +562,7 @@ class TestMidOperationDeletionRace:
 
         This tests the library boundary: install() must let OSError from
         create_source_dirs propagate to the caller. The CLI command handler
-        in commands/install.py catches this and prints 'Error:' + sys.exit(1).
+        in commands/install.py catches this and prints 'ERROR:' + sys.exit(1).
 
         Source directories are now created under the shared KANON_HOME store
         (<KANON_HOME>/store/.kanon-data/sources/), so the read-only target that

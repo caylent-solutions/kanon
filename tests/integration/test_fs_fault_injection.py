@@ -107,7 +107,7 @@ class TestReadonlyParentDirectory:
         )
 
     def test_readonly_parent_install_clean_error_on_stderr(self, tmp_path: pathlib.Path) -> None:
-        """An actionable 'Error:' message (not a raw traceback) appears on stderr."""
+        """An actionable 'ERROR:' message (not a raw traceback) appears on stderr."""
         kanonenv = _write_kanonenv(tmp_path)
         tmp_path.chmod(0o555)
         try:
@@ -116,14 +116,14 @@ class TestReadonlyParentDirectory:
             tmp_path.chmod(0o755)
 
         stderr_lines = result.stderr.splitlines()
-        error_lines = [line for line in stderr_lines if line.startswith("Error:")]
-        assert error_lines, f"Expected at least one line starting with 'Error:' on stderr. Got stderr={result.stderr!r}"
+        error_lines = [line for line in stderr_lines if line.startswith("ERROR:")]
+        assert error_lines, f"Expected at least one line starting with 'ERROR:' on stderr. Got stderr={result.stderr!r}"
 
     def test_readonly_parent_install_no_raw_traceback(self, tmp_path: pathlib.Path) -> None:
         """A raw Python traceback must NOT appear on stderr for read-only failures.
 
         The CLI must catch filesystem permission errors and emit a clean,
-        actionable 'Error:' message rather than exposing internal stack frames.
+        actionable 'ERROR:' message rather than exposing internal stack frames.
         """
         kanonenv = _write_kanonenv(tmp_path)
         tmp_path.chmod(0o555)
@@ -163,7 +163,7 @@ class TestReadonlyParentDirectory:
         )
 
     def test_readonly_parent_install_no_cross_channel_leakage(self, tmp_path: pathlib.Path) -> None:
-        """AC-CHANNEL-001: error text is on stderr only; stdout must contain no 'Error:' line."""
+        """AC-CHANNEL-001: error text is on stderr only; stdout must contain no 'ERROR:' line."""
         kanonenv = _write_kanonenv(tmp_path)
         tmp_path.chmod(0o555)
         try:
@@ -171,7 +171,7 @@ class TestReadonlyParentDirectory:
         finally:
             tmp_path.chmod(0o755)
 
-        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("Error:")]
+        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("ERROR:")]
         assert not stdout_error_lines, (
             f"Error text leaked to stdout. stdout={result.stdout!r}, stderr={result.stderr!r}"
         )
@@ -209,14 +209,14 @@ class TestMissingParentDirectory:
         tmp_path: pathlib.Path,
         subcommand: str,
     ) -> None:
-        """A clean 'Error:' message appears on stderr, not a raw traceback."""
+        """A clean 'ERROR:' message appears on stderr, not a raw traceback."""
         nonexistent = tmp_path / "does_not_exist" / ".kanon"
         result = _run_kanon_subprocess(subcommand, str(nonexistent))
 
         stderr_lines = result.stderr.splitlines()
-        error_lines = [line for line in stderr_lines if line.startswith("Error:")]
+        error_lines = [line for line in stderr_lines if line.startswith("ERROR:")]
         assert error_lines, (
-            f"Expected at least one line starting with 'Error:' on stderr ({subcommand!r}), "
+            f"Expected at least one line starting with 'ERROR:' on stderr ({subcommand!r}), "
             f"got stderr={result.stderr!r}"
         )
         assert "Traceback" not in result.stderr, (
@@ -232,11 +232,11 @@ class TestMissingParentDirectory:
         tmp_path: pathlib.Path,
         subcommand: str,
     ) -> None:
-        """AC-CHANNEL-001: error text is on stderr only; stdout must contain no 'Error:' line."""
+        """AC-CHANNEL-001: error text is on stderr only; stdout must contain no 'ERROR:' line."""
         nonexistent = tmp_path / "does_not_exist" / ".kanon"
         result = _run_kanon_subprocess(subcommand, str(nonexistent))
 
-        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("Error:")]
+        stdout_error_lines = [line for line in result.stdout.splitlines() if line.startswith("ERROR:")]
         assert not stdout_error_lines, (
             f"Error text leaked to stdout ({subcommand!r}). stdout={result.stdout!r}, stderr={result.stderr!r}"
         )
@@ -480,7 +480,7 @@ class TestPathsWithSpaces:
         result = _run_kanon_subprocess("install", str(nonexistent_kanon))
 
         assert result.returncode == 1
-        assert "Error:" in result.stderr, (
-            f"Expected 'Error:' on stderr for missing .kanon in spaced path. Got stderr={result.stderr!r}"
+        assert "ERROR:" in result.stderr, (
+            f"Expected 'ERROR:' on stderr for missing .kanon in spaced path. Got stderr={result.stderr!r}"
         )
-        assert "Error:" not in result.stdout, f"Error text must not appear on stdout. stdout={result.stdout!r}"
+        assert "ERROR:" not in result.stdout, f"Error text must not appear on stdout. stdout={result.stdout!r}"

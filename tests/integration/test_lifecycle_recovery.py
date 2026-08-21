@@ -18,7 +18,7 @@ import pytest
 
 from kanon_cli.commands.install import _run as _install_run
 from kanon_cli.core.clean import clean
-from kanon_cli.core.install import install
+from kanon_cli.core.install import compute_project_address, install
 from kanon_cli.repo import RepoCommandError
 
 
@@ -138,20 +138,21 @@ class TestInstallCrashCleanReinstall:
             with pytest.raises(RepoCommandError, match="sync failed: simulated crash"):
                 install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        source_dir = store_base / ".kanon-data" / "sources" / "crash"
+        project_address = compute_project_address(kanonenv)
+        source_dir = store_base / ".kanon-data" / "sources" / project_address / "crash"
         assert source_dir.is_dir(), "Source dir must exist after partial install (created before failed sync)"
 
         clean(kanonenv)
 
-        assert not (store_base / ".kanon-data").exists(), (
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
             "clean() must remove .kanon-data/ even after a simulated crash"
         )
         assert not (store_base / ".packages").exists(), "clean() must remove .packages/ even after a simulated crash"
 
         _install_with_synced_packages(kanonenv, {"crash": ["recovered-tool"]})
 
-        assert (store_base / ".kanon-data" / "sources" / "crash").is_dir(), (
-            "Reinstall after crash recovery must recreate .kanon-data/sources/crash/"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "crash").is_dir(), (
+            "Reinstall after crash recovery must recreate .kanon-data/sources/<project_address>/crash/"
         )
         assert (store_base / ".packages" / "recovered-tool").is_symlink(), (
             "Reinstall after crash recovery must create .packages/recovered-tool symlink"
@@ -181,8 +182,9 @@ class TestInstallCrashCleanReinstall:
             "Install must create .packages/fresh-tool even when .packages/ already existed"
         )
 
-        assert (store_base / ".kanon-data" / "sources" / "orphan").is_dir(), (
-            "Install must create .kanon-data/sources/orphan/"
+        project_address = compute_project_address(kanonenv)
+        assert (store_base / ".kanon-data" / "sources" / project_address / "orphan").is_dir(), (
+            "Install must create .kanon-data/sources/<project_address>/orphan/"
         )
 
     def test_stdout_stderr_discipline_no_cross_channel_leakage(
@@ -338,18 +340,19 @@ class TestKanonChangeReconciliation:
 
         _install_with_synced_packages(kanonenv, {"alpha": ["tool-alpha"], "beta": ["tool-beta"]})
 
-        assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir()
-        assert (store_base / ".kanon-data" / "sources" / "beta").is_dir()
+        project_address = compute_project_address(kanonenv)
+        assert (store_base / ".kanon-data" / "sources" / project_address / "alpha").is_dir()
+        assert (store_base / ".kanon-data" / "sources" / project_address / "beta").is_dir()
 
         kanonenv.write_text(_single_source_content("alpha"))
 
         clean(kanonenv)
         _install_with_synced_packages(kanonenv, {"alpha": ["tool-alpha"]}, refresh_lock=True)
 
-        assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir(), (
+        assert (store_base / ".kanon-data" / "sources" / project_address / "alpha").is_dir(), (
             "alpha source dir must exist after reinstall with alpha-only .kanon"
         )
-        assert not (store_base / ".kanon-data" / "sources" / "beta").exists(), (
+        assert not (store_base / ".kanon-data" / "sources" / project_address / "beta").exists(), (
             "beta source dir must be absent after clean + reinstall without beta source"
         )
 

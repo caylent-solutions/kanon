@@ -18,7 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.commands.install import _run as _install_run
-from kanon_cli.core.install import install
+from kanon_cli.core.install import compute_project_address, install
 from tests.conftest import write_manifest_for_sync
 
 
@@ -183,9 +183,11 @@ class TestInstallCreatesDirectories:
         kanonenv = _write_single_source_kanonenv(tmp_path, "primary")
         _install_with_patched_repo(kanonenv)
 
-        source_dir = _store_base() / ".kanon-data" / "sources" / "primary"
+        project_address = compute_project_address(kanonenv)
+        source_dir = _store_base() / ".kanon-data" / "sources" / project_address / "primary"
         assert source_dir.is_dir(), (
-            f".kanon-data/sources/primary/ must be created by install; it does not exist at {source_dir}"
+            f".kanon-data/sources/<project_address>/primary/ must be created by install; "
+            f"it does not exist at {source_dir}"
         )
 
     def test_both_packages_and_kanon_data_created_together(self, tmp_path: pathlib.Path) -> None:
@@ -214,8 +216,9 @@ class TestInstallCreatesDirectories:
         kanonenv = _write_single_source_kanonenv(tmp_path, source_name)
         _install_with_patched_repo(kanonenv)
 
-        source_dir = _store_base() / ".kanon-data" / "sources" / source_name
-        assert source_dir.is_dir(), f".kanon-data/sources/{source_name}/ must exist for source '{source_name}'"
+        project_address = compute_project_address(kanonenv)
+        source_dir = _store_base() / ".kanon-data" / "sources" / project_address / source_name
+        assert source_dir.is_dir(), f".kanon-data/sources/<project_address>/{source_name}/ must exist"
 
     def test_two_sources_create_separate_kanon_data_dirs(self, tmp_path: pathlib.Path) -> None:
         """Two sources each get their own .kanon-data/sources/<name>/ directory.
@@ -226,11 +229,12 @@ class TestInstallCreatesDirectories:
         _install_with_patched_repo(kanonenv)
 
         store_base = _store_base()
-        alpha_dir = store_base / ".kanon-data" / "sources" / "alpha"
-        bravo_dir = store_base / ".kanon-data" / "sources" / "bravo"
+        project_address = compute_project_address(kanonenv)
+        alpha_dir = store_base / ".kanon-data" / "sources" / project_address / "alpha"
+        bravo_dir = store_base / ".kanon-data" / "sources" / project_address / "bravo"
 
-        assert alpha_dir.is_dir(), ".kanon-data/sources/alpha/ must exist"
-        assert bravo_dir.is_dir(), ".kanon-data/sources/bravo/ must exist"
+        assert alpha_dir.is_dir(), ".kanon-data/sources/<project_address>/alpha/ must exist"
+        assert bravo_dir.is_dir(), ".kanon-data/sources/<project_address>/bravo/ must exist"
         assert alpha_dir != bravo_dir, "Source workspace directories must be distinct"
 
 
@@ -621,11 +625,16 @@ class TestInstallMultiSourceAggregation:
         )
 
         store_base = _store_base()
+        project_address = compute_project_address(kanonenv)
         alpha_link = store_base / ".packages" / "pkg-from-alpha"
         bravo_link = store_base / ".packages" / "pkg-from-bravo"
 
-        alpha_workspace = store_base / ".kanon-data" / "sources" / "alpha" / ".packages" / "pkg-from-alpha"
-        bravo_workspace = store_base / ".kanon-data" / "sources" / "bravo" / ".packages" / "pkg-from-bravo"
+        alpha_workspace = (
+            store_base / ".kanon-data" / "sources" / project_address / "alpha" / ".packages" / "pkg-from-alpha"
+        )
+        bravo_workspace = (
+            store_base / ".kanon-data" / "sources" / project_address / "bravo" / ".packages" / "pkg-from-bravo"
+        )
 
         assert alpha_link.resolve() == alpha_workspace.resolve(), (
             f"pkg-from-alpha symlink must resolve to alpha workspace; got {alpha_link.resolve()}"
@@ -796,9 +805,9 @@ class TestInstallLifecycleOrder:
 
         original_aggregate = __import__("kanon_cli.core.install", fromlist=["aggregate_symlinks"]).aggregate_symlinks
 
-        def record_aggregate(source_names: list[str], base_dir: pathlib.Path) -> dict[str, str]:
+        def record_aggregate(source_names: list[str], base_dir: pathlib.Path, project_address: str) -> dict[str, str]:
             stage_log.append("aggregate")
-            return original_aggregate(source_names, base_dir)
+            return original_aggregate(source_names, base_dir, project_address)
 
         original_update_gitignore = __import__("kanon_cli.core.install", fromlist=["update_gitignore"]).update_gitignore
 
@@ -889,9 +898,9 @@ class TestInstallChannelDiscipline:
                 _install_run(args)
 
         captured = capsys.readouterr()
-        assert "Error" in captured.err, f"stderr must contain 'Error' when install fails; got stderr={captured.err!r}"
-        assert "Error" not in captured.out, (
-            f"stdout must not contain 'Error' when install fails; got stdout={captured.out!r}"
+        assert "ERROR" in captured.err, f"stderr must contain 'ERROR' when install fails; got stderr={captured.err!r}"
+        assert "ERROR" not in captured.out, (
+            f"stdout must not contain 'ERROR' when install fails; got stdout={captured.out!r}"
         )
 
     def test_collision_error_written_to_stderr_not_stdout(

@@ -309,7 +309,7 @@ class TestInstallManifestParseErrorExitsOne:
             str(_write_kanonenv(tmp_path, _INVALID_KANONENV_CONTENT)),
         )
         assert result.returncode == 1
-        assert "Error" in result.stderr, (
+        assert "ERROR" in result.stderr, (
             f"Parse error must be reported on stderr.\n  stderr: {result.stderr!r}\n  stdout: {result.stdout!r}"
         )
 
@@ -317,14 +317,14 @@ class TestInstallManifestParseErrorExitsOne:
         """install manifest parse error does not leak to stdout (AC-CHANNEL-001).
 
         Error messages must be confined to stderr. stdout must not contain
-        the 'Error' prefix for parse failures.
+        the 'ERROR' prefix for parse failures.
         """
         result = _run_kanon(
             "install",
             str(_write_kanonenv(tmp_path, _INVALID_KANONENV_CONTENT)),
         )
         assert result.returncode == 1
-        assert "Error" not in result.stdout, (
+        assert "ERROR" not in result.stdout, (
             f"Parse error must not appear on stdout (AC-CHANNEL-001).\n  stdout: {result.stdout!r}"
         )
 
@@ -449,7 +449,7 @@ class TestRepoSyncNetworkErrorExitsOne:
                 main(["install", str(kanonenv)])
 
         captured = capsys.readouterr()
-        assert "Error" in captured.err, f"repo sync failure must write 'Error' to stderr; got stderr={captured.err!r}"
+        assert "ERROR" in captured.err, f"repo sync failure must write 'ERROR' to stderr; got stderr={captured.err!r}"
 
     def test_repo_sync_error_not_on_stdout(
         self,

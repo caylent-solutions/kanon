@@ -2061,9 +2061,11 @@ https://github.com/caylent-solutions/kanon/blob/main/docs/repo/manifest-format.m
         """
         # |dest| is the file we write to or symlink we create.
         # It is relative to the top of the repo client checkout.
-        # For linkfile elements, absolute dest paths are allowed (spec 17.1).
+        # For linkfile and copyfile elements, absolute dest paths are allowed
+        # (spec 17.1) so a manifest can deliver into the consuming project.
         is_linkfile = element == "linkfile"
-        msg = cls._CheckLocalPath(dest, abs_ok=is_linkfile)
+        abs_ok = element in ("linkfile", "copyfile")
+        msg = cls._CheckLocalPath(dest, abs_ok=abs_ok)
         if msg:
             raise ManifestInvalidPathError(f'<{element}> invalid "dest": {dest}: {msg}')
 

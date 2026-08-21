@@ -371,6 +371,41 @@ flag reference see [docs/list-and-add.md](list-and-add.md).
 
 ---
 
+## kanon install -- absolute destination boundary
+
+A `<linkfile>` or `<copyfile>` may declare an absolute `dest`, and the manifest
+declaring it is fetched from a remote repository. `kanon install` therefore
+confines an absolute destination to a permitted root rather than writing wherever
+the manifest asks.
+
+Permitted roots, highest precedence first:
+
+1. `--allow-abs-root <path>`, a repeatable global flag. When given,
+   `KANON_ALLOWED_ABS_ROOTS` is ignored for that invocation.
+2. `KANON_ALLOWED_ABS_ROOTS`, path-separator-delimited absolute paths.
+3. The consumer project root and the resolved `CLAUDE_MARKETPLACES_DIR`. These
+   are unconditional and cannot be removed, so the setting only ever widens the
+   boundary -- it can never lock an operator out of their own project.
+
+Every component of the destination is also checked, so a symlinked directory
+cannot redirect the write to somewhere the boundary would otherwise refuse.
+
+A destination outside every permitted root aborts the install non-interactively,
+naming the destination, the roots, and both ways to widen them:
+
+```text
+ERROR: source 'dev-lint' declares <copyfile dest="/etc/cron.d/x">, which resolves
+       outside every permitted root:
+         /home/you/myproject                    (project root)
+         /home/you/.claude-marketplaces         (CLAUDE_MARKETPLACES_DIR)
+       Widen with --allow-abs-root <path> or KANON_ALLOWED_ABS_ROOTS=<path>[:<path>].
+```
+
+Widening the boundary grants a manifest write access to that path, so treat
+`--allow-abs-root` as you would any other grant. See
+[docs/security-model.md](security-model.md) and
+[docs/configuration.md](configuration.md#absolute-manifest-destinations).
+
 ## kanon install -- refresh-lock-source exact-pin contract
 
 `kanon install --refresh-lock-source <name>` re-resolves exactly one
@@ -425,14 +460,26 @@ tree, leaving HEAD pointing to a deleted branch ref and raising an unhandled
 
 ### Behaviour after fix
 
-- Before re-running `repo init`, the `.repo/manifests` working tree is reset
-  to a clean HEAD state: tracked files are restored via `git checkout -- .`
-  and untracked `.bak` files are removed.
-- `repo init` is then re-run with the new revision; if it fails, the error is
-  caught and re-raised as a structured `RefreshRepoInitError` that names the
-  offending source and provides a remediation hint, rather than a raw traceback.
+- Before every `repo init` -- not only under `--refresh-lock` /
+  `--refresh-lock-source` -- the `.repo/manifests` working tree is reset to a
+  clean HEAD state: tracked files are restored via `git checkout -- .` and
+  untracked `.bak` files are removed.
+- `repo init` is then re-run with the new revision; under `--refresh-lock` /
+  `--refresh-lock-source`, a failure is caught and re-raised as a structured
+  `RefreshRepoInitError` that names the offending source and provides a
+  remediation hint, rather than a raw traceback.
 - Both `--refresh-lock` (full re-resolve) and `--refresh-lock-source <name>`
   (single-source re-resolve) apply this reset-and-reinit logic identically.
+
+As of issue #96, this reset runs before *every* `repo init`, including a
+plain `kanon install` on an already-installed workspace with no refresh flag.
+This is safe because each project's source workspace is now keyed by a
+stable per-project address (`compute_project_address`) and is never shared
+with another project's workspace -- before #96, an unconditional reset was
+unsafe because the shared, single-tenant workspace's `.repo/copy-link-files.json`
+ledger could only remember one project's set of linkfile destinations, so
+resetting and resyncing on one project's install could delete another
+project's already-delivered files.
 
 ### Usage examples
 

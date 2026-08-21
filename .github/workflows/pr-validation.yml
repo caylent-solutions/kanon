@@ -117,105 +117,217 @@ jobs:
   # fails the job on a non-zero exit, so there is no fallback or silent skip.
   # ---------------------------------------------------------------------------
 
-  unit-tests-linux:
-    name: Unit tests (Linux, with coverage gate)
+  changes:
+    name: Detect affected paths
     if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.detect.outputs.code }}
+      vendored: ${{ steps.detect.outputs.vendored }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Classify the changed paths
+        id: detect
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # Fails closed in every direction. Both outputs start true and are only
+        # narrowed by a positive match on a known-inert path set, so an empty diff
+        # or an unrecognised path leaves the full suite running. A merge-base or
+        # diff failure is NOT swallowed: `set -e` aborts the step with git's own
+        # message, which fails the job rather than quietly classifying nothing.
+        # The failure this must never produce is a green pull request whose tests
+        # were skipped by mistake.
+        #
+        # The diff is taken with core.quotePath=false so a non-ASCII path is not
+        # returned quoted (a leading `"` defeats every `^`-anchored pattern), and
+        # with --no-renames so a file moved out of the vendored tree still lists
+        # its old path -- otherwise only the destination appears and the vendored
+        # tier switches itself off. Both refs come from the environment rather
+        # than being interpolated into the script body, and the head is the pull
+        # request's own head sha so the classifier and the tiered jobs describe
+        # the same tree.
+        #
+        # Nothing under src/ or tests/ is ever inert, whatever its extension. The
+        # `.md` rule is not anchored to a directory, so without that condition a
+        # markdown fixture under tests/ would read as documentation and switch off
+        # the tiers that consume it.
+        #
+        # `code=false` requires that every changed file is documentation or
+        # repository metadata AND that none of it is a documentation file the test
+        # suite reads. `vendored=false` requires that nothing touched the vendored
+        # tree, its tests, or anything global enough to change how they run (shared
+        # conftest, dependencies, Make targets, CI itself).
+        #
+        # Documentation is not inert in this repository. tests/scenarios/conftest.py
+        # parses docs/integration-testing.md at import to derive scenario ids, and
+        # other modules assert against docs/ and README.md. Editing one of those can
+        # turn the suite red, so a change touching them must run the tiers even
+        # though it is "only docs". TEST_INPUT_DOCS lists them, and
+        # tests/unit/test_ci_workflows.py asserts the list still covers every
+        # documentation file the suite reads -- so it cannot silently drift.
+        run: |
+          set -euo pipefail
+          INERT='^(docs/|\.github/CODEOWNERS$|LICENSE$|.*\.md$)'
+          TEST_INPUT_DOCS='^(README\.md$|docs/README\.md$|docs/architecture\.md$|docs/archive/upgrading-from-2x\.md$|docs/catalogs-explained\.md$|docs/configuration\.md$|docs/git-auth-setup\.md$|docs/how-it-works\.md$|docs/integration-testing\.md$|docs/lifecycle\.md$|docs/manifest-format\.md$|docs/migration-to-add\.md$|docs/repo/manifest-format\.md$|docs/security-model\.md$|docs/shell-completion\.md$|docs/source-test-atomicity\.md$|docs/testing/)'
+          VENDORED_TRIGGERS='^(src/kanon_cli/repo/|tests/unit/repo/|tests/integration/repo/|tests/conftest\.py$|tests/unit/conftest\.py$|tests/fixtures/|pyproject\.toml$|uv\.lock$|Makefile$|\.tool-versions$|\.yamllint$|\.pre-commit-config\.yaml$|\.github/)'
+          code=true
+          vendored=true
+          base_sha=$(git merge-base "origin/$BASE_REF" "$HEAD_SHA")
+          files=$(git -c core.quotePath=false diff --name-only --no-renames "$base_sha" "$HEAD_SHA")
+          if [ -n "$files" ]; then
+            if ! grep -qvE "$INERT" <<<"$files" \
+              && ! grep -qE "$TEST_INPUT_DOCS" <<<"$files" \
+              && ! grep -qE '^(src/|tests/)' <<<"$files"; then
+              code=false
+            fi
+            if ! grep -qE "$VENDORED_TRIGGERS" <<<"$files"; then
+              vendored=false
+            fi
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "vendored=$vendored" >> "$GITHUB_OUTPUT"
+          echo "code=$code vendored=$vendored"
+          echo "### Affected paths" >> "$GITHUB_STEP_SUMMARY"
+          echo "- test tiers: \`$code\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- vendored repo tier: \`$vendored\`" >> "$GITHUB_STEP_SUMMARY"
+
+  unit-tests-linux:
+    name: Unit tests (Linux, with coverage gate)
+    needs: changes
+    if: ${{ always() && github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      # Every tiered job below keeps running even when its tier is skipped, and
+      # gates the work at step level instead, so the job still reports a status.
+      #
+      # Two properties this arrangement has to hold, both of which it previously
+      # got wrong:
+      #
+      # The gate is `!= 'false'`, not `== 'true'`. Only a classifier that
+      # positively decided a tier is unaffected may skip it. Anything else -- an
+      # empty output, a renamed output key, a typo'd step id -- runs the tests.
+      # With `== 'true'` every one of those skipped the tier while the job still
+      # reported success, which is the one outcome this must never produce.
+      #
+      # The job condition is `always()`, so a tier still runs when the `changes`
+      # job itself failed. Without it a transient checkout failure there skipped
+      # all five tier jobs, and branch protection treats a skipped required check
+      # as satisfied -- one flaky step, five green checks, zero tests executed.
+      - name: Checkout code
+        if: ${{ needs.changes.outputs.code != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
+        if: ${{ needs.changes.outputs.code != 'false' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run unit tests with coverage gate
+        if: ${{ needs.changes.outputs.code != 'false' }}
         shell: bash
         # Delegates to the Make target so the threshold lives in one place
         # (Makefile: COVERAGE_MIN) instead of being duplicated across both
         # workflow files, and so the run resolves from uv.lock like every other
         # job. pytest-cov's own --cov-fail-under replaces the hand-rolled
-        # coverage-json + bc comparison.
+        # coverage-json + bc comparison. Covers kanon's own source; the vendored
+        # tree has its own job below.
         run: make test-unit-cov
 
-  integration-tests-linux:
-    name: Integration tests (Linux)
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+  vendored-tests-linux:
+    name: Vendored repo tool tests (Linux)
+    needs: changes
+    if: ${{ always() && github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
+      # 6,666 of the suite's 17,285 tests cover a vendored tree that changed in
+      # 3 of the last 184 commits. Running them on every pull request spends the
+      # largest single block of test time in the repository re-proving code the
+      # change could not have touched.
       - name: Checkout code
+        if: ${{ needs.changes.outputs.vendored != 'false' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
+        if: ${{ needs.changes.outputs.vendored != 'false' }}
+        with:
+          base-ref: ${{ github.base_ref }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+      - name: Run vendored repo tool tests
+        if: ${{ needs.changes.outputs.vendored != 'false' }}
+        shell: bash
+        run: make test-unit-vendored
+
+  integration-tests-linux:
+    name: Integration tests (Linux)
+    needs: changes
+    if: ${{ always() && github.actor != 'caylent-platform-bot[bot]' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        if: ${{ needs.changes.outputs.code != 'false' }}
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+        if: ${{ needs.changes.outputs.code != 'false' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run integration tests
+        if: ${{ needs.changes.outputs.code != 'false' }}
         shell: bash
         run: make test-integration
 
   functional-tests-linux:
     name: Functional tests (Linux)
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    needs: changes
+    if: ${{ always() && github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
+        if: ${{ needs.changes.outputs.code != 'false' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
+        if: ${{ needs.changes.outputs.code != 'false' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run functional tests
+        if: ${{ needs.changes.outputs.code != 'false' }}
         shell: bash
         run: make test-functional
 
   scenario-tests-linux:
     name: Scenario tests (Linux, docs/integration-testing.md)
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
+    needs: changes
+    if: ${{ always() && github.actor != 'caylent-platform-bot[bot]' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
+        if: ${{ needs.changes.outputs.code != 'false' }}
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
+        if: ${{ needs.changes.outputs.code != 'false' }}
         with:
           base-ref: ${{ github.base_ref }}
           head-sha: ${{ github.event.pull_request.head.sha }}
       - name: Run scenario tests
+        if: ${{ needs.changes.outputs.code != 'false' }}
         shell: bash
         # Invokes the make target (operator-path guard E50-F1-S1-T2 requires it).
         # The recipe runs `pytest -m "scenario"` with no platform filter.
         run: make test-scenarios
-
-  full-suite-regression:
-    name: Full suite regression (cross-suite isolation guard)
-    # Runs `make test` -- the same `pytest --cov=kanon_cli` invocation
-    # that exercises unit + integration + functional + scenarios in a
-    # single process. The singular jobs above pass individually but
-    # this job catches the class of cross-suite isolation regressions
-    # documented in `git log --grep cross-suite` (e.g. session-scoped
-    # autouse fixtures leaking env state into later suites). It runs
-    # in parallel with the singular jobs so the wall-clock impact on
-    # PR feedback is bounded by the slowest single job, not summed.
-    if: ${{ github.actor != 'caylent-platform-bot[bot]' }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: ./.github/actions/setup-kanon
-        with:
-          base-ref: ${{ github.base_ref }}
-          head-sha: ${{ github.event.pull_request.head.sha }}
-      - name: Run the full suite together
-        shell: bash
-        run: make test
 
   code-owners:
     name: Code owners

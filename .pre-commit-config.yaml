@@ -39,3 +39,26 @@ repos:
         files: ^(src/kanon_cli|tests)/
         exclude: ^src/kanon_cli/repo/
         pass_filenames: true
+
+      # tests/fixtures/completion/*.sh are compared byte-for-byte by the
+      # functional and integration completion tests, so a parser change committed
+      # without regenerating them turns the suite red for a reason unrelated to
+      # the change under review.
+      #
+      # This VERIFIES rather than regenerates, deliberately. A hook that rewrites
+      # a golden file destroys the thing the golden exists for: the diff that
+      # would have shown a reviewer the generated output changed is authored
+      # automatically instead, and the reviewer sees a regenerated fixture rather
+      # than a failed check. That matters most for the case this hook triggers on
+      # -- its file set includes pyproject.toml, which is exactly where a shtab
+      # version bump lives, and shtab is what generates this output.
+      #
+      # Regeneration stays available as an explicit human command:
+      # `make update-completion-snapshots`, whose diff then lands in review.
+      - id: completion-snapshots
+        name: completion-snapshots (verify bash + zsh fixtures are current)
+        entry: make check-completion-snapshots
+        language: system
+        files: ^(src/kanon_cli/.*\.py|pyproject\.toml)$
+        exclude: ^src/kanon_cli/repo/
+        pass_filenames: false

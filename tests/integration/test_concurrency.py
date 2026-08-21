@@ -23,7 +23,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.core.install import install
+from kanon_cli.core.install import resolve_workspace_base_dir, compute_project_address, install
 
 
 fcntl = pytest.importorskip("fcntl")
@@ -417,9 +417,11 @@ class TestParallelInstallsDeterministic:
         assert (store_base / ".kanon-data").is_dir(), (
             f".kanon-data/ must exist in the store after parallel installs; found: {list(store_base.iterdir()) if store_base.exists() else 'missing'}"
         )
-        source_dir = store_base / ".kanon-data" / "sources" / "source1"
+        project_address = compute_project_address(kanonenv)
+        source_dir = store_base / ".kanon-data" / "sources" / project_address / "source1"
         assert source_dir.is_dir(), (
-            f".kanon-data/sources/source1/ must exist after parallel installs; found: {list((store_base / '.kanon-data').rglob('*'))}"
+            f".kanon-data/sources/<project_address>/source1/ must exist after parallel installs; "
+            f"found: {list((store_base / '.kanon-data').rglob('*'))}"
         )
 
     def test_parallel_installs_leave_consistent_gitignore(
@@ -570,11 +572,12 @@ class TestIdempotentRetryAfterPartialFailure:
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
 
+        project_address = compute_project_address(kanonenv)
         assert (store_base / ".packages").is_dir(), (
             ".packages/ must exist in the store after successful retry following partial failure"
         )
-        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
-            ".kanon-data/sources/primary/ must exist in the store after successful retry"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "primary").is_dir(), (
+            ".kanon-data/sources/<project_address>/primary/ must exist in the store after successful retry"
         )
 
     def test_retry_after_repo_init_failure_succeeds(
@@ -604,11 +607,12 @@ class TestIdempotentRetryAfterPartialFailure:
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         _patched_install(kanonenv)
 
+        project_address = compute_project_address(kanonenv)
         assert (store_base / ".packages").is_dir(), (
             ".packages/ must exist in the store after successful retry following repo_init failure"
         )
-        assert (store_base / ".kanon-data" / "sources" / "alpha").is_dir(), (
-            ".kanon-data/sources/alpha/ must exist in the store after successful retry"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "alpha").is_dir(), (
+            ".kanon-data/sources/<project_address>/alpha/ must exist in the store after successful retry"
         )
 
     def test_retry_with_partial_state_from_prior_run_succeeds(
@@ -622,8 +626,9 @@ class TestIdempotentRetryAfterPartialFailure:
         """
         kanonenv = _write_kanonenv(tmp_path, "beta")
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        project_address = compute_project_address(kanonenv)
 
-        partial_source_dir = store_base / ".kanon-data" / "sources" / "beta"
+        partial_source_dir = store_base / ".kanon-data" / "sources" / project_address / "beta"
         partial_source_dir.mkdir(parents=True, exist_ok=True)
         (partial_source_dir / "leftover.txt").write_text("stale file", encoding="utf-8")
 
@@ -632,8 +637,8 @@ class TestIdempotentRetryAfterPartialFailure:
         assert (store_base / ".packages").is_dir(), (
             ".packages/ must exist in the store after install succeeds over partial state"
         )
-        assert (store_base / ".kanon-data" / "sources" / "beta").is_dir(), (
-            ".kanon-data/sources/beta/ must exist in the store after install succeeds over partial state"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "beta").is_dir(), (
+            ".kanon-data/sources/<project_address>/beta/ must exist in the store after install succeeds over partial state"
         )
 
     @pytest.mark.parametrize("failing_source", ["first", "second"])
@@ -675,11 +680,12 @@ class TestIdempotentRetryAfterPartialFailure:
                 )
 
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        project_address = compute_project_address(kanonenv)
         _patched_install(kanonenv)
 
         for sn in source_names:
-            assert (store_base / ".kanon-data" / "sources" / sn).is_dir(), (
-                f".kanon-data/sources/{sn}/ must exist in the store after successful retry"
+            assert (store_base / ".kanon-data" / "sources" / project_address / sn).is_dir(), (
+                f".kanon-data/sources/<project_address>/{sn}/ must exist in the store after successful retry"
             )
         assert (store_base / ".packages").is_dir(), ".packages/ must exist in the store after retry"
 
@@ -784,13 +790,14 @@ class TestInstallOverInstallIdempotent:
         """
         kanonenv = _write_kanonenv(tmp_path, "primary")
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        project_address = compute_project_address(kanonenv)
 
         for _ in range(num_installs):
             _patched_install(kanonenv)
 
         assert (store_base / ".packages").is_dir(), ".packages/ must exist in the store after repeated installs"
-        assert (store_base / ".kanon-data" / "sources" / "primary").is_dir(), (
-            ".kanon-data/sources/primary/ must exist in the store after repeated installs"
+        assert (store_base / ".kanon-data" / "sources" / project_address / "primary").is_dir(), (
+            ".kanon-data/sources/<project_address>/primary/ must exist in the store after repeated installs"
         )
 
     def test_install_over_install_with_two_sources_is_idempotent(
@@ -804,12 +811,13 @@ class TestInstallOverInstallIdempotent:
         """
         kanonenv = _write_two_source_kanonenv(tmp_path, "alpha", "bravo")
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
+        project_address = compute_project_address(kanonenv)
         _patched_install(kanonenv)
         _patched_install(kanonenv)
 
         for sn in ("alpha", "bravo"):
-            assert (store_base / ".kanon-data" / "sources" / sn).is_dir(), (
-                f".kanon-data/sources/{sn}/ must exist in the store after repeated install"
+            assert (store_base / ".kanon-data" / "sources" / project_address / sn).is_dir(), (
+                f".kanon-data/sources/<project_address>/{sn}/ must exist in the store after repeated install"
             )
         assert (store_base / ".packages").is_dir(), ".packages/ must exist in the store after repeated install"
 
@@ -908,3 +916,66 @@ class TestCLIConcurrentInstallDeterminism:
         assert "kanon install: parsing" not in result.stderr, (
             f"Progress message leaked to stderr. stderr={result.stderr!r}"
         )
+
+
+@pytest.mark.integration
+class TestParallelInstallsDifferentProjects:
+    """Two *different* projects installing at once must both complete.
+
+    Every existing concurrency test races two installs of the **same** project,
+    which the store-wide workspace lock serialises. Two different projects is the
+    case per-project keying created: their workspaces are now disjoint, but they
+    still write into the shared, unkeyed `.packages/` farm with a non-atomic
+    `exists() -> unlink() -> symlink()` sequence, and `create_dirsymlink` uses a
+    plain `os.symlink` with no handling. An interleave there is the failure this
+    covers.
+    """
+
+    def test_two_projects_install_concurrently_without_error(self, tmp_path: pathlib.Path) -> None:
+        """Both installs finish cleanly and each keeps its own keyed workspace."""
+        project_a = tmp_path / "project-a"
+        project_b = tmp_path / "project-b"
+        for project in (project_a, project_b):
+            project.mkdir()
+        kanonenv_a = _write_kanonenv(project_a)
+        kanonenv_b = _write_kanonenv(project_b)
+
+        ctx = multiprocessing.get_context("fork")
+        go_event = ctx.Event()
+        ready_events = [ctx.Event() for _ in range(2)]
+        error_queue: "multiprocessing.Queue[str]" = ctx.Queue()
+
+        procs = [
+            ctx.Process(
+                target=_install_worker,
+                args=(str(kanonenv), ready_events[i], go_event, error_queue),
+                daemon=True,
+            )
+            for i, kanonenv in enumerate((kanonenv_a, kanonenv_b))
+        ]
+        for proc in procs:
+            proc.start()
+
+        for i, ready in enumerate(ready_events):
+            assert ready.wait(timeout=_PROC_READY_TIMEOUT), (
+                f"Install worker {i} did not become ready within {_PROC_READY_TIMEOUT}s"
+            )
+        go_event.set()
+
+        for i, proc in enumerate(procs):
+            proc.join(timeout=_PROC_JOIN_TIMEOUT)
+            assert not proc.is_alive(), f"Install worker {i} did not finish within {_PROC_JOIN_TIMEOUT}s"
+
+        errors: list[str] = []
+        while not error_queue.empty():
+            errors.append(error_queue.get_nowait())
+        assert errors == [], f"concurrent installs of two different projects reported: {errors!r}"
+
+        store = resolve_workspace_base_dir()
+        address_a = compute_project_address(kanonenv_a)
+        address_b = compute_project_address(kanonenv_b)
+        assert address_a != address_b, "two projects at different paths must have different addresses"
+        for address in (address_a, address_b):
+            assert (store / ".kanon-data" / "sources" / address).is_dir(), (
+                f"project address {address} has no workspace after a concurrent install"
+            )

@@ -234,6 +234,15 @@ def validate_linkfile_dest(xml_path: Path, repo_root: Path) -> list[str]:
                     errors.append(
                         f"{manifest_path}: project '{project_name}' has invalid linkfile dest='{dest}' -- {reason}"
                     )
+            for copyfile in project.findall("copyfile"):
+                dest = copyfile.get("dest", "")
+                if dest.startswith(MARKETPLACE_DIR_PREFIX):
+                    continue
+                reason = _dest_containment_error(dest)
+                if reason is not None:
+                    errors.append(
+                        f"{manifest_path}: project '{project_name}' has invalid copyfile dest='{dest}' -- {reason}"
+                    )
 
     if is_marketplace and linkfile_count > 0 and marketplace_dest_count == 0:
         errors.append(
@@ -795,7 +804,7 @@ def validate_marketplace(
 
     if not marketplace_files:
         print(
-            "Error: No catalog entry manifests (*.xml with a <catalog-metadata> block) found under repo-specs/",
+            "ERROR: No catalog entry manifests (*.xml with a <catalog-metadata> block) found under repo-specs/",
             file=sys.stderr,
         )
         return 1

@@ -431,7 +431,7 @@ def test_sync_linkfile_no_exclude_creates_dir_symlink(tmp_path: pathlib.Path) ->
 
 
 @pytest.mark.integration
-def test_sync_linkfile_exclude_with_absolute_dest(tmp_path: pathlib.Path) -> None:
+def test_sync_linkfile_exclude_with_absolute_dest(tmp_path: pathlib.Path, permit_abs_roots) -> None:
     """exclude="tests" with an absolute dest path creates per-child symlinks at the absolute path.
 
     When the linkfile dest is an absolute path and exclude is given, the
@@ -439,6 +439,7 @@ def test_sync_linkfile_exclude_with_absolute_dest(tmp_path: pathlib.Path) -> Non
 
     AC-FUNC-008
     """
+    permit_abs_roots(tmp_path)
     repos_base = tmp_path / "repos"
     repos_base.mkdir()
 
@@ -474,7 +475,7 @@ def test_sync_linkfile_exclude_with_absolute_dest(tmp_path: pathlib.Path) -> Non
 
 
 @pytest.mark.integration
-def test_sync_linkfile_exclude_always_skips_git_and_packages(tmp_path: pathlib.Path) -> None:
+def test_sync_linkfile_exclude_always_skips_git_and_packages(tmp_path: pathlib.Path, permit_abs_roots) -> None:
     """.git and .packages are always excluded from per-child linking, even without explicit exclude.
 
     The implementation always skips _LINKFILE_EXCLUDE_ALWAYS entries (.git,
@@ -485,6 +486,7 @@ def test_sync_linkfile_exclude_always_skips_git_and_packages(tmp_path: pathlib.P
 
     AC-FUNC-006
     """
+    permit_abs_roots(tmp_path)
     from kanon_cli.repo.project import _LinkFile
 
     src_dir = tmp_path / "src-dir"
@@ -514,7 +516,7 @@ def test_sync_linkfile_exclude_always_skips_git_and_packages(tmp_path: pathlib.P
 
 
 @pytest.mark.integration
-def test_sync_linkfile_exclude_always_skips_repo_prefix(tmp_path: pathlib.Path) -> None:
+def test_sync_linkfile_exclude_always_skips_repo_prefix(tmp_path: pathlib.Path, permit_abs_roots) -> None:
     """.repo* entries are always excluded from per-child linking.
 
     The implementation always skips entries whose names begin with '.repo'
@@ -524,6 +526,7 @@ def test_sync_linkfile_exclude_always_skips_repo_prefix(tmp_path: pathlib.Path) 
 
     AC-FUNC-006
     """
+    permit_abs_roots(tmp_path)
     from kanon_cli.repo.project import _LinkFile
 
     src_dir = tmp_path / "src-repo-prefix"

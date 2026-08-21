@@ -113,7 +113,7 @@ class TestTCClean:
 
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         assert not (store_base / ".packages").exists(), ".packages still present in store after clean"
-        assert not (store_base / ".kanon-data").exists(), ".kanon-data still present in store after clean"
+        assert not (store_base / ".kanon-data" / "sources").exists(), ".kanon-data still present in store after clean"
 
     def test_tc_clean_02_no_gitignore_for_nongit_store(self, tmp_path: pathlib.Path) -> None:
         """TC-clean-02: install writes no store .gitignore outside a git tree; clean creates none.
@@ -318,6 +318,6 @@ class TestTCClean:
         assert not (store_base / ".packages").exists(), (
             "TC-clean-03: .packages still present in store after clean --orphans"
         )
-        assert not (store_base / ".kanon-data").exists(), (
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
             "TC-clean-03: .kanon-data still present in store after clean --orphans"
         )

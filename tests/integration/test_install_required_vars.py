@@ -117,7 +117,7 @@ class TestInstallMissingRequiredVars:
         assert missing_var_suffix not in captured.out, (
             f"Error for missing {missing_var_suffix!r} must not appear on stdout, got stdout={captured.out!r}"
         )
-        assert "Error" in captured.err, (
+        assert "ERROR" in captured.err, (
             f"Expected 'Error' prefix in stderr when {missing_var_suffix!r} is missing, got stderr={captured.err!r}"
         )
 

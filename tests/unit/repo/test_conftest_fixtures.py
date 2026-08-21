@@ -64,6 +64,9 @@ def test_session_tmp_home_dir_returns_existing_directory(session_tmp_home_dir):
     Note: HOME may be overridden by the function-scoped tmp_home_dir fixture
     (autouse), so we verify the session path itself rather than comparing
     it to the current HOME env var.
+    Note: system_tmp is resolved because pytest's tmp_path_factory resolves
+    symlinks (e.g. macOS /var -> /private/var) when creating temp dirs, but
+    tempfile.gettempdir() does not.
     Spec: E0-F5-S1-T2 AC-FUNC-004
     """
     assert isinstance(session_tmp_home_dir, pathlib.Path), (
@@ -72,7 +75,7 @@ def test_session_tmp_home_dir_returns_existing_directory(session_tmp_home_dir):
     assert session_tmp_home_dir.is_dir(), (
         f"session_tmp_home_dir must point to an existing directory: {session_tmp_home_dir}"
     )
-    system_tmp = pathlib.Path(tempfile.gettempdir())
+    system_tmp = pathlib.Path(tempfile.gettempdir()).resolve()
     assert str(session_tmp_home_dir).startswith(str(system_tmp)), (
         f"session_tmp_home_dir should be under system temp dir {system_tmp}, got {session_tmp_home_dir}"
     )
@@ -103,10 +106,13 @@ def test_tmp_home_dir_is_under_system_tmp(tmp_home_dir):
     Given: tmp_home_dir fixture is active
     When: The test inspects the HOME path
     Then: HOME points to a sub-path of a system temp directory
+    Note: system_tmp is resolved because pytest's tmp_path_factory resolves
+    symlinks (e.g. macOS /var -> /private/var) when creating temp dirs, but
+    tempfile.gettempdir() does not.
     Spec: E0-F5-S1-T2 AC-FUNC-005
     """
     home_path = pathlib.Path(os.environ["HOME"])
-    system_tmp = pathlib.Path(tempfile.gettempdir())
+    system_tmp = pathlib.Path(tempfile.gettempdir()).resolve()
     assert str(home_path).startswith(str(system_tmp)), (
         f"tmp_home_dir should be under system temp dir {system_tmp}, got {home_path}"
     )

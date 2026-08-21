@@ -4,9 +4,13 @@ Covers the MS-01 multi-source scenario from Category 5 of docs/integration-testi
 and the CD-01/CD-02 collision detection scenarios from Category 6.
 
 The aggregate_symlinks() function at kanon_cli.core.install:
-- Accepts an ordered list of source names and a base directory.
+- Accepts an ordered list of source names, a base directory, and a
+  per-project address.
 - Creates symlinks in .packages/ pointing into
-  .kanon-data/sources/<name>/.packages/<pkg>/ for each package.
+  .kanon-data/sources/<project_address>/<name>/.packages/<pkg>/ for each
+  package. Only the source-workspace read side is keyed by project address;
+  the aggregated .packages/ destination is intentionally left unkeyed (see
+  aggregate_symlinks's docstring).
 - Returns a dict mapping package name to source name.
 - Raises ValueError (not SystemExit) on collision when two sources
   produce the same package name.
@@ -17,6 +21,7 @@ state is exercised directly via aggregate_symlinks() against real tmp_path
 directories.
 """
 
+import os
 import pathlib
 
 import pytest
@@ -25,20 +30,21 @@ from kanon_cli.core.install import aggregate_symlinks
 
 
 _NUM_STABILITY_RUNS = 3
+_PROJECT_ADDRESS = "c" * 64
 
 
 def _make_source_package(base_dir: pathlib.Path, source_name: str, pkg_name: str) -> pathlib.Path:
-    """Create a fake package directory inside .kanon-data/sources/<source>/.packages/<pkg>.
+    """Create a fake package directory inside .kanon-data/sources/<addr>/<source>/.packages/<pkg>.
 
     Args:
-        base_dir: Project root (tmp_path).
+        base_dir: The resolved store base directory (tmp_path in these tests).
         source_name: Name of the source directory to create the package under.
         pkg_name: Package name to create.
 
     Returns:
         Path to the created package directory.
     """
-    pkg_dir = base_dir / ".kanon-data" / "sources" / source_name / ".packages" / pkg_name
+    pkg_dir = base_dir / ".kanon-data" / "sources" / _PROJECT_ADDRESS / source_name / ".packages" / pkg_name
     pkg_dir.mkdir(parents=True, exist_ok=True)
     (pkg_dir / "README.md").write_text(f"# {pkg_name}\n")
     return pkg_dir
@@ -51,7 +57,7 @@ def _make_source_packages(
     """Create multiple fake package directories for multiple sources.
 
     Args:
-        base_dir: Project root (tmp_path).
+        base_dir: The resolved store base directory (tmp_path in these tests).
         packages_by_source: Mapping of source name to list of package names.
     """
     for source_name, pkg_names in packages_by_source.items():
@@ -77,7 +83,7 @@ class TestMS01TwoSourcesDistinctPackages:
         """
         _make_source_packages(tmp_path, {"alpha": ["pkg-alpha"], "bravo": ["pkg-bravo"]})
 
-        aggregate_symlinks(["alpha", "bravo"], tmp_path)
+        aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
         alpha_link = tmp_path / ".packages" / "pkg-alpha"
         bravo_link = tmp_path / ".packages" / "pkg-bravo"
@@ -93,7 +99,7 @@ class TestMS01TwoSourcesDistinctPackages:
         alpha_pkg = _make_source_package(tmp_path, "alpha", "pkg-alpha")
         _make_source_package(tmp_path, "bravo", "pkg-bravo")
 
-        aggregate_symlinks(["alpha", "bravo"], tmp_path)
+        aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
         alpha_link = tmp_path / ".packages" / "pkg-alpha"
         assert alpha_link.resolve() == alpha_pkg.resolve(), (
@@ -109,7 +115,7 @@ class TestMS01TwoSourcesDistinctPackages:
         """
         _make_source_packages(tmp_path, {"alpha": ["pkg-alpha"], "bravo": ["pkg-bravo"]})
 
-        owners = aggregate_symlinks(["alpha", "bravo"], tmp_path)
+        owners = aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
         assert owners.get("pkg-alpha") == "alpha", (
             f"pkg-alpha must be owned by 'alpha'; got {owners.get('pkg-alpha')!r}"
@@ -125,7 +131,7 @@ class TestMS01TwoSourcesDistinctPackages:
         """
         _make_source_packages(tmp_path, {"alpha": ["pkg-alpha"], "bravo": ["pkg-bravo"]})
 
-        owners = aggregate_symlinks(["alpha", "bravo"], tmp_path)
+        owners = aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
         assert len(owners) == 2, f"Return dict must have exactly 2 entries for 2 packages; got {len(owners)}: {owners}"
 
@@ -153,7 +159,7 @@ class TestMS01TwoSourcesDistinctPackages:
             {source_alpha: [f"pkg-{source_alpha}"], source_bravo: [f"pkg-{source_bravo}"]},
         )
 
-        owners = aggregate_symlinks([source_alpha, source_bravo], tmp_path)
+        owners = aggregate_symlinks([source_alpha, source_bravo], tmp_path, _PROJECT_ADDRESS)
 
         assert len(owners) == 2, f"Both packages must be registered; got {len(owners)} entries: {owners}"
 
@@ -179,7 +185,7 @@ class TestCD01CD02ConflictingPathsCollisionError:
         )
 
         with pytest.raises(ValueError, match="pkg-alpha"):
-            aggregate_symlinks(["primary", "secondary"], tmp_path)
+            aggregate_symlinks(["primary", "secondary"], tmp_path, _PROJECT_ADDRESS)
 
     def test_collision_error_names_the_colliding_package(self, tmp_path: pathlib.Path) -> None:
         """The ValueError message names the colliding package.
@@ -193,7 +199,7 @@ class TestCD01CD02ConflictingPathsCollisionError:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            aggregate_symlinks(["primary", "secondary"], tmp_path)
+            aggregate_symlinks(["primary", "secondary"], tmp_path, _PROJECT_ADDRESS)
 
         error_text = str(exc_info.value)
         assert "pkg-alpha" in error_text, (
@@ -212,7 +218,7 @@ class TestCD01CD02ConflictingPathsCollisionError:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            aggregate_symlinks(["primary", "secondary"], tmp_path)
+            aggregate_symlinks(["primary", "secondary"], tmp_path, _PROJECT_ADDRESS)
 
         error_text = str(exc_info.value)
         assert "primary" in error_text, f"ValueError message must name first source 'primary'; got: {error_text!r}"
@@ -240,7 +246,7 @@ class TestCD01CD02ConflictingPathsCollisionError:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            aggregate_symlinks(["aaa", "bbb"], tmp_path)
+            aggregate_symlinks(["aaa", "bbb"], tmp_path, _PROJECT_ADDRESS)
 
         error_text = str(exc_info.value)
         assert colliding_pkg in error_text, (
@@ -265,7 +271,7 @@ class TestSourcePriorityOrder:
         """
         _make_source_packages(tmp_path, {"alpha": ["pkg-only-alpha"], "bravo": ["pkg-only-bravo"]})
 
-        owners = aggregate_symlinks(["alpha", "bravo"], tmp_path)
+        owners = aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
         assert owners.get("pkg-only-alpha") == "alpha", (
             f"pkg-only-alpha must be owned by 'alpha'; got {owners.get('pkg-only-alpha')!r}"
@@ -283,7 +289,7 @@ class TestSourcePriorityOrder:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            aggregate_symlinks(["alpha", "bravo"], tmp_path)
+            aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
         error_text = str(exc_info.value)
         assert "alpha" in error_text, f"Error must mention 'alpha' as original owner; got: {error_text!r}"
@@ -305,7 +311,7 @@ class TestSourcePriorityOrder:
         )
 
         with pytest.raises(ValueError) as exc_info:
-            aggregate_symlinks(["bravo", "alpha"], tmp_path)
+            aggregate_symlinks(["bravo", "alpha"], tmp_path, _PROJECT_ADDRESS)
 
         error_text = str(exc_info.value)
         assert "bravo" in error_text, f"Error must mention 'bravo' as original owner; got: {error_text!r}"
@@ -333,9 +339,9 @@ class TestAggregationStabilityAcrossReRuns:
         """
         _make_source_packages(tmp_path, {"alpha": ["pkg-alpha"], "bravo": ["pkg-bravo"]})
 
-        aggregate_symlinks(["alpha", "bravo"], tmp_path)
+        aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
-        aggregate_symlinks(["alpha", "bravo"], tmp_path)
+        aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
     def test_symlinks_are_valid_after_second_run(self, tmp_path: pathlib.Path) -> None:
         """Symlinks created by the second run resolve to valid targets.
@@ -345,8 +351,8 @@ class TestAggregationStabilityAcrossReRuns:
         """
         _make_source_packages(tmp_path, {"alpha": ["pkg-alpha"], "bravo": ["pkg-bravo"]})
 
-        aggregate_symlinks(["alpha", "bravo"], tmp_path)
-        aggregate_symlinks(["alpha", "bravo"], tmp_path)
+        aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
+        aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
         for pkg_name in ("pkg-alpha", "pkg-bravo"):
             link = tmp_path / ".packages" / pkg_name
@@ -363,7 +369,7 @@ class TestAggregationStabilityAcrossReRuns:
 
         owners: dict[str, str] = {}
         for _ in range(_NUM_STABILITY_RUNS):
-            owners = aggregate_symlinks(["alpha", "bravo"], tmp_path)
+            owners = aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
         assert len(owners) == 3, (
             f"Package count must remain 3 after {_NUM_STABILITY_RUNS} runs; got {len(owners)}: {owners}"
@@ -377,9 +383,86 @@ class TestAggregationStabilityAcrossReRuns:
         """
         _make_source_packages(tmp_path, {"alpha": ["pkg-alpha"], "bravo": ["pkg-bravo"]})
 
-        first = aggregate_symlinks(["alpha", "bravo"], tmp_path)
-        second = aggregate_symlinks(["alpha", "bravo"], tmp_path)
+        first = aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
+        second = aggregate_symlinks(["alpha", "bravo"], tmp_path, _PROJECT_ADDRESS)
 
         assert first == second, (
             f"aggregate_symlinks must return identical dict on every run; first={first}, second={second}"
         )
+
+
+@pytest.mark.integration
+class TestCrossProjectPackageCollision:
+    """A package name already published by another project is announced, not silent.
+
+    `.packages/` is shared by every project using a `KANON_HOME` and keyed only by
+    package name. Replacing a link silently repointed the other project's tooling
+    -- `docs/architecture.md` calls `.packages/` the directory downstream tooling
+    references -- at this project's content, while reporting success.
+
+    It warns rather than refusing: refusing would stop two projects that share a
+    package name from coexisting at all, which kanon has never required. The
+    collision has to be visible, not fatal. Isolating the farm is issue #115.
+    """
+
+    def _publish(self, store: pathlib.Path, address: str, source: str, pkg: str) -> pathlib.Path:
+        pkg_dir = store / ".kanon-data" / "sources" / address / source / ".packages" / pkg
+        pkg_dir.mkdir(parents=True, exist_ok=True)
+        (pkg_dir / "marker.txt").write_text(address, encoding="utf-8")
+        return pkg_dir
+
+    def _collide(self, store: pathlib.Path) -> tuple[str, str, pathlib.Path]:
+        theirs, ours = "b" * 64, "a" * 64
+        their_pkg = self._publish(store, theirs, "src", "shared-tool")
+        packages = store / ".packages"
+        packages.mkdir(parents=True)
+        (packages / "shared-tool").symlink_to(their_pkg)
+        self._publish(store, ours, "src", "shared-tool")
+        return theirs, ours, packages
+
+    def test_collision_is_announced_on_stderr(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
+        store = tmp_path / "store"
+        theirs, ours, _packages = self._collide(store)
+
+        aggregate_symlinks(["src"], store, ours)
+
+        stderr = capsys.readouterr().err
+        assert "shared-tool" in stderr, f"expected the package named on stderr, got {stderr!r}"
+        assert theirs in stderr, "expected the other project's address named"
+        assert "KANON_HOME" in stderr, "expected the remedy named"
+
+    def test_install_still_proceeds(self, tmp_path: pathlib.Path) -> None:
+        """Warning, not refusing: two projects sharing a package name must coexist."""
+        store = tmp_path / "store"
+        _theirs, ours, packages = self._collide(store)
+
+        assert aggregate_symlinks(["src"], store, ours) == {"shared-tool": "src"}
+        assert os.path.realpath(packages / "shared-tool").startswith(str(store / ".kanon-data" / "sources" / ours)), (
+            "the installing project's link should now be in place"
+        )
+
+    def test_replacing_our_own_link_is_silent(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
+        """Re-installing the same project is not a collision and must not warn."""
+        store = tmp_path / "store"
+        ours = "a" * 64
+        our_pkg = self._publish(store, ours, "src", "shared-tool")
+        packages = store / ".packages"
+        packages.mkdir(parents=True)
+        (packages / "shared-tool").symlink_to(our_pkg)
+
+        aggregate_symlinks(["src"], store, ours)
+
+        assert "shared-tool" not in capsys.readouterr().err
+
+    def test_unrelated_package_names_do_not_warn(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture) -> None:
+        store = tmp_path / "store"
+        theirs, ours = "b" * 64, "a" * 64
+        their_pkg = self._publish(store, theirs, "src", "their-tool")
+        packages = store / ".packages"
+        packages.mkdir(parents=True)
+        (packages / "their-tool").symlink_to(their_pkg)
+        self._publish(store, ours, "src", "our-tool")
+
+        assert aggregate_symlinks(["src"], store, ours) == {"our-tool": "src"}
+        assert capsys.readouterr().err == ""
+        assert (packages / "their-tool").is_symlink()

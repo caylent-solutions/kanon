@@ -6,12 +6,13 @@ from unittest.mock import patch
 
 import pytest
 
+from kanon_cli.core.install import compute_project_address, store_entries_dir
 from kanon_cli.core.clean import (
+    remove_project_packages_links,
+    remove_project_workspace,
     clean,
-    remove_kanon_dir,
     remove_kanon_home_store,
     remove_marketplace_dir,
-    remove_packages_dir,
     remove_project_config,
 )
 from kanon_cli.core.lockfile import (
@@ -45,21 +46,45 @@ class TestDirectoryRemoval:
     def test_marketplace_missing_ok(self, tmp_path: pathlib.Path) -> None:
         remove_marketplace_dir(tmp_path / "nonexistent")
 
-    def test_removes_packages(self, tmp_path: pathlib.Path) -> None:
-        (tmp_path / ".packages").mkdir()
-        remove_packages_dir(tmp_path)
-        assert not (tmp_path / ".packages").exists()
+    def test_removes_only_this_projects_workspace(self, tmp_path: pathlib.Path) -> None:
+        """Another project's keyed workspace must survive this project's clean."""
+        ours, theirs = "a" * 64, "b" * 64
+        sources = tmp_path / ".kanon-data" / "sources"
+        (sources / ours / "shared").mkdir(parents=True)
+        (sources / theirs / "shared").mkdir(parents=True)
 
-    def test_packages_missing_ok(self, tmp_path: pathlib.Path) -> None:
-        remove_packages_dir(tmp_path)
+        remove_project_workspace(tmp_path, ours)
 
-    def test_removes_kanon(self, tmp_path: pathlib.Path) -> None:
-        (tmp_path / ".kanon-data").mkdir()
-        remove_kanon_dir(tmp_path)
-        assert not (tmp_path / ".kanon-data").exists()
+        assert not (sources / ours).exists(), "expected this project's workspace to be removed"
+        assert (sources / theirs / "shared").is_dir(), (
+            "kanon clean removed another project's workspace; plain clean is project-scoped "
+            "and only --purge-all is machine-wide"
+        )
 
-    def test_kanon_missing_ok(self, tmp_path: pathlib.Path) -> None:
-        remove_kanon_dir(tmp_path)
+    def test_workspace_missing_ok(self, tmp_path: pathlib.Path) -> None:
+        remove_project_workspace(tmp_path, "c" * 64)
+
+    def test_removes_only_this_projects_package_links(self, tmp_path: pathlib.Path) -> None:
+        """The aggregation farm is shared, so ownership is read off each link's target."""
+        ours, theirs = "a" * 64, "b" * 64
+        sources = tmp_path / ".kanon-data" / "sources"
+        our_pkg = sources / ours / "src" / ".packages" / "our-pkg"
+        their_pkg = sources / theirs / "src" / ".packages" / "their-pkg"
+        our_pkg.mkdir(parents=True)
+        their_pkg.mkdir(parents=True)
+
+        packages = tmp_path / ".packages"
+        packages.mkdir()
+        (packages / "our-pkg").symlink_to(our_pkg)
+        (packages / "their-pkg").symlink_to(their_pkg)
+
+        remove_project_packages_links(tmp_path, ours)
+
+        assert not (packages / "our-pkg").exists(), "expected our own link to be removed"
+        assert (packages / "their-pkg").is_symlink(), "kanon clean removed another project's aggregated package link"
+
+    def test_package_links_missing_ok(self, tmp_path: pathlib.Path) -> None:
+        remove_project_packages_links(tmp_path, "c" * 64)
 
     def test_removes_store_entries(self, tmp_path: pathlib.Path) -> None:
         """remove_store_entries prunes content-addressed entries, keeping the store base."""
@@ -180,7 +205,7 @@ class TestCleanLifecycle:
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins") as mock_uninstall:
             clean(kanonenv)
             mock_uninstall.assert_not_called()
-        assert not (store / ".packages").exists()
+        assert not (store / ".packages" / "pkg-a").exists(), "this project's aggregated package link must be removed"
 
     def test_marketplace_true_missing_dir_exits(self, tmp_path: pathlib.Path) -> None:
         kanonenv = tmp_path / ".kanon"
@@ -209,10 +234,8 @@ class TestCleanLifecycle:
             p = str(path)
             if ".mp" in p:
                 ops.append("rm_mp")
-            elif ".packages" in p:
-                ops.append("rm_packages")
             elif ".kanon-data" in p:
-                ops.append("rm_kanon")
+                ops.append("rm_workspace")
             orig_rmtree(path, ignore_errors=ignore_errors)
 
         with (
@@ -221,7 +244,11 @@ class TestCleanLifecycle:
         ):
             clean(kanonenv)
 
-        assert ops == ["uninstall", "rm_mp", "rm_packages", "rm_kanon"]
+        assert ops == ["uninstall", "rm_mp", "rm_workspace"], (
+            "Plain clean uninstalls marketplace plugins, removes the marketplace directory, "
+            "then removes this project's keyed workspace. The aggregated package links are "
+            f"unlinked individually rather than rmtree'd, so they do not appear here. Got {ops!r}."
+        )
 
 
 @pytest.mark.unit
@@ -276,8 +303,9 @@ class TestCleanSymlinkResolution:
 
         clean(symlink_kanonenv)
 
-        assert not (store / ".packages").exists(), ".packages/ must be removed from the KANON_HOME store"
-        assert not (store / ".kanon-data").exists(), ".kanon-data/ must be removed from the KANON_HOME store"
+        assert not (store / ".kanon-data" / "sources" / compute_project_address(real_kanonenv)).exists(), (
+            "this project's keyed source workspace must be removed from the KANON_HOME store"
+        )
         assert (symlink_dir / ".packages").exists(), (
             ".packages/ beside the .kanon symlink must NOT be removed by clean()"
         )
@@ -336,8 +364,9 @@ class TestCleanKanonHomeStore:
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
             clean(kanonenv)
 
-        assert not (store / ".packages").exists(), ".packages/ must be removed from the KANON_HOME store"
-        assert not (store / ".kanon-data").exists(), ".kanon-data/ must be removed from the KANON_HOME store"
+        assert not (store / ".kanon-data" / "sources" / compute_project_address(kanonenv)).exists(), (
+            "this project's keyed source workspace must be removed from the KANON_HOME store"
+        )
 
         assert (cwd_dir / ".packages").exists(), ".packages/ in cwd must NOT be touched by clean"
         assert (cwd_dir / ".kanon-data").exists(), ".kanon-data/ in cwd must NOT be touched by clean"
@@ -373,11 +402,8 @@ class TestCleanKanonHomeStore:
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
             clean(kanonenv)
 
-        assert not (store / ".packages").exists(), (
-            "Without KANON_HOME, .packages/ must be removed from $HOME/.kanon-home/store"
-        )
-        assert not (store / ".kanon-data").exists(), (
-            "Without KANON_HOME, .kanon-data/ must be removed from $HOME/.kanon-home/store"
+        assert not (store / ".kanon-data" / "sources" / compute_project_address(kanonenv)).exists(), (
+            "Without KANON_HOME, this project's keyed workspace must be removed from $HOME/.kanon-home/store"
         )
 
     def test_clean_prunes_content_addressed_store_entries(
@@ -405,8 +431,15 @@ class TestCleanKanonHomeStore:
         with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
             clean(kanonenv)
 
-        assert not entry.exists(), "the content-addressed store entry must be pruned by clean"
-        assert not store_entries_dir(store).exists(), "the store entries directory must be pruned by clean"
+        assert entry.exists(), (
+            "plain 'kanon clean' must NOT prune content-addressed store entries: they are "
+            "shared, content-addressed cache used by every project on the machine, so "
+            "removing them forces an unrelated project to re-fetch. Only --purge-all, which "
+            "is documented as machine-wide, removes them."
+        )
+        assert store_entries_dir(store).exists(), (
+            "the shared store entries directory must survive a project-scoped clean"
+        )
         assert store.exists(), "the store base directory must survive clean"
 
 
@@ -649,3 +682,63 @@ class TestCleanOrphansSourcePrune:
 
         mock_remove.assert_not_called()
         mock_locate.assert_not_called()
+
+
+@pytest.mark.unit
+class TestCleanIsProjectScoped:
+    """Plain `kanon clean` must not touch another project's state.
+
+    It used to remove the store's whole `.packages/` and `.kanon-data/`, so a
+    developer with five projects who cleaned one destroyed the installed state of
+    the other four -- and the CHANGELOG recommended exactly that as the way to
+    reclaim orphaned workspaces. Machine-wide teardown stays available under the
+    flag documented for it, `--purge-all`.
+    """
+
+    def test_clean_leaves_another_projects_workspace_and_links(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        home = tmp_path / "home"
+        store = home / "store"
+        monkeypatch.setenv("KANON_HOME", str(home))
+
+        ours = tmp_path / "ours"
+        ours.mkdir()
+        kanonenv = ours / ".kanon"
+        kanonenv.write_text("KANON_MARKETPLACE_INSTALL=false\n" + _MINIMAL_KANONENV)
+
+        our_address = compute_project_address(kanonenv)
+        their_address = "b" * 64
+
+        sources = store / ".kanon-data" / "sources"
+        our_pkg = sources / our_address / "src" / ".packages" / "our-pkg"
+        their_pkg = sources / their_address / "src" / ".packages" / "their-pkg"
+        our_pkg.mkdir(parents=True)
+        their_pkg.mkdir(parents=True)
+
+        packages = store / ".packages"
+        packages.mkdir(parents=True)
+        (packages / "our-pkg").symlink_to(our_pkg)
+        (packages / "their-pkg").symlink_to(their_pkg)
+
+        entries = store_entries_dir(store)
+        entries.mkdir(parents=True, exist_ok=True)
+        shared_entry = entries / ("c" * 64)
+        shared_entry.mkdir()
+
+        with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
+            clean(kanonenv)
+
+        assert not (sources / our_address).exists(), "our own workspace should be gone"
+        assert not (packages / "our-pkg").exists(), "our own package link should be gone"
+
+        assert (sources / their_address / "src").is_dir(), (
+            "another project's source workspace was destroyed by a project-scoped clean"
+        )
+        assert (packages / "their-pkg").is_symlink(), (
+            "another project's aggregated package link was destroyed by a project-scoped clean"
+        )
+        assert shared_entry.exists(), (
+            "the shared content-addressed store entry was pruned by a project-scoped clean, "
+            "forcing every other project on the machine to re-fetch"
+        )

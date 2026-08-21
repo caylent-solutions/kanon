@@ -25,6 +25,8 @@ import stat
 
 import pytest
 
+from kanon_cli.commands.doctor import _check_orphaned_workspaces
+
 from kanon_cli.constants import KANON_DOCTOR_STALE_LOCK_AGE_HOURS, KANON_HOME_CACHE_DIR_MODE
 
 
@@ -973,3 +975,75 @@ class TestDoctorCommandRefreshOSError:
         assert result == 1, f"Expected return code 1 when OSError is raised; got {result!r}"
         captured = capsys.readouterr()
         assert "ERROR:" in captured.err, f"Expected 'ERROR:' in stderr; got {captured.err!r}"
+
+
+@pytest.mark.unit
+class TestOrphanedWorkspaceCheck:
+    """`kanon doctor` reports workspaces left by the pre-keying store layout.
+
+    Per-source workspaces moved from `.kanon-data/sources/<alias>/` to
+    `.kanon-data/sources/<project_address>/<alias>/`. A workspace written by an
+    earlier kanon is never read again, and a full source checkout can be hundreds
+    of megabytes. Nothing detected it, nothing mentioned it, and nothing reclaimed
+    it -- silent, permanent disk growth for every operator who upgraded.
+    """
+
+    def _sources(self, store: pathlib.Path) -> pathlib.Path:
+        sources = store / ".kanon-data" / "sources"
+        sources.mkdir(parents=True, exist_ok=True)
+        return sources
+
+    def test_alias_named_directory_is_reported(self, tmp_path: pathlib.Path) -> None:
+        """A non-hex directory under sources/ is a pre-keying leftover."""
+        (self._sources(tmp_path) / "build").mkdir()
+
+        findings = _check_orphaned_workspaces(tmp_path)
+
+        assert len(findings) == 1, f"Expected one orphan finding, got {findings!r}."
+        assert findings[0].kind == "warn"
+        assert findings[0].code == "orphaned_source_workspace"
+        assert "build" in findings[0].message
+
+    def test_remediation_names_the_exact_path(self, tmp_path: pathlib.Path) -> None:
+        """The operator must not have to compute a digest to act on this.
+
+        After keying, the path contains a 64-character sha256 the operator cannot
+        derive by hand, so a remediation that does not print it is unusable.
+        """
+        (self._sources(tmp_path) / "build").mkdir()
+
+        remediation = _check_orphaned_workspaces(tmp_path)[0].remediation
+
+        assert str(tmp_path / ".kanon-data" / "sources" / "build") in remediation
+        assert "kanon clean" in remediation, "Expected the remediation to mention that kanon clean also reclaims it."
+        assert "every project" in remediation, (
+            "Expected the remediation to warn that kanon clean is store-wide, since "
+            f"recommending it without that warning destroys other projects: {remediation!r}"
+        )
+
+    def test_keyed_directories_are_not_reported(self, tmp_path: pathlib.Path) -> None:
+        """A 64-hex directory is a live project address, not an orphan."""
+        (self._sources(tmp_path) / ("a" * 64) / "shared").mkdir(parents=True)
+
+        assert _check_orphaned_workspaces(tmp_path) == []
+
+    def test_missing_store_is_not_an_error(self, tmp_path: pathlib.Path) -> None:
+        """A machine that has never installed has nothing to report."""
+        assert _check_orphaned_workspaces(tmp_path / "absent") == []
+
+    def test_files_beside_workspaces_are_ignored(self, tmp_path: pathlib.Path) -> None:
+        """Only directories are workspaces."""
+        (self._sources(tmp_path) / "stray.txt").write_text("x", encoding="utf-8")
+
+        assert _check_orphaned_workspaces(tmp_path) == []
+
+    def test_every_orphan_is_reported(self, tmp_path: pathlib.Path) -> None:
+        """Reporting only the first would understate the reclaimable space."""
+        sources = self._sources(tmp_path)
+        for alias in ("build", "marketplaces", "tooling"):
+            (sources / alias).mkdir()
+        (sources / ("b" * 64)).mkdir()
+
+        findings = _check_orphaned_workspaces(tmp_path)
+
+        assert len(findings) == 3, f"Expected all three orphans, got {[f.message for f in findings]!r}."

@@ -44,7 +44,7 @@ fails with an argparse "invalid choice" error and a non-zero exit code.
 Use `kanon search` to search a catalog, `kanon add <entry>
 --catalog-source <git-url>@<ref>` to add an entry to `.kanon`, and
 `kanon install` to fetch it. See
-[docs/migration-to-add.md](migration-to-add.md) for
+[docs/archive/upgrading-from-2x.md](archive/upgrading-from-2x.md) for
 the full migration guide.
 
 ## Install Lifecycle
@@ -58,11 +58,12 @@ The command performs these steps:
 3. **Pre-sync marketplace setup** -- If any source sets `KANON_SOURCE_<alias>_MARKETPLACE=true`: creates `CLAUDE_MARKETPLACES_DIR` and cleans its contents for a fresh sync
 4. **For each source in alphabetical order:**
    `kanonenv_path` is resolved via `Path.resolve()` before its parent is used, so a symlinked `.kanon` file will cause source directories to be created under the real project directory rather than the symlink's containing directory.
-   - Creates `.kanon-data/sources/<name>/` directory
+   - Creates `.kanon-data/sources/<project-address>/<name>/` directory, where
+     `<project-address>` is a sha256 of the resolved `.kanon` path
    - Calls `kanon_cli.repo.repo_init(source_dir, url, revision, manifest_path)` -- direct Python API call
    - Calls `kanon_cli.repo.repo_envsubst(source_dir, env_vars)` with `GITBASE` and `CLAUDE_MARKETPLACES_DIR` -- direct Python API call
    - Calls `kanon_cli.repo.repo_sync(source_dir)` -- aborts immediately on `RepoCommandError`
-5. **Aggregate symlinks** -- For each `.kanon-data/sources/<name>/.packages/*`, creates a symlink in `.packages/`
+5. **Aggregate symlinks** -- For each `.kanon-data/sources/<project-address>/<name>/.packages/*`, creates a symlink in `.packages/`
 6. **Collision detection** -- If two sources produce the same package name, fails fast with error identifying both sources
 7. **Conditional store `.gitignore` safety net** -- Only when the shared `KANON_HOME` store sits inside a git working tree, writes `<KANON_HOME>/store/.gitignore` containing `*` so the fetched-artifact cache is never committed. When the store is not inside a git repo (the default `~/.kanon-home`), no `.gitignore` is written
 8. **Post-sync marketplace install** -- If any source sets `KANON_SOURCE_<alias>_MARKETPLACE=true`: locates the `claude` binary, discovers marketplace entries and plugins, registers marketplaces, and installs plugins via the Claude Code CLI
@@ -78,8 +79,11 @@ The command performs these steps in order:
 3. **If a marketplace was registered (any source set `KANON_SOURCE_<alias>_MARKETPLACE=true`):**
    - Uninstalls marketplace plugins via the Claude Code CLI (discovers entries, uninstalls each plugin, removes marketplace registrations)
    - Removes `CLAUDE_MARKETPLACES_DIR` entirely
-4. **Remove `.packages/`** -- `shutil.rmtree` with `ignore_errors=True`
-5. **Remove `.kanon-data/`** -- `shutil.rmtree` with `ignore_errors=True`
+4. **Remove this project's `.packages/` links** -- each link whose target
+   resolves under this project's workspace is unlinked; links owned by other
+   projects sharing the store are left in place
+5. **Remove this project's source workspace** -- `.kanon-data/sources/<project-address>/`,
+   not the whole `.kanon-data/` tree, which holds every other project's workspaces
 
 The order is critical: uninstalling plugins first ensures Claude Code's
 registry is clean. Removing the marketplace directory before deleting

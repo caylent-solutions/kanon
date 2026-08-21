@@ -271,103 +271,29 @@ each `git ls-remote` call in `kanon install`, `kanon outdated`,
 `kanon why`, and `kanon doctor`. Bounded per call; not a global wall
 clock. Defined in `src/kanon_cli/constants.py`.
 
-**`KANON_KANON_FILE`** (default: `./.kanon`) -- Default `.kanon` file
-path. It supplies the default target for `kanon add` / `kanon remove`
-writes and the default `--kanon-file` value for the commands that accept
-that flag (`kanon add`, `kanon remove`, `kanon doctor`). On `kanon install`
-and `kanon validate lockfile` the `.kanon` path is given as a positional
-argument (these commands do not expose a `--kanon-file` flag). The
-`--kanon-file` CLI flag takes precedence over this variable when both are
-set.
+**`KANON_SYNC_JOBS`** (default: unset) -- Upper bound on how many worker
+processes `repo sync` fans out to during `kanon install`. This is a **cap**: it
+can lower fan-out, never raise it.
 
-**`KANON_LIST_FORMAT`** (default: `names`) -- Default output format
-for `kanon search`. Supported values: `names`, `json`. Overridden by
-`--format` CLI flag.
+`repo sync` resolves two independent job counts, and their defaults differ:
+network fetch defaults to **1**, local checkout to `min(cpu_count, 8)`. kanon
+caps each against its own default and passes them separately, so
+`KANON_SYNC_JOBS=64` leaves network fetch at 1 rather than raising it to 64. The
+cap also takes precedence over a manifest's `<default sync-j>`: an operator
+bounding fan-out on their own machine should not be overridden by a value a
+remote manifest chose.
 
-**`KANON_LIST_LIMIT`** (default: `50`) -- Default cap on the number
-of entries returned by `kanon search -A`. Overridden by
-`--limit N` / `--no-limit` CLI flags.
+Set it to `1` to run the sync in a single process. That is what the test suite
+pins, because many concurrent `kanon install` processes each building their own
+worker pool contend for the same POSIX semaphores and can wedge.
 
-**`KANON_TREE_NO_FILTER_THRESHOLD`** (default: `20`) -- Entry count
-above which `kanon search --tree` requires a filter argument. Without a
-filter, `kanon search --tree` exits with an error suggesting `--regex`,
-`<substring>`, or `--max-depth 0`. Override with
-`--no-filter-required`.
+When unset, kanon passes no job arguments at all and `repo sync` resolves its own
+defaults, clipped by a limit derived from `RLIMIT_NOFILE`.
 
-**`KANON_LIST_OUTPUT_FORMAT`** (default: `table`) -- Default output
-format for `kanon list` (the declared-vs-installed inventory command).
-Supported values: `table`, `json`. Overridden by the `--format` CLI
-flag. Distinct from `KANON_LIST_FORMAT` above, which configures
-`kanon search`'s output.
-
-**`KANON_LIST_JSON_INDENT`** (default: `2`) -- Number of spaces per
-indentation level in JSON output from `kanon list --format json`. Must
-be a non-negative integer parseable by Python `int()`.
-
-**`KANON_OUTDATED_FORMAT`** (default: `table`) -- Default output
-format for `kanon outdated`. Currently only `table` is supported.
-Overridden by `--format` CLI flag.
-
-**`KANON_WHY_FORMAT`** (default: `text`) -- Default output format for
-`kanon why`. Supported values: `text` (human-readable arrow-separated
-chains) and `json` (machine-readable JSON array). Overridden by
-`--format` CLI flag.
-
-**`KANON_WHY_JSON_INDENT`** (default: `2`) -- Number of spaces per
-indentation level in JSON output from `kanon why --format json`. Must
-be a non-negative integer parseable by Python `int()`.
-
-**`KANON_WHY_SUGGEST_MAX_DISTANCE`** (default: `3`) -- Maximum
-Levenshtein edit distance for closest-match suggestions when
-`kanon why` cannot find the requested argument. Must be a
-non-negative integer.
-
-**`KANON_WHY_SUGGEST_TOP_N`** (default: `3`) -- Maximum number of
-closest-match suggestions displayed on not-found. Results are sorted
-ascending by edit distance, ties broken lexicographically. Must be a
-non-negative integer.
-
-**`KANON_ALLOW_INSECURE_REMOTES`** (default: unset) -- When set to
-exactly `1`, disables the insecure-remote URL security check in
-`kanon install`. All remote URL schemes (HTTP, `file://`, `git://`,
-etc.) are accepted without error. Any value other than `1` is treated
-as unset. See the security rationale below.
-
-#### KANON\_ALLOW\_INSECURE\_REMOTES -- security rationale
-
-kanon enforces a trust model (spec Section 3.6) that requires all
-`<remote>` fetch URLs in resolved manifests to use HTTPS or SSH. Plain
-HTTP, `file://`, `git://`, and other unencrypted schemes are rejected
-by default because they expose dependency resolution to network-level
-interception and tampering.
-
-**Allowed unconditionally:**
-
-- `https://...` -- encrypted, authenticated.
-- `git@host:org/repo.git` -- SCP-style SSH; encrypted, key-authed.
-- `ssh://...` -- explicit SSH; encrypted, key-authenticated.
-
-**Rejected by default (allowed only with `KANON_ALLOW_INSECURE_REMOTES=1`):**
-
-- `http://...` -- unencrypted; interceptable in transit.
-- `file://...` -- local path; no network-level guarantees.
-- Any other scheme (`git://`, `ftp://`, custom schemes, empty URL).
-
-**Override:** Set `KANON_ALLOW_INSECURE_REMOTES=1` to disable the
-check. Only the exact string `1` enables it. Values such as `true`,
-`yes`, `on`, or `0` do NOT enable the override.
-
-```bash
-# Default: HTTP remote rejected
-kanon install .kanon  # exits 1 if any <remote> uses http://
-
-# Override: HTTP remote accepted
-KANON_ALLOW_INSECURE_REMOTES=1 kanon install .kanon
-```
-
-The check also runs on the lockfile-consistent replay path: even if a
-lockfile was recorded with an HTTP URL, `kanon install` rejects it.
-See [docs/lockfile.md](lockfile.md) for details on replay enforcement.
+Must be a positive integer; any other value aborts with exit 1. It is validated
+at CLI entry, before any command does work, so a bad value cannot abort an
+install part-way with a half-built workspace on disk. Defined in
+`src/kanon_cli/constants.py`.
 
 ---
 
@@ -415,6 +341,51 @@ export KANON_HOME=/tmp/my-kanon-home
 
 # Or per-invocation, overriding the env var and the default
 kanon --home /tmp/my-kanon-home install
+```
+
+---
+
+### Absolute manifest destinations
+
+**`CLAUDE_MARKETPLACES_DIR`** -- unlike every other setting on this page, this is
+not an environment variable kanon reads from your shell. It is a line in the
+`.kanon` file itself. `kanon add` inserts
+`CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces` as the first non-comment
+line the first time you add a marketplace entry, never overwrites a value you
+have changed, and prunes the line when the last marketplace entry is removed. The
+`${HOME}` in it is expanded at install time. A `.kanon` declaring a marketplace
+source with no such line fails the install.
+
+**`KANON_ALLOWED_ABS_ROOTS`** (default: unset) -- extra roots an absolute
+`<linkfile dest>` or `<copyfile dest>` may resolve under, separated by the
+platform path separator (`:` on POSIX). A manifest is fetched from a remote
+repository, so an absolute destination is confined rather than trusted; see
+[Security model](security-model.md). Entries must be absolute paths, and an empty
+entry or a relative one aborts with a non-zero exit.
+
+**Permitted-root resolution order (highest wins):**
+
+1. `--allow-abs-root <path>` global CLI flag, repeatable (when supplied). When
+   given, `KANON_ALLOWED_ABS_ROOTS` is ignored for that invocation.
+2. `KANON_ALLOWED_ABS_ROOTS` environment variable (when non-empty).
+3. No extra roots -- the default.
+
+Two roots are **always** permitted and cannot be removed by either mechanism: the
+consumer project root (the directory holding `.kanon`) and the resolved
+`CLAUDE_MARKETPLACES_DIR`. The setting can therefore only widen the boundary,
+never narrow it below the project being installed into. Nothing is added to
+`.kanon`, and existing `.kanon` files need no change.
+
+A destination outside every permitted root aborts the install, naming the
+destination, the roots, and how to widen them -- there is no prompt, so kanon
+stays usable in CI, containers, and cron.
+
+```bash
+# Allow a manifest to deliver into a shared tooling directory
+export KANON_ALLOWED_ABS_ROOTS=/opt/org-tooling
+
+# Or per-invocation, overriding the env var; repeat for several roots
+kanon --allow-abs-root /opt/org-tooling --allow-abs-root /srv/shared install
 ```
 
 ---

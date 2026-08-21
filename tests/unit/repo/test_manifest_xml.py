@@ -160,10 +160,23 @@ class ManifestValidateFilePaths(unittest.TestCase):
         check(".", "bar")
 
     def test_bad_paths(self):
-        """Make sure bad paths (src & dest) are rejected."""
+        """Make sure bad paths (src & dest) are rejected.
+
+        Absolute paths are excluded from the dest half of this check: dest
+        may be absolute for both linkfile and copyfile (spec 17.1), so an
+        absolute path is not a "bad dest" the way it is a bad src.
+        """
         for path in INVALID_FS_PATHS:
             self.assertRaises(error.ManifestInvalidPathError, self.check_both, path, "a")
-            self.assertRaises(error.ManifestInvalidPathError, self.check_both, "a", path)
+            if not os.path.isabs(path):
+                self.assertRaises(error.ManifestInvalidPathError, self.check_both, "a", path)
+
+    def test_absolute_dest_accepted_for_both(self):
+        """Absolute dest paths are accepted for both copyfile and linkfile.
+
+        Spec 17.1: unlike src, dest may be absolute for either element.
+        """
+        self.check_both("a", "/foo")
 
 
 class ValueTests(unittest.TestCase):
@@ -1272,20 +1285,21 @@ class CheckLocalPathAbsOkTests(unittest.TestCase):
                 f"absolute path '{path}' should be accepted with abs_ok=True",
             )
 
-    def test_spec_17_1_absolute_dest_rejected_copyfile(self):
-        """_ValidateFilePaths rejects absolute dest for copyfile.
+    def test_spec_17_1_absolute_dest_accepted_copyfile(self):
+        """_ValidateFilePaths accepts absolute dest for copyfile.
 
         Given: _ValidateFilePaths called for copyfile element.
         When: dest is an absolute path.
-        Then: ManifestInvalidPathError is raised.
-        Spec: Section 17.1 — copyfile dest remains restricted.
+        Then: No exception is raised.
+        Spec: Section 17.1 — absolute dest accepted for copyfile, matching
+        linkfile, so a manifest can deliver a real file into the consuming
+        project rather than only inside the repo client checkout.
         """
         for path in self.ABSOLUTE_PATHS:
-            with self.assertRaises(
-                error.ManifestInvalidPathError,
-                msg=f"copyfile absolute dest '{path}' should be rejected",
-            ):
+            try:
                 manifest_xml.XmlManifest._ValidateFilePaths("copyfile", "foo", path)
+            except error.ManifestInvalidPathError as exc:
+                self.fail(f"copyfile absolute dest '{path}' should be accepted, but raised: {exc}")
 
     def test_spec_17_1_bad_component_git_rejected_abs(self):
         """_CheckLocalPath rejects .git component in absolute paths.
@@ -1559,6 +1573,7 @@ class EnvsubstAbsoluteLinkfileIntegrationTest(unittest.TestCase):
     """
 
     ENV_VAR_NAME = "CLAUDE_MARKETPLACES_DIR"
+    ROOTS_ENV_VAR = "KANON_PERMITTED_ABS_ROOTS"
 
     def setUp(self):
         self.tempdirobj = tempfile.TemporaryDirectory(prefix="repo_tests")
@@ -1574,7 +1589,14 @@ class EnvsubstAbsoluteLinkfileIntegrationTest(unittest.TestCase):
         self.orig_env = os.environ.get(self.ENV_VAR_NAME)
         os.environ[self.ENV_VAR_NAME] = self.marketplace_dir
 
+        self.orig_roots = os.environ.get(self.ROOTS_ENV_VAR)
+        os.environ[self.ROOTS_ENV_VAR] = self.marketplace_dir
+
     def tearDown(self):
+        if self.orig_roots is None:
+            os.environ.pop(self.ROOTS_ENV_VAR, None)
+        else:
+            os.environ[self.ROOTS_ENV_VAR] = self.orig_roots
         if self.orig_env is None:
             os.environ.pop(self.ENV_VAR_NAME, None)
         else:

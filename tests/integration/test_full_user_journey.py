@@ -28,7 +28,7 @@ import pytest
 
 from kanon_cli.core.clean import clean
 from kanon_cli.core.discover import find_kanonenv
-from kanon_cli.core.install import install
+from kanon_cli.core.install import compute_project_address, install
 from kanon_cli.repo import RepoCommandError
 from tests.functional.conftest import _run_kanon
 
@@ -335,7 +335,9 @@ class TestFullJourneyBootstrapInstallClean:
         clean(kanonenv_path)
 
         assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
-        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
+            ".kanon-data/ must be absent from the store after clean"
+        )
         assert kanonenv_path.is_file(), ".kanon must survive clean"
 
 
@@ -442,7 +444,9 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
         assert len(uninstall_calls) >= 1, f"Expected at least one plugin uninstall call, got: {uninstall_calls!r}"
         assert len(remove_calls) >= 1, f"Expected at least one marketplace remove call, got: {remove_calls!r}"
         assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
-        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
+            ".kanon-data/ must be absent from the store after clean"
+        )
 
 
 @pytest.mark.integration
@@ -564,7 +568,9 @@ class TestFullJourneyBootstrapInstallValidateClean:
         clean(kanonenv_path)
 
         assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
-        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
+            ".kanon-data/ must be absent from the store after clean"
+        )
 
 
 @pytest.mark.integration
@@ -636,7 +642,9 @@ class TestFullJourneyWithVersionConstraints:
 
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
         assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
-        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
+            ".kanon-data/ must be absent from the store after clean"
+        )
 
 
 @pytest.mark.integration
@@ -704,7 +712,9 @@ class TestFullJourneyAutoDiscoverFromSubdirectory:
         clean(discovered)
 
         assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
-        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
+            ".kanon-data/ must be absent from the store after clean"
+        )
 
 
 @pytest.mark.integration
@@ -821,7 +831,9 @@ class TestFullJourneyMultiSourceWithMarketplace:
         assert len(uninstall_calls) >= 1, f"Expected plugin uninstall call during clean, got: {uninstall_calls!r}"
         assert len(remove_calls) >= 1, f"Expected marketplace remove call during clean, got: {remove_calls!r}"
         assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
-        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
+            ".kanon-data/ must be absent from the store after clean"
+        )
 
 
 @pytest.mark.integration
@@ -964,7 +976,9 @@ class TestFullJourneyInstallTwiceThenClean:
         clean(kanonenv_path)
 
         assert not (store_base / ".packages").exists(), ".packages/ must be absent from the store after clean"
-        assert not (store_base / ".kanon-data").exists(), ".kanon-data/ must be absent from the store after clean"
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
+            ".kanon-data/ must be absent from the store after clean"
+        )
 
 
 @pytest.mark.integration
@@ -1021,8 +1035,9 @@ class TestFullJourneyErrorRecovery:
                 )
 
         store_base = pathlib.Path(os.environ["KANON_HOME"]) / "store"
-        partial_exists = (store_base / ".kanon-data" / "sources" / "good").is_dir() or (
-            store_base / ".kanon-data" / "sources" / "bad"
+        project_address = compute_project_address(kanonenv_path)
+        partial_exists = (store_base / ".kanon-data" / "sources" / project_address / "good").is_dir() or (
+            store_base / ".kanon-data" / "sources" / project_address / "bad"
         ).is_dir()
         assert partial_exists, "Some partial state (store .kanon-data/sources/) must exist after failed install"
 
@@ -1031,6 +1046,6 @@ class TestFullJourneyErrorRecovery:
         assert not (store_base / ".packages").exists(), (
             ".packages/ must be absent from the store after clean (even after partial install)"
         )
-        assert not (store_base / ".kanon-data").exists(), (
+        assert not (store_base / ".kanon-data" / "sources").exists(), (
             ".kanon-data/ must be absent from the store after clean (even after partial install)"
         )

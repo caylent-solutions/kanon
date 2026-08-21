@@ -295,13 +295,14 @@ def test_linkfile_idempotent_on_already_current_symlink(tmp_path: pathlib.Path) 
 
 
 @pytest.mark.integration
-def test_linkfile_absolute_dest_creates_symlink_at_absolute_path(tmp_path: pathlib.Path) -> None:
+def test_linkfile_absolute_dest_creates_symlink_at_absolute_path(tmp_path: pathlib.Path, permit_abs_roots) -> None:
     """_Link() with an absolute dest path creates the symlink at that absolute path.
 
     AC-TEST-004: the absolute dest fork allows the symlink to be placed outside
     the workspace topdir. The resulting symlink must exist at the literal
     absolute dest path and must resolve to the source file's content.
     """
+    permit_abs_roots(tmp_path)
     worktree = tmp_path / "project"
     worktree.mkdir()
     topdir = tmp_path / "workspace"
@@ -325,12 +326,13 @@ def test_linkfile_absolute_dest_creates_symlink_at_absolute_path(tmp_path: pathl
 
 
 @pytest.mark.integration
-def test_linkfile_absolute_dest_is_actual_symlink_not_copy(tmp_path: pathlib.Path) -> None:
+def test_linkfile_absolute_dest_is_actual_symlink_not_copy(tmp_path: pathlib.Path, permit_abs_roots) -> None:
     """The entry at an absolute dest path is a symlink, not a file copy.
 
     AC-TEST-004: confirms that the fork that handles absolute dest paths still
     creates a symlink (not a copy) at the given absolute path.
     """
+    permit_abs_roots(tmp_path)
     worktree = tmp_path / "project"
     worktree.mkdir()
     topdir = tmp_path / "workspace"
@@ -352,12 +354,13 @@ def test_linkfile_absolute_dest_is_actual_symlink_not_copy(tmp_path: pathlib.Pat
 
 
 @pytest.mark.integration
-def test_linkfile_absolute_dest_creates_parent_dirs(tmp_path: pathlib.Path) -> None:
+def test_linkfile_absolute_dest_creates_parent_dirs(tmp_path: pathlib.Path, permit_abs_roots) -> None:
     """_Link() with an absolute dest creates intermediate parent directories.
 
     AC-TEST-004: the absolute dest fork must call os.makedirs on the parent of
     the dest path so that deeply nested absolute destinations are supported.
     """
+    permit_abs_roots(tmp_path)
     worktree = tmp_path / "project"
     worktree.mkdir()
     topdir = tmp_path / "workspace"

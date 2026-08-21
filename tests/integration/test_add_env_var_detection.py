@@ -23,6 +23,8 @@ from urllib.parse import urlparse
 
 import pytest
 
+from kanon_cli.constants import UNFILLED_VAR_SENTINEL
+
 from tests.integration.test_add_core import (
     _git,
     _init_git_work_dir,
@@ -126,7 +128,7 @@ class TestAddEnvVarDetection:
         assert _env_var_lines(content, "noenv") == {}, f"a literal remote must yield no env-var line; got:\n{content}"
         assert "KANON_SOURCE_noenv_URL=" in content
 
-    def test_custom_var_remote_writes_empty_placeholder(self, tmp_path: pathlib.Path) -> None:
+    def test_custom_var_remote_writes_unfilled_sentinel(self, tmp_path: pathlib.Path) -> None:
         """Case (b): a custom ${MYBASE} remote writes an EMPTY KANON_SOURCE_<alias>_MYBASE= line."""
         body = textwrap.dedent("""\
               <remote name="origin" fetch="${MYBASE}/repos" />
@@ -145,7 +147,7 @@ class TestAddEnvVarDetection:
 
         content = (workspace / ".kanon").read_text()
         env = _env_var_lines(content, "custom")
-        assert env == {"MYBASE": ""}, (
+        assert env == {"MYBASE": UNFILLED_VAR_SENTINEL}, (
             f"a custom ${{MYBASE}} remote must write an empty MYBASE placeholder; got:\n{content}"
         )
 
@@ -231,6 +233,102 @@ class TestAddEnvVarDetection:
 
         content = (workspace / ".kanon").read_text()
         env = _env_var_lines(content, "projvar")
-        assert env == {"SUBPATH": ""}, (
-            f"a ${{SUBPATH}} project attribute must be detected and written empty; got:\n{content}"
+        assert env == {"SUBPATH": UNFILLED_VAR_SENTINEL}, (
+            f"a ${{SUBPATH}} project attribute must be detected and written as the unfilled sentinel; got:\n{content}"
+        )
+
+    def test_linkfile_dest_var_is_detected(self, tmp_path: pathlib.Path) -> None:
+        """A ${VAR} used only in a <linkfile dest> is detected and written empty.
+
+        ``repo sync`` materializes ``<linkfile dest>`` on disk, so a ${VAR} there
+        decides where content lands and is functional. Detection must not stop at
+        the <project>'s OWN attributes.
+
+        Falsifiability: before the fix, ``_vars_in_attributes`` read only
+        ``element.attrib`` for each <project>, so ${KITROOT} was invisible and
+        ``add`` wrote no line -- the operator got no signal that configuration
+        was required.
+        """
+        body = textwrap.dedent("""\
+              <remote name="origin" fetch="https://example.com/repos" />
+              <default revision="main" remote="origin" />
+              <project name="pkg" path="pkg">
+                <linkfile src="rules" dest="${KITROOT}/.claude/rules" />
+              </project>
+        """)
+        bare = _make_manifest_repo_with_body(tmp_path / "catalog", "linkvar", body, ["1.0.0"])
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        result = _run_kanon(
+            ["add", "linkvar", "--catalog-source", f"file://{bare}@main"],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr!r}"
+
+        content = (workspace / ".kanon").read_text()
+        env = _env_var_lines(content, "linkvar")
+        assert env == {"KITROOT": UNFILLED_VAR_SENTINEL}, (
+            f"a ${{KITROOT}} in a <linkfile dest> must be detected and written as the unfilled sentinel; got:\n{content}"
+        )
+
+    def test_marketplace_dir_var_in_linkfile_writes_no_per_source_line(self, tmp_path: pathlib.Path) -> None:
+        """${CLAUDE_MARKETPLACES_DIR} in a <linkfile dest> writes no per-source line.
+
+        The marketplace dir is supplied to every source's substitution from the
+        auto-managed global .kanon header. A per-source line would overlay that
+        global with an empty value and break marketplace registration, so the
+        detector must exclude it while still reporting the entry's own vars.
+        """
+        body = textwrap.dedent("""\
+              <remote name="origin" fetch="https://example.com/repos" />
+              <default revision="main" remote="origin" />
+              <project name="pkg" path="pkg">
+                <linkfile src="plugin" dest="${CLAUDE_MARKETPLACES_DIR}/pkg" />
+                <linkfile src="rules" dest="${KITROOT}/.claude/rules" />
+              </project>
+        """)
+        bare = _make_manifest_repo_with_body(tmp_path / "catalog", "mktvar", body, ["1.0.0"])
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        result = _run_kanon(
+            ["add", "mktvar", "--catalog-source", f"file://{bare}@main"],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr!r}"
+
+        content = (workspace / ".kanon").read_text()
+        env = _env_var_lines(content, "mktvar")
+        assert env == {"KITROOT": UNFILLED_VAR_SENTINEL}, (
+            f"only ${{KITROOT}} may get a per-source line; CLAUDE_MARKETPLACES_DIR is global; got:\n{content}"
+        )
+
+    def test_copyfile_dest_var_is_detected(self, tmp_path: pathlib.Path) -> None:
+        """A ${VAR} used only in a <copyfile dest> is detected and written empty.
+
+        ``<copyfile>`` is the sibling of ``<linkfile>`` in the repo tool's
+        project-child dispatch, so it carries the same functional weight.
+        """
+        body = textwrap.dedent("""\
+              <remote name="origin" fetch="https://example.com/repos" />
+              <default revision="main" remote="origin" />
+              <project name="pkg" path="pkg">
+                <copyfile src="hooks/pre-commit" dest="${KITROOT}/.githooks/pre-commit" />
+              </project>
+        """)
+        bare = _make_manifest_repo_with_body(tmp_path / "catalog", "copyvar", body, ["1.0.0"])
+        workspace = tmp_path / "workspace"
+        workspace.mkdir()
+
+        result = _run_kanon(
+            ["add", "copyvar", "--catalog-source", f"file://{bare}@main"],
+            cwd=workspace,
+        )
+        assert result.returncode == 0, f"stderr: {result.stderr!r}"
+
+        content = (workspace / ".kanon").read_text()
+        env = _env_var_lines(content, "copyvar")
+        assert env == {"KITROOT": UNFILLED_VAR_SENTINEL}, (
+            f"a ${{KITROOT}} in a <copyfile dest> must be detected and written as the unfilled sentinel; got:\n{content}"
         )

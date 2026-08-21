@@ -85,7 +85,13 @@ import pytest
 
 from kanon_cli.core.include_walker import _walk_includes as _real_walk_includes
 from kanon_cli.core.install import _RefResolution
-from tests.conftest import _isolation_env, managed_repo_dir, strip_subprocess_coverage_env
+from tests.conftest import (
+    _isolation_env,
+    managed_repo_dir,
+    run_owned_subprocess,
+    strip_subprocess_coverage_env,
+    subprocess_timeout,
+)
 
 _MINIMAL_MANIFEST_XML = '<?xml version="1.0" encoding="UTF-8"?>\n<manifest></manifest>\n'
 
@@ -378,6 +384,10 @@ def _run_kanon(
 
     Executes ``python -m kanon_cli`` with the supplied arguments.
 
+    The child is bounded by :func:`subprocess_timeout`; a ``kanon`` process that
+    wedges is killed and raises :class:`subprocess.TimeoutExpired` naming the command
+    rather than blocking this pytest worker until CI's own limit expires.
+
     Args:
         *args: CLI arguments passed after ``python -m kanon_cli``.
         cwd: Working directory for the subprocess. Accepts a :class:`pathlib.Path`
@@ -394,6 +404,8 @@ def _run_kanon(
 
     Raises:
         ValueError: When both ``env`` and ``extra_env`` are provided at once.
+        subprocess.TimeoutExpired: When the child does not exit within
+            ``KANON_TEST_SUBPROCESS_TIMEOUT`` seconds.
     """
     if env is not None and extra_env is not None:
         raise ValueError("Provide either 'env' or 'extra_env', not both.")
@@ -413,13 +425,13 @@ def _run_kanon(
 
     resolved_cwd: "str | None" = str(cwd) if cwd is not None else None
 
-    return subprocess.run(
+    return run_owned_subprocess(
         [sys.executable, "-m", "kanon_cli", *args],
         capture_output=True,
         text=True,
-        check=False,
         cwd=resolved_cwd,
         env=resolved_env,
+        timeout=subprocess_timeout(),
     )
 
 

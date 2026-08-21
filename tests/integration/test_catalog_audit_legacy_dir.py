@@ -168,13 +168,13 @@ class TestCatalogAuditLegacyDirGitRepo:
         )
 
     def test_migration_doc_reference_in_warn_message(self, tmp_path: pathlib.Path) -> None:
-        """The WARN message references docs/migration-to-add.md. AC-FUNC-004."""
+        """The WARN message references docs/archive/upgrading-from-2x.md. AC-FUNC-004."""
         repo = _create_legacy_catalog_git_repo(tmp_path)
         result = _run_kanon(
             ["catalog", "audit", str(repo), "--check", "all"],
         )
-        assert "docs/migration-to-add.md" in result.stdout, (
-            f"Expected docs/migration-to-add.md reference in stdout.\n"
+        assert "docs/archive/upgrading-from-2x.md" in result.stdout, (
+            f"Expected docs/archive/upgrading-from-2x.md reference in stdout.\n"
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
 

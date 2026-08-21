@@ -46,6 +46,7 @@ from tests.conftest import (
     _leaked_kanon_processes,
     _positive_int_env,
     register_spawned_process_group,
+    run_owned_subprocess,
     subprocess_timeout,
 )
 
@@ -378,4 +379,46 @@ class TestLeakExitCode:
         reserved = {code.value for code in pytest.ExitCode}
         assert _PROCESS_LEAK_EXIT_CODE not in reserved, (
             f"leak exit code {_PROCESS_LEAK_EXIT_CODE} collides with pytest's reserved codes {sorted(reserved)}"
+        )
+
+
+@pytest.mark.functional
+class TestVendoredTestsAreOrderIndependent:
+    """A test that passes only because a sibling ran first is a latent failure.
+
+    ``tests/unit/repo/test_git_command.py::GitCommandWaitTest`` mocks
+    ``subprocess.Popen`` with a double that models only what ``.Wait()`` needs.
+    ``_build_env`` also reads ``user_agent.git``, which probes ``git --version``
+    once per process and memoizes the answer on module-level globals. With those
+    globals cold the probe reached the double and raised ``AttributeError``; with
+    them warm it never ran.
+
+    Nothing declared that dependency, so the class passed under one test
+    distribution and failed under another. It was latent on ``main`` and surfaced
+    in the full-suite job once new tests shifted xdist's ``loadscope``
+    assignment. Running the class by itself is what tells the two apart: a fresh
+    interpreter guarantees the caches are cold.
+    """
+
+    def test_git_command_wait_tests_pass_in_a_cold_interpreter(self) -> None:
+        """Run the class alone, where no sibling can have warmed the caches."""
+        repo_root = pathlib.Path(__file__).resolve().parents[2]
+        result = run_owned_subprocess(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "tests/unit/repo/test_git_command.py::GitCommandWaitTest",
+                "-p",
+                "no:cacheprovider",
+                "-q",
+            ],
+            cwd=str(repo_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=subprocess_timeout(),
+        )
+        assert result.returncode == 0, (
+            f"GitCommandWaitTest depends on another test having run first; in isolation it fails:\n{result.stdout}"
         )

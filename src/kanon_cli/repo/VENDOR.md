@@ -1,25 +1,19 @@
-# Vendored `repo` — deviations from upstream
+# Vendored `repo` — a permanent fork
 
 `src/kanon_cli/repo/` is a vendored fork of Google's
 [`git-repo`](https://gerrit.googlesource.com/git-repo/), embedded as a Python
 package by commit `e5a43e5` ("embed rpm-git-repo as kanon_cli.repo").
 
-## No upstream base revision is recorded
+## kanon does not track upstream
 
-**This is the gap, and it is not resolved by this file.** No upstream commit SHA,
-release tag, `REPO_REV`, version constant or NOTICE file exists anywhere in the
-tree, so the fork cannot be diffed against upstream. That means an upstream
-security fix cannot be located, assessed, or absorbed without first
-reconstructing the base by hand.
+This is a hard fork and stays one. There is no intent to pull from `git-repo`
+again, so no upstream base revision is recorded and none is needed. The tree is
+maintained as kanon's own code: defects and security issues in it are found
+through kanon's use of it, and fixed here.
 
-Establishing it would mean diffing this tree against successive upstream releases
-until the closest match emerges — archaeology across 32 files with an uncertain
-result. It has not been attempted. **If anyone ever does establish it, record it
-here first.**
-
-What follows is the deviations we *know* about, so a reviewer can at least see
-where this tree departs from upstream behaviour, and so a future resync has a
-starting list.
+The deviations below are recorded so a reviewer can tell which behaviour is
+fork-local rather than inherited, which is what matters when reading or changing
+this tree.
 
 ## Known deviations
 
@@ -58,6 +52,19 @@ available tags.
 `963fe6d` skips restoring a signal handler when `signal.getsignal()` returned
 `None`. Upstream passes that value straight to `signal.signal()`, which raises
 `TypeError` when the installed handler was not set from Python.
+
+### `GitCommandWaitTest` stubs the user agent
+
+Upstream's `GitCommandWaitTest` (`tests/unit/repo/test_git_command.py`) mocks
+`subprocess.Popen` with a double that models only what `.Wait()` needs.
+`_build_env` also reads `user_agent.git`, which probes `git --version` once per
+process and memoizes the answer on module-level globals, so the class spawned a
+subprocess -- and failed on the incomplete double -- only when no earlier test in
+the same worker had warmed those globals. It passed by accident of ordering.
+
+This fork stubs `git_command.user_agent` in that `setUp`.
+`tests/functional/test_suite_containment.py::TestVendoredTestsAreOrderIndependent`
+runs the class in a cold interpreter so the accident cannot return.
 
 ## Constraints this tree is under
 

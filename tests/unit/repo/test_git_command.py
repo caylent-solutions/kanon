@@ -42,7 +42,23 @@ class GitCommandTest(unittest.TestCase):
 
 
 class GitCommandWaitTest(unittest.TestCase):
-    """Tests the GitCommand class .Wait()"""
+    """Tests the GitCommand class .Wait()
+
+    ``_build_env`` reads ``user_agent.git``, which probes ``git --version``
+    through ``subprocess.Popen`` the first time anything asks for it. Both the
+    probe's result and the assembled string are memoized on module-level
+    globals -- ``_GitCall.version_tuple``'s ``lru_cache`` and
+    ``UserAgent._git_ua`` -- so whether this class spawns a subprocess at all
+    depended on whether an earlier test in the same worker process had already
+    warmed them.
+
+    When they were cold the probe reached the mocked ``Popen`` below, and
+    ``MockPopen`` models only what ``.Wait()`` needs: it has no ``returncode``,
+    so ``run_command`` raised ``AttributeError``. The class therefore passed
+    only by the accident of a sibling test running first, which made it a
+    latent failure that surfaces whenever test distribution changes. Stubbing
+    the user agent removes the dependency on that accident.
+    """
 
     def setUp(self):
         class MockPopen:
@@ -66,6 +82,12 @@ class GitCommandWaitTest(unittest.TestCase):
 
         def realpath_mock(val, **kwargs):
             return val
+
+        mock.patch.object(
+            git_command,
+            "user_agent",
+            mock.Mock(git="git/2.0.0 (linux) git-repo/stub"),
+        ).start()
 
         mock.patch.object(subprocess, "Popen", side_effect=popen_mock).start()
 

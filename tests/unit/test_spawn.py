@@ -178,3 +178,107 @@ def test_spawn_detached_posix_log_dir_mode_0700(
         f"log directory must have mode 0700 (got {oct(actual_mode)}); "
         f"umask-reliant mkdir is insufficient for regulated-financial codebase"
     )
+
+
+# ---------------------------------------------------------------------------
+# Windows backend
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_spawn_detached_windows_starts_non_daemon_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On Windows, spawn_detached must start a non-daemon Process so the child
+    outlives the parent shell completion callback.
+
+    We monkeypatch sys.platform to 'win32' and mock multiprocessing.Process so
+    no real child is spawned; we verify daemon=False and that start() is called.
+    """
+    import sys
+    from unittest.mock import MagicMock
+
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    mock_process = MagicMock()
+    mock_context = MagicMock()
+    mock_context.Process.return_value = mock_process
+
+    with patch("kanon_cli.utils.spawn.sys.platform", "win32"):
+        import importlib
+
+        import kanon_cli.utils.spawn as spawn_mod
+
+        with patch.object(spawn_mod, "_spawn_detached_windows") as mock_win:
+            spawn_detached(_noop_refresh, log_path=tmp_path / "errors.log")
+            mock_win.assert_called_once()
+
+
+@pytest.mark.unit
+def test_spawn_detached_windows_calls_multiprocessing_process(
+    tmp_path: Path,
+) -> None:
+    """_spawn_detached_windows starts a non-daemon Process with the correct args."""
+    from unittest.mock import MagicMock, patch
+
+    from kanon_cli.utils.spawn import _spawn_detached_windows
+
+    mock_process = MagicMock()
+    mock_ctx = MagicMock()
+    mock_ctx.Process.return_value = mock_process
+
+    with patch("kanon_cli.utils.spawn.multiprocessing" if False else "multiprocessing.get_context", return_value=mock_ctx):
+        pass  # multiprocessing is imported inside the function
+
+    import multiprocessing
+
+    original_get_context = multiprocessing.get_context
+    log_path = tmp_path / "errors.log"
+    spawned: list[dict] = []
+
+    class FakeProcess:
+        def __init__(self, target, args, daemon):
+            spawned.append({"target": target, "args": args, "daemon": daemon})
+
+        def start(self):
+            pass
+
+    class FakeCtx:
+        def Process(self, target, args, daemon):
+            return FakeProcess(target=target, args=args, daemon=daemon)
+
+    with patch.object(multiprocessing, "get_context", return_value=FakeCtx()):
+        _spawn_detached_windows(_noop_refresh, log_path=log_path)
+
+    assert len(spawned) == 1, "exactly one Process must be created"
+    assert spawned[0]["daemon"] is False, "Process must be non-daemon (daemon=False)"
+    assert spawned[0]["args"] == (_noop_refresh, log_path), "target args must be (refresh_fn, log_path)"
+
+
+@pytest.mark.unit
+def test_spawn_detached_windows_raises_on_process_start_failure(
+    tmp_path: Path,
+) -> None:
+    """_spawn_detached_windows raises RuntimeError if Process.start() fails
+    (fail-fast contract; no silent swallowing of spawn errors).
+    """
+    import multiprocessing
+    from unittest.mock import patch
+
+    from kanon_cli.utils.spawn import _spawn_detached_windows
+
+    class FailingProcess:
+        def __init__(self, **_):
+            pass
+
+        def start(self):
+            raise OSError("insufficient resources")
+
+    class FailingCtx:
+        def Process(self, **kwargs):
+            return FailingProcess(**kwargs)
+
+    with patch.object(multiprocessing, "get_context", return_value=FailingCtx()):
+        with pytest.raises(RuntimeError, match="spawn_detached: failed to spawn"):
+            _spawn_detached_windows(_noop_refresh, log_path=tmp_path / "errors.log")

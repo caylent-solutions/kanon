@@ -1,4 +1,4 @@
-"""POSIX detached-process spawn helper.
+"""Detached-process spawn helper — cross-platform.
 
 Provides a single ``spawn_detached`` function that starts a child process
 running an arbitrary callable, fully detached from the parent's controlling
@@ -13,8 +13,13 @@ POSIX (Linux, macOS):
     the caller-supplied *log_path* (append mode), calls *refresh_fn()*, and
     exits via ``os._exit`` (0 on success, 1 on exception).
 
-Windows is unsupported: kanon targets POSIX hosts (WSL/WSL2 is the recommended
-path on Windows in the meantime), so this helper has no Windows backend.
+Windows:
+    Uses ``multiprocessing.Process`` with the ``spawn`` start context so the
+    child gets a fresh interpreter.  The callable must be picklable (module-level
+    functions and ``functools.partial`` of them are always picklable).  The
+    process is non-daemon (``daemon=False``) so it outlives the parent shell
+    completion callback.  stdin and stdout in the child are redirected to
+    ``os.devnull``; stderr is appended to *log_path*.
 
 Fail-fast contract
 ------------------
@@ -27,6 +32,7 @@ deciding whether to propagate the error; library code never calls
 from __future__ import annotations
 
 import os
+import sys
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -63,22 +69,30 @@ def spawn_detached(refresh_fn: Callable[[], None], *, log_path: Path) -> None:
     stdin and stdout are redirected to ``/dev/null``; stderr is redirected to
     *log_path* (opened in append mode, created if absent).
 
-    The child is created via ``os.fork()``; the parent returns as soon as the
-    fork succeeds.  kanon is POSIX-only, so there is no Windows backend.
+    Dispatches to the platform-specific backend:
+
+    * POSIX: ``_spawn_detached_posix`` — ``os.fork()`` + ``os.setsid()``.
+    * Windows: ``_spawn_detached_windows`` — ``multiprocessing.Process``
+      with the ``spawn`` start context.
 
     Args:
         refresh_fn: Zero-argument callable executed only in the child process.
+            Must be picklable on Windows (module-level functions and
+            ``functools.partial`` of them are always picklable).
         log_path: Path to the file where the child's stderr is appended.
-            The log directory is created with mode 0700 (explicit chmod so the
-            umask cannot weaken permissions).  The parent does not create this
-            file; the child opens it in append mode so that any error output is
-            captured without touching the operator's terminal.
+            The log directory is created with mode 0700 on POSIX (explicit chmod
+            so the umask cannot weaken permissions) and with default permissions
+            on Windows.  The parent does not create this file; the child opens it
+            in append mode so any error output is captured without touching the
+            operator's terminal.
 
     Raises:
-        RuntimeError: If the underlying spawn mechanism fails (``os.fork``
-            raises ``OSError``).
+        RuntimeError: If the underlying spawn mechanism fails.
     """
-    _spawn_detached_posix(refresh_fn, log_path=log_path)
+    if sys.platform == "win32":
+        _spawn_detached_windows(refresh_fn, log_path=log_path)
+    else:
+        _spawn_detached_posix(refresh_fn, log_path=log_path)
 
 
 _POSIX_FILE_MODE = 0o600
@@ -126,3 +140,68 @@ def _spawn_detached_posix(
     except Exception:
         _record_posix_child_error(log_path)
         os._exit(1)
+
+
+def _windows_child_target(refresh_fn: Callable[[], None], log_path: Path) -> None:
+    """Child process entry point for the Windows spawn backend.
+
+    Redirects stdin and stdout to ``/dev/null`` so the child cannot write to
+    the parent's completion stdout.  Stderr is appended to *log_path*.
+    Called only inside the child process spawned by ``_spawn_detached_windows``.
+
+    Args:
+        refresh_fn: Zero-argument callable to run inside the child.
+        log_path: Path to the error log file (opened in append mode).
+    """
+    import io
+
+    devnull = open(os.devnull, "w", encoding="utf-8")
+    sys.stdin = io.StringIO()
+    sys.stdout = devnull
+    try:
+        sys.stderr = open(log_path, "a", encoding="utf-8")
+    except OSError:
+        sys.stderr = devnull
+
+    try:
+        refresh_fn()
+    except Exception:
+        _record_posix_child_error(log_path)
+
+
+def _spawn_detached_windows(
+    refresh_fn: Callable[[], None],
+    *,
+    log_path: Path,
+) -> None:
+    """Windows backend: spawn a non-daemon child via ``multiprocessing``.
+
+    Uses the ``spawn`` start context so the child receives a fresh interpreter.
+    The callable is serialised via ``pickle``; module-level functions and
+    ``functools.partial`` of them are always picklable.  ``daemon=False``
+    ensures the child outlives the parent shell completion callback.
+
+    Args:
+        refresh_fn: Zero-argument callable to run inside the child.
+            Must be picklable.
+        log_path: Path to the error log file appended to by the child.
+
+    Raises:
+        RuntimeError: If the ``multiprocessing.Process`` fails to start.
+    """
+    import multiprocessing
+
+    ctx = multiprocessing.get_context("spawn")
+    try:
+        p = ctx.Process(
+            target=_windows_child_target,
+            args=(refresh_fn, log_path),
+            daemon=False,
+        )
+        p.start()
+    except Exception as exc:
+        raise RuntimeError(
+            f"spawn_detached: failed to spawn background refresh child on Windows"
+            f" ({type(exc).__name__}: {exc})."
+            f" Ensure the callable is picklable and the Python executable is accessible."
+        ) from exc

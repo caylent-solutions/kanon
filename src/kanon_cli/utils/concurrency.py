@@ -299,7 +299,7 @@ def _exclusive_kernel_lock_windows(
     import ctypes.wintypes
     import msvcrt
 
-    kernel32: ctypes.WinDLL = ctypes.windll.kernel32  # type: ignore[attr-defined]
+    kernel32 = getattr(ctypes, "windll").kernel32
 
     LOCKFILE_EXCLUSIVE_LOCK: int = 0x00000002
     WAIT_TIMEOUT: int = 0x00000102
@@ -321,10 +321,7 @@ def _exclusive_kernel_lock_windows(
         ]
 
     handle = msvcrt.get_osfhandle(lock_fd.fileno())
-
-    # Manual-reset event, starts unsignaled.  The kernel signals it when
-    # LockFileEx grants the lock.
-    event: ctypes.wintypes.HANDLE = kernel32.CreateEventW(None, True, False, None)
+    event = kernel32.CreateEventW(None, True, False, None)
     if not event:
         raise OSError(
             f"CreateEventW failed during workspace lock acquisition"
@@ -335,11 +332,11 @@ def _exclusive_kernel_lock_windows(
     overlapped.hEvent = event
 
     try:
-        success: int = kernel32.LockFileEx(
+        success = kernel32.LockFileEx(
             handle,
             ctypes.wintypes.DWORD(LOCKFILE_EXCLUSIVE_LOCK),
-            ctypes.wintypes.DWORD(0),  # reserved
-            ctypes.wintypes.DWORD(1),  # lock one byte
+            ctypes.wintypes.DWORD(0),
+            ctypes.wintypes.DWORD(1),
             ctypes.wintypes.DWORD(0),
             ctypes.byref(overlapped),
         )
@@ -352,9 +349,8 @@ def _exclusive_kernel_lock_windows(
             )
 
         if not success:
-            # ERROR_IO_PENDING: lock contested; wait for the kernel to grant it.
             timeout_ms: int = int(timeout_seconds * 1000)
-            wait_result: int = kernel32.WaitForSingleObject(
+            wait_result = kernel32.WaitForSingleObject(
                 event, ctypes.wintypes.DWORD(timeout_ms)
             )
 
@@ -378,8 +374,8 @@ def _exclusive_kernel_lock_windows(
     finally:
         kernel32.UnlockFileEx(
             handle,
-            ctypes.wintypes.DWORD(0),  # reserved
-            ctypes.wintypes.DWORD(1),  # same byte range as the lock
+            ctypes.wintypes.DWORD(0),
+            ctypes.wintypes.DWORD(1),
             ctypes.wintypes.DWORD(0),
             ctypes.byref(unlock_overlapped),
         )

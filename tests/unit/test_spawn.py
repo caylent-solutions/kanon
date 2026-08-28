@@ -180,10 +180,6 @@ def test_spawn_detached_posix_log_dir_mode_0700(
     )
 
 
-# ---------------------------------------------------------------------------
-# Windows backend
-# ---------------------------------------------------------------------------
-
 
 @pytest.mark.unit
 def test_spawn_detached_windows_starts_non_daemon_process(
@@ -229,7 +225,7 @@ def test_spawn_detached_windows_calls_multiprocessing_process(
     mock_ctx.Process.return_value = mock_process
 
     with patch("kanon_cli.utils.spawn.multiprocessing" if False else "multiprocessing.get_context", return_value=mock_ctx):
-        pass  # multiprocessing is imported inside the function
+        pass
 
     import multiprocessing
 

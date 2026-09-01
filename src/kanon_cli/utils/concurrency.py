@@ -323,10 +323,7 @@ def _exclusive_kernel_lock_windows(
     handle = msvcrt.get_osfhandle(lock_fd.fileno())
     event = kernel32.CreateEventW(None, True, False, None)
     if not event:
-        raise OSError(
-            f"CreateEventW failed during workspace lock acquisition"
-            f" (GetLastError={ctypes.get_last_error()})"
-        )
+        raise OSError(f"CreateEventW failed during workspace lock acquisition (GetLastError={ctypes.get_last_error()})")
 
     overlapped = OVERLAPPED()
     overlapped.hEvent = event
@@ -344,15 +341,12 @@ def _exclusive_kernel_lock_windows(
         last_err = ctypes.get_last_error()
         if not success and last_err != ERROR_IO_PENDING:
             raise OSError(
-                f"LockFileEx failed (GetLastError={last_err})"
-                f" while acquiring workspace lock for {workspace_root}"
+                f"LockFileEx failed (GetLastError={last_err}) while acquiring workspace lock for {workspace_root}"
             )
 
         if not success:
             timeout_ms: int = int(timeout_seconds * 1000)
-            wait_result = kernel32.WaitForSingleObject(
-                event, ctypes.wintypes.DWORD(timeout_ms)
-            )
+            wait_result = kernel32.WaitForSingleObject(event, ctypes.wintypes.DWORD(timeout_ms))
 
             if wait_result == WAIT_TIMEOUT:
                 kernel32.CancelIoEx(handle, ctypes.byref(overlapped))

@@ -180,7 +180,6 @@ def test_spawn_detached_posix_log_dir_mode_0700(
     )
 
 
-
 @pytest.mark.unit
 def test_spawn_detached_windows_starts_non_daemon_process(
     tmp_path: Path,
@@ -202,8 +201,6 @@ def test_spawn_detached_windows_starts_non_daemon_process(
     mock_context.Process.return_value = mock_process
 
     with patch("kanon_cli.utils.spawn.sys.platform", "win32"):
-        import importlib
-
         import kanon_cli.utils.spawn as spawn_mod
 
         with patch.object(spawn_mod, "_spawn_detached_windows") as mock_win:
@@ -224,12 +221,13 @@ def test_spawn_detached_windows_calls_multiprocessing_process(
     mock_ctx = MagicMock()
     mock_ctx.Process.return_value = mock_process
 
-    with patch("kanon_cli.utils.spawn.multiprocessing" if False else "multiprocessing.get_context", return_value=mock_ctx):
+    with patch(
+        "kanon_cli.utils.spawn.multiprocessing" if False else "multiprocessing.get_context", return_value=mock_ctx
+    ):
         pass
 
     import multiprocessing
 
-    original_get_context = multiprocessing.get_context
     log_path = tmp_path / "errors.log"
     spawned: list[dict] = []
 

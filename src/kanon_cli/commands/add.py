@@ -47,6 +47,7 @@ from kanon_cli.constants import (
     SOURCE_GITBASE_VAR,
     UNFILLED_VAR_SENTINEL,
     SOURCE_MARKETPLACE_SUFFIX,
+    SOURCE_NAME_SUFFIX,
     SOURCE_PATH_SUFFIX,
     SOURCE_PREFIX,
     SOURCE_REF_SUFFIX,
@@ -163,8 +164,10 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "entry. The alias charset is [A-Za-z0-9_] with no '__' run. When\n"
             "the alias is already mapped to a different source it is a hard\n"
             "error (use --force to overwrite, or 'kanon remove <alias>'\n"
-            "first). Without --as, the alias is the sanitized manifest name,\n"
-            "auto-suffixed deterministically on a cross-source collision."
+            "first). Without --as, the alias is the sanitized manifest name;\n"
+            "a manifest name the .kanon file already declares reuses that\n"
+            "block's alias, and a collision between distinct packages whose\n"
+            "names sanitize alike is auto-suffixed deterministically."
         ),
     )
 
@@ -187,13 +190,14 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
         action="store_true",
         default=False,
         help=(
-            "Overwrite an existing alias block when re-adding the same\n"
-            "package (same source@ref), and re-pin its .kanon.lock entry\n"
+            "Overwrite an existing alias block when re-adding a package the\n"
+            ".kanon file already declares, and re-pin its .kanon.lock entry\n"
             "while keeping the dep's NAME. Without this flag, a re-add of an\n"
-            "existing alias is a hard error (with a diff and the guiding\n"
-            "message). A cross-source collision (a different source for the\n"
-            "same manifest name) is auto-suffixed deterministically and is\n"
-            "never an error, with or without --force."
+            "already-declared manifest name -- from any source, at any ref --\n"
+            "is a hard error (with a diff and the guiding message). A\n"
+            "collision between distinct packages whose names sanitize to one\n"
+            "alias is auto-suffixed deterministically and is never an error,\n"
+            "with or without --force."
         ),
     )
     parser.add_argument(
@@ -586,6 +590,41 @@ def _read_all_source_aliases(kanon_file: pathlib.Path) -> dict[str, tuple[str | 
     return aliases
 
 
+def _read_alias_by_manifest_name(kanon_file: pathlib.Path) -> dict[str, str]:
+    """Map every manifest ``_NAME`` in the .kanon file to the alias that declares it.
+
+    Scans the destination file once for ``KANON_SOURCE_<alias>_NAME`` lines. The
+    returned mapping answers "is this catalog entry already declared in this
+    ``.kanon``, under any alias and from any source?" -- the question alias
+    resolution must ask before minting a fresh alias, because two live source
+    blocks declaring the same ``_NAME`` are two sources claiming to provide one
+    package, which has no defined resolution at install time.
+
+    When a file already carries several blocks for one ``_NAME`` (written by a
+    kanon that predates the same-NAME check), the FIRST block in file order wins,
+    so a subsequent ``--force`` re-add updates the original block rather than the
+    trailing copy.
+
+    Args:
+        kanon_file: Path to the .kanon file (may not exist).
+
+    Returns:
+        Mapping ``manifest name -> alias`` for every ``_NAME`` line in the file.
+        Empty when the file is absent or carries no source blocks.
+    """
+    names: dict[str, str] = {}
+    if not kanon_file.exists():
+        return names
+
+    name_re = re.compile(rf"^{re.escape(SOURCE_PREFIX)}(.+?){re.escape(SOURCE_NAME_SUFFIX)}=(.*)$")
+
+    for raw_line in kanon_file.read_text(encoding="utf-8").splitlines():
+        match = name_re.match(raw_line.strip())
+        if match:
+            names.setdefault(match.group(2), match.group(1))
+    return names
+
+
 def _alias_candidate_sequence(base_alias: str, entry_url: str, entry_ref: str) -> list[str]:
     """Build the deterministic alias-candidate sequence for an entry.
 
@@ -622,6 +661,12 @@ def _resolve_entry_alias(
     force: bool,
 ) -> tuple[str, str]:
     """Resolve the local alias for an auto-computed (no ``--as``) entry.
+
+    Reached only for an entry whose manifest name is not already declared by an
+    existing block; a re-add of an already-declared name resolves to that block's
+    alias via :func:`_resolve_same_manifest_name_alias` instead. The candidate
+    sequence walked here therefore separates DISTINCT packages whose names
+    sanitize to one alias.
 
     Walks the deterministic candidate sequence (spec Section 4.2). For each
     candidate, in order:
@@ -664,6 +709,33 @@ def _resolve_entry_alias(
         file=sys.stderr,
     )
     sys.exit(1)
+
+
+def _resolve_same_manifest_name_alias(name_alias: str, force: bool) -> tuple[str, str]:
+    """Resolve the alias for an entry whose manifest name is already declared.
+
+    Reached when the ``.kanon`` file already carries a block whose ``_NAME``
+    equals the entry's manifest name (see :func:`_read_alias_by_manifest_name`).
+    The entry resolves to THAT alias whatever its source coordinates are, so the
+    existing block is updated in place and a second block claiming the same
+    package name is never appended. This takes precedence over the auto-suffix
+    candidate sequence in :func:`_resolve_entry_alias`, which exists to separate
+    DISTINCT packages whose names sanitize to one alias -- not to fork a single
+    package across two live blocks when its source URL or ref changes.
+
+    The ``--force`` gate is the same one a same-alias re-add goes through: an
+    update to an already-declared package is never silent.
+
+    Args:
+        name_alias: The alias whose block already declares the entry's manifest
+            name.
+        force: The ``--force`` flag.
+
+    Returns:
+        A ``(alias, mode)`` tuple where mode is ``"duplicate"`` (the caller
+        errors with a diff and the guiding message) or ``"force_overwrite"``.
+    """
+    return name_alias, ("force_overwrite" if force else "duplicate")
 
 
 def _resolve_override_alias(
@@ -1432,14 +1504,17 @@ def run_add(args: argparse.Namespace) -> int:
     without modifying any file.
 
     Alias keying (FR-6, spec Section 4.2): each entry's local alias is the
-    sanitized manifest name. A cross-source collision (the bare alias already
-    maps to a different source / ref) auto-suffixes deterministically -- the
-    sanitized source-repo name, then the sanitized ref -- so re-reading the
+    sanitized manifest name. An entry whose manifest ``NAME`` is already declared
+    by an existing block resolves to THAT block's alias whatever its source
+    coordinates are, so a re-add updates the one block in place and two live
+    sources never claim the same package name. A collision between DISTINCT
+    packages whose names sanitize to one alias auto-suffixes deterministically --
+    the sanitized source-repo name, then the sanitized ref -- so re-reading the
     committed .kanon reproduces the same aliases. ``--as <alias>`` overrides the
-    auto-computed alias for the (single) entry. A re-add of the same alias at
-    the same source@ref is a true duplicate: a hard error (with a diff and the
-    guiding message) without ``--force``; with ``--force`` the block is
-    overwritten and its lock entry re-pinned while keeping the dep's ``NAME``.
+    auto-computed alias for the (single) entry. A re-add of an already-declared
+    dependency is a duplicate: a hard error (with a diff and the guiding message)
+    without ``--force``; with ``--force`` the block is overwritten and its lock
+    entry re-pinned while keeping the dep's ``NAME``.
 
     Args:
         args: Parsed argument namespace from argparse.
@@ -1492,6 +1567,7 @@ def run_add(args: argparse.Namespace) -> int:
     catalog = _build_entry_catalog(manifest_root, url)
 
     existing_aliases = _read_all_source_aliases(kanon_file)
+    existing_manifest_names = _read_alias_by_manifest_name(kanon_file)
 
     resolved_entries: list[tuple[str, str, str, str, list[str], bool]] = []
     for raw_entry in args.entries:
@@ -1516,8 +1592,11 @@ def run_add(args: argparse.Namespace) -> int:
                 print(str(exc), file=sys.stderr)
                 sys.exit(1)
 
+        declared_alias = existing_manifest_names.get(metadata.name)
         if alias_override is not None:
             alias, mode = _resolve_override_alias(existing_aliases, alias_override, entry_url, resolved_revision, force)
+        elif declared_alias is not None:
+            alias, mode = _resolve_same_manifest_name_alias(declared_alias, force)
         else:
             alias, mode = _resolve_entry_alias(existing_aliases, base_alias, entry_url, resolved_revision, force)
 
@@ -1563,6 +1642,7 @@ def run_add(args: argparse.Namespace) -> int:
         )
 
         existing_aliases[alias] = (entry_url, resolved_revision)
+        existing_manifest_names.setdefault(metadata.name, alias)
         resolved_entries.append((alias, mode, entry_url, lock_ref_spec, lines, marketplace))
 
     any_marketplace = any(entry[5] for entry in resolved_entries)

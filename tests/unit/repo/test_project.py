@@ -117,9 +117,15 @@ class CopyLinkTestCase(unittest.TestCase):
         unset and the resolver fails closed, so a test exercising an absolute
         dest has to declare the boundary that makes its destination legal --
         exactly as ``install`` does for the consumer project root.
+
+        The temp root is resolved because an absolute dest is refused when any
+        component of its path is a symlink, and the platform temp root is one on
+        macOS (``/var`` -> ``/private/var``). A real consumer project root is
+        resolved before it is published as a permitted root, so the stub
+        checkout has to be too.
         """
         self.tempdirobj = tempfile.TemporaryDirectory(prefix="repo_tests")
-        self.tempdir = self.tempdirobj.name
+        self.tempdir = os.path.realpath(self.tempdirobj.name)
         self.topdir = os.path.join(self.tempdir, "checkout")
         self.worktree = os.path.join(self.topdir, "git-project")
         os.makedirs(self.topdir)
@@ -1464,7 +1470,8 @@ class TestLinkFileClassExtended:
 
     def test_link_absolute_dest_creates_parents(self):
         """Test _Link with absolute dest creates parent directories."""
-        with tempfile.TemporaryDirectory() as tmpdir:
+        with tempfile.TemporaryDirectory() as raw_tmpdir:
+            tmpdir = os.path.realpath(raw_tmpdir)
             worktree = os.path.join(tmpdir, "worktree")
             os.makedirs(worktree)
 

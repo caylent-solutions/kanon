@@ -583,15 +583,53 @@ class TestResetManifestsWorkingTree:
     AC-TEST-003.
     """
 
+    def _git(self, *args: str, cwd: pathlib.Path) -> None:
+        """Run one git command against the fixture repo and nothing else.
+
+        ``cwd`` alone does not confine git: ``GIT_DIR`` and its siblings take
+        precedence over it, and git exports them to its own hooks. Run from a
+        pre-push hook, these calls wrote ``core.bare=true`` and a fixture
+        identity into the developer's real repository -- breaking their
+        worktrees and reattributing their next commit. Scrubbing the ambient
+        git environment is what makes ``cwd`` mean what this helper assumes.
+        """
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True)
+
     def _init_git_repo(self, path: pathlib.Path) -> None:
         """Initialise a bare-minimum git repo at path with a tracked file."""
         path.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "init", "-b", "main", str(path)], check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=path, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "T"], cwd=path, check=True, capture_output=True)
+        self._git("init", "-b", "main", ".", cwd=path)
+        self._git("config", "user.email", "t@t.com", cwd=path)
+        self._git("config", "user.name", "T", cwd=path)
         (path / "manifest.xml").write_text("<manifest/>\n")
-        subprocess.run(["git", "add", "manifest.xml"], cwd=path, check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
+        self._git("add", "manifest.xml", cwd=path)
+        self._git("commit", "-m", "init", cwd=path)
+
+    def test_fixture_setup_does_not_write_to_an_ambient_git_dir(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Building a fixture repo touches nothing but the fixture, GIT_DIR set or not.
+
+        Git exports GIT_DIR to its hooks, so this suite runs with one set
+        whenever it is invoked from pre-push. GIT_DIR outranks cwd, so the
+        helper's `git config` calls landed in the developer's own repository:
+        core.bare=true broke every worktree of it, and the fixture identity
+        reattributed their next commit to `T <t@t.com>`.
+        """
+        outer = tmp_path / "developers-own-repo"
+        outer.mkdir()
+        subprocess.run(["git", "init", "-b", "main", "."], cwd=outer, check=True, capture_output=True)
+        outer_config = outer / ".git" / "config"
+        before = outer_config.read_text(encoding="utf-8")
+        monkeypatch.setenv("GIT_DIR", str(outer / ".git"))
+
+        self._init_git_repo(tmp_path / "fixture")
+
+        assert outer_config.read_text(encoding="utf-8") == before, (
+            f"Building a fixture repo must not touch the repository GIT_DIR points at, but "
+            f"{outer_config} changed:\n{before!r}\n->\n{outer_config.read_text(encoding='utf-8')!r}"
+        )
 
     def test_noop_when_manifests_dir_absent(self, tmp_path: pathlib.Path) -> None:
         """_reset_manifests_working_tree is a no-op when .repo/manifests does not exist.

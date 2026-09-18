@@ -11,6 +11,7 @@ Covers:
 """
 
 import argparse
+import os
 import pathlib
 import subprocess
 from unittest.mock import MagicMock, patch
@@ -26,6 +27,7 @@ from kanon_cli.core.install import (
     aggregate_symlinks,
     compute_project_address,
     create_source_dirs,
+    ensure_project_packages_anchor,
     install,
     prepare_marketplace_dir,
     RefreshRepoInitError,
@@ -825,6 +827,79 @@ class TestInstallMarketplaceLockfileState:
 
 
 @pytest.mark.unit
+class TestProjectPackagesAnchor:
+    """ensure_project_packages_anchor() maintains the project-root .packages anchor.
+
+    The anchor is what lets a delivered <linkfile> name a target relative to the
+    project root instead of counting directories up to the store, so the same
+    manifest yields the same target from a plain clone and from a git worktree.
+    """
+
+    def _roots(self, tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        return project_root, tmp_path / "store"
+
+    def test_creates_anchor_and_gitignores_it(self, tmp_path: pathlib.Path) -> None:
+        """The anchor points at the store's package directory and is kept out of git."""
+        project_root, store = self._roots(tmp_path)
+
+        anchor = ensure_project_packages_anchor(project_root, store)
+
+        assert pathlib.Path(os.readlink(anchor)) == store / ".packages", (
+            f"Expected the anchor to point at {store / '.packages'}, but it points at {os.readlink(anchor)!r}."
+        )
+        assert "/.packages" in (project_root / ".gitignore").read_text(encoding="utf-8"), (
+            "The anchor points into this machine's own KANON_HOME, so install must gitignore it; "
+            "committing it would hand every other developer a dangling link."
+        )
+
+    def test_repoints_an_anchor_aimed_elsewhere(self, tmp_path: pathlib.Path) -> None:
+        """A stale anchor from a previous KANON_HOME is repointed, not left dangling."""
+        project_root, store = self._roots(tmp_path)
+        (project_root / ".packages").symlink_to(tmp_path / "old-store" / ".packages")
+
+        anchor = ensure_project_packages_anchor(project_root, store)
+
+        assert pathlib.Path(os.readlink(anchor)) == store / ".packages", (
+            f"Expected a stale anchor to be repointed at the current store, but it still points at "
+            f"{os.readlink(anchor)!r}."
+        )
+
+    def test_is_idempotent_on_a_correct_anchor(self, tmp_path: pathlib.Path) -> None:
+        """Re-running install over a correct anchor leaves it exactly as it was."""
+        project_root, store = self._roots(tmp_path)
+
+        first = ensure_project_packages_anchor(project_root, store)
+        before = os.lstat(first).st_ino
+        second = ensure_project_packages_anchor(project_root, store)
+
+        assert os.lstat(second).st_ino == before, (
+            "Expected a correct anchor to be left alone, but it was recreated. Replacing it on every "
+            "install would churn a path other tooling resolves through."
+        )
+
+    def test_refuses_to_replace_real_content_at_the_anchor_path(self, tmp_path: pathlib.Path) -> None:
+        """A real .packages directory is the consumer's own and is never deleted to make room."""
+        from kanon_cli.core.install import InstallError
+
+        project_root, store = self._roots(tmp_path)
+        occupied = project_root / ".packages"
+        occupied.mkdir()
+        (occupied / "theirs.txt").write_text("not kanon's\n", encoding="utf-8")
+
+        with pytest.raises(InstallError) as excinfo:
+            ensure_project_packages_anchor(project_root, store)
+
+        assert str(occupied) in str(excinfo.value), (
+            f"Expected the error to name the occupied path {occupied}, but it said: {excinfo.value}"
+        )
+        assert (occupied / "theirs.txt").exists(), (
+            "install must fail fast rather than delete content it did not create."
+        )
+
+
+@pytest.mark.unit
 class TestInstallKanonHomeStore:
     """install() places .packages/ and .kanon-data/ under <KANON_HOME>/store.
 
@@ -882,7 +957,12 @@ class TestInstallKanonHomeStore:
 
         assert (store / ".kanon-data").exists(), ".kanon-data/ must be created under <KANON_HOME>/store"
         assert not (cwd_dir / ".kanon-data").exists(), ".kanon-data/ must NOT be created in cwd"
-        assert not (cwd_dir / ".packages").exists(), ".packages/ must NOT be created in cwd"
+        assert (cwd_dir / ".packages").is_symlink(), (
+            ".packages/ in cwd must be the anchor symlink a delivered <linkfile> resolves through"
+        )
+        assert pathlib.Path(os.readlink(cwd_dir / ".packages")) == store / ".packages", (
+            ".packages/ in cwd must point into <KANON_HOME>/store, never hold package content of its own"
+        )
 
     def test_install_creates_packages_under_kanon_home_store(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

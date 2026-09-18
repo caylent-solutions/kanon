@@ -88,6 +88,9 @@ from kanon_cli.constants import (
     KANON_HOME_STORE_LOCKS_SUBDIR,
     KANON_HOME_STORE_SUBDIR,
     KANON_HOME_STORE_TMP_SUBDIR,
+    KANON_PROJECT_PACKAGES_ANCHOR_ENV,
+    PACKAGES_DIR_NAME,
+    PROJECT_PACKAGES_ANCHOR_GITIGNORE_ENTRY,
     SOURCE_ENV_KEY,
     SOURCE_MARKETPLACE_KEY,
     SOURCE_PREFIX,
@@ -2093,6 +2096,68 @@ def export_permitted_abs_roots(kanon_file: pathlib.Path, marketplace_dir_str: st
     return deduped
 
 
+def ensure_project_packages_anchor(project_root: pathlib.Path, base_dir: pathlib.Path) -> pathlib.Path:
+    """Publish the project-root ``.packages`` anchor an absolute ``<linkfile>`` resolves through.
+
+    A ``<linkfile>`` delivering into the consuming project points at content that
+    lives in the store, outside the project. Without a project-root reference the
+    symlink target has to walk ``..`` from the destination all the way up to the
+    store, so its value encodes how deeply the checkout sits on disk: a plain
+    clone and a git worktree of that same clone produce different targets from
+    one manifest, and the worktree's -- three levels longer -- dangles for
+    everyone else once committed.
+
+    The anchor removes the choice. ``<project_root>/.packages`` points at the
+    store's aggregated package directory, so a delivered target is expressed
+    purely in project-root-relative terms and is identical at every checkout
+    depth. The anchor itself is machine-specific, so it is added to the project's
+    ``.gitignore``.
+
+    Idempotent: an anchor already pointing at the store's package directory is
+    left alone. An anchor pointing elsewhere is repointed. A real directory or
+    file sitting on the anchor path is NOT replaced -- that is the consumer's own
+    content, and silently deleting it to make room is exactly the destructive,
+    unannounced behaviour this function exists to prevent.
+
+    When the store itself resolves to the project root (an operator who pointed
+    ``KANON_HOME`` at their own project), the anchor path IS the store's package
+    directory and no link is created.
+
+    Args:
+        project_root: The consumer project root (the ``.kanon`` file's parent).
+        base_dir: The resolved store base directory (``<KANON_HOME>/store``).
+
+    Returns:
+        The absolute path to the anchor.
+
+    Raises:
+        InstallError: If the anchor path is occupied by a non-symlink entry.
+    """
+    store_packages = base_dir / PACKAGES_DIR_NAME
+    store_packages.mkdir(parents=True, exist_ok=True)
+    anchor = project_root / PACKAGES_DIR_NAME
+
+    if anchor.resolve() != store_packages.resolve():
+        if anchor.is_symlink():
+            if pathlib.Path(os.readlink(anchor)) != store_packages:
+                anchor.unlink()
+                create_dirsymlink(anchor, store_packages)
+        elif anchor.exists():
+            raise InstallError(
+                f"ERROR: cannot create the package anchor {anchor}: the path already exists and is "
+                f"not a symlink.\n"
+                f"  Kanon links it to {store_packages} so that manifest-delivered symlinks resolve "
+                f"independently of where this checkout sits on disk.\n"
+                f"  Remediation: move or remove {anchor}, then re-run 'kanon install'."
+            )
+        else:
+            create_dirsymlink(anchor, store_packages)
+        update_gitignore(project_root, entries=[PROJECT_PACKAGES_ANCHOR_GITIGNORE_ENTRY])
+
+    os.environ[KANON_PROJECT_PACKAGES_ANCHOR_ENV] = str(anchor)
+    return anchor
+
+
 def run_repo_sync(source_dir: pathlib.Path) -> None:
     """Run ``repo sync`` in source directory, bounded by ``KANON_SYNC_JOBS``.
 
@@ -2216,13 +2281,13 @@ def aggregate_symlinks(
     Raises:
         ValueError: If two sources produce the same package name.
     """
-    packages_dir = base_dir / ".packages"
+    packages_dir = base_dir / PACKAGES_DIR_NAME
     packages_dir.mkdir(exist_ok=True)
 
     package_owners: dict[str, str] = {}
 
     for name in source_names:
-        source_packages = source_workspace_dir(base_dir, project_address, name) / ".packages"
+        source_packages = source_workspace_dir(base_dir, project_address, name) / PACKAGES_DIR_NAME
         if not source_packages.exists():
             continue
         for pkg in source_packages.iterdir():
@@ -2744,6 +2809,7 @@ def _run_install(
         prepare_marketplace_dir(marketplace_dir)
 
     export_permitted_abs_roots(kanonenv_path, marketplace_dir_str)
+    ensure_project_packages_anchor(kanonenv_path.resolve().parent, base_dir)
 
     repo_rev = globals_dict.get("REPO_REV", "")
 
@@ -3173,6 +3239,8 @@ def install(
          Log drift info-lines (or raise BranchDriftError with --strict-drift).
       5. If any dependency sets KANON_SOURCE_<alias>_MARKETPLACE=true: create
          and clean the marketplace dir.
+      5a. Ensure the project-root .packages anchor, before any sync writes a
+         <linkfile> whose target resolves through it.
       6. For each source: mkdir, repo init (or lockfile replay), envsubst, sync.
          On the REFRESH_LOCK_SOURCE path, only the named source is re-resolved;
          all other sources replay their pinned SHAs from the existing lockfile.

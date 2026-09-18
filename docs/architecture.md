@@ -106,6 +106,16 @@ Key paths:
 - **`.packages/`** -- aggregated symlinks pointing into the per-source
   `.packages/*` entries. This is the only directory operators need to
   reference in downstream tooling.
+- **`<project-root>/.packages`** -- the anchor: a symlink beside `.kanon`
+  pointing at the store's aggregated `.packages/`. It holds no content of its
+  own, and `kanon install` adds it to the project's `.gitignore`. A
+  `<linkfile>` delivering into the consuming project names a target relative to
+  the project root and reaches the store through this anchor, so the target it
+  writes is identical whatever the checkout's depth on disk. Computed against
+  the store directly, the target would instead record that depth: an install run
+  inside a git worktree sits three directories deeper than the clone containing
+  it and would write a three-level-longer target -- correct there, dangling in
+  every ordinary clone. `kanon clean` removes the anchor it created.
 - **`<KANON_HOME>/store/.gitignore`** -- `kanon install` writes this
   safety net (containing `*`) ONLY when the shared `KANON_HOME` store sits
   inside a git working tree, so the fetched-artifact cache is never committed.

@@ -1370,6 +1370,21 @@ permitted root: the consumer project root, the resolved
 [docs/security-model.md](docs/security-model.md) and
 [docs/configuration.md](docs/configuration.md#absolute-manifest-destinations).
 
+A `<linkfile>` delivering into the consuming project reaches the store through
+`<project-root>/.packages` -- a gitignored symlink `kanon install` maintains
+beside `.kanon` -- so the symlink it writes names a target relative to the
+project root:
+
+```text
+.claude/rules -> ../.packages/my-standards/rules
+```
+
+That target is a function of the manifest alone. It is byte-identical whether
+you install from a plain clone or from a git worktree nested inside one, and it
+stays valid when the checkout moves. Do not commit the `.packages` anchor
+itself: it points into your own `KANON_HOME`, and every developer's
+`kanon install` creates their own.
+
 ---
 
 ## SSH Authentication Setup

@@ -862,6 +862,24 @@ KANON_PERMITTED_ABS_ROOTS_ENV = "KANON_PERMITTED_ABS_ROOTS"
 
 ABS_ROOTS_SEPARATOR = os.pathsep
 
+PACKAGES_DIR_NAME = ".packages"
+"""Name of the aggregated package directory, in the store and at the project root alike."""
+
+PROJECT_PACKAGES_ANCHOR_GITIGNORE_ENTRY = f"/{PACKAGES_DIR_NAME}"
+"""Entry keeping the machine-specific project-root anchor out of the consumer's history."""
+
+KANON_PROJECT_PACKAGES_ANCHOR_ENV = "KANON_PROJECT_PACKAGES_ANCHOR"
+"""Internal absolute path of the project-root ``.packages`` anchor, for the vendored repo tool.
+
+A ``<linkfile>`` that delivers into the consuming project points at content in the
+store, which lives outside the project. Computing that symlink's target directly
+against the store makes the ``..`` chain a function of how deeply the checkout
+happens to sit on disk, so the same manifest yields a different -- and, once
+committed, dangling -- target from a worktree than from a plain clone. Routing the
+target through this anchor expresses it entirely in project-root-relative terms,
+which no checkout depth can change.
+"""
+
 
 def resolve_allowed_abs_roots() -> list[str]:
     """Return the operator-supplied extra roots for absolute manifest destinations.

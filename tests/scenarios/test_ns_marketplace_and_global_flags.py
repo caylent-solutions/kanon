@@ -41,6 +41,7 @@ import pytest
 
 import kanon_cli.constants as constants
 
+from tests.conftest import assert_only_packages_anchor_beside_kanon
 from tests.scenarios.conftest import (
     make_plain_repo,
     run_kanon,
@@ -282,12 +283,16 @@ class TestNSCommandSurface:
         assert not env_store.exists(), (
             f"--home must take precedence over KANON_HOME env, but the env store was created: {env_store}"
         )
-        assert not (work_dir / ".packages").exists(), "install must not write artifacts beside .kanon"
+        assert_only_packages_anchor_beside_kanon(work_dir, flag_home / constants.KANON_HOME_STORE_SUBDIR)
 
         clean_result = run_kanon("--home", str(flag_home), "clean", str(kanon_file), cwd=work_dir)
         assert clean_result.returncode == 0, (
             f"kanon --home clean exited {clean_result.returncode}\n"
             f"stdout={clean_result.stdout!r}\nstderr={clean_result.stderr!r}"
+        )
+        assert not (work_dir / ".packages").is_symlink(), (
+            "clean must remove the .packages anchor install created, leaving no link into the store "
+            "it has just emptied."
         )
 
         store_dir_home = tmp_path / "store-dir-home"

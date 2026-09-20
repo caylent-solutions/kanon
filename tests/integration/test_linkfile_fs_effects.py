@@ -622,7 +622,7 @@ def _install_into_checkout(
         topdir: The source's repo workspace.
         git_worktree: The package checkout the link points into.
         permit_abs_roots: Fixture permitting an absolute dest under a root.
-        monkeypatch: Fixture used to publish the project-root package anchor.
+        monkeypatch: Fixture used to publish the consumer project root.
 
     Returns:
         The raw target string of the symlink the install created.
@@ -630,9 +630,8 @@ def _install_into_checkout(
     project_root = root.joinpath(*depth)
     project_root.mkdir(parents=True)
 
-    anchor = project_root / ".packages"
-    anchor.symlink_to(root / "store" / ".packages")
-    monkeypatch.setenv("KANON_PROJECT_PACKAGES_ANCHOR", str(anchor))
+    (project_root / ".packages").symlink_to(root / "store" / ".packages")
+    monkeypatch.setenv("KANON_PROJECT_ROOT", str(project_root))
     permit_abs_roots(project_root)
 
     dest = project_root / LINK_DEST_IN_PROJECT

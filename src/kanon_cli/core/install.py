@@ -88,7 +88,7 @@ from kanon_cli.constants import (
     KANON_HOME_STORE_LOCKS_SUBDIR,
     KANON_HOME_STORE_SUBDIR,
     KANON_HOME_STORE_TMP_SUBDIR,
-    KANON_PROJECT_PACKAGES_ANCHOR_ENV,
+    KANON_PROJECT_ROOT_ENV,
     PACKAGES_DIR_NAME,
     PROJECT_PACKAGES_ANCHOR_GITIGNORE_ENTRY,
     SOURCE_ENV_KEY,
@@ -2119,10 +2119,6 @@ def ensure_project_packages_anchor(project_root: pathlib.Path, base_dir: pathlib
     content, and silently deleting it to make room is exactly the destructive,
     unannounced behaviour this function exists to prevent.
 
-    When the store itself resolves to the project root (an operator who pointed
-    ``KANON_HOME`` at their own project), the anchor path IS the store's package
-    directory and no link is created.
-
     Args:
         project_root: The consumer project root (the ``.kanon`` file's parent).
         base_dir: The resolved store base directory (``<KANON_HOME>/store``).
@@ -2137,24 +2133,23 @@ def ensure_project_packages_anchor(project_root: pathlib.Path, base_dir: pathlib
     store_packages.mkdir(parents=True, exist_ok=True)
     anchor = project_root / PACKAGES_DIR_NAME
 
-    if anchor.resolve() != store_packages.resolve():
-        if anchor.is_symlink():
-            if pathlib.Path(os.readlink(anchor)) != store_packages:
-                anchor.unlink()
-                create_dirsymlink(anchor, store_packages)
-        elif anchor.exists():
-            raise InstallError(
-                f"ERROR: cannot create the package anchor {anchor}: the path already exists and is "
-                f"not a symlink.\n"
-                f"  Kanon links it to {store_packages} so that manifest-delivered symlinks resolve "
-                f"independently of where this checkout sits on disk.\n"
-                f"  Remediation: move or remove {anchor}, then re-run 'kanon install'."
-            )
-        else:
+    if anchor.is_symlink():
+        if pathlib.Path(os.readlink(anchor)) != store_packages:
+            anchor.unlink()
             create_dirsymlink(anchor, store_packages)
-        update_gitignore(project_root, entries=[PROJECT_PACKAGES_ANCHOR_GITIGNORE_ENTRY])
+    elif anchor.exists():
+        raise InstallError(
+            f"ERROR: cannot create the package anchor {anchor}: the path already exists and is "
+            f"not a symlink.\n"
+            f"  Kanon links it to {store_packages} so that manifest-delivered symlinks resolve "
+            f"independently of where this checkout sits on disk.\n"
+            f"  Remediation: move or remove {anchor}, then re-run 'kanon install'."
+        )
+    else:
+        create_dirsymlink(anchor, store_packages)
+    update_gitignore(project_root, entries=[PROJECT_PACKAGES_ANCHOR_GITIGNORE_ENTRY])
 
-    os.environ[KANON_PROJECT_PACKAGES_ANCHOR_ENV] = str(anchor)
+    os.environ[KANON_PROJECT_ROOT_ENV] = str(project_root)
     return anchor
 
 

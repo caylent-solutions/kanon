@@ -382,8 +382,6 @@ jobs:
   native-windows:
     name: Native Windows contracts
     runs-on: windows-latest
-    env:
-      KANON_NATIVE_STORE_ROOT: ${{ runner.temp }}
     steps:
       - name: Checkout reviewed commit
         uses: actions/checkout@v6
@@ -392,5 +390,7 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup-kanon
       - name: Run native Windows acceptance
+        env:
+          KANON_NATIVE_STORE_ROOT: ${{ runner.temp }}
         shell: bash
         run: make test-windows

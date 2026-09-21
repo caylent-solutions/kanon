@@ -2746,6 +2746,7 @@ def _run_install(
             lockfile_hash_mismatch_computed = classification.computed_hash
 
     _consistent_has_orphans: bool = False
+    _captured_content_pins: bool = False
 
     reconcile_computed_hash: str | None = None
 
@@ -3052,6 +3053,7 @@ def _run_install(
 
         if not _replay_locked_pins:
             resolved_entries[-1].content_pins = capture_content_pins(source_dir, _manifest_tree_paths)
+            _captured_content_pins = _captured_content_pins or bool(resolved_entries[-1].content_pins)
             resolved_entries[-1].projects = build_project_entries(
                 manifest_xml_path,
                 manifest_repo_root,
@@ -3188,7 +3190,7 @@ def _run_install(
             )
             write_lockfile(lf, lockfile_path)
 
-    elif install_state is InstallState.LOCKFILE_CONSISTENT and _consistent_has_orphans:
+    elif install_state is InstallState.LOCKFILE_CONSISTENT and (_consistent_has_orphans or _captured_content_pins):
         pruned_lf_nn = cast(Lockfile, existing_lockfile)
         active_names = set(source_names)
 
@@ -3256,8 +3258,8 @@ def install(
           marketplace install script.
       11. Write .kanon.lock: full write for LOCKFILE_ABSENT/REFRESH_LOCK/RECONCILE;
           partial merge for REFRESH_LOCK_SOURCE; pruned rewrite for
-          LOCKFILE_CONSISTENT with orphans; unchanged for LOCKFILE_CONSISTENT
-          without orphans.  On the RECONCILE path the lockfile is written once at
+          LOCKFILE_CONSISTENT with orphans or newly captured content pins; otherwise
+          unchanged for LOCKFILE_CONSISTENT. On the RECONCILE path the lockfile is written once at
           the end on success only (nothing is persisted earlier).
 
     Args:

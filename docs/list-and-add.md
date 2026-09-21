@@ -395,8 +395,18 @@ Worked example: `Package-A` normalizes to `package_a`.
 
 The normalized alias appears in the `KANON_SOURCE_<alias>_*` block
 keys. `kanon add` writes the normalized form verbatim, unless
-`--as <alias>` overrides it or a cross-source collision triggers a
-deterministic auto-suffix.
+`--as <alias>` overrides it, the manifest name is already declared by an
+existing block (whose alias is then reused), or a collision with a
+different package triggers a deterministic auto-suffix.
+
+An explicit `--as` cannot create another alias for a manifest name already
+declared in the file. Re-add using that name's existing alias, or remove the old
+alias first.
+
+A forced replacement re-pins the catalog reference and manifest path, and clears
+that dependency's old content pins and derived project metadata. The next
+`kanon install` resolves and saves fresh content pins; subsequent installs replay
+them. Other dependencies retain their existing pins.
 
 ### add -- File creation
 
@@ -466,7 +476,7 @@ between two installs. See
 | `--catalog-default-branch name` | env | Branch used when the catalog source omits `@ref`. Env: KANON_CATALOG_DEFAULT_BRANCH (default `main`; `auto` = remote HEAD). |
 | `--as alias` | auto | Override the auto-computed local alias (single entry only). Charset `[A-Za-z0-9_]`, no `__` run. |
 | `--kanon-file path` | `./.kanon` | Target file. Env: KANON_KANON_FILE. |
-| `--force` | off | Re-add an existing alias (same source@ref): overwrite the block and re-pin its lock entry. Without it, a re-add is a hard error. |
+| `--force` | off | Re-add a manifest name the `.kanon` already declares (from any source, at any ref): overwrite that block in place and re-pin its lock entry. Without it, a re-add is a hard error. |
 | `--dry-run` | off | Print diff without modifying any file. Exit 0. |
 | `--marketplace-install` | auto | Force `KANON_SOURCE_<alias>_MARKETPLACE=true` (errors if the entry is not a `claude-marketplace` type). Excl. `--no-marketplace-install`. |
 | `--no-marketplace-install` | auto | Force the `_MARKETPLACE` line to be omitted. Excl. `--marketplace-install`. |
@@ -507,19 +517,23 @@ file. See "add error 4 -- Within-request alias collision" below.
 
 #### add -- Cross-source collision (auto-suffixed, never an error)
 
-When the requested entry's manifest name sanitizes to an alias already
-mapped to a **different** source, the alias is auto-suffixed
+When a **different** package's manifest name sanitizes to an alias
+already mapped to another source, the alias is auto-suffixed
 deterministically and the add succeeds -- with or without `--force`. Use
 `--as <alias>` to choose an explicit alias instead.
 
-#### add -- Same-alias re-add (hard error without `--force`)
+#### add -- Re-add of a declared name (hard error without `--force`)
 
-When the target `.kanon` already maps the alias to the **same**
-source@ref, `kanon add` treats it as a re-add and exits with a hard
-error (showing a diff and a remediation hint) unless `--force` is passed.
-See "add error 5 -- Re-adding an existing alias without `--force`" below.
-With `--force`, the existing block is overwritten and its lock entry is
-re-pinned.
+When the target `.kanon` already carries a block whose
+`KANON_SOURCE_<alias>_NAME` equals the requested entry's manifest name,
+`kanon add` treats it as a re-add of that package and resolves to **that
+block's alias** -- whatever source URL or ref the re-add names, and even
+when the alias is not the sanitized manifest name. Two live blocks are
+never left claiming one package name. The re-add exits with a hard error
+(showing a diff and a remediation hint) unless `--force` is passed. See
+"add error 5 -- Re-adding an existing alias without `--force`" below.
+With `--force`, the existing block is overwritten in place and its lock
+entry is re-pinned, keeping the dependency's `_NAME`.
 
 ### add -- Error scenarios
 
@@ -595,14 +609,16 @@ ERROR: within-request collision: 'package-a' and 'Package-A' both normalise to s
 Remove duplicate entries from your command arguments.
 ```
 
-> A *cross-source* collision (two different sources whose manifest names
-> sanitize to the same alias) is NOT an error -- it is auto-suffixed
+> A *cross-source* collision (two **different** packages whose manifest
+> names sanitize to the same alias) is NOT an error -- it is auto-suffixed
 > deterministically, with or without `--force`. Only a within-request
-> duplicate and a same-alias re-add (below) are errors.
+> duplicate and a re-add of an already-declared manifest name (below) are
+> errors.
 
 #### add error 5 -- Re-adding an existing alias without `--force`
 
-Reproducer (when alias `package_a` already maps to the same source@ref):
+Reproducer (when a block already declares the manifest name `package-a`,
+here under alias `package_a` pinned to an older ref):
 
 ```bash
 kanon add 'package-a@==1.5.0' \

@@ -880,3 +880,168 @@ class TestRunAddDryRunAndForcePaths:
 
         content = kanon_file.read_text()
         assert "KANON_SOURCE_entry_a_REF=refs/tags/1.0.0" in content
+
+
+@pytest.mark.unit
+class TestSameManifestNameDetection:
+    """A manifest NAME already declared in .kanon resolves to its existing block."""
+
+    _URL_FIRST = "https://example.com/org-a/manifest-repo.git"
+    _URL_SECOND = "https://example.com/caylent/caylent-private-kanon.git"
+
+    def _write_declared_block(
+        self,
+        tmp_path: pathlib.Path,
+        alias: str,
+        name: str,
+        url: str = _URL_FIRST,
+        ref: str = "refs/tags/1.0.0",
+    ) -> pathlib.Path:
+        """Write a .kanon carrying one alias-keyed block and return its path."""
+        kanon_file = tmp_path / ".kanon"
+        kanon_file.write_text(
+            f"KANON_SOURCE_{alias}_NAME={name}\n"
+            f"KANON_SOURCE_{alias}_REF={ref}\n"
+            f"KANON_SOURCE_{alias}_URL={url}\n"
+            f"KANON_SOURCE_{alias}_PATH=repo-specs/{name}-marketplace.xml\n",
+            encoding="utf-8",
+        )
+        return kanon_file
+
+    def test_absent_file_declares_no_names(self, tmp_path: pathlib.Path) -> None:
+        """A .kanon that does not exist yet declares no manifest names."""
+        from kanon_cli.commands.add import _read_alias_by_manifest_name
+
+        assert _read_alias_by_manifest_name(tmp_path / ".kanon") == {}
+
+    def test_maps_each_declared_name_to_its_alias(self, tmp_path: pathlib.Path) -> None:
+        """Every _NAME line maps its verbatim manifest name to the declaring alias."""
+        from kanon_cli.commands.add import _read_alias_by_manifest_name
+
+        kanon_file = tmp_path / ".kanon"
+        kanon_file.write_text(
+            "KANON_SOURCE_ace_engagement_kit_NAME=ace-engagement-kit\n"
+            f"KANON_SOURCE_ace_engagement_kit_URL={self._URL_FIRST}\n"
+            "KANON_SOURCE_ace_engagement_kit_TEAM_NAME=custom-team\n"
+            "KANON_SOURCE_other_pkg_NAME=other-pkg\n"
+            f"KANON_SOURCE_other_pkg_URL={self._URL_SECOND}\n",
+            encoding="utf-8",
+        )
+
+        assert _read_alias_by_manifest_name(kanon_file) == {
+            "ace-engagement-kit": "ace_engagement_kit",
+            "other-pkg": "other_pkg",
+        }
+
+    def test_pre_existing_duplicate_name_resolves_to_the_first_block(self, tmp_path: pathlib.Path) -> None:
+        """A file already carrying two blocks for one NAME resolves to the first in file order."""
+        from kanon_cli.commands.add import _read_alias_by_manifest_name
+
+        kanon_file = tmp_path / ".kanon"
+        kanon_file.write_text(
+            "KANON_SOURCE_ace_engagement_kit_NAME=ace-engagement-kit\n"
+            f"KANON_SOURCE_ace_engagement_kit_URL={self._URL_FIRST}\n"
+            "KANON_SOURCE_ace_engagement_kit_caylent_private_kanon_NAME=ace-engagement-kit\n"
+            f"KANON_SOURCE_ace_engagement_kit_caylent_private_kanon_URL={self._URL_SECOND}\n",
+            encoding="utf-8",
+        )
+
+        assert _read_alias_by_manifest_name(kanon_file) == {"ace-engagement-kit": "ace_engagement_kit"}
+
+    def _run_add_against(
+        self,
+        tmp_path: pathlib.Path,
+        entry_name: str,
+        entry_url: str,
+        force: bool,
+        alias_override: str | None = None,
+    ) -> int:
+        """Run run_add for one entry against a stubbed catalog; return its exit code."""
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import run_add
+
+        xml_path = tmp_path / "repo" / "repo-specs" / f"{entry_name}-marketplace.xml"
+        xml_path.parent.mkdir(parents=True, exist_ok=True)
+        xml_path.write_text("<manifest></manifest>\n", encoding="utf-8")
+
+        args = argparse.Namespace(
+            catalog_source=f"{entry_url}@main",
+            kanon_file=str(tmp_path / ".kanon"),
+            entries=[entry_name],
+            force=force,
+            dry_run=False,
+            alias_override=alias_override,
+        )
+
+        with (
+            patch(
+                "kanon_cli.commands.add._resolve_manifest_repo_for_add",
+                return_value=(tmp_path / "repo", entry_url, "main"),
+            ),
+            patch(
+                "kanon_cli.commands.add._build_entry_catalog",
+                return_value=[(_make_metadata(entry_name), xml_path, entry_url)],
+            ),
+            patch(
+                "kanon_cli.commands.add._resolve_spec",
+                return_value="refs/tags/2.0.0",
+            ),
+        ):
+            return run_add(args)
+
+    def test_readd_from_another_source_without_force_writes_nothing(
+        self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Field regression: a second source for a declared NAME errors instead of appending."""
+        kanon_file = self._write_declared_block(tmp_path, "ace_engagement_kit", "ace-engagement-kit")
+        before = kanon_file.read_text(encoding="utf-8")
+
+        with pytest.raises(SystemExit) as exc_info:
+            self._run_add_against(tmp_path, "ace-engagement-kit", self._URL_SECOND, force=False)
+
+        assert exc_info.value.code != 0
+        assert kanon_file.read_text(encoding="utf-8") == before
+        assert "--force" in capsys.readouterr().err
+
+    def test_readd_from_another_source_with_force_updates_one_block(self, tmp_path: pathlib.Path) -> None:
+        """--force repoints the declared block in place, leaving exactly one block for the NAME."""
+        kanon_file = self._write_declared_block(tmp_path, "ace_engagement_kit", "ace-engagement-kit")
+
+        assert self._run_add_against(tmp_path, "ace-engagement-kit", self._URL_SECOND, force=True) == 0
+
+        content = kanon_file.read_text(encoding="utf-8")
+        assert content.count("_NAME=ace-engagement-kit") == 1
+        assert f"KANON_SOURCE_ace_engagement_kit_URL={self._URL_SECOND}" in content
+        assert self._URL_FIRST not in content
+        assert "KANON_SOURCE_ace_engagement_kit_caylent_private_kanon_URL=" not in content
+
+    def test_readd_under_a_legacy_alias_updates_that_alias(self, tmp_path: pathlib.Path) -> None:
+        """The declaring alias is reused even when it is not the sanitized manifest name."""
+        kanon_file = self._write_declared_block(tmp_path, "legacy_alias", "ace-engagement-kit")
+
+        assert self._run_add_against(tmp_path, "ace-engagement-kit", self._URL_SECOND, force=True) == 0
+
+        content = kanon_file.read_text(encoding="utf-8")
+        assert content.count("_NAME=ace-engagement-kit") == 1
+        assert f"KANON_SOURCE_legacy_alias_URL={self._URL_SECOND}" in content
+        assert "KANON_SOURCE_ace_engagement_kit_URL=" not in content
+
+    def test_distinct_name_sharing_the_alias_still_auto_suffixes(self, tmp_path: pathlib.Path) -> None:
+        """A DIFFERENT manifest name whose alias is taken is auto-suffixed, not overwritten."""
+        kanon_file = self._write_declared_block(tmp_path, "ace_engagement_kit", "ace-engagement-kit")
+
+        assert self._run_add_against(tmp_path, "ace_engagement_kit", self._URL_SECOND, force=False) == 0
+
+        content = kanon_file.read_text(encoding="utf-8")
+        assert "KANON_SOURCE_ace_engagement_kit_NAME=ace-engagement-kit" in content
+        assert "KANON_SOURCE_ace_engagement_kit_caylent_private_kanon_NAME=ace_engagement_kit" in content
+
+    @pytest.mark.parametrize("force", [False, True])
+    def test_override_cannot_duplicate_declared_name(self, tmp_path: pathlib.Path, force: bool) -> None:
+        """Even --force cannot create a second alias for an already-declared manifest."""
+        path = self._write_declared_block(tmp_path, "legacy_alias", "ace-engagement-kit")
+        before = path.read_bytes()
+        with pytest.raises(SystemExit):
+            self._run_add_against(tmp_path, "ace-engagement-kit", self._URL_SECOND, force, "another_alias")
+        assert path.read_bytes() == before

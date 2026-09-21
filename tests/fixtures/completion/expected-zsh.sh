@@ -137,16 +137,19 @@ _shtab_kanon_add_options=(
 entry. The alias charset is \[A-Za-z0-9_\] with no \'__\' run. When
 the alias is already mapped to a different source it is a hard
 error (use --force to overwrite, or \'kanon remove \<alias\>\'
-first). Without --as, the alias is the sanitized manifest name,
-auto-suffixed deterministically on a cross-source collision.]:alias_override:"
+first). Without --as, the alias is the sanitized manifest name\;
+a manifest name the .kanon file already declares reuses that
+block\'s alias, and a collision between distinct packages whose
+names sanitize alike is auto-suffixed deterministically.]:alias_override:"
   "--kanon-file[Destination .kanon file path. Defaults to \'.\/.kanon\'. Overridden by the KANON_KANON_FILE environment variable\; the CLI flag takes precedence when both are set.]:kanon_file:"
-  "--force[Overwrite an existing alias block when re-adding the same
-package (same source\@ref), and re-pin its .kanon.lock entry
+  "--force[Overwrite an existing alias block when re-adding a package the
+.kanon file already declares, and re-pin its .kanon.lock entry
 while keeping the dep\'s NAME. Without this flag, a re-add of an
-existing alias is a hard error (with a diff and the guiding
-message). A cross-source collision (a different source for the
-same manifest name) is auto-suffixed deterministically and is
-never an error, with or without --force.]"
+already-declared manifest name -- from any source, at any ref --
+is a hard error (with a diff and the guiding message). A
+collision between distinct packages whose names sanitize to one
+alias is auto-suffixed deterministically and is never an error,
+with or without --force.]"
   "--dry-run[Print the diff that WOULD be written to the destination
 .kanon file (\'\+\' for added lines, \'-\' for removed lines when a
 --force overwrite replaces an existing block). Makes no on-disk

@@ -40,8 +40,8 @@ Trigger procedure per slug:
 - ``source-collision``: a re-add of an existing package -- a ``.kanon`` already
   carries the ``example_pkg`` block at ``refs/tags/v1.0.0`` and a second
   ``kanon add example_pkg@==1.0.0`` for the same source@ref hits the same-NAME
-  guard (spec Section 4.2). Without ``--force`` this is a hard error; a
-  cross-source same-name add would instead auto-suffix.
+  guard (spec Section 4.2). Without ``--force`` this is a hard error; the guard
+  fires for any source and any ref once the manifest name is declared.
 - ``conflict-detected``: ``kanon install`` with two ``.kanon`` sources that
   both resolve to the same canonical URL but carry different SHAs (written
   directly into the lockfile to avoid a real network call).

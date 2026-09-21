@@ -15,12 +15,17 @@ The arc covered:
 
 1. Happy path -- source-explicit ``add`` writes the bare-alias block from the
    single ``--catalog-source``.
-2. Edge / determinism -- a cross-source add of the SAME manifest name auto-suffixes
-   to ``<alias>_<sanitized-source-repo>``; re-reading the committed ``.kanon``
+2. Same-NAME guard -- re-adding a manifest name the ``.kanon`` already declares
+   resolves to the existing block whatever source it comes from: a hard error
+   without ``--force``, an in-place update of that one block with ``--force``.
+   Two live blocks never claim one package name.
+3. Edge / determinism -- a cross-source add of a DISTINCT manifest name that
+   sanitizes to an already-taken alias auto-suffixes to
+   ``<alias>_<sanitized-source-repo>``; re-reading the committed ``.kanon``
    reproduces both aliases (deterministic on re-read).
-3. Error path -- a cross-source ``--as`` collision (the chosen alias is already
+4. Error path -- a cross-source ``--as`` collision (the chosen alias is already
    mapped to a different source) fails fast with an actionable message.
-4. Force path -- a ``--force`` re-add of the same source@ref overwrites the alias
+5. Force path -- a ``--force`` re-add of the same source@ref overwrites the alias
    block and re-pins its ``.kanon.lock`` entry (the ``resolved_sha`` is updated to
    the source tip while the dep's ``NAME`` is preserved).
 """
@@ -44,6 +49,9 @@ _DEFAULT_BRANCH = "main"
 _MANIFEST_NAME = "history"
 
 
+_ALIAS_TWIN_MANIFEST_NAME = "History"
+
+
 _REPO_FIRST = "org-a-history"
 _REPO_SECOND = "caylent-private-kanon"
 
@@ -53,6 +61,8 @@ _RELEASE_TAG = "1.0.0"
 
 _XML_FILENAME = "history-marketplace.xml"
 _XML_REL_PATH = f"repo-specs/{_XML_FILENAME}"
+
+_ALIAS_TWIN_XML_FILENAME = "history-upper-marketplace.xml"
 
 _SOURCE_PREFIX = "KANON_SOURCE_"
 _LOCKFILE_NAME = ".kanon.lock"
@@ -101,8 +111,14 @@ def _catalog_xml(name: str) -> str:
     )
 
 
-def _create_bare_catalog_repo(base: pathlib.Path, repo_name: str) -> pathlib.Path:
-    """Create a bare catalog repo publishing the shared manifest name; return its bare path."""
+def _create_bare_catalog_repo(base: pathlib.Path, repo_name: str, *, with_alias_twin: bool = False) -> pathlib.Path:
+    """Create a bare catalog repo publishing the shared manifest name; return its bare path.
+
+    When ``with_alias_twin`` is set the repo also publishes
+    ``_ALIAS_TWIN_MANIFEST_NAME`` -- a DISTINCT manifest name that sanitizes to
+    the same alias as ``_MANIFEST_NAME`` -- so the auto-suffix path can be driven
+    without two blocks ever claiming one package name.
+    """
     work = base / f"{repo_name}-work"
     work.mkdir(parents=True, exist_ok=True)
     _git(["init", "-b", _DEFAULT_BRANCH], cwd=work)
@@ -112,6 +128,8 @@ def _create_bare_catalog_repo(base: pathlib.Path, repo_name: str) -> pathlib.Pat
     repo_specs = work / "repo-specs"
     repo_specs.mkdir()
     (repo_specs / _XML_FILENAME).write_text(_catalog_xml(_MANIFEST_NAME), encoding="utf-8")
+    if with_alias_twin:
+        (repo_specs / _ALIAS_TWIN_XML_FILENAME).write_text(_catalog_xml(_ALIAS_TWIN_MANIFEST_NAME), encoding="utf-8")
     _git(["add", "."], cwd=work)
     _git(["commit", "-m", "Add history catalog entry"], cwd=work)
     _git(["tag", "-a", _RELEASE_TAG, "-m", f"Release {_RELEASE_TAG}"], cwd=work)
@@ -160,7 +178,7 @@ def two_source_world(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str, str]:
     repos = tmp_path / "repos"
     repos.mkdir()
     bare_first = _create_bare_catalog_repo(repos, _REPO_FIRST)
-    bare_second = _create_bare_catalog_repo(repos, _REPO_SECOND)
+    bare_second = _create_bare_catalog_repo(repos, _REPO_SECOND, with_alias_twin=True)
     source_first = f"file://{bare_first}@{_RELEASE_TAG}"
     source_second = f"file://{bare_second}@{_RELEASE_TAG}"
 
@@ -178,11 +196,12 @@ class TestAddAliasJourney:
         project: pathlib.Path,
         source: str,
         *extra: str,
+        entry: str = _MANIFEST_NAME,
     ) -> subprocess.CompletedProcess[str]:
-        """Run ``kanon add <name> --catalog-source <source> [extra...]`` in the project dir."""
+        """Run ``kanon add <entry> --catalog-source <source> [extra...]`` in the project dir."""
         kanon_file = project / ".kanon"
         return _run_kanon(
-            ["add", _MANIFEST_NAME, "--catalog-source", source, "--kanon-file", str(kanon_file), *extra],
+            ["add", entry, "--catalog-source", source, "--kanon-file", str(kanon_file), *extra],
             cwd=project,
         )
 
@@ -210,30 +229,82 @@ class TestAddAliasJourney:
 
         assert not kanon_file.exists()
 
-    def test_cross_source_add_auto_suffixes_deterministically(
+    def test_same_name_from_second_source_does_not_append_a_second_block(
         self, two_source_world: tuple[pathlib.Path, str, str]
     ) -> None:
-        """Edge / determinism: a same-NAME add from a 2nd source auto-suffixes; re-read is stable."""
+        """Same-NAME guard: re-adding a declared name from another source errors, writing nothing.
+
+        Field regression: the second add used to auto-suffix to a fresh alias,
+        leaving two live blocks both declaring the same package NAME -- a state
+        install has no rule for.
+        """
+        project, source_first, source_second = two_source_world
+
+        first = self._add(project, source_first)
+        assert first.returncode == 0, f"first add failed: {first.stderr!r}"
+        kanon_text = (project / ".kanon").read_text(encoding="utf-8")
+
+        second = self._add(project, source_second)
+        assert second.returncode != 0, (
+            f"a re-add of an already-declared manifest name must fail fast.\n  stdout={second.stdout!r}"
+        )
+        assert _MANIFEST_NAME in second.stderr
+        assert "--force" in second.stderr
+
+        reread = (project / ".kanon").read_text(encoding="utf-8")
+        assert reread == kanon_text, "a refused re-add must not modify the committed .kanon"
+        assert reread.count(f"{_SOURCE_PREFIX}{_MANIFEST_NAME}_NAME={_MANIFEST_NAME}") == 1
+        assert _block_value(reread, _sanitized_repo_alias(_MANIFEST_NAME, _REPO_SECOND), "_URL") is None
+
+    def test_same_name_from_second_source_with_force_updates_the_one_block(
+        self, two_source_world: tuple[pathlib.Path, str, str]
+    ) -> None:
+        """Same-NAME guard: --force repoints the existing block in place, never adding a second."""
+        project, source_first, source_second = two_source_world
+
+        first = self._add(project, source_first)
+        assert first.returncode == 0, f"first add failed: {first.stderr!r}"
+        first_url = _block_value((project / ".kanon").read_text(encoding="utf-8"), _MANIFEST_NAME, "_URL")
+
+        forced = self._add(project, source_second, "--force")
+        assert forced.returncode == 0, (
+            f"a --force re-add must succeed.\n  stdout={forced.stdout!r}\n  stderr={forced.stderr!r}"
+        )
+
+        kanon_text = (project / ".kanon").read_text(encoding="utf-8")
+        declarations = re.findall(
+            rf"^{re.escape(_SOURCE_PREFIX)}(.+?)_NAME={re.escape(_MANIFEST_NAME)}$",
+            kanon_text,
+            re.MULTILINE,
+        )
+        assert declarations == [_MANIFEST_NAME], (
+            f"exactly one block may declare {_MANIFEST_NAME!r}; found aliases {declarations!r}"
+        )
+
+        updated_url = _block_value(kanon_text, _MANIFEST_NAME, "_URL")
+        assert updated_url is not None and updated_url != first_url, "the existing block must be repointed in place"
+
+    def test_distinct_names_sharing_an_alias_auto_suffix_deterministically(
+        self, two_source_world: tuple[pathlib.Path, str, str]
+    ) -> None:
+        """Edge / determinism: two DISTINCT names that sanitize alike get suffixed aliases."""
         project, source_first, source_second = two_source_world
 
         first = self._add(project, source_first)
         assert first.returncode == 0, f"first add failed: {first.stderr!r}"
 
-        second = self._add(project, source_second)
+        second = self._add(project, source_second, entry=_ALIAS_TWIN_MANIFEST_NAME)
         assert second.returncode == 0, (
-            f"cross-source add of the same name must succeed via auto-suffix.\n  stderr={second.stderr!r}"
+            f"a distinct name colliding on alias must auto-suffix.\n  stderr={second.stderr!r}"
         )
 
         kanon_text = (project / ".kanon").read_text(encoding="utf-8")
         expected_suffixed = _sanitized_repo_alias(_MANIFEST_NAME, _REPO_SECOND)
 
-        assert _block_value(kanon_text, _MANIFEST_NAME, "_URL") is not None
-        assert _block_value(kanon_text, expected_suffixed, "_URL") is not None
-
         assert "__" not in expected_suffixed
-        first_url = _block_value(kanon_text, _MANIFEST_NAME, "_URL")
-        second_url = _block_value(kanon_text, expected_suffixed, "_URL")
-        assert first_url != second_url
+        assert _block_value(kanon_text, _MANIFEST_NAME, "_NAME") == _MANIFEST_NAME
+        assert _block_value(kanon_text, expected_suffixed, "_NAME") == _ALIAS_TWIN_MANIFEST_NAME
+        assert _block_value(kanon_text, _MANIFEST_NAME, "_URL") != _block_value(kanon_text, expected_suffixed, "_URL")
 
         duplicate = self._add(project, source_first)
         assert duplicate.returncode != 0, "re-add of the identical name+source@ref must be a duplicate error"

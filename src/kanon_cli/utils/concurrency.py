@@ -6,19 +6,22 @@ workspace state (kanon install, kanon add, kanon remove,
 kanon doctor --refresh-completion-cache) must wrap its mutation
 inside this context manager.
 
-POSIX backend (spec Section 4 / FR-32, FR-33, FR-36, issue #67)
----------------------------------------------------------------
+Lock backends (spec Section 4 / FR-32, FR-33, FR-36, issue #67, issue #75)
+---------------------------------------------------------------------------
 The context manager acquires an exclusive kernel-level lock on
 ``.kanon-data/INSTALL_LOCK_FILENAME`` before yielding control to the caller.
-The backend is POSIX-only:
+Two platform-specific backends are available:
 
-* POSIX (Linux, macOS): ``fcntl.flock(fd, LOCK_EX)``.
+* POSIX (Linux, macOS): ``fcntl.flock(fd, LOCK_EX)`` with a ``SIGALRM``
+  fail-fast timeout.
+* Windows: Win32 ``LockFileEx`` via ``ctypes`` with a ``WaitForSingleObject``
+  timeout.
 
 This gives **true kernel-level blocking with NO internal poll loop and NO
-``sleep``** (CLAUDE.md "no time-based synchronization"). The POSIX
-``import fcntl`` lives **inside** ``_exclusive_kernel_lock_posix``, so importing
-this module never fails on a platform that lacks ``fcntl`` (there is no column-0
-module-top ``import fcntl``).
+``sleep``** (CLAUDE.md "no time-based synchronization"). The POSIX ``import fcntl`` and the Windows ``import ctypes``
+live **inside** their respective backend functions, so importing this module
+never fails on a platform that lacks either module (there is no column-0
+module-top platform-specific import).
 
 The lock is released (and the file descriptor closed) on exit regardless of
 whether the body raised an exception (try/finally semantics). The kernel
@@ -67,6 +70,7 @@ import datetime
 import os
 import pathlib
 import socket
+import sys
 from collections.abc import Generator, Iterator
 from typing import IO
 
@@ -124,8 +128,8 @@ def kanon_workspace_lock(workspace_root: pathlib.Path) -> Generator[None, None, 
     opening the lock file so a fresh workspace does not fail with
     ``FileNotFoundError``.
 
-    The lock is an exclusive kernel-level lock acquired through the POSIX
-    backend (``fcntl.flock``). The calling process blocks here until any other
+    The lock is an exclusive kernel-level lock acquired through the host
+    backend (POSIX ``flock`` or Windows ``LockFileEx``). The calling process blocks here until any other
     process that holds the lock releases it, OR until the configured acquisition
     timeout
     (``KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS``) expires, in which case a
@@ -173,8 +177,9 @@ def kanon_workspace_lock(workspace_root: pathlib.Path) -> Generator[None, None, 
 
     timeout_seconds = _acquire_timeout_seconds()
 
-    with open(lock_path, "wb") as lock_fd:
+    with open(lock_path, "ab") as lock_fd:
         with _exclusive_kernel_lock(lock_fd, workspace_root, lock_path, timeout_seconds):
+            os.utime(lock_path, None)
             _held_lock_paths.add(lock_key)
             try:
                 yield
@@ -189,11 +194,17 @@ def _exclusive_kernel_lock(
     lock_path: pathlib.Path,
     timeout_seconds: int,
 ) -> Iterator[None]:
-    """Acquire the POSIX exclusive kernel lock with a fail-fast timeout.
+    """Acquire an exclusive kernel lock with a fail-fast timeout.
 
-    Delegates to ``_exclusive_kernel_lock_posix``, which gives kernel-level
-    blocking with no poll loop and no ``sleep``; the timeout is a kernel timer
-    that interrupts the blocking syscall on expiry.
+    Dispatches to the platform-specific backend:
+
+    * POSIX (Linux, macOS): ``_exclusive_kernel_lock_posix`` — uses
+      ``fcntl.flock(LOCK_EX)`` interrupted by a ``SIGALRM`` kernel timer on
+      expiry.  True kernel-level blocking with no poll loop and no ``sleep``.
+
+    * Windows: ``_exclusive_kernel_lock_windows`` — uses Win32 ``LockFileEx``
+      with an OVERLAPPED event and ``WaitForSingleObject`` timeout.  True
+      kernel-level blocking with no poll loop and no ``sleep``.
 
     Args:
         lock_fd: An open writable file object for the lock file.
@@ -204,8 +215,12 @@ def _exclusive_kernel_lock(
     Raises:
         WorkspaceLockTimeoutError: If the lock is not granted within the timeout.
     """
-    with _exclusive_kernel_lock_posix(lock_fd, workspace_root, lock_path, timeout_seconds):
-        yield
+    if sys.platform == "win32":
+        with _exclusive_kernel_lock_windows(lock_fd, workspace_root, lock_path, timeout_seconds):
+            yield
+    else:
+        with _exclusive_kernel_lock_posix(lock_fd, workspace_root, lock_path, timeout_seconds):
+            yield
 
 
 @contextlib.contextmanager
@@ -251,3 +266,112 @@ def _exclusive_kernel_lock_posix(
         yield
     finally:
         fcntl.flock(fileno, fcntl.LOCK_UN)
+
+
+@contextlib.contextmanager
+def _exclusive_kernel_lock_windows(
+    lock_fd: IO[bytes],
+    workspace_root: pathlib.Path,
+    lock_path: pathlib.Path,
+    timeout_seconds: int,
+) -> Iterator[None]:
+    """Windows backend: ``LockFileEx`` with ``WaitForSingleObject`` timeout.
+
+    Uses the Win32 ``LockFileEx`` API with an OVERLAPPED event handle so that
+    the kernel signals the event when the lock is granted, then waits on that
+    event via ``WaitForSingleObject``.  This gives true kernel-level blocking
+    with no poll loop and no ``sleep`` — the equivalent of the POSIX
+    ``fcntl.flock`` + ``SIGALRM`` approach on Windows.
+
+    ``UnlockFileEx`` is called in the finally block so the lock is always
+    released, even if the caller's body raises.
+
+    Args:
+        lock_fd: An open writable file object for the lock file.
+        workspace_root: The workspace whose lock is being acquired (for messages).
+        lock_path: The lock-file path (for messages).
+        timeout_seconds: The fail-fast acquisition timeout in seconds.
+
+    Raises:
+        WorkspaceLockTimeoutError: If the lock is not granted within the timeout.
+        OSError: If a Win32 API call fails unexpectedly.
+    """
+    import ctypes
+    from ctypes import wintypes as w
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    class OVERLAPPED(ctypes.Structure):
+        _fields_ = [
+            ("Internal", ctypes.c_size_t),
+            ("InternalHigh", ctypes.c_size_t),
+            ("Offset", w.DWORD),
+            ("OffsetHigh", w.DWORD),
+            ("hEvent", w.HANDLE),
+        ]
+
+    signatures = {
+        "CreateFileW": ([w.LPCWSTR, w.DWORD, w.DWORD, w.LPVOID, w.DWORD, w.DWORD, w.HANDLE], w.HANDLE),
+        "CreateEventW": ([w.LPVOID, w.BOOL, w.BOOL, w.LPCWSTR], w.HANDLE),
+        "LockFileEx": ([w.HANDLE, w.DWORD, w.DWORD, w.DWORD, w.DWORD, ctypes.POINTER(OVERLAPPED)], w.BOOL),
+        "UnlockFileEx": ([w.HANDLE, w.DWORD, w.DWORD, w.DWORD, ctypes.POINTER(OVERLAPPED)], w.BOOL),
+        "WaitForSingleObject": ([w.HANDLE, w.DWORD], w.DWORD),
+        "CancelIoEx": ([w.HANDLE, ctypes.POINTER(OVERLAPPED)], w.BOOL),
+        "GetOverlappedResult": ([w.HANDLE, ctypes.POINTER(OVERLAPPED), ctypes.POINTER(w.DWORD), w.BOOL], w.BOOL),
+        "CloseHandle": ([w.HANDLE], w.BOOL),
+    }
+    for name, (args, result) in signatures.items():
+        function = getattr(kernel, name)
+        function.argtypes = args
+        function.restype = result
+
+    handle = kernel.CreateFileW(str(lock_path), 0xC0000000, 3, None, 4, 0x40000000, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    event = None
+    acquired = False
+    pending = False
+    overlapped = OVERLAPPED()
+    transferred = w.DWORD()
+    try:
+        event = kernel.CreateEventW(None, True, False, None)
+        if not event:
+            raise ctypes.WinError(ctypes.get_last_error())
+        overlapped.hEvent = event
+        acquired = bool(kernel.LockFileEx(handle, 2, 0, 1, 0, ctypes.byref(overlapped)))
+        if not acquired:
+            error = ctypes.get_last_error()
+            if error != 997:
+                raise ctypes.WinError(error)
+            pending = True
+            status = kernel.WaitForSingleObject(event, min(timeout_seconds * 1000, 0xFFFFFFFE))
+            if status == 258:
+                raise WorkspaceLockTimeoutError(
+                    f"ERROR: timed out acquiring the workspace lock for {workspace_root} "
+                    f"after {timeout_seconds}s. Lock file: {lock_path}. "
+                    f"Another process is holding the lock ({_stale_lock_diagnostics()}). "
+                    "Wait for that process to finish; do not delete an active lock file."
+                )
+            if status != 0:
+                raise ctypes.WinError(ctypes.get_last_error())
+            if not kernel.GetOverlappedResult(handle, ctypes.byref(overlapped), ctypes.byref(transferred), False):
+                raise ctypes.WinError(ctypes.get_last_error())
+            pending = False
+            acquired = True
+        yield
+    finally:
+        try:
+            if pending:
+                kernel.CancelIoEx(handle, ctypes.byref(overlapped))
+                acquired = bool(
+                    kernel.GetOverlappedResult(handle, ctypes.byref(overlapped), ctypes.byref(transferred), True)
+                )
+                if not acquired and ctypes.get_last_error() != 995:
+                    raise ctypes.WinError(ctypes.get_last_error())
+            if acquired:
+                if not kernel.UnlockFileEx(handle, 0, 1, 0, ctypes.byref(overlapped)):
+                    raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            kernel.CloseHandle(handle)
+            if event:
+                kernel.CloseHandle(event)

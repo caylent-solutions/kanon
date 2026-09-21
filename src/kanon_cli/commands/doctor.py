@@ -1172,7 +1172,7 @@ def doctor_command(
                     message=(
                         f"Advisory: stale install lock found at {lock_path} "
                         f"(mtime older than {KANON_DOCTOR_STALE_LOCK_AGE_HOURS}h). "
-                        f"fcntl.flock self-cleans on process exit; this file is harmless."
+                        f"The workspace lock self-cleans on process exit; this file is harmless."
                     ),
                     remediation="",
                 )

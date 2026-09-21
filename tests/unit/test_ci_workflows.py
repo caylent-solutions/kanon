@@ -1,21 +1,7 @@
-"""Tests for CI workflow configuration.
+"""Validate full Linux tiers plus explicit native Windows acceptance.
 
-Validates the single-Linux-set CI contract for the two validation workflows
-(`pr-validation.yml`, `main-validation.yml`) per FR-6 / FR-8 of the
-windows-support-removal spec:
-
-- AC-1: No `runs-on: windows-latest` job remains in either validation
-  workflow.
-- The two-set Linux/Windows matrix is collapsed: each test tier (unit /
-  integration / functional / scenario) runs exactly once on a Linux runner
-  with the bare tier marker (for example `-m "unit"`, `-m "integration"`),
-  with no per-OS marker filter (an `and not <os>_only` exclusion).
-- Surviving conventions are preserved: every `run` step uses `shell: bash`,
-  the workflow YAML is valid, the integration job runs in parallel with the
-  unit job, and the ruff check / format-check steps cover `src/`.
-
-The contract assertions below fail if a `windows-latest` leg or a per-OS
-marker filter is reintroduced into either workflow.
+Existing Linux tiers retain their bare markers, dependencies and gates. The
+Windows job runs real process/filesystem contracts against the reviewed commit.
 """
 
 import pathlib
@@ -182,22 +168,19 @@ def test_all_run_steps_use_shell_bash(workflow_path: pathlib.Path):
 
 @pytest.mark.unit
 @pytest.mark.parametrize("workflow_path", WORKFLOW_FILES, ids=WORKFLOW_IDS)
-def test_no_windows_latest_runner(workflow_path: pathlib.Path):
-    """Validate that no job targets the windows-latest runner (AC-1, FR-6).
-
-    Given: A workflow YAML file
-    When: The `runs-on` of every job is inspected
-    Then: No job runs on `windows-latest`; the two-set matrix is collapsed to a
-        single Linux set. This fails if a Windows leg is reintroduced.
-    """
+def test_native_windows_acceptance(workflow_path: pathlib.Path):
+    """Every validation workflow runs the actual Windows contracts without skips."""
     workflow = _load_workflow(workflow_path)
-    jobs = workflow.get("jobs", {})
-    assert jobs, f"Workflow {workflow_path.name} must contain jobs"
-    windows_jobs = {name: job.get("runs-on") for name, job in jobs.items() if job.get("runs-on") == "windows-latest"}
-    assert not windows_jobs, (
-        f"Workflow {workflow_path.name} must not contain any windows-latest job "
-        f"(single-Linux-set contract, FR-6/AC-1). Offending jobs: {sorted(windows_jobs)}"
-    )
+    jobs = workflow["jobs"]
+    windows_jobs = [job for job in jobs.values() if job.get("runs-on") == "windows-latest"]
+    assert len(windows_jobs) == 1
+    assert "make test-windows" in _job_run_text(windows_jobs[0])
+    checkout = next(step for step in windows_jobs[0]["steps"] if step.get("uses", "").startswith("actions/checkout@"))
+    assert "github.event.pull_request.head.sha" in checkout["with"]["ref"]
+    recipe = _makefile_recipe("test-windows")
+    assert "uv run --locked pytest" in recipe
+    assert "tests/native/windows_contracts.py" in recipe
+    assert "tests/unit/test_concurrency.py" in recipe
 
 
 @pytest.mark.unit

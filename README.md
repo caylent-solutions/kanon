@@ -91,16 +91,29 @@ via declarative manifests.
 
 ## Platform support
 
-Kanon runs on macOS and Linux. **Windows is not currently supported
-(planned).** Native Windows support is on the roadmap but not yet
-available; in the meantime, run kanon under WSL2 (Windows Subsystem for
-Linux), where the Linux instructions throughout this documentation apply
-unchanged.
+Kanon runs on macOS and Linux. Native Windows support is experimental.
+The native Windows acceptance job exercises workspace exclusion and timeout,
+detached workers, error logs, directory symlinks, configuration ACL checks, and
+an isolated local-catalog CLI lifecycle. It does not certify the entire vendored
+repo command surface, enterprise VDI policies, or Git OAuth authentication.
+WSL2 remains the established Windows option for the Linux workflows.
 
-The shell-completion docs describe a cross-platform PowerShell Core
-(`pwsh`) completer that also runs on macOS and Linux; see
-[docs/shell-completion.md](docs/shell-completion.md). PowerShell Core
-support is not a claim of native Windows support.
+Native Windows requires Git for Windows with `core.longpaths=true`, and either
+Windows Developer Mode or the Create symbolic links privilege. Symlinks are
+required; Kanon does not replace them with copies. The `.kanon` file must allow
+writes only to its owner, SYSTEM, or Administrators; inherited grants to other
+users must be removed in Windows Security settings. Unsupported ACL forms are
+rejected rather than treated as secure.
+
+See [Windows setup](docs/git-auth-setup.md#windows-experimental) and
+[PowerShell completion](docs/shell-completion.md). Long paths should also be
+enabled in Windows policy; keep `KANON_HOME` short (for example `C:\kanon`). Git for Windows can still
+reject long `GIT_DIR` paths even with `core.longpaths=true`. The store and Kanon installation must be on the same drive: the vendored repo
+engine creates relative links to its installed hooks and cannot calculate those
+links across drive letters.
+
+Network-share workspaces and
+non-NTFS filesystems have not been validated.
 
 ---
 
@@ -1530,8 +1543,7 @@ version bumps.
 - [Integration Testing](docs/integration-testing.md) -- End-to-end CLI test
   plan
 - [kanon repo reference](docs/repo/README.md) -- Manifest format, `.repo/`
-  layout, hooks, smart sync, Python support (Windows is not currently
-  supported; see [Platform support](#platform-support) and use WSL2)
+  layout, hooks, smart sync, Python support (native Windows is experimental; see [Platform support](#platform-support))
 - [Contributing](CONTRIBUTING.md) -- How to create and maintain Kanon
   packages and marketplaces
 - [Privacy & Telemetry](docs/privacy.md) -- What usage telemetry kanon

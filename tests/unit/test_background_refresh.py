@@ -19,7 +19,7 @@ Cases covered:
   without invoking refresh_fn in-process.
 - Spawn-failure propagation: when spawn_detached raises RuntimeError,
   fork_background_refresh propagates it (fail-fast, no silent fallback).
-- The callable handed to spawn_detached is a picklable functools.partial
+- The callable handed to spawn_detached is a serializable functools.partial
   wrapping the module-level _run_refresh_with_logging (required for the Windows
   spawn path).
 - KANON_COMPLETION_LOG selects the log path forwarded to spawn_detached.
@@ -147,7 +147,7 @@ def test_parent_returns_without_running_refresh_fn_in_process(
 
 
 @pytest.mark.unit
-def test_spawn_detached_receives_picklable_partial_wrapper(
+def test_spawn_detached_receives_serializable_partial_wrapper(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -155,8 +155,8 @@ def test_spawn_detached_receives_picklable_partial_wrapper(
     functools.partial of the module-level _run_refresh_with_logging, NOT a
     nested closure.
 
-    A functools.partial of a module-level function is picklable, which the
-    Windows spawn path requires. A nested closure would be unpicklable.
+    A functools.partial of a module-level function is serializable, which the
+    Windows spawn path requires. A nested closure would be not serializable.
     """
     monkeypatch.setenv("KANON_HOME", str(tmp_path))
     monkeypatch.setenv("KANON_COMPLETION_REFRESH_BG", "1")
@@ -171,9 +171,12 @@ def test_spawn_detached_receives_picklable_partial_wrapper(
 
     assert len(captured) == 1
     passed = captured[0]
-    assert isinstance(passed, functools.partial), "wrapper must be a functools.partial (picklable)"
+    assert isinstance(passed, functools.partial), "wrapper must be a functools.partial (serializable)"
     assert passed.func is _run_refresh_with_logging, "wrapper must bind the module-level logging helper"
     assert passed.args[0] is _noop, "wrapper must bind the caller's refresh_fn"
+    from kanon_cli.utils.worker import encode, decode
+
+    assert decode(encode(passed)).args == passed.args
 
 
 @pytest.mark.unit

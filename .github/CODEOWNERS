@@ -2,5 +2,5 @@
 #
 # Defines code ownership for pull request review requirements.
 
-# All files owned by the primary maintainer
-/ @matt-dresden-caylent
+# All files owned by the Kanon release-approver team
+* @caylent-solutions/kanon-release-approvers

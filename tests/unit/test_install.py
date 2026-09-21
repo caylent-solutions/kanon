@@ -28,6 +28,7 @@ from kanon_cli.core.install import (
     compute_project_address,
     create_source_dirs,
     ensure_project_packages_anchor,
+    project_packages_dir,
     install,
     prepare_marketplace_dir,
     RefreshRepoInitError,
@@ -882,9 +883,9 @@ class TestProjectPackagesAnchor:
         """The anchor points at the store's package directory and is kept out of git."""
         project_root, store = self._roots(tmp_path)
 
-        anchor = ensure_project_packages_anchor(project_root, store)
+        anchor = ensure_project_packages_anchor(project_root, store, _PROJECT_ADDRESS)
 
-        assert pathlib.Path(os.readlink(anchor)) == store / ".packages", (
+        assert pathlib.Path(os.readlink(anchor)) == project_packages_dir(store, _PROJECT_ADDRESS), (
             f"Expected the anchor to point at {store / '.packages'}, but it points at {os.readlink(anchor)!r}."
         )
         assert "/.packages" in (project_root / ".gitignore").read_text(encoding="utf-8"), (
@@ -897,9 +898,9 @@ class TestProjectPackagesAnchor:
         project_root, store = self._roots(tmp_path)
         (project_root / ".packages").symlink_to(tmp_path / "old-store" / ".packages")
 
-        anchor = ensure_project_packages_anchor(project_root, store)
+        anchor = ensure_project_packages_anchor(project_root, store, _PROJECT_ADDRESS)
 
-        assert pathlib.Path(os.readlink(anchor)) == store / ".packages", (
+        assert pathlib.Path(os.readlink(anchor)) == project_packages_dir(store, _PROJECT_ADDRESS), (
             f"Expected a stale anchor to be repointed at the current store, but it still points at "
             f"{os.readlink(anchor)!r}."
         )
@@ -908,9 +909,9 @@ class TestProjectPackagesAnchor:
         """Re-running install over a correct anchor leaves it exactly as it was."""
         project_root, store = self._roots(tmp_path)
 
-        first = ensure_project_packages_anchor(project_root, store)
+        first = ensure_project_packages_anchor(project_root, store, _PROJECT_ADDRESS)
         before = os.lstat(first).st_ino
-        second = ensure_project_packages_anchor(project_root, store)
+        second = ensure_project_packages_anchor(project_root, store, _PROJECT_ADDRESS)
 
         assert os.lstat(second).st_ino == before, (
             "Expected a correct anchor to be left alone, but it was recreated. Replacing it on every "
@@ -927,7 +928,7 @@ class TestProjectPackagesAnchor:
         (occupied / "theirs.txt").write_text("not kanon's\n", encoding="utf-8")
 
         with pytest.raises(InstallError) as excinfo:
-            ensure_project_packages_anchor(project_root, store)
+            ensure_project_packages_anchor(project_root, store, _PROJECT_ADDRESS)
 
         assert str(occupied) in str(excinfo.value), (
             f"Expected the error to name the occupied path {occupied}, but it said: {excinfo.value}"
@@ -998,9 +999,9 @@ class TestInstallKanonHomeStore:
         assert (cwd_dir / ".packages").is_symlink(), (
             ".packages/ in cwd must be the anchor symlink a delivered <linkfile> resolves through"
         )
-        assert pathlib.Path(os.readlink(cwd_dir / ".packages")) == store / ".packages", (
-            ".packages/ in cwd must point into <KANON_HOME>/store, never hold package content of its own"
-        )
+        assert pathlib.Path(os.readlink(cwd_dir / ".packages")) == project_packages_dir(
+            store, compute_project_address(kanonenv)
+        ), ".packages/ in cwd must point into <KANON_HOME>/store, never hold package content of its own"
 
     def test_install_creates_packages_under_kanon_home_store(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -1110,7 +1111,7 @@ class TestAggregateSymlinksUsesSymlink:
         with patch("kanon_cli.core.install.create_dirsymlink") as mock_helper:
             aggregate_symlinks(["build"], tmp_path, _PROJECT_ADDRESS)
 
-        mock_helper.assert_called_once()
+        assert mock_helper.call_count == 2
         call_args = mock_helper.call_args
 
         assert call_args[0][0].name == "test-lint", (

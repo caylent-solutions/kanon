@@ -1388,6 +1388,11 @@ def source_workspace_dir(base_dir: pathlib.Path, project_address: str, source_na
     return project_sources_dir(base_dir, project_address) / source_name
 
 
+def project_packages_dir(base_dir: pathlib.Path, project_address: str) -> pathlib.Path:
+    """Return the private aggregation directory used by one consumer's linkfiles."""
+    return project_sources_dir(base_dir, project_address) / PACKAGES_DIR_NAME
+
+
 def store_entries_dir(store_base: pathlib.Path) -> pathlib.Path:
     """Return the directory under ``store_base`` that holds content-addressed entries.
 
@@ -2096,7 +2101,9 @@ def export_permitted_abs_roots(kanon_file: pathlib.Path, marketplace_dir_str: st
     return deduped
 
 
-def ensure_project_packages_anchor(project_root: pathlib.Path, base_dir: pathlib.Path) -> pathlib.Path:
+def ensure_project_packages_anchor(
+    project_root: pathlib.Path, base_dir: pathlib.Path, project_address: str
+) -> pathlib.Path:
     """Publish the project-root ``.packages`` anchor an absolute ``<linkfile>`` resolves through.
 
     A ``<linkfile>`` delivering into the consuming project points at content that
@@ -2108,7 +2115,7 @@ def ensure_project_packages_anchor(project_root: pathlib.Path, base_dir: pathlib
     everyone else once committed.
 
     The anchor removes the choice. ``<project_root>/.packages`` points at the
-    store's aggregated package directory, so a delivered target is expressed
+    project's private aggregated package directory, so a delivered target is expressed
     purely in project-root-relative terms and is identical at every checkout
     depth. The anchor itself is machine-specific, so it is added to the project's
     ``.gitignore``.
@@ -2122,6 +2129,7 @@ def ensure_project_packages_anchor(project_root: pathlib.Path, base_dir: pathlib
     Args:
         project_root: The consumer project root (the ``.kanon`` file's parent).
         base_dir: The resolved store base directory (``<KANON_HOME>/store``).
+        project_address: The consumer's address, including its chosen config filename.
 
     Returns:
         The absolute path to the anchor.
@@ -2129,7 +2137,7 @@ def ensure_project_packages_anchor(project_root: pathlib.Path, base_dir: pathlib
     Raises:
         InstallError: If the anchor path is occupied by a non-symlink entry.
     """
-    store_packages = base_dir / PACKAGES_DIR_NAME
+    store_packages = project_packages_dir(base_dir, project_address)
     store_packages.mkdir(parents=True, exist_ok=True)
     anchor = project_root / PACKAGES_DIR_NAME
 
@@ -2243,32 +2251,24 @@ def aggregate_symlinks(
     base_dir: pathlib.Path,
     project_address: str,
 ) -> dict[str, str]:
-    """Aggregate packages from all sources into ``.packages/``.
+    """Aggregate packages into a private consumer directory and the shared index.
 
     For each ``.kanon-data/sources/<project_address>/<name>/.packages/*``,
-    creates a symlink in the top-level ``.packages/`` directory. Detects
-    collisions when two sources produce the same package name.
+    creates a symlink in this project's private ``.packages/`` directory and in
+    the top-level shared index. Detects collisions when two sources produce the
+    same package name. Consumer linkfiles use only the private directory, so
+    another project's install or clean cannot change their delivered content.
 
-    Unlike the per-source ``.repo`` workspace, this aggregation farm is NOT keyed
-    by project: keying it broke roughly 140 end-to-end tests for no behavioural
-    gain, and ``docs/architecture.md`` points operators at ``.packages/`` as the
-    directory downstream tooling references, so its path is part of the contract.
-
-    That leaves one shared surface. If another project on this machine already
-    published a link under the same package name, replacing it silently would
-    repoint that project's tooling at this project's content -- the same
-    silent-wrong-content class the keyed workspace was introduced to close. The
-    replacement is therefore announced on stderr naming both projects, so the
-    collision is visible without making two projects sharing a package name unable
-    to coexist. Fully isolating the farm is tracked separately (issue #115).
+    The legacy shared index remains for existing downstream tooling. Its links
+    still use last-install-wins semantics across projects, with a warning when
+    ownership changes. Consumer anchors never traverse this shared index.
 
     Args:
         source_names: Ordered list of source names.
         base_dir: The resolved store base directory (``<KANON_HOME>/store``).
         project_address: The consumer project's stable address from
-            ``compute_project_address``. Used only to locate this project's
-            keyed source workspaces (the read side); the aggregated
-            ``.packages/`` write side is intentionally left unkeyed.
+            ``compute_project_address``. Keys both the source workspaces and the
+            private aggregation directory.
 
     Returns:
         Dict mapping package name to source name.
@@ -2278,6 +2278,8 @@ def aggregate_symlinks(
     """
     packages_dir = base_dir / PACKAGES_DIR_NAME
     packages_dir.mkdir(exist_ok=True)
+    private_packages = project_packages_dir(base_dir, project_address)
+    private_packages.mkdir(parents=True, exist_ok=True)
 
     package_owners: dict[str, str] = {}
 
@@ -2292,11 +2294,19 @@ def aggregate_symlinks(
                     f"Package collision for '{pkg_name}': provided by both '{package_owners[pkg_name]}' and '{name}'"
                 )
             package_owners[pkg_name] = name
+            private_link = private_packages / pkg_name
+            if private_link.is_symlink() or private_link.exists():
+                private_link.unlink()
+            create_dirsymlink(private_link, pkg.resolve())
             link_path = packages_dir / pkg_name
             _warn_if_package_link_owned_elsewhere(link_path, base_dir, project_address, pkg_name)
             if link_path.exists() or link_path.is_symlink():
                 link_path.unlink()
             create_dirsymlink(link_path, pkg.resolve())
+
+    for stale in private_packages.iterdir():
+        if stale.name not in package_owners:
+            stale.unlink()
 
     return package_owners
 
@@ -2309,8 +2319,8 @@ def update_gitignore(
 
     Creates ``.gitignore`` if it does not exist. Appends missing entries without
     duplicating existing ones. ``entries`` is always supplied by the caller; the
-    sole caller is the in-git-repo store safety net, which passes the whole-store
-    ignore entry (``KANON_HOME_STORE_GITIGNORE_ENTRY``).
+    callers are the in-git-repo store safety net and the consumer's private
+    package anchor, each supplying its own ignore entry.
 
     Args:
         base_dir: Directory whose ``.gitignore`` is ensured.
@@ -2804,7 +2814,7 @@ def _run_install(
         prepare_marketplace_dir(marketplace_dir)
 
     export_permitted_abs_roots(kanonenv_path, marketplace_dir_str)
-    ensure_project_packages_anchor(kanonenv_path.resolve().parent, base_dir)
+    ensure_project_packages_anchor(kanonenv_path.resolve().parent, base_dir, project_address)
 
     repo_rev = globals_dict.get("REPO_REV", "")
 

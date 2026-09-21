@@ -18,7 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.commands.install import _run as _install_run
-from kanon_cli.core.install import compute_project_address, install
+from kanon_cli.core.install import compute_project_address, install, project_packages_dir
 from tests.conftest import write_manifest_for_sync
 
 
@@ -773,7 +773,8 @@ class TestInstallLifecycleOrder:
         packages_during_sync: list[list[str]] = []
 
         def check_packages_during_sync(repo_dir: str, **kwargs: object) -> None:
-            packages_during_sync.append(sorted(p.name for p in (store_base / ".packages").iterdir()))
+            private_packages = project_packages_dir(store_base, compute_project_address(kanonenv))
+            packages_during_sync.append(sorted(p.name for p in private_packages.iterdir()))
 
         with (
             patch("kanon_cli.repo.repo_init"),

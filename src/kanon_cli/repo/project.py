@@ -509,6 +509,9 @@ def _ResolveAbsDest(dest, skipfinal=False):
     # has to establish where the dest sits.
     parent_real = os.path.realpath(os.path.dirname(normalized))
     real = os.path.join(parent_real, os.path.basename(normalized))
+    project_root = _ConsumerProjectRoot()
+    if project_root and real == os.path.join(os.path.realpath(project_root), _PACKAGES_DIR_NAME):
+        raise ManifestInvalidPathError(f"{dest}: the consumer's .packages anchor is reserved for kanon")
     contained = False
     for root in roots:
         root_real = os.path.realpath(root)
@@ -658,14 +661,14 @@ class _LinkFile:
 
         The anchor is what removes depth from the computation.  Every project
         the manifest syncs occupies a ``.packages/<name>`` slot under |topdir|,
-        and ``<project_root>/.packages`` points at the aggregation of those
+        and ``<project_root>/.packages`` points at this consumer's aggregation of those
         slots, so the same content is reachable from inside the project.  Both
         sides of the measurement are then project-root-relative -- ``.claude``
         and ``.packages/<name>/...``, neither carrying an absolute prefix -- and
         the target that falls out is a function of the manifest alone.
 
-        Sources outside a ``.packages`` slot, destinations outside the project
-        (a marketplace entry, say), and a missing project root all fall back to
+        Sources outside a ``.packages`` slot, destinations inside the source
+        workspace or outside the consumer (a marketplace entry, say), and a missing project root all fall back to
         the plain on-disk measurement: this narrows a target that would
         otherwise escape the project root, and never widens one.
 
@@ -678,6 +681,9 @@ class _LinkFile:
         """
         dest_dir = os.path.dirname(dest)
         on_disk = os.path.relpath(src, dest_dir)
+        dest_from_workspace = os.path.relpath(os.path.realpath(dest_dir), os.path.realpath(self.topdir))
+        if dest_from_workspace.split(os.path.sep)[0] != os.pardir:
+            return on_disk
 
         project_root = _ConsumerProjectRoot()
         if not project_root:

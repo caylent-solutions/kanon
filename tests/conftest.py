@@ -473,8 +473,11 @@ def assert_only_packages_anchor_beside_kanon(project_root: pathlib.Path, store: 
         f"{'a real directory or file' if anchor.exists() else 'missing'}. Artifacts belong in the "
         f"store; only the anchor pointing at it belongs in the project."
     )
-    assert pathlib.Path(os.readlink(anchor)) == store / ".packages", (
-        f"Expected {anchor} to point at {store / '.packages'}, but it points at "
+    from kanon_cli.core.install import compute_project_address, project_packages_dir
+
+    expected = project_packages_dir(store, compute_project_address(project_root / ".kanon"))
+    assert pathlib.Path(os.readlink(anchor)) == expected, (
+        f"Expected {anchor} to point at {expected}, but it points at "
         f"{os.readlink(anchor)!r}. The anchor is the project's only route to the store."
     )
     assert not (project_root / ".kanon-data").exists(), (

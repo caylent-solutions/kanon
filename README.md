@@ -1382,8 +1382,9 @@ project root:
 That target is a function of the manifest alone. It is byte-identical whether
 you install from a plain clone or from a git worktree nested inside one, and it
 stays valid when the checkout moves. Do not commit the `.packages` anchor
-itself: it points into your own `KANON_HOME`, and every developer's
-`kanon install` creates their own.
+itself: it points into your project's private directory in `KANON_HOME`, and
+every developer's `kanon install` creates their own. Installing or cleaning
+another project leaves this project's delivered content unchanged.
 
 ---
 

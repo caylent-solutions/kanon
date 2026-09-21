@@ -13,11 +13,14 @@ AC-CHANNEL-001: no stdout leakage on success or expected-error paths.
 
 import os
 import pathlib
+import shutil
 import stat
 
 import pytest
 
 from kanon_cli.repo.project import _LinkFile
+from kanon_cli.repo.project import _CopyFile
+from kanon_cli.repo.error import ManifestInvalidPathError
 
 
 def _make_linkfile(
@@ -582,7 +585,7 @@ def _build_store(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
 
     Mirrors the real shape the delivered symlink has to reach: a per-source repo
     workspace whose projects occupy ``.packages/<name>`` slots, plus the
-    aggregated ``<store>/.packages`` directory that links to those slots.
+    private aggregated directory that links to those slots.
 
     Args:
         root: Directory to build the store under.
@@ -599,7 +602,7 @@ def _build_store(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     rules_dir.mkdir(parents=True)
     (rules_dir / RULE_FILE_NAME).write_text(RULE_FILE_BODY, encoding="utf-8")
 
-    aggregated = store / ".packages"
+    aggregated = topdir.parent / ".packages"
     aggregated.mkdir(parents=True)
     (aggregated / PACKAGE_NAME).symlink_to(git_worktree)
 
@@ -630,7 +633,7 @@ def _install_into_checkout(
     project_root = root.joinpath(*depth)
     project_root.mkdir(parents=True)
 
-    (project_root / ".packages").symlink_to(root / "store" / ".packages")
+    (project_root / ".packages").symlink_to(topdir.parent / ".packages")
     monkeypatch.setenv("KANON_PROJECT_ROOT", str(project_root))
     permit_abs_roots(project_root)
 
@@ -715,3 +718,39 @@ def test_linkfile_target_resolves_to_source_content_at_both_depths(
             f"Expected the link delivered into the checkout at {'/'.join(depth)} to resolve to the "
             f"package's own content, but reading {delivered} did not return it."
         )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("operation", ["link", "copy"])
+def test_manifest_cannot_replace_packages_anchor(tmp_path, monkeypatch, permit_abs_roots, operation):
+    """Manifest delivery cannot overwrite the shared entry point for this consumer's packages."""
+    project_root = tmp_path.resolve() / "consumer"
+    project_root.mkdir()
+    store = tmp_path.resolve() / "private-packages"
+    store.mkdir()
+    anchor = project_root / ".packages"
+    anchor.symlink_to(store)
+    source = tmp_path.resolve() / "source"
+    source.mkdir()
+    (source / "payload.txt").write_text("payload", encoding="utf-8")
+    monkeypatch.setenv("KANON_PROJECT_ROOT", str(project_root))
+    permit_abs_roots(project_root)
+    cls = _LinkFile if operation == "link" else _CopyFile
+    delivery = cls(str(source), "payload.txt", str(source), str(anchor))
+    with pytest.raises(ManifestInvalidPathError, match="anchor is reserved"):
+        delivery._Link() if operation == "link" else delivery._Copy()
+    assert anchor.is_symlink()
+    assert anchor.resolve() == store
+
+
+@pytest.mark.integration
+def test_workspace_link_stays_local_when_store_is_inside_consumer(tmp_path, monkeypatch):
+    """A cached workspace retains working internal links without a consumer anchor."""
+    consumer = tmp_path.resolve() / "consumer"
+    consumer.mkdir()
+    topdir, checkout = _build_store(consumer)
+    monkeypatch.setenv("KANON_PROJECT_ROOT", str(consumer))
+    _make_linkfile(checkout, LINK_SRC, topdir, "internal-rules")._Link()
+    cached = tmp_path.resolve() / "cache-copy"
+    shutil.copytree(topdir, cached, symlinks=True)
+    assert (cached / "internal-rules" / RULE_FILE_NAME).read_text(encoding="utf-8") == RULE_FILE_BODY

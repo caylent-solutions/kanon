@@ -747,18 +747,18 @@ class TestBackgroundRefreshClosure:
         call_args = mock_fetch.call_args[0]
         assert call_args[0] == self._REPO_URL, "background refresh must use the original repo_url"
 
-    def test_refresh_callable_is_picklable(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_refresh_callable_is_serializable(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """The EXACT callable the real callsite passes to fork_background_refresh
-        must be picklable so the Windows detached-spawn path works end-to-end.
+        must be serializable so the Windows detached-spawn path works end-to-end.
 
         ``project_versions.complete`` builds the background-refresh callable from
-        a nested closure historically; a nested closure is NOT picklable and the
-        Windows ``spawn_detached`` path serialises the callable via pickle. This
+        a nested closure historically; a nested closure is NOT serializable and the
+        Windows ``spawn_detached`` path serialises the callable as JSON. This
         test captures the precise object handed to fork_background_refresh and
-        asserts ``pickle.dumps`` succeeds on it; it FAILS if picklability
+        asserts ``encode`` succeeds on it; it FAILS if serialization
         regresses (e.g. the callsite reverts to a nested closure).
         """
-        import pickle
+        from kanon_cli.utils.worker import encode
 
         self._seed_stale_cache(tmp_path, monkeypatch)
 
@@ -774,24 +774,26 @@ class TestBackgroundRefreshClosure:
         passed_fn = captured[0]
 
         try:
-            pickle.dumps(passed_fn)
+            encode(passed_fn)
         except Exception as exc:
             raise AssertionError(
-                f"The callable passed to fork_background_refresh is not picklable "
+                f"The callable passed to fork_background_refresh is not serializable "
                 f"({type(exc).__name__}: {exc}). The Windows detach path requires a "
-                f"picklable callable -- the callsite must pass functools.partial of a "
+                f"serializable callable -- the callsite must pass functools.partial of a "
                 f"module-level function, never a nested closure."
             ) from exc
 
-    def test_refresh_callable_round_trips_through_pickle(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The picklable callable round-trips and, when invoked, reaches
+    def test_refresh_callable_round_trips_through_worker_protocol(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The serializable callable round-trips and, when invoked, reaches
         _fetch_and_cache_versions with the original repo_url and entry dir.
 
         This proves the Windows child would actually run the intended refresh
         after deserialising, not merely that serialisation does not raise.
         """
         import functools
-        import pickle
+        from kanon_cli.utils.worker import encode, decode
 
         entry_dir = self._seed_stale_cache(tmp_path, monkeypatch)
 
@@ -804,7 +806,7 @@ class TestBackgroundRefreshClosure:
             complete(self._REPO_URL, "")
 
         assert len(captured) == 1
-        revived = pickle.loads(pickle.dumps(captured[0]))
+        revived = decode(encode(captured[0]))
 
         assert isinstance(revived, functools.partial)
         assert revived.func is pv._fetch_and_cache_versions

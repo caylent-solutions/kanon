@@ -132,3 +132,7 @@ check-completion-snapshots: ## Verify the completion fixtures match generated ou
 		exit 1; \
 	fi; \
 	echo "completion fixtures match generated output"
+
+.PHONY: test-windows
+test-windows: ## Run native Windows contracts and portable utility regressions
+	uv run --locked pytest --confcutdir=tests/native tests/native/windows_contracts.py tests/unit/test_concurrency.py tests/unit/test_spawn.py tests/unit/test_worker.py tests/unit/test_windows_lock_api.py -q

@@ -11,7 +11,8 @@ Performs full Kanon teardown in the following order:
      which .packages/ and .kanon-data/ are removed.
   4. If marketplace was registered: uninstall marketplace plugins via claude CLI,
      then remove CLAUDE_MARKETPLACES_DIR.
-  5. Remove .packages/ directory (ignore_errors=True)
+  5. Remove this project's .packages/ links, plus the project-root .packages
+     anchor install created
   6. Remove .kanon-data/ directory (ignore_errors=True)
   7. Prune the content-addressed store entries via prune_store (spec Section 3.5)
 """
@@ -25,12 +26,14 @@ from kanon_cli.constants import (
     KANON_HOME_CACHE_SUBDIR,
     KANON_HOME_STORE_SUBDIR,
     LOCKFILE_FILENAME,
+    PACKAGES_DIR_NAME,
     SOURCE_MARKETPLACE_KEY,
     resolve_kanon_home,
 )
 from kanon_cli.core.install import (
     KANON_DATA_SUBDIR,
     compute_project_address,
+    project_packages_dir,
     project_sources_dir,
     prune_store,
     resolve_workspace_base_dir,
@@ -91,7 +94,7 @@ def project_packages_links(base_dir: pathlib.Path, project_address: str) -> list
     Returns:
         The links whose target lies under this project's source workspace.
     """
-    packages_dir = base_dir / ".packages"
+    packages_dir = base_dir / PACKAGES_DIR_NAME
     owned: list[pathlib.Path] = []
     try:
         entries = sorted(packages_dir.iterdir())
@@ -127,7 +130,31 @@ def remove_project_packages_links(base_dir: pathlib.Path, project_address: str) 
             shutil.rmtree(link, ignore_errors=True)
         except FileNotFoundError:
             continue
-    _remove_if_empty(base_dir / ".packages")
+    _remove_if_empty(base_dir / PACKAGES_DIR_NAME)
+
+
+def remove_project_packages_anchor(project_root: pathlib.Path, base_dir: pathlib.Path, project_address: str) -> None:
+    """Remove the project-root ``.packages`` anchor ``install`` created.
+
+    The anchor is kanon's own artifact, so leaving it behind would orphan a
+    symlink into a store this project no longer has content in -- the same class
+    of leftover as an unregistered marketplace.
+
+    Only a symlink pointing at this project's private package directory is removed. A real
+    directory, or a link the operator pointed somewhere else, is the operator's
+    and is left alone.
+
+    Args:
+        project_root: The consumer project root (the ``.kanon`` file's parent).
+        base_dir: The resolved store base directory.
+        project_address: The consumer project's address.
+    """
+    anchor = project_root / PACKAGES_DIR_NAME
+    if not anchor.is_symlink():
+        return
+    if pathlib.Path(os.readlink(anchor)) != project_packages_dir(base_dir, project_address):
+        return
+    anchor.unlink()
 
 
 def remove_project_workspace(base_dir: pathlib.Path, project_address: str) -> None:
@@ -488,6 +515,7 @@ def clean(
 
     print("kanon clean: removing this project's aggregated package links...")
     remove_project_packages_links(base_dir, project_address)
+    remove_project_packages_anchor(kanonenv_path.parent, base_dir, project_address)
     print("kanon clean: removing this project's source workspace...")
     remove_project_workspace(base_dir, project_address)
     if purge_home:

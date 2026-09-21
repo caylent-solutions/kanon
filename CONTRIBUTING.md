@@ -209,6 +209,27 @@ make test-scenarios
 
 A coverage meta test (`tests/scenarios/test_scenario_coverage_meta.py`) fails CI if any in-scope scenario in `docs/integration-testing.md` lacks a matching pytest test. To add a new scenario: add the `### XX-NN: <title>` heading + bash block to `docs/integration-testing.md`, then add a `@pytest.mark.scenario` test under `tests/scenarios/test_<category>.py` that references the scenario ID in its function name or docstring.
 
+### Native Windows acceptance
+
+Run `make test-windows` on native Windows with Git for Windows and symlink
+privileges. The target uses the locked toolchain and executes the native
+contracts plus portable lock/worker unit tests. The dedicated test root avoids
+the existing POSIX process-group harness; it does not skip failing tests in
+that harness or claim that the full suite runs on Windows. Native tests are
+explicitly selected from `tests/native/windows_contracts.py`, so POSIX test
+collection never substitutes mocks for native acceptance.
+
+Worker contracts use a disposable interpreter with the trusted test callbacks
+installed through its site configuration. Workers start in Python isolated
+mode, so neither the current workspace nor `PYTHONPATH` supplies their imports.
+Native regressions cover hostile workspace modules and two workers writing to
+the same append-only log before either worker exits.
+
+The lifecycle fixture enables Git long paths for its child processes and uses
+local disposable repositories. Windows 11 validation and the `windows-latest`
+CI job complement the existing Linux tiers and macOS checks. Authentication and
+the complete vendored repo command surface require separate acceptance.
+
 ### Test Requirements
 
 - **Unit Tests**: Must maintain at least `COVERAGE_MIN` (default 93%) coverage

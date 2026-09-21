@@ -104,8 +104,21 @@ Key paths:
   mutation. A stale lock left by a killed process is harmless; the next
   invocation reopens and re-acquires it.
 - **`.packages/`** -- aggregated symlinks pointing into the per-source
-  `.packages/*` entries. This is the only directory operators need to
-  reference in downstream tooling.
+  `.packages/*` entries. This legacy index uses last-install-wins semantics
+  across projects; use the consumer anchor for project-specific content.
+- **`<project-root>/.packages`** -- the anchor: a symlink beside `.kanon`
+  pointing at `.kanon-data/sources/<project_address>/.packages/` in the store.
+  It holds no content of its own. Each project has a private aggregation directory, so another project's
+  install or clean cannot repoint its delivered content. The legacy shared
+  `<store>/.packages/` index remains available to existing downstream tooling.
+  `kanon install` adds the anchor to the project's `.gitignore`. A
+  `<linkfile>` delivering into the consuming project names a target relative to
+  the project root and reaches the store through this anchor, so the target it
+  writes is identical whatever the checkout's depth on disk. Computed against
+  the store directly, the target would instead record that depth: an install run
+  inside a git worktree sits three directories deeper than the clone containing
+  it and would write a three-level-longer target -- correct there, dangling in
+  every ordinary clone. `kanon clean` removes the anchor it created.
 - **`<KANON_HOME>/store/.gitignore`** -- `kanon install` writes this
   safety net (containing `*`) ONLY when the shared `KANON_HOME` store sits
   inside a git working tree, so the fetched-artifact cache is never committed.

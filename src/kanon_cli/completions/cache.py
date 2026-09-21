@@ -450,8 +450,8 @@ def _run_refresh_with_logging(refresh_fn: Callable[[], None], completer_name: st
 
     This is a module-level function (not a nested closure) so that
     ``functools.partial(_run_refresh_with_logging, refresh_fn, completer_name)``
-    is picklable.  Picklability is required for the Windows spawn path, which
-    serialises the callable via ``pickle`` to pass it to a child interpreter.
+    can be described by the Windows worker's JSON protocol and imported in a
+    fresh interpreter without deserializing executable objects.
 
     Args:
         refresh_fn: Zero-argument callable that performs the cache refresh.

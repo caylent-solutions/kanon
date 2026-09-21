@@ -378,3 +378,19 @@ jobs:
           fi
           echo "Final owners: $UNIQUE_OWNERS"
           echo "owners=$UNIQUE_OWNERS" >> $GITHUB_OUTPUT
+
+  native-windows:
+    name: Native Windows contracts
+    runs-on: windows-latest
+    steps:
+      - name: Checkout reviewed commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+      - name: Run native Windows acceptance
+        env:
+          KANON_NATIVE_STORE_ROOT: ${{ runner.temp }}
+        shell: bash
+        run: make test-windows

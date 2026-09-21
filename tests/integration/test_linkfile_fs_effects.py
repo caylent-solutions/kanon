@@ -13,11 +13,14 @@ AC-CHANNEL-001: no stdout leakage on success or expected-error paths.
 
 import os
 import pathlib
+import shutil
 import stat
 
 import pytest
 
 from kanon_cli.repo.project import _LinkFile
+from kanon_cli.repo.project import _CopyFile
+from kanon_cli.repo.error import ManifestInvalidPathError
 
 
 def _make_linkfile(
@@ -566,3 +569,188 @@ def test_linkfile_link_does_not_write_to_stdout(tmp_path: pathlib.Path, capsys: 
 
     captured = capsys.readouterr()
     assert not captured.out, f"Expected no stdout output from _LinkFile._Link(), but got: {captured.out!r}"
+
+
+PACKAGE_NAME = "engagement-kit"
+LINK_SRC = "standards/rules"
+LINK_DEST_IN_PROJECT = ".claude/rules"
+RULE_FILE_NAME = "coding-standards.md"
+RULE_FILE_BODY = "# coding standards\n"
+PLAIN_CLONE_DEPTH = ("code", "consumer-repo")
+WORKTREE_DEPTH = ("code", "consumer-repo", ".claude", "worktrees", "wt-1")
+
+
+def _build_store(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    """Lay out a store the way ``kanon install`` does, outside any project.
+
+    Mirrors the real shape the delivered symlink has to reach: a per-source repo
+    workspace whose projects occupy ``.packages/<name>`` slots, plus the
+    private aggregated directory that links to those slots.
+
+    Args:
+        root: Directory to build the store under.
+
+    Returns:
+        A ``(topdir, git_worktree)`` pair -- the source's repo workspace and the
+        package checkout inside it.
+    """
+    store = root / "store"
+    topdir = store / ".kanon-data" / "sources" / "a1b2c3" / "engagement_kit"
+    git_worktree = topdir / ".packages" / PACKAGE_NAME
+
+    rules_dir = git_worktree / LINK_SRC
+    rules_dir.mkdir(parents=True)
+    (rules_dir / RULE_FILE_NAME).write_text(RULE_FILE_BODY, encoding="utf-8")
+
+    aggregated = topdir.parent / ".packages"
+    aggregated.mkdir(parents=True)
+    (aggregated / PACKAGE_NAME).symlink_to(git_worktree)
+
+    return topdir, git_worktree
+
+
+def _install_into_checkout(
+    root: pathlib.Path,
+    depth: tuple[str, ...],
+    topdir: pathlib.Path,
+    git_worktree: pathlib.Path,
+    permit_abs_roots,
+    monkeypatch: pytest.MonkeyPatch,
+) -> str:
+    """Deliver the linkfile into a checkout nested *depth* directories under *root*.
+
+    Args:
+        root: Directory the simulated checkout tree is created under.
+        depth: Path components placing the project root beneath *root*.
+        topdir: The source's repo workspace.
+        git_worktree: The package checkout the link points into.
+        permit_abs_roots: Fixture permitting an absolute dest under a root.
+        monkeypatch: Fixture used to publish the consumer project root.
+
+    Returns:
+        The raw target string of the symlink the install created.
+    """
+    project_root = root.joinpath(*depth)
+    project_root.mkdir(parents=True)
+
+    (project_root / ".packages").symlink_to(topdir.parent / ".packages")
+    monkeypatch.setenv("KANON_PROJECT_ROOT", str(project_root))
+    permit_abs_roots(project_root)
+
+    dest = project_root / LINK_DEST_IN_PROJECT
+    _make_linkfile(git_worktree, LINK_SRC, topdir, str(dest))._Link()
+
+    return os.readlink(str(dest))
+
+
+@pytest.mark.integration
+def test_linkfile_target_identical_across_checkout_depths(
+    tmp_path: pathlib.Path,
+    permit_abs_roots,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One manifest yields one symlink target at two different checkout depths.
+
+    Regression for the field failure: an install run inside a git worktree sits
+    three directories deeper than the clone containing it, so a target measured
+    against the store on disk came out three ``..`` levels longer. That value was
+    correct in the worktree and dangling in every ordinary clone, and nothing
+    reported the difference -- it was committed and merged before anyone noticed.
+    """
+    topdir, git_worktree = _build_store(tmp_path)
+
+    plain_target = _install_into_checkout(
+        tmp_path, PLAIN_CLONE_DEPTH, topdir, git_worktree, permit_abs_roots, monkeypatch
+    )
+    worktree_target = _install_into_checkout(
+        tmp_path, WORKTREE_DEPTH, topdir, git_worktree, permit_abs_roots, monkeypatch
+    )
+
+    assert plain_target == worktree_target, (
+        f"Expected one manifest to produce one symlink target regardless of checkout depth, but a "
+        f"plain clone produced {plain_target!r} while a git worktree three directories deeper "
+        f"produced {worktree_target!r}. A target that records checkout depth dangles for every "
+        f"clone at a different depth once it is committed."
+    )
+
+
+@pytest.mark.integration
+def test_linkfile_target_stays_inside_the_project_root(
+    tmp_path: pathlib.Path,
+    permit_abs_roots,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The delivered target is expressed in project-root-relative terms only.
+
+    Depth-independence follows from the target never leaving the project: the
+    anchor at ``<project_root>/.packages`` is what the store is reached through,
+    so no ``..`` in the target may climb past the project root.
+    """
+    topdir, git_worktree = _build_store(tmp_path)
+
+    target = _install_into_checkout(tmp_path, PLAIN_CLONE_DEPTH, topdir, git_worktree, permit_abs_roots, monkeypatch)
+
+    dest_dir = pathlib.Path(LINK_DEST_IN_PROJECT).parent
+    assert not os.path.normpath(dest_dir / target).startswith(".."), (
+        f"Expected the symlink target {target!r} at {LINK_DEST_IN_PROJECT!r} to resolve inside the "
+        f"project root via the .packages anchor, but it climbs out of the project. A target that "
+        f"escapes the project root encodes where the checkout happens to sit on disk."
+    )
+
+
+@pytest.mark.integration
+def test_linkfile_target_resolves_to_source_content_at_both_depths(
+    tmp_path: pathlib.Path,
+    permit_abs_roots,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The identical target is also the correct one: it reads back the package content.
+
+    Asserting only that the two targets match would pass for two identically
+    broken links, so each checkout reads the delivered file through its own link.
+    """
+    topdir, git_worktree = _build_store(tmp_path)
+
+    for depth in (PLAIN_CLONE_DEPTH, WORKTREE_DEPTH):
+        _install_into_checkout(tmp_path, depth, topdir, git_worktree, permit_abs_roots, monkeypatch)
+        delivered = tmp_path.joinpath(*depth, LINK_DEST_IN_PROJECT, RULE_FILE_NAME)
+        assert delivered.read_text(encoding="utf-8") == RULE_FILE_BODY, (
+            f"Expected the link delivered into the checkout at {'/'.join(depth)} to resolve to the "
+            f"package's own content, but reading {delivered} did not return it."
+        )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("operation", ["link", "copy"])
+def test_manifest_cannot_replace_packages_anchor(tmp_path, monkeypatch, permit_abs_roots, operation):
+    """Manifest delivery cannot overwrite the shared entry point for this consumer's packages."""
+    project_root = tmp_path.resolve() / "consumer"
+    project_root.mkdir()
+    store = tmp_path.resolve() / "private-packages"
+    store.mkdir()
+    anchor = project_root / ".packages"
+    anchor.symlink_to(store)
+    source = tmp_path.resolve() / "source"
+    source.mkdir()
+    (source / "payload.txt").write_text("payload", encoding="utf-8")
+    monkeypatch.setenv("KANON_PROJECT_ROOT", str(project_root))
+    permit_abs_roots(project_root)
+    cls = _LinkFile if operation == "link" else _CopyFile
+    delivery = cls(str(source), "payload.txt", str(source), str(anchor))
+    with pytest.raises(ManifestInvalidPathError, match="anchor is reserved"):
+        delivery._Link() if operation == "link" else delivery._Copy()
+    assert anchor.is_symlink()
+    assert anchor.resolve() == store
+
+
+@pytest.mark.integration
+def test_workspace_link_stays_local_when_store_is_inside_consumer(tmp_path, monkeypatch):
+    """A cached workspace retains working internal links without a consumer anchor."""
+    consumer = tmp_path.resolve() / "consumer"
+    consumer.mkdir()
+    topdir, checkout = _build_store(consumer)
+    monkeypatch.setenv("KANON_PROJECT_ROOT", str(consumer))
+    _make_linkfile(checkout, LINK_SRC, topdir, "internal-rules")._Link()
+    cached = tmp_path.resolve() / "cache-copy"
+    shutil.copytree(topdir, cached, symlinks=True)
+    assert (cached / "internal-rules" / RULE_FILE_NAME).read_text(encoding="utf-8") == RULE_FILE_BODY

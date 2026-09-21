@@ -26,6 +26,7 @@ from kanon_cli.cli import main
 from kanon_cli.constants import KANON_HOME_STORE_SUBDIR
 from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import _RefResolution, install
+from tests.conftest import assert_only_packages_anchor_beside_kanon
 
 
 _FAKE_SHA = "a" * 40
@@ -100,8 +101,7 @@ class TestRemovedVarsHaveNoEffect:
         assert (store / ".packages").exists(), "install must place .packages/ under <KANON_HOME>/store"
         assert not junk_workspace.exists(), "KANON_WORKSPACE_DIR is removed and must have no effect"
         assert not junk_cache.exists(), "KANON_CACHE_DIR is removed and must have no effect"
-        assert not (project / ".packages").exists(), "install must NOT write artifacts beside .kanon"
-        assert not (project / ".kanon-data").exists(), "install must NOT write artifacts beside .kanon"
+        assert_only_packages_anchor_beside_kanon(project, store)
 
 
 @pytest.mark.integration
@@ -129,4 +129,4 @@ class TestHomeFlagRelocatesStoreEndToEnd:
         assert (flag_store / ".kanon-data").exists(), "--home must relocate the store to the flag path"
         assert (flag_store / ".packages").exists(), "--home must relocate the store to the flag path"
         assert not env_store.exists(), "the KANON_HOME env store must be unused when --home is given"
-        assert not (project / ".packages").exists(), "install must NOT write artifacts beside .kanon"
+        assert_only_packages_anchor_beside_kanon(project, flag_store)

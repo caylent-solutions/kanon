@@ -1576,8 +1576,16 @@ class EnvsubstAbsoluteLinkfileIntegrationTest(unittest.TestCase):
     ROOTS_ENV_VAR = "KANON_PERMITTED_ABS_ROOTS"
 
     def setUp(self):
+        """Build the stub checkout and marketplace directory.
+
+        The temp root is resolved because an absolute dest is refused when any
+        component of its path is a symlink, and the platform temp root is one on
+        macOS (``/var`` -> ``/private/var``). A real marketplace directory is
+        resolved before it is published as a permitted root, so the stub one has
+        to be too.
+        """
         self.tempdirobj = tempfile.TemporaryDirectory(prefix="repo_tests")
-        self.tempdir = self.tempdirobj.name
+        self.tempdir = os.path.realpath(self.tempdirobj.name)
 
         self.worktree = os.path.join(self.tempdir, "git-project")
         self.topdir = os.path.join(self.tempdir, "checkout")

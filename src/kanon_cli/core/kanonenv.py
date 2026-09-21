@@ -189,6 +189,11 @@ def _check_permissions(path: pathlib.Path) -> None:
     Raises:
         ValueError: If the file has group-write or world-write permission bits.
     """
+    if os.name == "nt":
+        from kanon_cli.utils.windows_permissions import check_private_writers
+
+        check_private_writers(path)
+        return
     mode = path.stat().st_mode
     if mode & _UNSAFE_WRITE_BITS:
         insecure_bits: list[str] = []

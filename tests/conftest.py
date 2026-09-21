@@ -453,6 +453,38 @@ def managed_repo_dir(tmp_path_factory: pytest.TempPathFactory, name: str) -> Gen
         shutil.rmtree(base, ignore_errors=True)
 
 
+def assert_only_packages_anchor_beside_kanon(project_root: pathlib.Path, store: pathlib.Path) -> None:
+    """Assert the project root holds the ``.packages`` anchor and no artifacts of its own.
+
+    Install keeps every fetched artifact in the ``KANON_HOME`` store. The one
+    entry it writes beside ``.kanon`` is the ``.packages`` anchor: a symlink into
+    that store, which is what lets a delivered ``<linkfile>`` name its target in
+    project-root-relative terms instead of counting directories up to the store.
+    An anchor holds no content, so the store remains the single artifact
+    location; a real ``.packages`` directory here would be a second one.
+
+    Args:
+        project_root: The consumer project root (the ``.kanon`` file's parent).
+        store: The resolved ``<KANON_HOME>/store`` directory.
+    """
+    anchor = project_root / ".packages"
+    assert anchor.is_symlink(), (
+        f"Expected {anchor} to be the anchor symlink install writes beside .kanon, but it is "
+        f"{'a real directory or file' if anchor.exists() else 'missing'}. Artifacts belong in the "
+        f"store; only the anchor pointing at it belongs in the project."
+    )
+    from kanon_cli.core.install import compute_project_address, project_packages_dir
+
+    expected = project_packages_dir(store, compute_project_address(project_root / ".kanon"))
+    assert pathlib.Path(os.readlink(anchor)) == expected, (
+        f"Expected {anchor} to point at {expected}, but it points at "
+        f"{os.readlink(anchor)!r}. The anchor is the project's only route to the store."
+    )
+    assert not (project_root / ".kanon-data").exists(), (
+        f"Expected no .kanon-data/ beside .kanon, but found one at {project_root / '.kanon-data'}."
+    )
+
+
 _TEXT_IO_METHODS = ("read_text", "write_text")
 
 

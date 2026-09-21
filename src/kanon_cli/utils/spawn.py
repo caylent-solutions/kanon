@@ -1,4 +1,4 @@
-"""POSIX detached-process spawn helper.
+"""Detached-process spawn helper — cross-platform.
 
 Provides a single ``spawn_detached`` function that starts a child process
 running an arbitrary callable, fully detached from the parent's controlling
@@ -13,8 +13,13 @@ POSIX (Linux, macOS):
     the caller-supplied *log_path* (append mode), calls *refresh_fn()*, and
     exits via ``os._exit`` (0 on success, 1 on exception).
 
-Windows is unsupported: kanon targets POSIX hosts (WSL/WSL2 is the recommended
-path on Windows in the meantime), so this helper has no Windows backend.
+Windows:
+    Uses a detached subprocess running an importable module-level function or
+    partial from the installed environment. Isolated Python startup excludes
+    the workspace, PYTHONPATH and user site from imports. JSON arguments travel
+    over a private pipe. The interpreter never
+    joins this subprocess at shutdown; stdout is discarded and stderr is
+    appended to *log_path*. Callback failures exit nonzero.
 
 Fail-fast contract
 ------------------
@@ -27,6 +32,7 @@ deciding whether to propagate the error; library code never calls
 from __future__ import annotations
 
 import os
+import sys
 import traceback
 from collections.abc import Callable
 from pathlib import Path
@@ -63,25 +69,60 @@ def spawn_detached(refresh_fn: Callable[[], None], *, log_path: Path) -> None:
     stdin and stdout are redirected to ``/dev/null``; stderr is redirected to
     *log_path* (opened in append mode, created if absent).
 
-    The child is created via ``os.fork()``; the parent returns as soon as the
-    fork succeeds.  kanon is POSIX-only, so there is no Windows backend.
+    Dispatches to the platform-specific backend:
+
+    * POSIX: ``_spawn_detached_posix`` — ``os.fork()`` + ``os.setsid()``.
+    * Windows: ``_spawn_detached_windows`` — detached ``subprocess.Popen``.
 
     Args:
         refresh_fn: Zero-argument callable executed only in the child process.
+            Must be a module-level function or partial installed in the Python
+            environment on Windows, with JSON values, paths, bytes, or nested
+            partials as arguments. Workspace, PYTHONPATH and user-site imports
+            are excluded from the isolated worker.
         log_path: Path to the file where the child's stderr is appended.
-            The log directory is created with mode 0700 (explicit chmod so the
-            umask cannot weaken permissions).  The parent does not create this
-            file; the child opens it in append mode so that any error output is
-            captured without touching the operator's terminal.
+            The log directory is created with mode 0700 on POSIX (explicit chmod
+            so the umask cannot weaken permissions) and with default permissions
+            on Windows. The Windows parent creates the log before launching the
+            child so log setup errors are raised synchronously.
 
     Raises:
-        RuntimeError: If the underlying spawn mechanism fails (``os.fork``
-            raises ``OSError``).
+        RuntimeError: If the underlying spawn mechanism fails.
     """
-    _spawn_detached_posix(refresh_fn, log_path=log_path)
+    if sys.platform == "win32":
+        _spawn_detached_windows(refresh_fn, log_path=log_path)
+    else:
+        _spawn_detached_posix(refresh_fn, log_path=log_path)
 
 
 _POSIX_FILE_MODE = 0o600
+
+
+def _windows_append_fd(path, flags):
+    """Open an append-only Win32 handle; child writes cannot overwrite old data.
+
+    CRT append mode alone only seeks before writes made through that CRT file
+    descriptor. An inherited stderr handle needs FILE_APPEND_DATA without
+    FILE_WRITE_DATA so the kernel appends every write from every process.
+    Ownership passes to the CRT descriptor only after open_osfhandle succeeds.
+    """
+    import ctypes
+    from ctypes import wintypes as w
+    import msvcrt
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [w.LPCWSTR, w.DWORD, w.DWORD, w.LPVOID, w.DWORD, w.DWORD, w.HANDLE]
+    kernel.CreateFileW.restype = w.HANDLE
+    kernel.CloseHandle.argtypes = [w.HANDLE]
+    kernel.CloseHandle.restype = w.BOOL
+    handle = kernel.CreateFileW(path, 4, 3, None, 4, 0x80, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return msvcrt.open_osfhandle(handle, flags | os.O_BINARY)
+    except BaseException:
+        kernel.CloseHandle(handle)
+        raise
 
 
 def _spawn_detached_posix(
@@ -126,3 +167,49 @@ def _spawn_detached_posix(
     except Exception:
         _record_posix_child_error(log_path)
         os._exit(1)
+
+
+def _spawn_detached_windows(
+    refresh_fn: Callable[[], None],
+    *,
+    log_path: Path,
+):
+    """Start a detached subprocess, with no multiprocessing shutdown join.
+
+    The parent creates the log before launch so setup errors are synchronous.
+    Only a pipe carries the JSON job; stderr and stdout are redirected at the
+    OS handle level, including output from subprocesses started by the worker.
+    The returned Popen handle lets native contract tests observe the exit code.
+    Production callers do not wait for the worker.
+    """
+    import json
+    import subprocess
+
+    from kanon_cli.utils.worker import encode
+
+    try:
+        payload = json.dumps(encode(refresh_fn), ensure_ascii=True).encode("utf-8")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "ab", opener=_windows_append_fd) as log:
+            child = subprocess.Popen(
+                [sys.executable, "-I", "-X", "utf8", "-m", "kanon_cli.utils.worker"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=log,
+                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                close_fds=True,
+            )
+        try:
+            child.stdin.write(payload)
+            child.stdin.close()
+        except BaseException:
+            child.terminate()
+            child.wait()
+            raise
+        return child
+    except Exception as exc:
+        raise RuntimeError(
+            f"spawn_detached: failed to spawn background refresh child on Windows"
+            f" ({type(exc).__name__}: {exc})."
+            " Check the log directory permissions and Python installation."
+        ) from exc

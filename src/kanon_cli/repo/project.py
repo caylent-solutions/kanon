@@ -509,6 +509,9 @@ def _ResolveAbsDest(dest, skipfinal=False):
     # has to establish where the dest sits.
     parent_real = os.path.realpath(os.path.dirname(normalized))
     real = os.path.join(parent_real, os.path.basename(normalized))
+    project_root = _ConsumerProjectRoot()
+    if project_root and real == os.path.join(os.path.realpath(project_root), _PACKAGES_DIR_NAME):
+        raise ManifestInvalidPathError(f"{dest}: the consumer's .packages anchor is reserved for kanon")
     contained = False
     for root in roots:
         root_real = os.path.realpath(root)
@@ -601,9 +604,25 @@ class _CopyFile:
                 raise OSError(f"Cannot copy file {src!r} to {dest!r}: {e}") from e
 
 
+# The slot every synced project occupies under the repo client checkout, and the
+# name of the anchor kanon maintains at the consumer project root pointing at the
+# aggregation of those slots.
+_PACKAGES_DIR_NAME = ".packages"
+
 # Entries that must never be symlinked when using exclude-based linking.
-_LINKFILE_EXCLUDE_ALWAYS = frozenset({".git", ".packages"})
+_LINKFILE_EXCLUDE_ALWAYS = frozenset({".git", _PACKAGES_DIR_NAME})
 _LINKFILE_EXCLUDE_PREFIXES = (".repo",)
+
+
+def _ConsumerProjectRoot():
+    """Return the consumer project root, or "" when unset.
+
+    kanon resolves the root and hands it to this tree through the environment,
+    the same way it hands over the permitted absolute roots.  An empty or absent
+    value means the vendored tool is being driven directly rather than through
+    kanon, in which case link targets keep their plain relative form.
+    """
+    return os.environ.get("KANON_PROJECT_ROOT", "")
 
 
 class _LinkFile:
@@ -628,6 +647,60 @@ class _LinkFile:
             self.exclude = frozenset(name for name in (n.strip() for n in exclude.split(",")) if name)
         else:
             self.exclude = frozenset()
+
+    def _LinkTarget(self, src, dest):
+        """Return the target to write into the symlink at |dest|.
+
+        Measured between |src| and |dest| as they sit on disk, a ``<linkfile>``
+        that delivers into the consuming project has to climb out of the project
+        to reach its source in the store, so the target's ``..`` chain records
+        the checkout's depth: installing from a git worktree -- three
+        directories deeper than the clone containing it -- writes a
+        three-level-longer target that is correct there and dangling in every
+        ordinary clone, with nothing to signal the difference.
+
+        The anchor is what removes depth from the computation.  Every project
+        the manifest syncs occupies a ``.packages/<name>`` slot under |topdir|,
+        and ``<project_root>/.packages`` points at this consumer's aggregation of those
+        slots, so the same content is reachable from inside the project.  Both
+        sides of the measurement are then project-root-relative -- ``.claude``
+        and ``.packages/<name>/...``, neither carrying an absolute prefix -- and
+        the target that falls out is a function of the manifest alone.
+
+        Sources outside a ``.packages`` slot, destinations inside the source
+        workspace or outside the consumer (a marketplace entry, say), and a missing project root all fall back to
+        the plain on-disk measurement: this narrows a target that would
+        otherwise escape the project root, and never widens one.
+
+        Args:
+            src: Absolute path to the link source under |git_worktree|.
+            dest: Absolute path of the symlink being created.
+
+        Returns:
+            The relative path to store as the symlink's target.
+        """
+        dest_dir = os.path.dirname(dest)
+        on_disk = os.path.relpath(src, dest_dir)
+        dest_from_workspace = os.path.relpath(os.path.realpath(dest_dir), os.path.realpath(self.topdir))
+        if dest_from_workspace.split(os.path.sep)[0] != os.pardir:
+            return on_disk
+
+        project_root = _ConsumerProjectRoot()
+        if not project_root:
+            return on_disk
+
+        # Both realpath'd so a project root and a dest spelled through different
+        # aliases of the same directory still compare equal; the dest's own
+        # components are already known to be symlink-free.
+        dest_from_root = os.path.relpath(os.path.realpath(dest_dir), os.path.realpath(project_root))
+        if dest_from_root.split(os.path.sep)[0] == os.pardir:
+            return on_disk
+
+        src_from_root = os.path.relpath(src, self.topdir)
+        if src_from_root.split(os.path.sep)[0] != _PACKAGES_DIR_NAME:
+            return on_disk
+
+        return os.path.relpath(src_from_root, dest_from_root)
 
     def __linkIt(self, relSrc, absDest):
         # Link file if it does not exist or is out of date.
@@ -672,8 +745,7 @@ class _LinkFile:
                 continue
             child_src = os.path.join(absSrc, child)
             child_dest = os.path.join(absDest, child)
-            relpath = os.path.relpath(child_src, absDest)
-            self.__linkIt(relpath, child_dest)
+            self.__linkIt(self._LinkTarget(child_src, child_dest), child_dest)
 
     def _Link(self):
         """Link the self.src & self.dest paths.
@@ -705,8 +777,7 @@ class _LinkFile:
             else:
                 # Make sure the target of the symlink is relative in the
                 # context of the repo client checkout.
-                relpath = os.path.relpath(src, os.path.dirname(dest))
-                self.__linkIt(relpath, dest)
+                self.__linkIt(self._LinkTarget(src, dest), dest)
         else:
             if self.exclude:
                 raise ManifestInvalidPathError(

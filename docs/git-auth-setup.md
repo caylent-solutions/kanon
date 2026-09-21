@@ -235,17 +235,33 @@ To clear a stale credential on Linux:
    git ls-remote https://git.example.com/<repo>.git
    ```
 
-## Windows (not currently supported -- use WSL2)
+## Windows (experimental)
 
-Windows is **not currently supported (planned)**: native Windows support is
-on the roadmap but not yet available. In the meantime, run kanon under WSL2
-(Windows Subsystem for Linux) and follow the [Linux](#linux) git-auth
-instructions above -- inside a WSL2 distribution, kanon and git behave
-exactly as they do on Linux, including credential helpers, `ssh-agent`, and
-`url.insteadOf` rewrites.
+Native Windows requires Git for Windows on `PATH`, `core.longpaths=true`, and
+Windows Developer Mode or the Create symbolic links privilege. Enable long
+paths in Windows policy as well. Keep `KANON_HOME` short (for example
+`C:\kanon`): Git for Windows still rejects some long `GIT_DIR` paths even
+with `core.longpaths=true`. Kanon creates directory symlinks and
+fails with an actionable error when Windows denies that privilege.
 
-See the README [Platform support](../README.md#platform-support) note for
-the project-wide statement of supported platforms.
+The store and Kanon installation must be on the same drive: the vendored repo
+engine creates relative links to its installed hooks and cannot calculate those
+links across drive letters.
+
+Kanon checks the `.kanon` file's Windows DACL. Write grants must be limited to
+the file owner, SYSTEM and Administrators (Owner Rights grants are also
+accepted). An inherited write grant to Everyone or Users is rejected. Use the
+file's Security settings to remove those grants; POSIX `chmod` does not secure
+a Windows ACL. Unknown access-control entry types are rejected conservatively.
+
+Git authentication remains Git's responsibility. Configure Git Credential
+Manager for your host, then verify access with `git ls-remote` before running
+Kanon. The native acceptance fixtures use local repositories; they do not
+validate OAuth, corporate credential policies, SSH agents, network shares, or
+the full vendored repo command surface.
+
+WSL2 continues to use the [Linux](#linux) instructions. See
+[Platform support](../README.md#platform-support) for the tested scope.
 
 ## Per-host configuration patterns
 

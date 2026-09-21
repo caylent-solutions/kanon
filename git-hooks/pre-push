@@ -1,7 +1,21 @@
 #!/bin/bash
 
-ROOT_DIR=$(git rev-parse --show-toplevel)
-cd "$ROOT_DIR"
+# Git exports GIT_DIR and friends to its hooks, and everything this script runs
+# inherits them. The test suite shells out to `git init` and `git config`
+# against temporary fixture repos passing only a working directory, which an
+# ambient GIT_DIR overrides, so those writes land in the pushing developer's own
+# repository instead: core.bare=true, which breaks every worktree of it, and a
+# fixture user.name/user.email, which silently reattributes their next commit.
+# Roughly ninety unit tests fail in the process, so the gate also reports a
+# failure that has nothing to do with the change being pushed.
+#
+# This has to happen before the rev-parse below, which needs a working tree
+# GIT_DIR alone does not supply -- from a linked worktree it failed outright,
+# leaving ROOT_DIR empty and the `cd` a silent no-op.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_PREFIX
+
+ROOT_DIR=$(git rev-parse --show-toplevel) || exit 1
+cd "$ROOT_DIR" || exit 1
 
 echo "Running lint..."
 if ! make lint; then

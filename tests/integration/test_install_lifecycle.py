@@ -18,7 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.commands.install import _run as _install_run
-from kanon_cli.core.install import compute_project_address, install
+from kanon_cli.core.install import compute_project_address, install, project_packages_dir
 from tests.conftest import write_manifest_for_sync
 
 
@@ -758,19 +758,23 @@ class TestInstallLifecycleOrder:
             ".gitignore must NOT exist after install() completes for a store that is not inside a git repo"
         )
 
-    def test_packages_dir_created_after_sync_and_before_gitignore(self, tmp_path: pathlib.Path) -> None:
-        """.packages/ is created (aggregate step) after sync and before gitignore-update.
+    def test_packages_dir_is_empty_during_sync_and_populated_after(self, tmp_path: pathlib.Path) -> None:
+        """.packages/ exists but holds nothing during sync; aggregate_symlinks fills it afterwards.
 
-        The aggregate step and gitignore-update both happen after the per-source
-        sync loop finishes. This test confirms .packages/ exists after install.
+        The directory itself is created before the sync loop, because the
+        project-root anchor that a delivered <linkfile> resolves through has to
+        point at something by the time sync writes those links. Its *contents*
+        are still the aggregate step's alone, which is what the ordering is
+        actually about, so that is what this asserts.
         """
         kanonenv = _write_single_source_kanonenv(tmp_path)
         store_base = _store_base()
 
-        packages_existed_during_sync: list[bool] = []
+        packages_during_sync: list[list[str]] = []
 
         def check_packages_during_sync(repo_dir: str, **kwargs: object) -> None:
-            packages_existed_during_sync.append((store_base / ".packages").exists())
+            private_packages = project_packages_dir(store_base, compute_project_address(kanonenv))
+            packages_during_sync.append(sorted(p.name for p in private_packages.iterdir()))
 
         with (
             patch("kanon_cli.repo.repo_init"),
@@ -779,8 +783,9 @@ class TestInstallLifecycleOrder:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        assert not packages_existed_during_sync[0], (
-            ".packages/ must NOT exist when repo_sync runs -- aggregate_symlinks runs after sync"
+        assert packages_during_sync[0] == [], (
+            f".packages/ must hold no package links when repo_sync runs -- aggregate_symlinks runs "
+            f"after sync -- but it held {packages_during_sync[0]}"
         )
         assert (store_base / ".packages").is_dir(), ".packages/ must exist after install() completes"
 

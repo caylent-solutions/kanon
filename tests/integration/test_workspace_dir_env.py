@@ -23,6 +23,7 @@ from kanon_cli.constants import KANON_HOME_STORE_SUBDIR
 from kanon_cli.core.clean import clean
 from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import _RefResolution, install
+from tests.conftest import assert_only_packages_anchor_beside_kanon
 
 
 _FAKE_SHA = "a" * 40
@@ -103,8 +104,7 @@ class TestKanonHomeStoreInstallCleanRoundtrip:
         _run_install(kanonenv, lock_path)
 
         assert (store / ".kanon-data").exists(), "install must create .kanon-data/ under <KANON_HOME>/store"
-        assert not (project / ".kanon-data").exists(), "install must NOT create .kanon-data/ in the cwd (beside .kanon)"
-        assert not (project / ".packages").exists(), "install must NOT create .packages/ in the cwd (beside .kanon)"
+        assert_only_packages_anchor_beside_kanon(project, store)
 
     def test_install_creates_packages_dir_under_store(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -147,6 +147,32 @@ class TestKanonHomeStoreInstallCleanRoundtrip:
         assert (project / ".packages").exists(), "clean must NOT remove .packages/ beside .kanon when KANON_HOME is set"
         assert (project / ".kanon-data").exists(), (
             "clean must NOT remove .kanon-data/ beside .kanon when KANON_HOME is set"
+        )
+
+    def test_clean_removes_the_packages_anchor_install_created(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An install/clean roundtrip leaves no anchor pointing into the emptied store.
+
+        The anchor is kanon's own artifact, so clean owns its removal; leaving it
+        would orphan a symlink into a store this project no longer has content in.
+        """
+        kanon_home = tmp_path / "kanon_home"
+        store = _store_dir(kanon_home)
+        project = tmp_path / "project"
+        project.mkdir()
+        monkeypatch.setenv("KANON_HOME", str(kanon_home))
+
+        kanonenv = _url_kanonenv(project)
+        _run_install(kanonenv, lock_path=project / ".kanon.lock")
+        assert (project / ".packages").is_symlink(), "pre-condition: install must create the anchor"
+
+        with patch("kanon_cli.core.clean.uninstall_marketplace_plugins"):
+            clean(kanonenv)
+
+        assert not (project / ".packages").is_symlink(), (
+            f"clean must remove the .packages anchor it created, but {project / '.packages'} still "
+            f"points at {store / '.packages'}, which clean has just emptied."
         )
 
     def test_store_is_created_when_absent(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

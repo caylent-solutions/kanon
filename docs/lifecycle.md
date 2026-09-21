@@ -15,7 +15,7 @@
       -- direct Python API call, no subprocess
    d. kanon_cli.repo.repo_sync(source_dir)
       -- direct Python API call, fail-fast on RepoCommandError
-5. Aggregate: symlink .kanon-data/sources/<project-address>/<name>/.packages/* -> .packages/
+5. Aggregate: publish private links under .kanon-data/sources/<project-address>/.packages/ and the legacy shared .packages/ index. The consumer .packages anchor points only at the private links.
 6. Collision check: fail-fast if duplicate package names
 7. Conditional store .gitignore safety net: only when the shared KANON_HOME
    store sits inside a git working tree, write <KANON_HOME>/store/.gitignore
@@ -53,7 +53,7 @@ touched. See
    else any source's .kanon KANON_SOURCE_<alias>_MARKETPLACE flag):
    a. Uninstall marketplace plugins via claude CLI
    b. rm -rf CLAUDE_MARKETPLACES_DIR
-5. unlink this project's links under .packages/ (other projects' links kept)
+5. unlink this project's shared-index links and consumer .packages anchor (other projects' private links kept)
 6. rm -rf .kanon-data/sources/<project-address>/ (other projects' workspaces kept)
 7. If --purge or --purge-all: delete this project's .kanon and .kanon.lock
 8. If --purge-all: remove the KANON_HOME store dir (store/, cache/, empty root)

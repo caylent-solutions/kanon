@@ -11,6 +11,7 @@ Covers:
 """
 
 import argparse
+import os
 import pathlib
 import subprocess
 from unittest.mock import MagicMock, patch
@@ -26,6 +27,8 @@ from kanon_cli.core.install import (
     aggregate_symlinks,
     compute_project_address,
     create_source_dirs,
+    ensure_project_packages_anchor,
+    project_packages_dir,
     install,
     prepare_marketplace_dir,
     RefreshRepoInitError,
@@ -581,15 +584,53 @@ class TestResetManifestsWorkingTree:
     AC-TEST-003.
     """
 
+    def _git(self, *args: str, cwd: pathlib.Path) -> None:
+        """Run one git command against the fixture repo and nothing else.
+
+        ``cwd`` alone does not confine git: ``GIT_DIR`` and its siblings take
+        precedence over it, and git exports them to its own hooks. Run from a
+        pre-push hook, these calls wrote ``core.bare=true`` and a fixture
+        identity into the developer's real repository -- breaking their
+        worktrees and reattributing their next commit. Scrubbing the ambient
+        git environment is what makes ``cwd`` mean what this helper assumes.
+        """
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True)
+
     def _init_git_repo(self, path: pathlib.Path) -> None:
         """Initialise a bare-minimum git repo at path with a tracked file."""
         path.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["git", "init", "-b", "main", str(path)], check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "t@t.com"], cwd=path, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "T"], cwd=path, check=True, capture_output=True)
+        self._git("init", "-b", "main", ".", cwd=path)
+        self._git("config", "user.email", "t@t.com", cwd=path)
+        self._git("config", "user.name", "T", cwd=path)
         (path / "manifest.xml").write_text("<manifest/>\n")
-        subprocess.run(["git", "add", "manifest.xml"], cwd=path, check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=path, check=True, capture_output=True)
+        self._git("add", "manifest.xml", cwd=path)
+        self._git("commit", "-m", "init", cwd=path)
+
+    def test_fixture_setup_does_not_write_to_an_ambient_git_dir(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Building a fixture repo touches nothing but the fixture, GIT_DIR set or not.
+
+        Git exports GIT_DIR to its hooks, so this suite runs with one set
+        whenever it is invoked from pre-push. GIT_DIR outranks cwd, so the
+        helper's `git config` calls landed in the developer's own repository:
+        core.bare=true broke every worktree of it, and the fixture identity
+        reattributed their next commit to `T <t@t.com>`.
+        """
+        outer = tmp_path / "developers-own-repo"
+        outer.mkdir()
+        subprocess.run(["git", "init", "-b", "main", "."], cwd=outer, check=True, capture_output=True)
+        outer_config = outer / ".git" / "config"
+        before = outer_config.read_text(encoding="utf-8")
+        monkeypatch.setenv("GIT_DIR", str(outer / ".git"))
+
+        self._init_git_repo(tmp_path / "fixture")
+
+        assert outer_config.read_text(encoding="utf-8") == before, (
+            f"Building a fixture repo must not touch the repository GIT_DIR points at, but "
+            f"{outer_config} changed:\n{before!r}\n->\n{outer_config.read_text(encoding='utf-8')!r}"
+        )
 
     def test_noop_when_manifests_dir_absent(self, tmp_path: pathlib.Path) -> None:
         """_reset_manifests_working_tree is a no-op when .repo/manifests does not exist.
@@ -825,6 +866,79 @@ class TestInstallMarketplaceLockfileState:
 
 
 @pytest.mark.unit
+class TestProjectPackagesAnchor:
+    """ensure_project_packages_anchor() maintains the project-root .packages anchor.
+
+    The anchor is what lets a delivered <linkfile> name a target relative to the
+    project root instead of counting directories up to the store, so the same
+    manifest yields the same target from a plain clone and from a git worktree.
+    """
+
+    def _roots(self, tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+        project_root = tmp_path / "project"
+        project_root.mkdir()
+        return project_root, tmp_path / "store"
+
+    def test_creates_anchor_and_gitignores_it(self, tmp_path: pathlib.Path) -> None:
+        """The anchor points at the store's package directory and is kept out of git."""
+        project_root, store = self._roots(tmp_path)
+
+        anchor = ensure_project_packages_anchor(project_root, store, _PROJECT_ADDRESS)
+
+        assert pathlib.Path(os.readlink(anchor)) == project_packages_dir(store, _PROJECT_ADDRESS), (
+            f"Expected the anchor to point at {store / '.packages'}, but it points at {os.readlink(anchor)!r}."
+        )
+        assert "/.packages" in (project_root / ".gitignore").read_text(encoding="utf-8"), (
+            "The anchor points into this machine's own KANON_HOME, so install must gitignore it; "
+            "committing it would hand every other developer a dangling link."
+        )
+
+    def test_repoints_an_anchor_aimed_elsewhere(self, tmp_path: pathlib.Path) -> None:
+        """A stale anchor from a previous KANON_HOME is repointed, not left dangling."""
+        project_root, store = self._roots(tmp_path)
+        (project_root / ".packages").symlink_to(tmp_path / "old-store" / ".packages")
+
+        anchor = ensure_project_packages_anchor(project_root, store, _PROJECT_ADDRESS)
+
+        assert pathlib.Path(os.readlink(anchor)) == project_packages_dir(store, _PROJECT_ADDRESS), (
+            f"Expected a stale anchor to be repointed at the current store, but it still points at "
+            f"{os.readlink(anchor)!r}."
+        )
+
+    def test_is_idempotent_on_a_correct_anchor(self, tmp_path: pathlib.Path) -> None:
+        """Re-running install over a correct anchor leaves it exactly as it was."""
+        project_root, store = self._roots(tmp_path)
+
+        first = ensure_project_packages_anchor(project_root, store, _PROJECT_ADDRESS)
+        before = os.lstat(first).st_ino
+        second = ensure_project_packages_anchor(project_root, store, _PROJECT_ADDRESS)
+
+        assert os.lstat(second).st_ino == before, (
+            "Expected a correct anchor to be left alone, but it was recreated. Replacing it on every "
+            "install would churn a path other tooling resolves through."
+        )
+
+    def test_refuses_to_replace_real_content_at_the_anchor_path(self, tmp_path: pathlib.Path) -> None:
+        """A real .packages directory is the consumer's own and is never deleted to make room."""
+        from kanon_cli.core.install import InstallError
+
+        project_root, store = self._roots(tmp_path)
+        occupied = project_root / ".packages"
+        occupied.mkdir()
+        (occupied / "theirs.txt").write_text("not kanon's\n", encoding="utf-8")
+
+        with pytest.raises(InstallError) as excinfo:
+            ensure_project_packages_anchor(project_root, store, _PROJECT_ADDRESS)
+
+        assert str(occupied) in str(excinfo.value), (
+            f"Expected the error to name the occupied path {occupied}, but it said: {excinfo.value}"
+        )
+        assert (occupied / "theirs.txt").exists(), (
+            "install must fail fast rather than delete content it did not create."
+        )
+
+
+@pytest.mark.unit
 class TestInstallKanonHomeStore:
     """install() places .packages/ and .kanon-data/ under <KANON_HOME>/store.
 
@@ -882,7 +996,12 @@ class TestInstallKanonHomeStore:
 
         assert (store / ".kanon-data").exists(), ".kanon-data/ must be created under <KANON_HOME>/store"
         assert not (cwd_dir / ".kanon-data").exists(), ".kanon-data/ must NOT be created in cwd"
-        assert not (cwd_dir / ".packages").exists(), ".packages/ must NOT be created in cwd"
+        assert (cwd_dir / ".packages").is_symlink(), (
+            ".packages/ in cwd must be the anchor symlink a delivered <linkfile> resolves through"
+        )
+        assert pathlib.Path(os.readlink(cwd_dir / ".packages")) == project_packages_dir(
+            store, compute_project_address(kanonenv)
+        ), ".packages/ in cwd must point into <KANON_HOME>/store, never hold package content of its own"
 
     def test_install_creates_packages_under_kanon_home_store(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -992,7 +1111,7 @@ class TestAggregateSymlinksUsesSymlink:
         with patch("kanon_cli.core.install.create_dirsymlink") as mock_helper:
             aggregate_symlinks(["build"], tmp_path, _PROJECT_ADDRESS)
 
-        mock_helper.assert_called_once()
+        assert mock_helper.call_count == 2
         call_args = mock_helper.call_args
 
         assert call_args[0][0].name == "test-lint", (

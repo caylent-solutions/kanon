@@ -2677,7 +2677,6 @@ def _run_install(
 
     _consistent_has_orphans: bool = False
     _captured_content_pins: bool = False
-    _marketplace_ownership_changed: bool = False
 
     reconcile_computed_hash: str | None = None
 
@@ -2789,11 +2788,6 @@ def _run_install(
     resolved_entries: list[SourceEntry] = []
 
     attributed_marketplaces: dict[str, list[str]] = {}
-    old_marketplace_set = {
-        marketplace
-        for entry in (existing_lockfile.sources if existing_lockfile is not None else [])
-        for marketplace in entry.registered_marketplaces
-    }
 
     refresh_lock_source_nn: str = cast(str, refresh_lock_source)
     target_source_entry: SourceEntry | None = None
@@ -3002,11 +2996,7 @@ def _run_install(
 
             after_names = set(discover_registered_marketplace_names(marketplace_dir))
             attributed_marketplaces[name] = sorted(after_names - before_marketplace_names)
-
-        current_marketplaces = attributed_marketplaces.get(name, [])
-        if resolved_entries[-1].registered_marketplaces != current_marketplaces:
-            _marketplace_ownership_changed = True
-            resolved_entries[-1].registered_marketplaces = current_marketplaces
+            resolved_entries[-1].registered_marketplaces = attributed_marketplaces[name]
 
         resolved_entries[-1].includes = _include_tree_to_entries(
             include_tree,
@@ -3057,6 +3047,11 @@ def _run_install(
     new_marketplace_set: set[str] = set()
     for _names in attributed_marketplaces.values():
         new_marketplace_set.update(_names)
+
+    old_marketplace_set: set[str] = set()
+    if existing_lockfile is not None:
+        for _src in existing_lockfile.sources:
+            old_marketplace_set.update(_src.registered_marketplaces)
 
     orphaned_marketplaces = sorted(old_marketplace_set - new_marketplace_set)
     if orphaned_marketplaces:
@@ -3124,9 +3119,7 @@ def _run_install(
             )
             write_lockfile(lf, lockfile_path)
 
-    elif install_state is InstallState.LOCKFILE_CONSISTENT and (
-        _consistent_has_orphans or _captured_content_pins or _marketplace_ownership_changed
-    ):
+    elif install_state is InstallState.LOCKFILE_CONSISTENT and (_consistent_has_orphans or _captured_content_pins):
         pruned_lf_nn = cast(Lockfile, existing_lockfile)
         active_names = set(source_names)
 
@@ -3192,7 +3185,7 @@ def install(
           marketplace install script.
       11. Write .kanon.lock: full write for LOCKFILE_ABSENT/REFRESH_LOCK/RECONCILE;
           partial merge for REFRESH_LOCK_SOURCE; pruned rewrite for
-          LOCKFILE_CONSISTENT with orphans, newly captured content pins or changed marketplace ownership; otherwise
+          LOCKFILE_CONSISTENT with orphans or newly captured content pins; otherwise
           unchanged for LOCKFILE_CONSISTENT. On the RECONCILE path the lockfile is written once at
           the end on success only (nothing is persisted earlier).
 

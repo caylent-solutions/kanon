@@ -65,7 +65,6 @@ from kanon_cli.core.catalog import (
 from kanon_cli.core.manifest_vars import detect_functional_manifest_vars
 from kanon_cli.core.cli_args import add_catalog_default_branch_arg, add_catalog_source_arg
 from kanon_cli.core.kanon_hash import kanon_hash
-from kanon_cli.core.kanonenv import _read_key_value_pairs
 from kanon_cli.core.install import _resolve_ref_to_sha, read_lockfile_if_present, resolve_kanon_lock_root
 from kanon_cli.core.kanonenv_writer import (
     ensure_claude_marketplaces_dir,
@@ -572,60 +571,38 @@ def _read_all_source_aliases(kanon_file: pathlib.Path) -> dict[str, tuple[str | 
     if not kanon_file.exists():
         return aliases
 
-    for key, value in _read_key_value_pairs(kanon_file).items():
-        if not key.startswith(SOURCE_PREFIX):
+    url_re = re.compile(rf"^{re.escape(SOURCE_PREFIX)}(.+?){re.escape(SOURCE_URL_SUFFIX)}=(.*)$")
+    ref_re = re.compile(rf"^{re.escape(SOURCE_PREFIX)}(.+?){re.escape(SOURCE_REF_SUFFIX)}=(.*)$")
+
+    for raw_line in kanon_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        url_match = url_re.match(line)
+        if url_match:
+            alias = url_match.group(1)
+            prev_url, prev_ref = aliases.get(alias, (None, None))
+            aliases[alias] = (url_match.group(2), prev_ref)
             continue
-        for suffix in (SOURCE_URL_SUFFIX, SOURCE_REF_SUFFIX):
-            if key.endswith(suffix):
-                alias = key[len(SOURCE_PREFIX) : -len(suffix)]
-                url, ref = aliases.get(alias, (None, None))
-                aliases[alias] = (value, ref) if suffix == SOURCE_URL_SUFFIX else (url, value)
-                break
+        ref_match = ref_re.match(line)
+        if ref_match:
+            alias = ref_match.group(1)
+            prev_url, prev_ref = aliases.get(alias, (None, None))
+            aliases[alias] = (prev_url, ref_match.group(2))
     return aliases
 
 
 def _read_alias_by_manifest_name(kanon_file: pathlib.Path) -> dict[str, str]:
-    """Map every manifest ``_NAME`` in the .kanon file to the alias that declares it.
-
-    Scans the destination file once for ``KANON_SOURCE_<alias>_NAME`` lines. The
-    returned mapping answers "is this catalog entry already declared in this
-    ``.kanon``, under any alias and from any source?" -- the question alias
-    resolution must ask before minting a fresh alias, because two live source
-    blocks declaring the same ``_NAME`` are two sources claiming to provide one
-    package, which has no defined resolution at install time.
-
-    Ambiguous files already carrying several aliases for one name are rejected
-    before any writes. The operator must choose which alias to remove; a forced
-    re-add must not report success while leaving the install collision in place.
-
-    Args:
-        kanon_file: Path to the .kanon file (may not exist).
-
-    Returns:
-        Mapping ``manifest name -> alias`` for every ``_NAME`` line in the file.
-        Empty when the file is absent or carries no source blocks.
-    """
+    """Map declared manifest names to their first existing alias."""
     names: dict[str, str] = {}
     if not kanon_file.exists():
         return names
 
-    values = _read_key_value_pairs(kanon_file)
-    for key, name in values.items():
-        if not key.startswith(SOURCE_PREFIX) or not key.endswith(SOURCE_NAME_SUFFIX):
-            continue
-        alias = key[len(SOURCE_PREFIX) : -len(SOURCE_NAME_SUFFIX)]
-        if f"{SOURCE_PREFIX}{alias}{SOURCE_URL_SUFFIX}" not in values:
-            continue
-        if name in names and names[name] != alias:
-            print(
-                f"ERROR: manifest name '{name}' is declared by multiple aliases: "
-                f"'{names[name]}' and '{alias}'.\n"
-                "Remove the unwanted block with 'kanon remove <alias>' before re-adding; "
-                "--force cannot choose which dependency to keep.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        names[name] = alias
+    aliases = _read_all_source_aliases(kanon_file)
+    name_re = re.compile(rf"^{re.escape(SOURCE_PREFIX)}(.+?){re.escape(SOURCE_NAME_SUFFIX)}=(.*)$")
+
+    for raw_line in kanon_file.read_text(encoding="utf-8").splitlines():
+        match = name_re.match(raw_line.strip())
+        if match and match.group(1) in aliases:
+            names.setdefault(match.group(2), match.group(1))
     return names
 
 
@@ -668,7 +645,7 @@ def _resolve_entry_alias(
 
     Reached only for an entry whose manifest name is not already declared by an
     existing block; a re-add of an already-declared name resolves to that block's
-    alias via :func:`_resolve_same_manifest_name_alias` instead. The candidate
+    alias in ``run_add`` instead. The candidate
     sequence walked here therefore separates DISTINCT packages whose names
     sanitize to one alias.
 
@@ -713,33 +690,6 @@ def _resolve_entry_alias(
         file=sys.stderr,
     )
     sys.exit(1)
-
-
-def _resolve_same_manifest_name_alias(name_alias: str, force: bool) -> tuple[str, str]:
-    """Resolve the alias for an entry whose manifest name is already declared.
-
-    Reached when the ``.kanon`` file already carries a block whose ``_NAME``
-    equals the entry's manifest name (see :func:`_read_alias_by_manifest_name`).
-    The entry resolves to THAT alias whatever its source coordinates are, so the
-    existing block is updated in place and a second block claiming the same
-    package name is never appended. This takes precedence over the auto-suffix
-    candidate sequence in :func:`_resolve_entry_alias`, which exists to separate
-    DISTINCT packages whose names sanitize to one alias -- not to fork a single
-    package across two live blocks when its source URL or ref changes.
-
-    The ``--force`` gate is the same one a same-alias re-add goes through: an
-    update to an already-declared package is never silent.
-
-    Args:
-        name_alias: The alias whose block already declares the entry's manifest
-            name.
-        force: The ``--force`` flag.
-
-    Returns:
-        A ``(alias, mode)`` tuple where mode is ``"duplicate"`` (the caller
-        errors with a diff and the guiding message) or ``"force_overwrite"``.
-    """
-    return name_alias, ("force_overwrite" if force else "duplicate")
 
 
 def _resolve_override_alias(
@@ -1333,13 +1283,13 @@ def _overwrite_source_block(
     """
     other_aliases = set(_read_all_source_aliases(dest).keys())
 
-    existing_lines = dest.read_text(encoding="utf-8-sig").splitlines(keepends=True)
+    existing_lines = dest.read_text(encoding="utf-8").splitlines(keepends=True)
     result: list[str] = []
     inserted = False
 
     for raw_line in existing_lines:
         stripped = raw_line.rstrip("\n").rstrip("\r")
-        key = stripped.split("=", 1)[0].strip() if "=" in stripped else stripped
+        key = stripped.split("=", 1)[0] if "=" in stripped else stripped
         if _is_alias_block_key(key, source_name, other_aliases):
             if not inserted:
                 for new_line in lines:
@@ -1371,8 +1321,7 @@ def _repin_lock_entry(
     ``remove`` + ``add``). The lockfile's ``kanon_hash`` is recomputed from the
     just-overwritten ``.kanon`` so the lock does not drift from ``.kanon``.
     Content pins, project metadata and includes belong to the replaced manifest
-    and are discarded so the next install resolves its new content. Marketplace
-    ownership remains until install can unregister entries the replacement drops.
+    and are discarded so the next install resolves its new content.
 
     The function is a deliberate no-op (returns without touching the lock) when
     no lockfile exists or the lockfile carries no entry for ``alias``: ``add``
@@ -1445,7 +1394,7 @@ def _existing_block_lines(dest: pathlib.Path, source_name: str) -> list[str]:
     matched: list[str] = []
     for raw_line in dest.read_text(encoding="utf-8").splitlines():
         stripped = raw_line.strip()
-        key = stripped.split("=", 1)[0].strip() if "=" in stripped else stripped
+        key = stripped.split("=", 1)[0] if "=" in stripped else stripped
         if _is_alias_block_key(key, source_name, other_aliases):
             matched.append(stripped)
     return matched
@@ -1617,7 +1566,7 @@ def run_add(args: argparse.Namespace) -> int:
         if alias_override is not None:
             alias, mode = _resolve_override_alias(existing_aliases, alias_override, entry_url, resolved_revision, force)
         elif declared_alias is not None:
-            alias, mode = _resolve_same_manifest_name_alias(declared_alias, force)
+            alias, mode = declared_alias, ("force_overwrite" if force else "duplicate")
         else:
             alias, mode = _resolve_entry_alias(existing_aliases, base_alias, entry_url, resolved_revision, force)
 

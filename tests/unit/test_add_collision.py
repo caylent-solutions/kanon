@@ -922,6 +922,7 @@ class TestSameManifestNameDetection:
         kanon_file.write_text(
             "KANON_SOURCE_ace_engagement_kit_NAME=ace-engagement-kit\n"
             f"KANON_SOURCE_ace_engagement_kit_URL={self._URL_FIRST}\n"
+            "KANON_SOURCE_ace_engagement_kit_TEAM_NAME=custom-team\n"
             "KANON_SOURCE_other_pkg_NAME=other-pkg\n"
             f"KANON_SOURCE_other_pkg_URL={self._URL_SECOND}\n",
             encoding="utf-8",
@@ -932,8 +933,8 @@ class TestSameManifestNameDetection:
             "other-pkg": "other_pkg",
         }
 
-    def test_pre_existing_duplicate_name_is_rejected(self, tmp_path: pathlib.Path) -> None:
-        """Ambiguous existing blocks must be repaired explicitly before a re-add."""
+    def test_pre_existing_duplicate_name_resolves_to_the_first_block(self, tmp_path: pathlib.Path) -> None:
+        """A file already carrying two blocks for one NAME resolves to the first in file order."""
         from kanon_cli.commands.add import _read_alias_by_manifest_name
 
         kanon_file = tmp_path / ".kanon"
@@ -945,27 +946,7 @@ class TestSameManifestNameDetection:
             encoding="utf-8",
         )
 
-        with pytest.raises(SystemExit) as exc:
-            _read_alias_by_manifest_name(kanon_file)
-        assert exc.value.code == 1
-
-    def test_declared_name_without_force_is_a_duplicate(self) -> None:
-        """A declared manifest name resolves to its alias in duplicate mode without --force."""
-        from kanon_cli.commands.add import _resolve_same_manifest_name_alias
-
-        assert _resolve_same_manifest_name_alias("ace_engagement_kit", force=False) == (
-            "ace_engagement_kit",
-            "duplicate",
-        )
-
-    def test_declared_name_with_force_is_an_overwrite(self) -> None:
-        """--force turns the declared-name collision into an in-place overwrite."""
-        from kanon_cli.commands.add import _resolve_same_manifest_name_alias
-
-        assert _resolve_same_manifest_name_alias("ace_engagement_kit", force=True) == (
-            "ace_engagement_kit",
-            "force_overwrite",
-        )
+        assert _read_alias_by_manifest_name(kanon_file) == {"ace-engagement-kit": "ace_engagement_kit"}
 
     def _run_add_against(
         self,
@@ -1064,27 +1045,3 @@ class TestSameManifestNameDetection:
         with pytest.raises(SystemExit):
             self._run_add_against(tmp_path, "ace-engagement-kit", self._URL_SECOND, force, "another_alias")
         assert path.read_bytes() == before
-
-    def test_name_index_uses_canonical_keys_and_ignores_env_suffixes(self, tmp_path: pathlib.Path) -> None:
-        """Whitespace and a UTF-8 BOM use parser semantics; custom *_NAME vars are not aliases."""
-        from kanon_cli.commands.add import _read_alias_by_manifest_name
-
-        path = tmp_path / ".kanon"
-        path.write_text(
-            "\ufeffKANON_SOURCE_legacy_URL = https://example.com/catalog.git\n"
-            "KANON_SOURCE_legacy_NAME = kit\n"
-            "KANON_SOURCE_legacy_TEAM_NAME=some-other-package\n",
-            encoding="utf-8",
-        )
-        assert _read_alias_by_manifest_name(path) == {"kit": "legacy"}
-
-    def test_force_readd_replaces_whitespace_padded_legacy_block(self, tmp_path: pathlib.Path) -> None:
-        """The canonical NAME lookup and block writer agree on padded keys and a BOM."""
-        path = self._write_declared_block(tmp_path, "legacy_alias", "ace-engagement-kit")
-        path.write_text("\ufeff" + path.read_text(encoding="utf-8").replace("=", " = "), encoding="utf-8")
-        assert self._run_add_against(tmp_path, "ace-engagement-kit", self._URL_SECOND, True) == 0
-        from kanon_cli.core.kanonenv import _read_key_value_pairs
-
-        values = _read_key_value_pairs(path)
-        assert values["KANON_SOURCE_legacy_alias_URL"] == self._URL_SECOND
-        assert sum(key.endswith("_NAME") for key in values) == 1

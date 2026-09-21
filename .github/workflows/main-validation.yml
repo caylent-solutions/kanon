@@ -433,6 +433,8 @@ jobs:
   native-windows:
     name: Native Windows contracts
     runs-on: windows-latest
+    env:
+      KANON_NATIVE_STORE_ROOT: ${{ runner.temp }}
     steps:
       - name: Checkout reviewed commit
         uses: actions/checkout@v6

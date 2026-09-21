@@ -108,7 +108,11 @@ rejected rather than treated as secure.
 See [Windows setup](docs/git-auth-setup.md#windows-experimental) and
 [PowerShell completion](docs/shell-completion.md). Long paths should also be
 enabled in Windows policy; keep `KANON_HOME` short (for example `C:\kanon`). Git for Windows can still
-reject long `GIT_DIR` paths even with `core.longpaths=true`. Network-share workspaces and
+reject long `GIT_DIR` paths even with `core.longpaths=true`. The store and Kanon installation must be on the same drive: the vendored repo
+engine creates relative links to its installed hooks and cannot calculate those
+links across drive letters.
+
+Network-share workspaces and
 non-NTFS filesystems have not been validated.
 
 ---

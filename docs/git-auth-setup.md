@@ -244,6 +244,10 @@ paths in Windows policy as well. Keep `KANON_HOME` short (for example
 with `core.longpaths=true`. Kanon creates directory symlinks and
 fails with an actionable error when Windows denies that privilege.
 
+The store and Kanon installation must be on the same drive: the vendored repo
+engine creates relative links to its installed hooks and cannot calculate those
+links across drive letters.
+
 Kanon checks the `.kanon` file's Windows DACL. Write grants must be limited to
 the file owner, SYSTEM and Administrators (Owner Rights grants are also
 accepted). An inherited write grant to Everyone or Users is rejected. Use the

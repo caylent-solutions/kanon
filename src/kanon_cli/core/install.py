@@ -2814,7 +2814,6 @@ def _run_install(
         prepare_marketplace_dir(marketplace_dir)
 
     export_permitted_abs_roots(kanonenv_path, marketplace_dir_str)
-    ensure_project_packages_anchor(kanonenv_path.resolve().parent, base_dir, project_address)
 
     repo_rev = globals_dict.get("REPO_REV", "")
 
@@ -2825,6 +2824,7 @@ def _run_install(
         base_env_vars["CLAUDE_MARKETPLACES_DIR"] = marketplace_dir_str
 
     source_dirs = create_source_dirs(source_names, base_dir, project_address)
+    ensure_project_packages_anchor(kanonenv_path.resolve().parent, base_dir, project_address)
 
     allow_insecure: bool = os.environ.get(KANON_ALLOW_INSECURE_REMOTES) == "1"
 

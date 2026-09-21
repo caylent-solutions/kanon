@@ -399,6 +399,18 @@ keys. `kanon add` writes the normalized form verbatim, unless
 existing block (whose alias is then reused), or a collision with a
 different package triggers a deterministic auto-suffix.
 
+An explicit `--as` cannot create another alias for a manifest name already
+declared in the file. Re-add using that name's existing alias, or remove the old
+alias first. If several existing aliases already declare one name, `add` stops
+and names the conflicting aliases, including under `--force`; choose which
+dependency to keep with `kanon remove <alias>` before retrying.
+
+A forced replacement re-pins the catalog reference and manifest path, and clears
+that dependency's old content pins and derived project metadata. The next
+`kanon install` resolves and saves fresh content pins; subsequent installs replay
+them. Other dependencies retain their existing pins. Marketplace ownership is
+kept until install can remove registrations no longer supplied by the replacement.
+
 ### add -- File creation
 
 When the target `.kanon` file does not exist, `kanon add` creates

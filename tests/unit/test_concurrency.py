@@ -19,6 +19,7 @@ AC-TEST-001
 import multiprocessing
 import multiprocessing.synchronize
 import pathlib
+import re
 from unittest.mock import patch
 
 import pytest
@@ -37,7 +38,7 @@ _LOCK_EVENT_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_EVENT_TIMEOUT", "60.
 _LOCK_JOIN_TIMEOUT = float(os.environ.get("KANON_TEST_LOCK_JOIN_TIMEOUT", "30.0"))
 
 
-_MP_CONTEXT = multiprocessing.get_context("fork")
+_MP_CONTEXT = multiprocessing.get_context("spawn")
 
 
 def _acquire_nonblocking_in_child(
@@ -144,7 +145,7 @@ class TestEagerCreate:
         simulated_error = OSError(13, "Permission denied")
 
         with patch.object(pathlib.Path, "mkdir", side_effect=simulated_error):
-            with pytest.raises(OSError, match=str(kanon_data)):
+            with pytest.raises(OSError, match=re.escape(str(kanon_data))):
                 with kanon_workspace_lock(tmp_path):
                     pass
 
@@ -490,3 +491,23 @@ class TestCrossProcessContention:
         assert outcome == "acquired", (
             f"Second process must acquire the lock after the first releases it; expected 'acquired' but got {outcome!r}"
         )
+
+
+@pytest.mark.unit
+def test_kernel_releases_lock_after_process_termination(tmp_path):
+    """A crashed holder must not leave a workspace permanently locked."""
+    ready = _MP_CONTEXT.Event()
+    release = _MP_CONTEXT.Event()
+    holder = _MP_CONTEXT.Process(target=_hold_lock_then_signal, args=(tmp_path, ready, release))
+    holder.start()
+    try:
+        assert ready.wait(_LOCK_EVENT_TIMEOUT)
+        holder.terminate()
+        holder.join(_LOCK_JOIN_TIMEOUT)
+        assert not holder.is_alive()
+        with kanon_workspace_lock(tmp_path):
+            assert (tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME).exists()
+    finally:
+        if holder.is_alive():
+            holder.terminate()
+        holder.join(_LOCK_JOIN_TIMEOUT)

@@ -429,3 +429,17 @@ jobs:
         run: |
           NEW_VERSION=$(grep '^version = ' pyproject.toml | sed 's/.*version = "\([^"]*\)".*/\1/')
           gh workflow run publish.yml -f tag="$NEW_VERSION"
+
+  native-windows:
+    name: Native Windows contracts
+    runs-on: windows-latest
+    steps:
+      - name: Checkout reviewed commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-kanon
+      - name: Run native Windows acceptance
+        shell: bash
+        run: make test-windows

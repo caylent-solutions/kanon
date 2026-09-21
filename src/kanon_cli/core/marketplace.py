@@ -15,24 +15,16 @@ import xml.etree.ElementTree as ET
 
 
 def create_dirsymlink(link_path: pathlib.Path, target: pathlib.Path) -> None:
-    """Create a directory symlink at *link_path* pointing at *target* (POSIX).
-
-    This creates a standard directory symlink via ``os.symlink``.  Kanon is
-    POSIX-only; on Windows the recommended path is WSL/WSL2.
-
-    The function fails fast with an actionable ``OSError`` if the link cannot be
-    created.  It never silently skips the link.
-
-    Args:
-        link_path: Path at which the symlink should be created.
-        target: Path to the directory the link should resolve to.
-
-    Raises:
-        OSError: If link creation fails for any reason (e.g. *link_path* already
-            exists as a non-symlink entry, or the filesystem does not support
-            symbolic links).
-    """
-    os.symlink(target, link_path)
+    """Create a directory symlink, with actionable Windows privilege errors."""
+    try:
+        os.symlink(target, link_path, target_is_directory=True)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            raise OSError(
+                "Kanon requires directory symlinks. Enable Windows Developer Mode "
+                "or run with the Create symbolic links privilege."
+            ) from exc
+        raise
 
 
 def locate_claude_binary() -> str:

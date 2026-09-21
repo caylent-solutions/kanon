@@ -14,12 +14,10 @@ POSIX (Linux, macOS):
     exits via ``os._exit`` (0 on success, 1 on exception).
 
 Windows:
-    Uses ``multiprocessing.Process`` with the ``spawn`` start context so the
-    child gets a fresh interpreter.  The callable must be picklable (module-level
-    functions and ``functools.partial`` of them are always picklable).  The
-    process is non-daemon (``daemon=False``) so it outlives the parent shell
-    completion callback.  stdin and stdout in the child are redirected to
-    ``os.devnull``; stderr is appended to *log_path*.
+    Uses a detached subprocess running an importable module-level function or
+    partial. JSON arguments travel over a private pipe. The interpreter never
+    joins this subprocess at shutdown; stdout is discarded and stderr is
+    appended to *log_path*. Callback failures exit nonzero.
 
 Fail-fast contract
 ------------------
@@ -72,19 +70,17 @@ def spawn_detached(refresh_fn: Callable[[], None], *, log_path: Path) -> None:
     Dispatches to the platform-specific backend:
 
     * POSIX: ``_spawn_detached_posix`` — ``os.fork()`` + ``os.setsid()``.
-    * Windows: ``_spawn_detached_windows`` — ``multiprocessing.Process``
-      with the ``spawn`` start context.
+    * Windows: ``_spawn_detached_windows`` — detached ``subprocess.Popen``.
 
     Args:
         refresh_fn: Zero-argument callable executed only in the child process.
-            Must be picklable on Windows (module-level functions and
-            ``functools.partial`` of them are always picklable).
+            Must be an importable module-level function or partial on Windows,
+            with JSON values, paths, bytes, or nested partials as arguments.
         log_path: Path to the file where the child's stderr is appended.
             The log directory is created with mode 0700 on POSIX (explicit chmod
             so the umask cannot weaken permissions) and with default permissions
-            on Windows.  The parent does not create this file; the child opens it
-            in append mode so any error output is captured without touching the
-            operator's terminal.
+            on Windows. The Windows parent creates the log before launching the
+            child so log setup errors are raised synchronously.
 
     Raises:
         RuntimeError: If the underlying spawn mechanism fails.
@@ -142,66 +138,48 @@ def _spawn_detached_posix(
         os._exit(1)
 
 
-def _windows_child_target(refresh_fn: Callable[[], None], log_path: Path) -> None:
-    """Child process entry point for the Windows spawn backend.
-
-    Redirects stdin and stdout to ``/dev/null`` so the child cannot write to
-    the parent's completion stdout.  Stderr is appended to *log_path*.
-    Called only inside the child process spawned by ``_spawn_detached_windows``.
-
-    Args:
-        refresh_fn: Zero-argument callable to run inside the child.
-        log_path: Path to the error log file (opened in append mode).
-    """
-    import io
-
-    devnull = open(os.devnull, "w", encoding="utf-8")
-    sys.stdin = io.StringIO()
-    sys.stdout = devnull
-    try:
-        sys.stderr = open(log_path, "a", encoding="utf-8")
-    except OSError:
-        sys.stderr = devnull
-
-    try:
-        refresh_fn()
-    except Exception:
-        _record_posix_child_error(log_path)
-
-
 def _spawn_detached_windows(
     refresh_fn: Callable[[], None],
     *,
     log_path: Path,
-) -> None:
-    """Windows backend: spawn a non-daemon child via ``multiprocessing``.
+):
+    """Start a detached subprocess, with no multiprocessing shutdown join.
 
-    Uses the ``spawn`` start context so the child receives a fresh interpreter.
-    The callable is serialised via ``pickle``; module-level functions and
-    ``functools.partial`` of them are always picklable.  ``daemon=False``
-    ensures the child outlives the parent shell completion callback.
-
-    Args:
-        refresh_fn: Zero-argument callable to run inside the child.
-            Must be picklable.
-        log_path: Path to the error log file appended to by the child.
-
-    Raises:
-        RuntimeError: If the ``multiprocessing.Process`` fails to start.
+    The parent creates the log before launch so setup errors are synchronous.
+    Only a pipe carries the JSON job; stderr and stdout are redirected at the
+    OS handle level, including output from subprocesses started by the worker.
+    The returned Popen handle lets native contract tests observe the exit code.
+    Production callers do not wait for the worker.
     """
-    import multiprocessing
+    import json
+    import subprocess
 
-    ctx = multiprocessing.get_context("spawn")
+    from kanon_cli.utils.worker import encode
+
     try:
-        p = ctx.Process(
-            target=_windows_child_target,
-            args=(refresh_fn, log_path),
-            daemon=False,
-        )
-        p.start()
+        payload = json.dumps(encode(refresh_fn), ensure_ascii=True).encode("utf-8")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("ab") as log:
+            child = subprocess.Popen(
+                [sys.executable, "-m", "kanon_cli.utils.worker"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=log,
+                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                close_fds=True,
+                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+            )
+        try:
+            child.stdin.write(payload)
+            child.stdin.close()
+        except BaseException:
+            child.terminate()
+            child.wait()
+            raise
+        return child
     except Exception as exc:
         raise RuntimeError(
             f"spawn_detached: failed to spawn background refresh child on Windows"
             f" ({type(exc).__name__}: {exc})."
-            f" Ensure the callable is picklable and the Python executable is accessible."
+            " Check the log directory permissions and Python installation."
         ) from exc

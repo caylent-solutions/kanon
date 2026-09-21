@@ -18,10 +18,10 @@ Two platform-specific backends are available:
   timeout.
 
 This gives **true kernel-level blocking with NO internal poll loop and NO
-``sleep``** (CLAUDE.md "no time-based synchronization"). The POSIX ``import fcntl`` and the Windows ``import ctypes``/``import msvcrt``
+``sleep``** (CLAUDE.md "no time-based synchronization"). The POSIX ``import fcntl`` and the Windows ``import ctypes``
 live **inside** their respective backend functions, so importing this module
 never fails on a platform that lacks either module (there is no column-0
-module-top ``import fcntl`` or ``import msvcrt``).
+module-top platform-specific import).
 
 The lock is released (and the file descriptor closed) on exit regardless of
 whether the body raised an exception (try/finally semantics). The kernel
@@ -128,8 +128,8 @@ def kanon_workspace_lock(workspace_root: pathlib.Path) -> Generator[None, None, 
     opening the lock file so a fresh workspace does not fail with
     ``FileNotFoundError``.
 
-    The lock is an exclusive kernel-level lock acquired through the POSIX
-    backend (``fcntl.flock``). The calling process blocks here until any other
+    The lock is an exclusive kernel-level lock acquired through the host
+    backend (POSIX ``flock`` or Windows ``LockFileEx``). The calling process blocks here until any other
     process that holds the lock releases it, OR until the configured acquisition
     timeout
     (``KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS``) expires, in which case a
@@ -177,7 +177,7 @@ def kanon_workspace_lock(workspace_root: pathlib.Path) -> Generator[None, None, 
 
     timeout_seconds = _acquire_timeout_seconds()
 
-    with open(lock_path, "wb") as lock_fd:
+    with open(lock_path, "ab") as lock_fd:
         with _exclusive_kernel_lock(lock_fd, workspace_root, lock_path, timeout_seconds):
             _held_lock_paths.add(lock_key)
             try:
@@ -296,80 +296,81 @@ def _exclusive_kernel_lock_windows(
         OSError: If a Win32 API call fails unexpectedly.
     """
     import ctypes
-    import ctypes.wintypes
-    import msvcrt
+    from ctypes import wintypes as w
 
-    kernel32 = getattr(ctypes, "windll").kernel32
-
-    LOCKFILE_EXCLUSIVE_LOCK: int = 0x00000002
-    WAIT_TIMEOUT: int = 0x00000102
-    ERROR_IO_PENDING: int = 997
-
-    class _OffsetStruct(ctypes.Structure):
-        _fields_ = [("Offset", ctypes.wintypes.DWORD), ("OffsetHigh", ctypes.wintypes.DWORD)]
-
-    class _OffsetUnion(ctypes.Union):
-        _fields_ = [("s", _OffsetStruct), ("Pointer", ctypes.c_void_p)]
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
 
     class OVERLAPPED(ctypes.Structure):
-        _anonymous_ = ("_u",)
         _fields_ = [
-            ("Internal", ctypes.c_ulong),
-            ("InternalHigh", ctypes.c_ulong),
-            ("_u", _OffsetUnion),
-            ("hEvent", ctypes.wintypes.HANDLE),
+            ("Internal", ctypes.c_size_t),
+            ("InternalHigh", ctypes.c_size_t),
+            ("Offset", w.DWORD),
+            ("OffsetHigh", w.DWORD),
+            ("hEvent", w.HANDLE),
         ]
 
-    handle = msvcrt.get_osfhandle(lock_fd.fileno())
-    event = kernel32.CreateEventW(None, True, False, None)
-    if not event:
-        raise OSError(f"CreateEventW failed during workspace lock acquisition (GetLastError={ctypes.get_last_error()})")
+    signatures = {
+        "CreateFileW": ([w.LPCWSTR, w.DWORD, w.DWORD, w.LPVOID, w.DWORD, w.DWORD, w.HANDLE], w.HANDLE),
+        "CreateEventW": ([w.LPVOID, w.BOOL, w.BOOL, w.LPCWSTR], w.HANDLE),
+        "LockFileEx": ([w.HANDLE, w.DWORD, w.DWORD, w.DWORD, w.DWORD, ctypes.POINTER(OVERLAPPED)], w.BOOL),
+        "UnlockFileEx": ([w.HANDLE, w.DWORD, w.DWORD, w.DWORD, ctypes.POINTER(OVERLAPPED)], w.BOOL),
+        "WaitForSingleObject": ([w.HANDLE, w.DWORD], w.DWORD),
+        "CancelIoEx": ([w.HANDLE, ctypes.POINTER(OVERLAPPED)], w.BOOL),
+        "GetOverlappedResult": ([w.HANDLE, ctypes.POINTER(OVERLAPPED), ctypes.POINTER(w.DWORD), w.BOOL], w.BOOL),
+        "CloseHandle": ([w.HANDLE], w.BOOL),
+    }
+    for name, (args, result) in signatures.items():
+        function = getattr(kernel, name)
+        function.argtypes = args
+        function.restype = result
 
+    handle = kernel.CreateFileW(str(lock_path), 0xC0000000, 3, None, 4, 0x40000000, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    event = None
+    acquired = False
+    pending = False
     overlapped = OVERLAPPED()
-    overlapped.hEvent = event
-
+    transferred = w.DWORD()
     try:
-        success = kernel32.LockFileEx(
-            handle,
-            ctypes.wintypes.DWORD(LOCKFILE_EXCLUSIVE_LOCK),
-            ctypes.wintypes.DWORD(0),
-            ctypes.wintypes.DWORD(1),
-            ctypes.wintypes.DWORD(0),
-            ctypes.byref(overlapped),
-        )
-
-        last_err = ctypes.get_last_error()
-        if not success and last_err != ERROR_IO_PENDING:
-            raise OSError(
-                f"LockFileEx failed (GetLastError={last_err}) while acquiring workspace lock for {workspace_root}"
-            )
-
-        if not success:
-            timeout_ms: int = int(timeout_seconds * 1000)
-            wait_result = kernel32.WaitForSingleObject(event, ctypes.wintypes.DWORD(timeout_ms))
-
-            if wait_result == WAIT_TIMEOUT:
-                kernel32.CancelIoEx(handle, ctypes.byref(overlapped))
+        event = kernel.CreateEventW(None, True, False, None)
+        if not event:
+            raise ctypes.WinError(ctypes.get_last_error())
+        overlapped.hEvent = event
+        acquired = bool(kernel.LockFileEx(handle, 2, 0, 1, 0, ctypes.byref(overlapped)))
+        if not acquired:
+            error = ctypes.get_last_error()
+            if error != 997:
+                raise ctypes.WinError(error)
+            pending = True
+            status = kernel.WaitForSingleObject(event, min(timeout_seconds * 1000, 0xFFFFFFFE))
+            if status == 258:
                 raise WorkspaceLockTimeoutError(
                     f"ERROR: timed out acquiring the workspace lock for {workspace_root} "
-                    f"after {timeout_seconds}s.\n"
-                    f"Lock file: {lock_path}\n"
-                    f"Another process is holding the lock ({_stale_lock_diagnostics()}).\n"
-                    "If you believe the lock is stale (the owning process has exited), inspect it "
-                    "with 'kanon doctor --prune-cache' and remove the lock file once you have "
-                    "confirmed no kanon process is running against this workspace."
+                    f"after {timeout_seconds}s. Lock file: {lock_path}. "
+                    f"Another process is holding the lock ({_stale_lock_diagnostics()}). "
+                    "Wait for that process to finish; do not delete an active lock file."
                 )
-    finally:
-        kernel32.CloseHandle(event)
-
-    unlock_overlapped = OVERLAPPED()
-    try:
+            if status != 0:
+                raise ctypes.WinError(ctypes.get_last_error())
+            if not kernel.GetOverlappedResult(handle, ctypes.byref(overlapped), ctypes.byref(transferred), False):
+                raise ctypes.WinError(ctypes.get_last_error())
+            pending = False
+            acquired = True
         yield
     finally:
-        kernel32.UnlockFileEx(
-            handle,
-            ctypes.wintypes.DWORD(0),
-            ctypes.wintypes.DWORD(1),
-            ctypes.wintypes.DWORD(0),
-            ctypes.byref(unlock_overlapped),
-        )
+        try:
+            if pending:
+                kernel.CancelIoEx(handle, ctypes.byref(overlapped))
+                acquired = bool(
+                    kernel.GetOverlappedResult(handle, ctypes.byref(overlapped), ctypes.byref(transferred), True)
+                )
+                if not acquired and ctypes.get_last_error() != 995:
+                    raise ctypes.WinError(ctypes.get_last_error())
+            if acquired:
+                if not kernel.UnlockFileEx(handle, 0, 1, 0, ctypes.byref(overlapped)):
+                    raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            kernel.CloseHandle(handle)
+            if event:
+                kernel.CloseHandle(event)

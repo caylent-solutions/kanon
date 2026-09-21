@@ -154,6 +154,17 @@ class TestEagerCreate:
 class TestNormalExitRelease:
     """AC-FUNC-002: the exclusive lock is acquired on entry and released on normal exit."""
 
+    def test_acquisition_refreshes_stale_mtime_without_truncating(self, tmp_path):
+        lock = tmp_path / ".kanon-data" / INSTALL_LOCK_FILENAME
+        with kanon_workspace_lock(tmp_path):
+            pass
+        content = os.urandom(32)
+        lock.write_bytes(content)
+        os.utime(lock, (0, 0))
+        with kanon_workspace_lock(tmp_path):
+            assert lock.stat().st_mtime > 0
+        assert lock.read_bytes() == content
+
     def test_lock_is_released_after_normal_exit(self, tmp_path: pathlib.Path) -> None:
         """A second acquisition succeeds immediately after the first exits normally.
 

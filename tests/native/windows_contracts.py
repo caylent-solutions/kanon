@@ -10,8 +10,10 @@ import functools
 import os
 from pathlib import Path
 import socket
+import site
 import subprocess
 import sys
+import venv
 
 import pytest
 
@@ -35,11 +37,29 @@ def wait_worker(child):
         raise
 
 
+@pytest.fixture(scope="module")
+def native_python(tmp_path_factory):
+    """Install trusted test callbacks into a disposable isolated interpreter.
+
+    Production workers ignore PYTHONPATH. This environment makes the test
+    callback module an installed import without weakening worker isolation or
+    changing the developer's interpreter installation.
+    """
+    root = tmp_path_factory.mktemp("native-python")
+    venv.EnvBuilder(with_pip=False).create(root)
+    paths = [
+        str(Path(__file__).resolve().parent),
+        str(Path(__file__).resolve().parents[2] / "src"),
+        *site.getsitepackages(),
+    ]
+    (root / "Lib" / "site-packages" / "native-tests.pth").write_text("\n".join(paths) + "\n", encoding="utf-8")
+    return root / "Scripts" / "python.exe"
+
+
 @pytest.fixture(autouse=True)
-def native_environment(monkeypatch):
+def native_environment(monkeypatch, native_python):
     assert sys.platform == "win32", "This acceptance suite must execute on native Windows"
-    paths = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[2] / "src")]
-    monkeypatch.setenv("PYTHONPATH", os.pathsep.join(paths))
+    monkeypatch.setattr(sys, "executable", str(native_python))
     monkeypatch.setenv("KANON_TELEMETRY_DISABLED", "1")
 
 
@@ -80,6 +100,63 @@ def test_worker_logs_and_exit_status(tmp_path, callback, expected):
     text = log.read_text(encoding="utf-8")
     assert "hidden" not in text
     assert ("visible-stderr-café" if expected == 0 else "native-worker-controlled-failure") in text
+
+
+def test_workers_append_to_shared_log(tmp_path):
+    from contextlib import ExitStack
+    from worker_callbacks import released_output
+
+    log = tmp_path / "shared.log"
+    messages = ["first-worker", "second-worker"]
+    children = []
+    with socket.socket() as listener, ExitStack() as connections:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        listener.settimeout(TIMEOUT)
+        channels = []
+        try:
+            for message in messages:
+                children.append(
+                    _spawn_detached_windows(
+                        functools.partial(released_output, listener.getsockname()[1], TIMEOUT, message), log_path=log
+                    )
+                )
+                channel, _ = listener.accept()
+                connections.enter_context(channel)
+                channel.settimeout(TIMEOUT)
+                assert channel.recv(1) == b"R"
+                channels.append(channel)
+            for child, channel in zip(children, channels, strict=True):
+                channel.sendall(b"!")
+                assert channel.recv(1) == b"D"
+                assert wait_worker(child) == 0
+        finally:
+            for child in children:
+                if child.poll() is None:
+                    child.kill()
+                wait_worker(child)
+    assert log.read_text(encoding="utf-8").splitlines() == messages
+
+
+def test_worker_ignores_workspace_and_pythonpath_modules(tmp_path, monkeypatch):
+    from worker_callbacks import marker
+
+    package = tmp_path / "kanon_cli" / "utils"
+    package.mkdir(parents=True)
+    poison = "raise RuntimeError('workspace-code-executed')\n"
+    (package.parent / "__init__.py").write_text(poison, encoding="utf-8")
+    (package / "__init__.py").write_text(poison, encoding="utf-8")
+    (package / "worker.py").write_text(poison, encoding="utf-8")
+    (tmp_path / "sitecustomize.py").write_text(poison, encoding="utf-8")
+    (tmp_path / "worker_callbacks.py").write_text(poison, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    destination = tmp_path / "trusted-worker-marker"
+    log = tmp_path / "worker.log"
+    child = _spawn_detached_windows(functools.partial(marker, destination), log_path=log)
+    assert wait_worker(child) == 0
+    assert destination.read_text(encoding="utf-8") == "completed"
+    assert log.read_bytes() == b""
 
 
 def test_real_nested_update_callback(tmp_path):

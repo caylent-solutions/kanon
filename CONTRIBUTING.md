@@ -219,6 +219,12 @@ that harness or claim that the full suite runs on Windows. Native tests are
 explicitly selected from `tests/native/windows_contracts.py`, so POSIX test
 collection never substitutes mocks for native acceptance.
 
+Worker contracts use a disposable interpreter with the trusted test callbacks
+installed through its site configuration. Workers start in Python isolated
+mode, so neither the current workspace nor `PYTHONPATH` supplies their imports.
+Native regressions cover hostile workspace modules and two workers writing to
+the same append-only log before either worker exits.
+
 The lifecycle fixture enables Git long paths for its child processes and uses
 local disposable repositories. Windows 11 validation and the `windows-latest`
 CI job complement the existing Linux tiers and macOS checks. Authentication and

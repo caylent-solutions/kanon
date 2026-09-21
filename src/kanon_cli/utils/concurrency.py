@@ -179,6 +179,7 @@ def kanon_workspace_lock(workspace_root: pathlib.Path) -> Generator[None, None, 
 
     with open(lock_path, "ab") as lock_fd:
         with _exclusive_kernel_lock(lock_fd, workspace_root, lock_path, timeout_seconds):
+            os.utime(lock_path, None)
             _held_lock_paths.add(lock_key)
             try:
                 yield

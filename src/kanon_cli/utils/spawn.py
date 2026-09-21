@@ -15,7 +15,9 @@ POSIX (Linux, macOS):
 
 Windows:
     Uses a detached subprocess running an importable module-level function or
-    partial. JSON arguments travel over a private pipe. The interpreter never
+    partial from the installed environment. Isolated Python startup excludes
+    the workspace, PYTHONPATH and user site from imports. JSON arguments travel
+    over a private pipe. The interpreter never
     joins this subprocess at shutdown; stdout is discarded and stderr is
     appended to *log_path*. Callback failures exit nonzero.
 
@@ -74,8 +76,10 @@ def spawn_detached(refresh_fn: Callable[[], None], *, log_path: Path) -> None:
 
     Args:
         refresh_fn: Zero-argument callable executed only in the child process.
-            Must be an importable module-level function or partial on Windows,
-            with JSON values, paths, bytes, or nested partials as arguments.
+            Must be a module-level function or partial installed in the Python
+            environment on Windows, with JSON values, paths, bytes, or nested
+            partials as arguments. Workspace, PYTHONPATH and user-site imports
+            are excluded from the isolated worker.
         log_path: Path to the file where the child's stderr is appended.
             The log directory is created with mode 0700 on POSIX (explicit chmod
             so the umask cannot weaken permissions) and with default permissions
@@ -92,6 +96,33 @@ def spawn_detached(refresh_fn: Callable[[], None], *, log_path: Path) -> None:
 
 
 _POSIX_FILE_MODE = 0o600
+
+
+def _windows_append_fd(path, flags):
+    """Open an append-only Win32 handle; child writes cannot overwrite old data.
+
+    CRT append mode alone only seeks before writes made through that CRT file
+    descriptor. An inherited stderr handle needs FILE_APPEND_DATA without
+    FILE_WRITE_DATA so the kernel appends every write from every process.
+    Ownership passes to the CRT descriptor only after open_osfhandle succeeds.
+    """
+    import ctypes
+    from ctypes import wintypes as w
+    import msvcrt
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [w.LPCWSTR, w.DWORD, w.DWORD, w.LPVOID, w.DWORD, w.DWORD, w.HANDLE]
+    kernel.CreateFileW.restype = w.HANDLE
+    kernel.CloseHandle.argtypes = [w.HANDLE]
+    kernel.CloseHandle.restype = w.BOOL
+    handle = kernel.CreateFileW(path, 4, 3, None, 4, 0x80, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return msvcrt.open_osfhandle(handle, flags | os.O_BINARY)
+    except BaseException:
+        kernel.CloseHandle(handle)
+        raise
 
 
 def _spawn_detached_posix(
@@ -159,15 +190,14 @@ def _spawn_detached_windows(
     try:
         payload = json.dumps(encode(refresh_fn), ensure_ascii=True).encode("utf-8")
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("ab") as log:
+        with open(log_path, "ab", opener=_windows_append_fd) as log:
             child = subprocess.Popen(
-                [sys.executable, "-m", "kanon_cli.utils.worker"],
+                [sys.executable, "-I", "-X", "utf8", "-m", "kanon_cli.utils.worker"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=log,
                 creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
                 close_fds=True,
-                env={**os.environ, "PYTHONIOENCODING": "utf-8"},
             )
         try:
             child.stdin.write(payload)

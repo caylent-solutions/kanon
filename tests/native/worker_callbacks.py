@@ -24,6 +24,15 @@ def fail():
     raise ValueError("native-worker-controlled-failure")
 
 
+def released_output(port, timeout, message):
+    """Keep two worker logs open before allowing either process to write."""
+    with socket.create_connection(("127.0.0.1", port), timeout=timeout) as channel:
+        channel.sendall(b"R")
+        assert channel.recv(1) == b"!"
+        print(message, file=sys.stderr, flush=True)
+        channel.sendall(b"D")
+
+
 def marker(path):
     Path(path).write_text("completed", encoding="utf-8")
 

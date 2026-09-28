@@ -2,7 +2,247 @@
 
 
 
+## v3.4.2 (2026-09-28)
+
+### Build
+
+* build(deps): bump gitpython from 3.1.58 to 3.1.59
+
+Bumps [gitpython](https://github.com/gitpython-developers/GitPython) from 3.1.58 to 3.1.59.
+- [Release notes](https://github.com/gitpython-developers/GitPython/releases)
+- [Changelog](https://github.com/gitpython-developers/GitPython/blob/main/CHANGES)
+- [Commits](https://github.com/gitpython-developers/GitPython/compare/3.1.58...3.1.59)
+
+---
+updated-dependencies:
+- dependency-name: gitpython
+  dependency-version: 3.1.59
+  dependency-type: indirect
+...
+
+Signed-off-by: dependabot[bot] &lt;support@github.com&gt; ([`aa305fd`](https://github.com/caylent-solutions/kanon/commit/aa305fda781cb18119f20117c60469ce340a3428))
+
+### Chore
+
+* chore(pre-commit): run the no-comments gate through uv
+
+The hook invoked a bare `python`, which does not exist on a machine whose
+only interpreter is the uv-managed one. There it failed with &#34;Executable
+`python` not found&#34; on every commit -- the gate reported Failed without ever
+scanning a file, so a disallowed comment could reach a commit unnoticed.
+
+Every other entry point to this check already goes through uv: the Makefile&#39;s
+lint-no-comments target, and the sibling completion-snapshots hook by way of
+make.
+
+Co-Authored-By: Claude Opus 5 &lt;noreply@anthropic.com&gt; ([`b8fa7f0`](https://github.com/caylent-solutions/kanon/commit/b8fa7f0fd7dec7698647b1e0a75e45d80e25ba4f))
+
+### Ci
+
+* ci(windows): resolve runner temp in execution step context ([`45b6677`](https://github.com/caylent-solutions/kanon/commit/45b66775169af7906eea3e5640969d55a0db4987))
+
+* ci(windows): align native store with vendored same-volume requirement ([`184023a`](https://github.com/caylent-solutions/kanon/commit/184023aad380ce0197898a15771a5870f17763e5))
+
+### Fix
+
+* fix: preserve source-directory permission diagnostics ([`f88d9c0`](https://github.com/caylent-solutions/kanon/commit/f88d9c03c218cfd6663a5233d4a2bbf6f0d394f0))
+
+* fix(windows): isolate worker imports and preserve concurrent logs ([`0e39afe`](https://github.com/caylent-solutions/kanon/commit/0e39afe8d606d6eda870853ceead99f9afb4be27))
+
+* fix(add): refresh content and ownership after forced replacement ([`9208978`](https://github.com/caylent-solutions/kanon/commit/920897879c730f36fb183bef6adc466e5e08223d))
+
+* fix: isolate consumer linkfiles across shared-store projects ([`418cae0`](https://github.com/caylent-solutions/kanon/commit/418cae0095ed6a4ff40fc5e5f3b6285f9f760ed4))
+
+* fix(windows): enforce native locking and detached worker contracts ([`8bca79c`](https://github.com/caylent-solutions/kanon/commit/8bca79c1740a6809936cadaaefe13298aa51f90f))
+
+* fix(codeowners): assign Kanon release approvers to all files ([`0dc908b`](https://github.com/caylent-solutions/kanon/commit/0dc908b515276f61efce622d637996820f906a96))
+
+* fix(hooks): stop the pre-push gate corrupting the repository it gates
+
+Git exports GIT_DIR and its siblings to hooks, and pre-push inherits
+them into `make test-unit-cov`. GIT_DIR outranks cwd, so the fixture
+helper in TestResetManifestsWorkingTree -- which passes only a working
+directory to `git init` and `git config` -- wrote into the pushing
+developer&#39;s own repository instead of its temp fixture: core.bare=true,
+which breaks every worktree of that repo, and a fixture
+user.name/user.email, which silently reattributed their next commit.
+Both were observed on a real checkout.
+
+Fixed at both ends. The helper scrubs GIT_* from the environment it
+hands git, so cwd means what the helper assumes; a regression test
+builds a fixture repo under a deliberately set GIT_DIR and asserts that
+repository&#39;s config is untouched. pre-push unsets the same variables
+after resolving the repo root, so no future test acquires the same
+reach.
+
+Co-Authored-By: Claude Opus 5 &lt;noreply@anthropic.com&gt; ([`065caa2`](https://github.com/caylent-solutions/kanon/commit/065caa20fe5ee1c1d74bea71526fd925e3e544b3))
+
+* fix: linkfile symlink target no longer records checkout depth
+
+A &lt;linkfile&gt; delivering into the consuming project pointed at content in
+the KANON_HOME store, which sits outside the project, so the target was
+measured across the filesystem and its &#34;..&#34; chain recorded how deeply the
+checkout happened to sit on disk. Installing from a git worktree -- three
+directories deeper than the clone containing it -- wrote a
+three-level-longer target: correct there, dangling in every ordinary
+clone, with nothing to signal the difference. One such target was
+committed and merged before anyone noticed.
+
+kanon install now maintains &lt;project-root&gt;/.packages, a gitignored
+symlink into the store&#39;s aggregated package directory, and measures the
+target between two project-root-relative paths instead. The result is a
+function of the manifest alone and is byte-identical at every checkout
+depth. kanon clean removes the anchor it created.
+
+Marketplace destinations and any source outside a .packages slot keep
+their existing plain relative target; this narrows a target that would
+otherwise escape the project root, and never widens one.
+
+Co-Authored-By: Claude Opus 5 &lt;noreply@anthropic.com&gt; ([`bbc4aa5`](https://github.com/caylent-solutions/kanon/commit/bbc4aa539e83d5c8c225f8a74408b19a351284c2))
+
+* fix(add): resolve a re-add to the block already declaring that manifest name
+
+kanon add resolved an entry&#39;s alias from the source URL and ref alone, so a
+re-add whose coordinates differed at all -- a newer tag, a differently spelled
+catalog URL -- missed the same-alias duplicate check and auto-suffixed into a
+fresh alias. The .kanon file was left with two live source blocks declaring the
+same KANON_SOURCE_&lt;alias&gt;_NAME, a state install has no rule for.
+
+An entry whose manifest name is already declared now resolves to that block&#39;s
+alias, whatever source it names and whatever alias the block carries. The
+--force gate is unchanged: a hard error with a diff, or an in-place overwrite
+plus lock re-pin. The auto-suffix candidate sequence still separates distinct
+packages whose names sanitize to one alias.
+
+Co-Authored-By: Claude Opus 5 &lt;noreply@anthropic.com&gt; ([`3018b8f`](https://github.com/caylent-solutions/kanon/commit/3018b8f65a2a1798dbeb72ec2a844eaaccb5a9df))
+
+* fix(lint,format): remove unused import and variable in test_spawn, fix ruff format ([`04ef906`](https://github.com/caylent-solutions/kanon/commit/04ef90619d20fb8363534534a1d0236fbaa2be41))
+
+* fix(concurrency,spawn): add Windows backend for issue #75
+
+- concurrency.py: dispatch _exclusive_kernel_lock to platform-specific
+  backend; add _exclusive_kernel_lock_windows using Win32 LockFileEx +
+  WaitForSingleObject — true kernel-level blocking with no poll loop and
+  no sleep, matching the POSIX SIGALRM approach
+- spawn.py: dispatch spawn_detached to _spawn_detached_windows on win32;
+  Windows backend uses multiprocessing.Process(daemon=False) with the
+  spawn context; _windows_child_target redirects stdin/stdout/stderr
+  before calling refresh_fn
+- doctor.py: remove &#39;fcntl.flock&#39; reference from stale-lock diagnostic
+- tests/test_spawn.py: add three Windows backend unit tests
+
+Resolves #75 — AttributeError: module &#39;os&#39; has no attribute &#39;fork&#39;
+Resolves ModuleNotFoundError: No module named &#39;fcntl&#39; on Windows ([`7b28799`](https://github.com/caylent-solutions/kanon/commit/7b28799e476504596d6698fba493d494b0ba80cc))
+
+* fix(concurrency,spawn): add Windows backend to resolve issue #75
+
+concurrency.py: add _exclusive_kernel_lock_windows using Win32 LockFileEx
++ WaitForSingleObject via ctypes. Dispatches from _exclusive_kernel_lock
+via sys.platform check. True kernel-level blocking with no poll loop and
+no sleep, matching the POSIX SIGALRM approach. import fcntl / import signal
+remain inside _exclusive_kernel_lock_posix; no unconditional POSIX-only
+import on any CLI startup path.
+
+spawn.py: add _spawn_detached_windows + _windows_child_target using
+multiprocessing.Process(daemon=False) with the spawn context. The callable
+is already picklable (module-level functools.partial, noted in cache.py).
+Dispatches from spawn_detached via sys.platform check. The POSIX path
+(os.fork / os.setsid / os.dup2) is unchanged.
+
+doctor.py: remove platform-specific &#39;fcntl.flock&#39; reference from the
+STALE_INSTALL_LOCK advisory message.
+
+tests/unit/test_spawn.py: add three tests for the Windows backend covering
+non-daemon process creation, correct args, and fail-fast on start() failure.
+All tests use mocking and run on every platform without skipif.
+
+Fixes #75. ([`f4bd55b`](https://github.com/caylent-solutions/kanon/commit/f4bd55b00c8bd8fb49e15b81ee6051eef5dcb419))
+
+### Refactor
+
+* refactor: narrow duplicate-source fix to add and content refresh ([`b78b792`](https://github.com/caylent-solutions/kanon/commit/b78b7927d37acee40f56aff9bf5b6e1d52c9f39b))
+
+* refactor: simplify the linkfile target computation
+
+Four cleanups, no behaviour change. The depth-independence tests still
+fail without the fix, and the full suite passes with it.
+
+_AnchoredTarget returned either a target or None, leaving both call
+sites to repeat the plain-relpath fallback behind an `or`. It is now
+_LinkTarget, always returns a target, and owns that fallback as its own
+named default, so each call site is a single unconditional expression.
+
+Containment of the dest was decided by prefix arithmetic against the
+project root and then re-derived, as a relative path, on the way out.
+One os.path.relpath now does both: a first component of &#34;..&#34; is what
+&#34;outside the project&#34; means, which is also how the src side already
+reads.
+
+The environment carried &lt;project_root&gt;/.packages, which the vendored
+tool took apart with dirname and basename to recover two facts install
+already had. It now carries KANON_PROJECT_ROOT, and &#34;.packages&#34; is a
+module constant in project.py -- shared with _LINKFILE_EXCLUDE_ALWAYS,
+which had the name as a third literal.
+
+ensure_project_packages_anchor guarded against the store resolving to
+the project root, which requires .kanon to live inside the store. The
+full suite passes without it; it was validation for a case that cannot
+arise, and it cost a nesting level.
+
+Co-Authored-By: Claude Opus 5 &lt;noreply@anthropic.com&gt; ([`4f9e77a`](https://github.com/caylent-solutions/kanon/commit/4f9e77a34120d99d1ee6867074910284d2bd3607))
+
+### Test
+
+* test: resolve the stub temp root so absolute-dest tests pass on macOS
+
+Twenty-one absolute-dest tests failed on every macOS checkout, including
+a clean main, which left `make test-unit` -- and with it the pre-push
+gate -- red regardless of the change under test.
+
+An absolute &lt;linkfile&gt;/&lt;copyfile&gt; dest is refused when any component of
+its path is a symlink, and the platform temp root is one on macOS:
+tempfile puts these fixtures under /var/folders/..., and /var is a
+symlink to /private/var. The resolver was right; the fixtures were not.
+install() resolves the consumer project root before publishing it as a
+permitted root, so a stub checkout standing in for one has to be
+resolved too.
+
+Co-Authored-By: Claude Opus 5 &lt;noreply@anthropic.com&gt; ([`de103e7`](https://github.com/caylent-solutions/kanon/commit/de103e7cfd130b3291be3d972b9305f2734c152a))
+
+### Unknown
+
+* Merge pull request #129 from caylent-solutions/fix/add-same-name-duplicate-source-block
+
+fix(add): resolve a re-add to the block already declaring that manifest name ([`0ac1f1c`](https://github.com/caylent-solutions/kanon/commit/0ac1f1c3ab957529bd9eacbe15fcb11dc9518502))
+
+* Merge remote-tracking branch &#39;refs/remotes/upstream/main&#39; into review/fix-pr129 ([`5d5f562`](https://github.com/caylent-solutions/kanon/commit/5d5f562459556f3c042cf966fafcae2449dba667))
+
+* Merge pull request #128 from caylent-solutions/chore/pre-commit-no-comments-uv
+
+chore(pre-commit): run the no-comments gate through uv ([`7a0e81f`](https://github.com/caylent-solutions/kanon/commit/7a0e81f2d12616f677be2d94285e9fd5bbd8fd07))
+
+* Merge pull request #122 from caylent-solutions/fix/windows-compat-issue-75
+
+fix(windows): enforce native workspace locks and detached workers ([`a4b0df2`](https://github.com/caylent-solutions/kanon/commit/a4b0df24656e9d8d5ef8730cafa22ba3f68f0a0f))
+
+* Merge pull request #127 from caylent-solutions/fix/linkfile-target-checkout-depth
+
+fix: linkfile symlink target no longer records checkout depth ([`9e41cb2`](https://github.com/caylent-solutions/kanon/commit/9e41cb21cc6a70f91049c79dac1d5e3ea9f3724a))
+
+* Merge pull request #125 from caylent-solutions/dependabot/uv/gitpython-3.1.59
+
+build(deps): bump gitpython from 3.1.58 to 3.1.59 ([`388ba57`](https://github.com/caylent-solutions/kanon/commit/388ba57e075582abc2132c05552a24228d528f74))
+
+* Merge pull request #130 from caylent-solutions/chore/builders-codeowners
+
+chore(codeowners): assign Kanon release approvers to all files ([`b0787c2`](https://github.com/caylent-solutions/kanon/commit/b0787c297622573b03ab37ee64664edf6103026e))
+
+
 ## v3.4.1 (2026-08-21)
+
+### Chore
+
+* chore(release): 3.4.1 ([`8a9a35c`](https://github.com/caylent-solutions/kanon/commit/8a9a35cde4985d74f1515f7fa52065809dc21e34))
 
 ### Fix
 
@@ -44,6 +284,12 @@ and does not require claude on PATH.
 Verified end to end in a container against a 3.4.0 build: the reported sequence
 now leaves zero marketplaces, zero plugins and no stale lockfile. Guards proven
 falsifiable by reintroducing the defect in both paths. ([`6edc65a`](https://github.com/caylent-solutions/kanon/commit/6edc65a9c5cbe09fc057c370e867abaaf63136f7))
+
+### Unknown
+
+* Merge pull request #121 from caylent-solutions/release-3.4.1
+
+Release 3.4.1 ([`a7f5c31`](https://github.com/caylent-solutions/kanon/commit/a7f5c3113867f270c25e0a7e74a2c27bd68567fa))
 
 
 ## v3.4.0 (2026-08-21)

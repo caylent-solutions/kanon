@@ -13,6 +13,7 @@ from kanon_cli.core.clean import (
 from kanon_cli.constants import LOCKFILE_FILENAME
 from kanon_cli.core.discover import find_kanonenv
 from kanon_cli.core.kanonenv import NoSourcesError
+from kanon_cli.core.min_version import enforce_min_version
 
 
 def register(subparsers) -> None:
@@ -157,6 +158,12 @@ def _run(args) -> None:
             _purge_home_only()
             return
         print(f"ERROR: .kanon file not found: {args.kanonenv_path}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        enforce_min_version(args.kanonenv_path)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
     try:

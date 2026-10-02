@@ -72,6 +72,7 @@ from kanon_cli.core.kanonenv_writer import (
     has_claude_marketplaces_dir_header,
 )
 from kanon_cli.core.lockfile import write_lockfile
+from kanon_cli.core.min_version import enforce_min_version
 from kanon_cli.utils.concurrency import kanon_workspace_lock
 from kanon_cli.utils.lock_file_path import derive_lock_file_path
 from kanon_cli.core.metadata import (
@@ -1494,6 +1495,7 @@ def run_add(args: argparse.Namespace) -> int:
 
     kanon_file = pathlib.Path(getattr(args, "kanon_file", KANON_KANON_FILE_DEFAULT))
     guard_kanon_file_not_dir(kanon_file)
+    enforce_min_version(kanon_file)
     force: bool = getattr(args, "force", False)
     dry_run: bool = getattr(args, "dry_run", False)
     alias_override: str | None = getattr(args, "alias_override", None)

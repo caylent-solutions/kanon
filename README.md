@@ -756,13 +756,24 @@ Use `kanon search` to discover entries and `kanon add` to add them. See
 The `.kanon` file is a shell-compatible `KEY=VALUE` configuration file that
 drives the Kanon lifecycle. Lines starting with `#` are comments. Values can
 reference environment variables using `${VAR}` syntax (e.g.,
-`${HOME}/.claude-marketplaces`). Every `.kanon` variable can be overridden
-by an environment variable of the same name, enabling CI/CD pipelines to
-customize behavior without modifying the file.
+`${HOME}/.claude-marketplaces`). Every `.kanon` variable except
+`CLAUDE_MARKETPLACES_DIR` and `KANON_MIN_VERSION` can be overridden by an
+environment variable of the same name, enabling CI/CD pipelines to customize
+behavior without modifying the file.
 
 ### Core Variables
 
-There is no required global header. The only global variable kanon reads is:
+There is no required global header. kanon reads two global variables:
+
+**`KANON_MIN_VERSION`** (Optional)
+The oldest kanon that may operate on this `.kanon`, as a single PEP 440 version
+(e.g. `KANON_MIN_VERSION=3.4.2`). `kanon install`, `add`, `remove` and `clean`
+check it before doing any work. When the running kanon is older, the command
+exits 1 and prints the upgrade command (`pipx upgrade kanon-cli`). A value that
+is not a single version (for example `latest` or `>=3.4.2`) also exits 1. An
+environment variable cannot override or supply it, and `--no-update-check` does
+not affect it. kanon releases before 3.5.0 ignore the line, so you can add it
+before every teammate has upgraded.
 
 **`CLAUDE_MARKETPLACES_DIR`** (Auto-managed)
 Directory for marketplace symlinks. Auto-added (as
@@ -838,6 +849,9 @@ environment-variable reference.
 ### Example .kanon
 
 ```properties
+# Oldest kanon allowed to install, add, remove or clean this project.
+KANON_MIN_VERSION=3.4.2
+
 # Auto-added by `kanon add` of a claude-marketplace entry / `kanon marketplace
 # enable`; pruned on the last `kanon remove` / `kanon marketplace disable`.
 # Hand-set it only to override the directory.

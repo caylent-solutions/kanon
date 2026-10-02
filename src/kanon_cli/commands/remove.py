@@ -50,6 +50,7 @@ from kanon_cli.core.kanonenv_writer import (
     prune_claude_marketplaces_dir_if_unused,
 )
 from kanon_cli.core.metadata import derive_source_name
+from kanon_cli.core.min_version import enforce_min_version
 from kanon_cli.utils.concurrency import kanon_workspace_lock
 
 
@@ -417,6 +418,8 @@ def run_remove(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    enforce_min_version(kanon_file)
 
     raw_bytes = kanon_file.read_bytes()
     raw_text = raw_bytes.decode("utf-8")

@@ -1,4 +1,4 @@
-"""Idempotent maintenance of the auto-managed ``.kanon`` global header.
+"""Idempotent maintenance of the auto-managed ``.kanon`` global headers.
 
 A ``claude-marketplace`` dependency requires the global ``.kanon`` header
 ``CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces`` so that
@@ -13,7 +13,12 @@ This module keeps that header in sync with the presence of any
   marketplace dependency is removed or disabled, so the CWD ``.kanon`` carries no
   stale auto-managed line.
 
-Both functions are idempotent and preserve the file's dominant newline. Matching
+``upsert_min_version`` sets the ``KANON_MIN_VERSION`` header that ``kanon add``
+carries over from a catalog entry's ``<min-kanon-version>``: it replaces an
+existing line in place or inserts one as the first non-comment line. Deciding
+whether the value should change (never lowering it) is the caller's job.
+
+All functions are idempotent and preserve the file's dominant newline. Matching
 is done on the parsed KEY of each line, never on a substring: the literal
 ``"_MARKETPLACE"`` is a substring of ``"CLAUDE_MARKETPLACES_DIR"``, so a substring
 test would falsely treat the header itself as a marketplace dependency.
@@ -26,6 +31,7 @@ import sys
 
 from kanon_cli.constants import (
     KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
+    KANON_MIN_VERSION_KEY,
     MARKETPLACE_DIR_GLOBAL_KEY,
     MARKETPLACE_FLAG_TRUE,
     SOURCE_MARKETPLACE_SUFFIX,
@@ -233,16 +239,75 @@ def _ensure_unlocked(kanon_file: pathlib.Path) -> bool:
     if _has_header(lines):
         return False
 
+    _insert_header_line(lines, KANON_HEADER_CLAUDE_MARKETPLACES_DIR)
+    _write_lines(kanon_file, lines)
+    return True
+
+
+def _insert_header_line(lines: list[str], header: str) -> None:
+    """Insert ``header`` as the first non-comment line, followed by a blank separator.
+
+    Args:
+        lines: All lines of the ``.kanon`` file (newlines retained); mutated.
+        header: The ``KEY=VALUE`` text to insert, without a newline.
+    """
     newline = _detect_newline(lines)
-    header_line = KANON_HEADER_CLAUDE_MARKETPLACES_DIR + newline
     insert_at = _first_content_index(lines)
-    lines.insert(insert_at, header_line)
+    lines.insert(insert_at, header + newline)
     separator_at = insert_at + 1
     if separator_at < len(lines) and lines[separator_at].strip():
         lines.insert(separator_at, newline)
+
+
+def _write_lines(kanon_file: pathlib.Path, lines: list[str]) -> None:
+    """Write ``lines`` back to ``kanon_file`` verbatim, preserving line endings.
+
+    Args:
+        kanon_file: Path to the ``.kanon`` file.
+        lines: The full file content as newline-retaining lines.
+    """
     with kanon_file.open("w", encoding="utf-8", newline="") as handle:
         handle.write("".join(lines))
-    return True
+
+
+def upsert_min_version(kanon_file: pathlib.Path, version: str, *, hold_lock: bool = True) -> None:
+    """Set the ``KANON_MIN_VERSION`` header to ``version``.
+
+    An existing ``KANON_MIN_VERSION`` line is rewritten in place, keeping its
+    line ending. Otherwise the line is inserted as the first non-comment,
+    non-blank line with a blank separator after it. A missing file is created.
+
+    Args:
+        kanon_file: Path to the ``.kanon`` file.
+        version: The version text to write.
+        hold_lock: When ``True`` (default), the read-modify-write runs under the
+            store-side workspace lock for ``kanon_file``. Callers that already
+            hold that lock pass ``False`` to avoid a reentrant acquisition.
+    """
+    if hold_lock:
+        with kanon_workspace_lock(resolve_kanon_lock_root(kanon_file)):
+            _upsert_min_version_unlocked(kanon_file, version)
+        return
+    _upsert_min_version_unlocked(kanon_file, version)
+
+
+def _upsert_min_version_unlocked(kanon_file: pathlib.Path, version: str) -> None:
+    """Perform the min-version upsert without acquiring the workspace lock.
+
+    Args:
+        kanon_file: Path to the ``.kanon`` file.
+        version: The version text to write.
+    """
+    lines = _read_lines(kanon_file)
+    header = f"{KANON_MIN_VERSION_KEY}={version}"
+    for index, raw_line in enumerate(lines):
+        if _key_of(raw_line) == KANON_MIN_VERSION_KEY:
+            ending = raw_line[len(raw_line.rstrip("\r\n")) :]
+            lines[index] = header + ending
+            break
+    else:
+        _insert_header_line(lines, header)
+    _write_lines(kanon_file, lines)
 
 
 def prune_claude_marketplaces_dir_if_unused(kanon_file: pathlib.Path, *, hold_lock: bool = True) -> bool:
@@ -288,6 +353,5 @@ def _prune_unlocked(kanon_file: pathlib.Path) -> bool:
         return False
 
     kept = [line for line in lines if _key_of(line) != MARKETPLACE_DIR_GLOBAL_KEY]
-    with kanon_file.open("w", encoding="utf-8", newline="") as handle:
-        handle.write("".join(kept))
+    _write_lines(kanon_file, kept)
     return True

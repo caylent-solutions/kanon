@@ -773,7 +773,8 @@ exits 1 and prints the upgrade command (`pipx upgrade kanon-cli`). A value that
 is not a single version (for example `latest` or `>=3.4.2`) also exits 1. An
 environment variable cannot override or supply it, and `--no-update-check` does
 not affect it. kanon releases before 3.5.0 ignore the line, so you can add it
-before every teammate has upgraded.
+before every teammate has upgraded. `kanon add` also writes or raises the line
+when an added catalog entry declares a higher `<min-kanon-version>`.
 
 **`CLAUDE_MARKETPLACES_DIR`** (Auto-managed)
 Directory for marketplace symlinks. Auto-added (as
@@ -1044,8 +1045,11 @@ my-manifest-repo/
 Each catalog entry is an XML file under `repo-specs/` (any filename)
 containing exactly one nested `<catalog-metadata>` block. Required fields are `name`,
 `display-name`, `description`, and `version`; recommended fields are `type`,
-`owner-name`, `owner-email`, and `keywords` (comma-separated). The legacy
-flat-attribute scheme (metadata as XML attributes) is rejected.
+`owner-name`, `owner-email`, and `keywords` (comma-separated). The optional
+`min-kanon-version` names the oldest kanon that supports the entry: `kanon add`
+refuses the entry on an older kanon and raises the consumer's
+`KANON_MIN_VERSION` to it (never lowering it). The legacy flat-attribute scheme
+(metadata as XML attributes) is rejected.
 
 ```xml
 <package>
@@ -1058,6 +1062,7 @@ flat-attribute scheme (metadata as XML attributes) is rejected.
     <owner-name>Platform Team</owner-name>
     <owner-email>platform@example.com</owner-email>
     <keywords>build,lint,conventions</keywords>
+    <min-kanon-version>3.4.2</min-kanon-version>
   </catalog-metadata>
   <include name="repo-specs/my-archetype/packages.xml" />
 </package>

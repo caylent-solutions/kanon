@@ -775,6 +775,12 @@ KANON_MIN_VERSION=3.4.2
   (`--no-update-check`, `KANON_SKIP_UPDATE_CHECK`) do not affect it.
 - `kanon clean --purge-all` with no `.kanon` present has no file to read, so it
   runs unchecked.
+- A catalog entry can declare `<min-kanon-version>` in its
+  `<catalog-metadata>`. `kanon add` refuses the entry when the running kanon is
+  older, and otherwise writes the highest declared value across the added
+  entries into `.kanon` when it is above the current `KANON_MIN_VERSION` (or
+  none is set). `kanon add` never lowers the value; `--dry-run` previews the
+  change as `-`/`+` lines.
 - kanon releases before 3.5.0 treat the line as an unknown global and ignore
   it, so a repo can add it before every operator has upgraded.
 

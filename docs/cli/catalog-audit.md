@@ -496,6 +496,14 @@ The following fields SHOULD be present. A missing field produces one **WARN** fi
 | `owner-email` | Primary owner contact address. |
 | `keywords` | Comma-separated keyword list for discoverability. |
 
+### Optional fields
+
+The following field MAY be present. Absence produces no finding:
+
+| Field | Description |
+|-------|-------------|
+| `min-kanon-version` | Oldest kanon that supports the entry. Must be a single PEP 440 version (e.g. `3.4.2`); anything else (`latest`, `>=3.4.2`) produces one **ERROR** finding (M008). |
+
 ### Structural rules
 
 | Condition | Finding |
@@ -508,7 +516,8 @@ The following fields SHOULD be present. A missing field produces one **WARN** fi
 ### Exit code behaviour
 
 `kanon catalog audit --check metadata` exits **1** when any ERROR-level finding is
-present (missing required field, duplicate child, multiple blocks, or malformed XML).
+present (missing required field, duplicate child, multiple blocks, malformed XML,
+or an invalid `<min-kanon-version>`).
 It exits **0** when only WARN-level findings are present (missing recommended fields).
 Under `--strict`, WARN findings are treated as errors and the exit code becomes 1.
 

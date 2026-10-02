@@ -218,6 +218,9 @@ GLOBALLY_SUPPLIED_MANIFEST_VARS = frozenset({MARKETPLACE_DIR_GLOBAL_KEY})
 KANON_MIN_VERSION_KEY = "KANON_MIN_VERSION"
 
 
+KANON_CATALOG_MIN_VERSION_TAG = "min-kanon-version"
+
+
 ANSI_YELLOW = "\033[33m"
 ANSI_RESET = "\033[0m"
 
@@ -266,12 +269,12 @@ KANON_UPDATE_UPGRADE_COMMAND = "pipx upgrade kanon-cli"
 
 
 KANON_MIN_VERSION_TOO_OLD_TEMPLATE = (
-    "{path} requires kanon {required} or later; this is kanon {running}.\nUpgrade with: {upgrade_command}"
+    "{origin} requires kanon {required} or later; this is kanon {running}.\nUpgrade with: {upgrade_command}"
 )
 
 
 KANON_MIN_VERSION_INVALID_TEMPLATE = (
-    "Invalid {key}={value!r} in {path}: expected a single version such as 3.4.2 (PEP 440)."
+    "Invalid {key}={value!r} in {origin}: expected a single version such as 3.4.2 (PEP 440)."
 )
 
 

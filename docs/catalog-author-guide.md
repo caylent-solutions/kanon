@@ -130,6 +130,8 @@ with a `<catalog-metadata>` block) under `repo-specs/` and inspects the
    `<name>` elements) -- produces an ERROR (M006).
 4. More than one `<catalog-metadata>` block in a single file -- produces
    an ERROR (M005).
+5. A `<min-kanon-version>` that is not a single PEP 440 version -- produces
+   an ERROR (M008).
 
 Required fields (absence = ERROR):
 
@@ -148,6 +150,12 @@ Recommended fields (absence = WARN):
 | `owner-name` | Primary owner display name. |
 | `owner-email` | Primary owner contact address. |
 | `keywords` | Comma-separated keyword list for discoverability. |
+
+Optional fields (absence is silent):
+
+| Field | Description |
+| ----- | ----------- |
+| `min-kanon-version` | Oldest kanon that supports the entry (single PEP 440 version). `kanon add` refuses the entry on an older kanon and raises the consumer's `KANON_MIN_VERSION` to it. A malformed value is an ERROR (M008). |
 
 **Emitted message:**
 

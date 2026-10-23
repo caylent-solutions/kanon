@@ -64,7 +64,12 @@ def kanon_hash(kanon_path: pathlib.Path) -> str:
             (U+0000) that would corrupt the serialised form.
     """
     parsed = parse_kanonenv(kanon_path)
-    serialised = _serialise_sources(parsed["sources"])
+    return hash_sources(parsed["sources"])
+
+
+def hash_sources(sources: dict[str, dict[str, str]]) -> str:
+    """Hash parsed source declarations using the same canonical form as a file."""
+    serialised = _serialise_sources(sources)
     digest = hashlib.sha256(serialised)
     return f"sha256:{digest.hexdigest()}"
 

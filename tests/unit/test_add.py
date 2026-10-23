@@ -337,6 +337,7 @@ class TestNoStandardHeader:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, "https://example.com/org/repo.git")],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/1.0.0",
@@ -1096,6 +1097,7 @@ class TestRunAddGitbaseDerivationError:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, unparseable_url)],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/1.0.0",
@@ -1261,6 +1263,7 @@ class TestRunAddHappyPath:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, "https://example.com/repo.git")],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/1.0.0",
@@ -1353,6 +1356,7 @@ class TestRunAddWorkspaceLock:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, "https://example.com/repo.git")],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/1.0.0",
@@ -1431,6 +1435,7 @@ class TestRunAddWorkspaceLock:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, "https://example.com/repo.git")],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/1.0.0",
@@ -2083,6 +2088,7 @@ class TestRunAddForce:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, "https://example.com/repo.git")],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/2.0.0",
@@ -2142,6 +2148,7 @@ class TestRunAddForce:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, "https://example.com/repo.git")],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/2.0.0",
@@ -2190,6 +2197,7 @@ class TestRunAddForce:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, "https://example.com/repo.git")],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/1.0.0",
@@ -2247,6 +2255,7 @@ class TestRunAddForce:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, "https://example.com/repo.git")],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/2.0.0",
@@ -2436,6 +2445,7 @@ class TestRunAddMarketplaceLine:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, url)],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/1.0.0",
@@ -2519,6 +2529,52 @@ class TestRunAddMarketplaceLine:
 
 
 _ADD_PY = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "commands" / "add.py"
+
+
+@pytest.mark.unit
+class TestSelectedRevisionTimeout:
+    """Selected revision reads honor the configured resolution deadline."""
+
+    def test_timeout_reports_entry_and_ref(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A timed-out fetch stops before checkout and names the operator's remedy."""
+        import subprocess
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import _checkout_manifest_revision
+
+        timeout = len(tmp_path.parts)
+        monkeypatch.setenv("KANON_RESOLVE_TIMEOUT", str(timeout))
+        with patch(
+            "kanon_cli.commands.add.subprocess.run", side_effect=subprocess.TimeoutExpired("git", timeout)
+        ) as run:
+            with pytest.raises(SystemExit) as exc_info:
+                _checkout_manifest_revision(tmp_path, tmp_path.name, "refs/tags/release")
+        assert exc_info.value.code == 1
+        assert run.call_count == 1
+        assert run.call_args.kwargs["timeout"] == timeout
+        message = capsys.readouterr().err
+        assert tmp_path.name in message
+        assert "refs/tags/release" in message
+        assert "KANON_RESOLVE_TIMEOUT" in message
+
+    @pytest.mark.parametrize("timeout", ["0", "-1", "invalid"])
+    def test_invalid_timeout_fails_before_git(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], timeout: str
+    ) -> None:
+        """Invalid limits cannot create an unbounded or immediately timed-out fetch."""
+        from unittest.mock import patch
+
+        from kanon_cli.commands.add import _checkout_manifest_revision
+
+        monkeypatch.setenv("KANON_RESOLVE_TIMEOUT", timeout)
+        with patch("kanon_cli.commands.add.subprocess.run") as run:
+            with pytest.raises(SystemExit) as exc_info:
+                _checkout_manifest_revision(tmp_path, tmp_path.name, "main")
+        assert exc_info.value.code == 1
+        run.assert_not_called()
+        assert "KANON_RESOLVE_TIMEOUT must be a positive integer" in capsys.readouterr().err
 
 
 @pytest.mark.unit

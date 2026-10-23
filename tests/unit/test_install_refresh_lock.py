@@ -172,6 +172,7 @@ class TestRefreshLockIsHermetic:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("manifest.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(
                 kanonenv_path=kanon_path,
@@ -198,6 +199,7 @@ class TestRefreshLockIsHermetic:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("manifest.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(
                 kanonenv_path=kanon_path,
@@ -289,6 +291,7 @@ class TestInstallRefreshLockKwarg:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(
                 kanonenv_path=kanon_path,
@@ -323,6 +326,7 @@ class TestRefreshLockDoesNotTouchKanonFile:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=mock_ref),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(
                 kanonenv_path=kanon_path,

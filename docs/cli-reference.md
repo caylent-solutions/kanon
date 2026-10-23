@@ -14,7 +14,7 @@ are registered once via `kanon_cli.core.cli_args` so every parser exposes them.
 | `--quiet` / `--verbose` | -- | normal | Logging verbosity. Mutually exclusive. |
 | `--no-color` | `NO_COLOR` | auto | Disable ANSI color. Any non-empty `NO_COLOR` also disables color. |
 | `--no-update-check` | `KANON_SKIP_UPDATE_CHECK` | off | Skip the best-effort PyPI "update available" check. The flag is equivalent to setting `KANON_SKIP_UPDATE_CHECK=1`. |
-| `--home` / `--store-dir <path>` | `KANON_HOME` | `~/.kanon-home` | Shared kanon home root (content-addressed store plus caches). `--store-dir` is an accepted alias of `--home`. Precedence: flag > `KANON_HOME` env > `~/.kanon-home`. |
+| `--home` / `--store-dir <path>` | `KANON_HOME` | `~/.kanon-home` | Shared kanon home root (project source workspaces plus caches). `--store-dir` is an accepted alias of `--home`. Precedence: flag > `KANON_HOME` env > `~/.kanon-home`. |
 | `--allow-abs-root <path>` | `KANON_ALLOWED_ABS_ROOTS` | (none) | Permit an absolute `<linkfile>`/`<copyfile>` dest to resolve under `<path>`. Repeatable. The consumer project root and the resolved `CLAUDE_MARKETPLACES_DIR` are always permitted and cannot be removed, so this only ever widens the boundary. Precedence: flag > env var > the two built-in roots. |
 | `--telemetry-debug` | `KANON_TELEMETRY_DEBUG` | off | Print the exact usage-telemetry JSON that would be sent to stderr for this invocation (still non-blocking). |
 | `--telemetry-endpoint <url>` | `KANON_TELEMETRY_ENDPOINT` | `https://collector.platform.solutions.caylent.com/v1/logs` | Override the usage-telemetry collector endpoint (`https://` only). Flag wins over the env var. |

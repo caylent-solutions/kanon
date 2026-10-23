@@ -14,13 +14,15 @@ Performs full Kanon teardown in the following order:
   5. Remove this project's .packages/ links, plus the project-root .packages
      anchor install created
   6. Remove .kanon-data/ directory (ignore_errors=True)
-  7. Prune the content-addressed store entries via prune_store (spec Section 3.5)
+  7. With --purge, remove project config; with --purge-all, remove the owned
+     store and cache trees, including unused snapshots from older versions
 """
 
 import pathlib
 import os
 import shutil
 import sys
+import tomllib
 
 from kanon_cli.constants import (
     KANON_HOME_CACHE_SUBDIR,
@@ -35,11 +37,12 @@ from kanon_cli.core.install import (
     compute_project_address,
     project_packages_dir,
     project_sources_dir,
-    prune_store,
     resolve_workspace_base_dir,
     sources_root_dir,
+    source_workspace_dir,
 )
 from kanon_cli.core.marketplace import (
+    copied_marketplace_json_paths,
     locate_claude_binary,
     remove_marketplace,
     uninstall_marketplace_plugins,
@@ -170,21 +173,6 @@ def remove_project_workspace(base_dir: pathlib.Path, project_address: str) -> No
     shutil.rmtree(project_sources_dir(base_dir, project_address), ignore_errors=True)
     _remove_if_empty(sources_root_dir(base_dir))
     _remove_if_empty(base_dir / KANON_DATA_SUBDIR)
-
-
-def remove_store_entries(base_dir: pathlib.Path) -> None:
-    """Prune the content-addressed store entries from the KANON_HOME store.
-
-    Delegates to ``prune_store`` (spec Section 3.5 / FR-16): removes the
-    content-addressed entries directory plus the per-entry lock roots and the
-    publish temp dir, leaving the store base directory itself in place. This is
-    the store-prune half of ``kanon clean`` alongside the per-project
-    ``.packages/`` and ``.kanon-data/`` removal.
-
-    Args:
-        base_dir: The resolved store base directory (``<KANON_HOME>/store``).
-    """
-    prune_store(base_dir)
 
 
 def remove_project_config(kanonenv_path: pathlib.Path, lockfile_path: pathlib.Path) -> None:
@@ -418,6 +406,18 @@ def find_lockfile(start_dir: pathlib.Path | None = None) -> pathlib.Path | None:
         current = parent
 
 
+def _has_source_marketplace_attribution(lockfile_path: pathlib.Path) -> bool:
+    """Distinguish explicit empty ledgers from legacy locks with no attribution.
+
+    The parsed lockfile defaults missing ledgers to empty lists. Read only field
+    presence from the already-validated source so legacy teardown stays available
+    without treating a modern, explicitly empty ledger as missing information.
+    """
+    with lockfile_path.open("rb") as stream:
+        raw = tomllib.load(stream)
+    return all("registered_marketplaces" in source for source in raw.get("sources", []))
+
+
 def clean(
     kanonenv_path: pathlib.Path,
     orphans: bool = False,
@@ -439,8 +439,14 @@ def clean(
          KANON_SOURCE_<alias>_MARKETPLACE flags (registered when ANY dependency
          opts in) for old lockfiles or when no lockfile exists.
       5. If marketplace was registered: run uninstall, remove marketplace dir.
-      6. Remove .packages/ and .kanon-data/, then prune the content-addressed
-         store entries (spec Section 3.5 / FR-16).
+      6. Remove this project's package links and source workspace.
+      7. With purge, remove project config. With purge_home, remove the owned
+         store and cache trees, including unused snapshots from older versions.
+
+    Per-source lockfile attribution limits uninstall to the workspaces that
+    registered marketplaces in the last successful install, including copied
+    marketplace metadata. Explicit empty ledgers remain empty; older locks that
+    omit attribution retain directory-wide teardown.
 
     The lockfile-first lookup ensures that an install whose registered set differs
     from the current .kanon flags (e.g. a dependency's
@@ -485,7 +491,11 @@ def clean(
         current_source_names = config["KANON_SOURCES"]
         _prune_orphaned_marketplaces(lockfile, current_source_names)
 
-    if lockfile is not None and lockfile.marketplace_registered:
+    has_attribution = lockfile is not None and _has_source_marketplace_attribution(lockfile_path)
+    if has_attribution and lockfile is not None:
+        effective_marketplace_install = lockfile.marketplace_registered
+        effective_marketplace_dir_str = lockfile.marketplace_dir
+    elif lockfile is not None and lockfile.marketplace_registered:
         effective_marketplace_install = True
         effective_marketplace_dir_str = lockfile.marketplace_dir
     else:
@@ -509,7 +519,22 @@ def clean(
             print(f"kanon clean: marketplace directory {marketplace_dir} already absent; skipping uninstall.")
         else:
             print("kanon clean: running marketplace uninstall...")
-            uninstall_marketplace_plugins(marketplace_dir)
+            if has_attribution and lockfile is not None:
+                copied_json_owners: dict[pathlib.Path, pathlib.Path] = {}
+                registered_roots = []
+                for source in lockfile.sources:
+                    source_dir = source_workspace_dir(base_dir, project_address, source.name)
+                    for json_path in copied_marketplace_json_paths(source_dir, marketplace_dir):
+                        copied_json_owners[json_path] = source_dir
+                    if source.registered_marketplaces:
+                        registered_roots.append(source_dir)
+                uninstall_marketplace_plugins(
+                    marketplace_dir,
+                    allowed_source_roots=registered_roots,
+                    copied_json_owners=copied_json_owners,
+                )
+            else:
+                uninstall_marketplace_plugins(marketplace_dir)
             print("kanon clean: removing marketplace directory...")
             remove_marketplace_dir(marketplace_dir)
 
@@ -518,9 +543,6 @@ def clean(
     remove_project_packages_anchor(kanonenv_path.parent, base_dir, project_address)
     print("kanon clean: removing this project's source workspace...")
     remove_project_workspace(base_dir, project_address)
-    if purge_home:
-        print("kanon clean: pruning content-addressed store entries...")
-        remove_store_entries(base_dir)
     if purge:
         remove_project_config(kanonenv_path, lockfile_path)
     if purge_home:

@@ -770,6 +770,7 @@ class TestRunAddDryRunAndForcePaths:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, "https://example.com/repo.git")],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/1.0.0",
@@ -826,6 +827,7 @@ class TestRunAddDryRunAndForcePaths:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, "https://example.com/repo.git")],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/2.0.0",
@@ -869,6 +871,7 @@ class TestRunAddDryRunAndForcePaths:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(meta, xml_path, "https://example.com/repo.git")],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/1.0.0",
@@ -983,6 +986,7 @@ class TestSameManifestNameDetection:
                 "kanon_cli.commands.add._build_entry_catalog",
                 return_value=[(_make_metadata(entry_name), xml_path, entry_url)],
             ),
+            patch("kanon_cli.commands.add._checkout_manifest_revision"),
             patch(
                 "kanon_cli.commands.add._resolve_spec",
                 return_value="refs/tags/2.0.0",

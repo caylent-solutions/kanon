@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kanon_cli.core.install import compute_project_address, store_entries_dir
+from kanon_cli.core.install import compute_project_address
 from kanon_cli.core.clean import (
     remove_project_packages_links,
     remove_project_workspace,
@@ -89,26 +89,6 @@ class TestDirectoryRemoval:
     def test_package_links_missing_ok(self, tmp_path: pathlib.Path) -> None:
         remove_project_packages_links(tmp_path, "c" * 64)
 
-    def test_removes_store_entries(self, tmp_path: pathlib.Path) -> None:
-        """remove_store_entries prunes content-addressed entries, keeping the store base."""
-        from kanon_cli.core.clean import remove_store_entries
-        from kanon_cli.core.install import store_entries_dir
-
-        store = tmp_path / "store"
-        (store_entries_dir(store) / "deadbeef").mkdir(parents=True)
-        remove_store_entries(store)
-        assert not store_entries_dir(store).exists()
-        assert store.exists(), "the store base directory must survive a prune"
-
-    def test_store_entries_missing_ok(self, tmp_path: pathlib.Path) -> None:
-        """remove_store_entries on an empty store is a no-op (clean before install)."""
-        from kanon_cli.core.clean import remove_store_entries
-
-        store = tmp_path / "store"
-        store.mkdir()
-        remove_store_entries(store)
-        assert store.exists()
-
 
 @pytest.mark.unit
 class TestRemoveProjectConfig:
@@ -145,6 +125,10 @@ class TestRemoveKanonHomeStore:
         home = tmp_path / "kanon-home"
         (home / "store").mkdir(parents=True)
         (home / "cache").mkdir()
+        for legacy_path in ("entries/old/payload", ".tmp/interrupted/payload", ".locks/old/lock"):
+            path = home / "store" / legacy_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("legacy", encoding="utf-8")
         return home
 
     def test_removes_store_cache_and_empty_root(self, tmp_path: pathlib.Path) -> None:
@@ -409,11 +393,10 @@ class TestCleanKanonHomeStore:
             "Without KANON_HOME, this project's keyed workspace must be removed from $HOME/.kanon-home/store"
         )
 
-    def test_clean_prunes_content_addressed_store_entries(
+    def test_clean_preserves_legacy_snapshot_entries(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """AC-52: clean prunes the content-addressed store entries in addition to per-project artifacts."""
-        from kanon_cli.core.install import store_entries_dir
+        """Only explicit machine-wide purge removes old unused snapshots."""
 
         kanon_home = tmp_path / "home"
         store = kanon_home / "store"
@@ -423,7 +406,7 @@ class TestCleanKanonHomeStore:
         kanonenv = cwd_dir / ".kanon"
         kanonenv.write_text(_MINIMAL_KANONENV)
 
-        entry = store_entries_dir(store) / ("a" * 64)
+        entry = (store / "entries") / ("a" * 64)
         entry.mkdir(parents=True)
         (entry / "payload").write_text("data")
         (store / ".packages").mkdir(parents=True)
@@ -435,14 +418,9 @@ class TestCleanKanonHomeStore:
             clean(kanonenv)
 
         assert entry.exists(), (
-            "plain 'kanon clean' must NOT prune content-addressed store entries: they are "
-            "shared, content-addressed cache used by every project on the machine, so "
-            "removing them forces an unrelated project to re-fetch. Only --purge-all, which "
-            "is documented as machine-wide, removes them."
+            "plain clean must leave legacy snapshot data untouched; only --purge-all removes the complete shared store"
         )
-        assert store_entries_dir(store).exists(), (
-            "the shared store entries directory must survive a project-scoped clean"
-        )
+        assert (store / "entries").exists(), "the shared store entries directory must survive a project-scoped clean"
         assert store.exists(), "the store base directory must survive clean"
 
 
@@ -724,7 +702,7 @@ class TestCleanIsProjectScoped:
         (packages / "our-pkg").symlink_to(our_pkg)
         (packages / "their-pkg").symlink_to(their_pkg)
 
-        entries = store_entries_dir(store)
+        entries = store / "entries"
         entries.mkdir(parents=True, exist_ok=True)
         shared_entry = entries / ("c" * 64)
         shared_entry.mkdir()
@@ -741,10 +719,7 @@ class TestCleanIsProjectScoped:
         assert (packages / "their-pkg").is_symlink(), (
             "another project's aggregated package link was destroyed by a project-scoped clean"
         )
-        assert shared_entry.exists(), (
-            "the shared content-addressed store entry was pruned by a project-scoped clean, "
-            "forcing every other project on the machine to re-fetch"
-        )
+        assert shared_entry.exists(), "project-scoped clean must leave legacy snapshot data untouched"
 
 
 @pytest.mark.unit

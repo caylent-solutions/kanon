@@ -5,9 +5,9 @@ Provides the ``kanon marketplace`` subcommand group with three operations
 
 - ``kanon marketplace enable <alias>`` -- write
   ``KANON_SOURCE_<alias>_MARKETPLACE=true`` into ``.kanon``.
-- ``kanon marketplace disable <alias>`` -- remove the
-  ``KANON_SOURCE_<alias>_MARKETPLACE`` line (absence is the canonical false;
-  kanon never writes ``=false`` itself).
+- ``kanon marketplace disable <alias>`` -- write
+  ``KANON_SOURCE_<alias>_MARKETPLACE=false``, preserving its marketplace type
+  so it can be enabled again without consulting the catalog.
 - ``kanon marketplace status [--all]`` -- print each dependency, its
   ``<catalog-metadata><type>``, and the effective marketplace setting, rendering
   an explicit ``=false`` and an absent line identically (both "disabled").
@@ -152,9 +152,8 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "determinism is unaffected.\n\n"
             "Subcommands:\n"
             "  enable <alias>    Write KANON_SOURCE_<alias>_MARKETPLACE=true.\n"
-            "  disable <alias>   Remove the KANON_SOURCE_<alias>_MARKETPLACE line\n"
-            "                    (absence is the canonical false; kanon never\n"
-            "                    writes =false itself).\n"
+            "  disable <alias>   Write KANON_SOURCE_<alias>_MARKETPLACE=false,\n"
+            "                    preserving the type so enable can restore it.\n"
             "  status [--all]    Show each dependency, its catalog <type>, and the\n"
             "                    effective marketplace setting. An explicit =false\n"
             "                    and an absent line render identically (disabled)."
@@ -243,11 +242,11 @@ def _register_disable(
     disable_parser: argparse.ArgumentParser = marketplace_subparsers.add_parser(
         "disable",
         add_help=True,
-        help="Disable marketplace install for a dependency (removes the line).",
+        help="Disable marketplace install for a dependency (writes =false).",
         description=(
-            "Remove the KANON_SOURCE_<alias>_MARKETPLACE line from .kanon for the\n"
-            "named dependency. Absence is the canonical false; kanon never writes\n"
-            "=false itself. The alias must already exist in .kanon. Disabling an\n"
+            "Write KANON_SOURCE_<alias>_MARKETPLACE=false in .kanon for the\n"
+            "named marketplace dependency, preserving its type for re-enabling.\n"
+            "The alias must already exist in .kanon. Disabling an\n"
             "already-disabled dependency is a no-op (exit 0)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -509,9 +508,9 @@ def run_enable(args: argparse.Namespace) -> int:
 def run_disable(args: argparse.Namespace) -> int:
     """Entry point for ``kanon marketplace disable <alias>``.
 
-    Removes the ``KANON_SOURCE_<alias>_MARKETPLACE`` line from ``.kanon``; absence
-    is the canonical false (kanon never writes ``=false``). The alias must already
-    exist. Disabling an already-disabled dependency is a no-op that still exits 0.
+    Writes ``KANON_SOURCE_<alias>_MARKETPLACE=false`` in ``.kanon``, preserving
+    the marketplace type marker for a later ``enable``. The alias must already
+    exist. Disabling a dependency without a marker is a no-op that exits 0.
     Editing is confined to ``.kanon``; ``.kanon.lock`` is never read or written.
 
     Args:
@@ -541,7 +540,9 @@ def run_disable(args: argparse.Namespace) -> int:
         print(f"Marketplace install already disabled for '{alias}' in {kanon_file}")
         return 0
 
-    del lines[idx]
+    newline = _detect_newline(lines)
+    existing_newline = "\r\n" if lines[idx].endswith("\r\n") else ("\n" if lines[idx].endswith("\n") else newline)
+    lines[idx] = f"{SOURCE_PREFIX}{alias}{SOURCE_MARKETPLACE_SUFFIX}=false" + existing_newline
     _write_lines(kanon_file, lines)
     prune_claude_marketplaces_dir_if_unused(kanon_file)
     print(f"Disabled marketplace install for '{alias}' in {kanon_file}")

@@ -194,7 +194,7 @@ def add_global_flags(parser: argparse.ArgumentParser) -> None:
         default=None,
         metavar="<path>",
         help=(
-            "Use <path> as the shared kanon home root (the content-addressed store and "
+            "Use <path> as the shared kanon home root (source workspaces and "
             "caches live under it). Takes precedence over the KANON_HOME environment variable "
             "and the ~/.kanon-home default. --store-dir is an accepted alias."
         ),

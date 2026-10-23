@@ -394,6 +394,7 @@ class TestOrphanPruneNoFlag:
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_ALPHA}\trefs/heads/main\n")
             install(
@@ -430,6 +431,7 @@ class TestOrphanPruneNoFlag:
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_ALPHA}\trefs/heads/main\n")
             install(
@@ -597,6 +599,7 @@ class TestDriftReuseNoFlag:
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
             install(
@@ -628,6 +631,7 @@ class TestDriftReuseNoFlag:
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
             install(
@@ -792,6 +796,7 @@ class TestDriftDetectorScope:
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
             install(
@@ -819,6 +824,7 @@ class TestDriftDetectorScope:
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             mock_run.return_value = MagicMock(returncode=0, stdout=f"{_FAKE_SHA_REMOTE}\trefs/heads/main\n")
 

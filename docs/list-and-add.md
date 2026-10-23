@@ -139,6 +139,10 @@ package-c
 The default `names` format streams one line at a time as each XML
 file is read. No full in-memory buffering.
 
+`--tree` resolves XML include paths from the manifest repository root,
+matching `kanon install`. A same-named file beside the including XML does
+not override that path.
+
 `--tree` requires a filter when the catalog has more entries than
 `KANON_TREE_NO_FILTER_THRESHOLD` (default 20). Without a filter:
 
@@ -286,6 +290,15 @@ entries. If the file does not yet exist, it is created; no global header
 is written -- each per-dependency block carries its own optional env-var
 lines, and there is no global `[catalog]` block or
 `KANON_MARKETPLACE_INSTALL` header (both removed in 3.0.0).
+
+Discovery uses the configured catalog revision. After selecting a release,
+`add` finds the entry again by metadata name at that release and reads its
+manifest path, included variables, and marketplace type there. A manifest can
+therefore move between `main` and a release without producing an invalid
+`PATH`/`REF` pair. If any requested entry is absent or unreadable at its
+selected revision, the command exits non-zero before changing `.kanon` or
+`.kanon.lock`. Fetching and checking out a selected revision use the
+`KANON_RESOLVE_TIMEOUT` limit (30 seconds per Git command by default).
 
 `kanon add` does **not** validate `<remote>` resolvability
 (soft-spot 4) or tag-format PEP 440 compliance (soft-spot 5).

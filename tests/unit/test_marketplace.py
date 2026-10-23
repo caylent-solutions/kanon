@@ -235,14 +235,30 @@ class TestInstallPlugin:
             mock_run.return_value = MagicMock(returncode=0)
             result = install_plugin("/usr/bin/claude", "my-plugin", "my-marketplace")
             assert result is True
-            cmd = mock_run.call_args[0][0]
-            assert cmd == ["/usr/bin/claude", "plugin", "install", "my-plugin@my-marketplace", "--scope", "user"]
+            commands = [call.args[0] for call in mock_run.call_args_list]
+            assert commands == [
+                ["/usr/bin/claude", "plugin", action, "my-plugin@my-marketplace", "--scope", "user"]
+                for action in ("install", "update")
+            ]
 
     def test_failure(self) -> None:
         with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stderr="error")
             result = install_plugin("/usr/bin/claude", "my-plugin", "my-marketplace")
             assert result is False
+            mock_run.assert_called_once()
+
+    @pytest.mark.parametrize("failure", ["exit", "timeout"])
+    def test_refresh_failure_is_not_a_successful_install(self, failure: str, capsys: pytest.CaptureFixture) -> None:
+        error = (
+            subprocess.CompletedProcess(args=[], returncode=1, stderr="refresh failed")
+            if failure == "exit"
+            else subprocess.TimeoutExpired(cmd="claude plugin update", timeout=30)
+        )
+        with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
+            mock_run.side_effect = [subprocess.CompletedProcess(args=[], returncode=0), error]
+            assert install_plugin("/usr/bin/claude", "my-plugin", "my-marketplace") is False
+        assert "update" in capsys.readouterr().err
 
     def test_timeout(self) -> None:
         with patch("kanon_cli.core.marketplace.subprocess.run") as mock_run:
@@ -340,10 +356,11 @@ class TestInstallMarketplacePlugins:
         with (
             patch("kanon_cli.core.marketplace.locate_claude_binary", return_value="/usr/bin/claude"),
             patch("kanon_cli.core.marketplace.register_marketplace", return_value=False),
-            patch("kanon_cli.core.marketplace.install_plugin", return_value=True),
+            patch("kanon_cli.core.marketplace.install_plugin", return_value=True) as mock_install,
         ):
             with pytest.raises(SystemExit):
                 install_marketplace_plugins(tmp_path / "marketplaces")
+        mock_install.assert_not_called()
 
 
 @pytest.mark.unit

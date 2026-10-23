@@ -7,8 +7,8 @@ Covers the idempotent auto-management of the ``CLAUDE_MARKETPLACES_DIR`` header:
 - ensure is a no-op when the header is already present, including when an operator
   has hand-set a custom value (never clobbered, never duplicated).
 - the ``hold_lock=False`` path writes directly without acquiring the workspace lock.
-- prune removes the header when no ``_MARKETPLACE=true`` flag remains, keeps it when
-  one remains, tolerates a hand-written ``=false``, and is a no-op when absent.
+- prune removes the header when no marketplace type marker remains, keeps it for
+  enabled and disabled marketplace dependencies, and is a no-op when absent.
 - the ``"_MARKETPLACE"``-substring trap does not cause a false marketplace match on
   the ``CLAUDE_MARKETPLACES_DIR`` header itself.
 """
@@ -218,7 +218,7 @@ class TestPruneClaudeMarketplacesDir:
     """Tests for ``prune_claude_marketplaces_dir_if_unused``."""
 
     def test_removes_when_no_marketplace_remains(self, tmp_path: pathlib.Path) -> None:
-        """The header is removed when no ``_MARKETPLACE=true`` flag remains.
+        """The header is removed when no marketplace type marker remains.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -273,8 +273,8 @@ class TestPruneClaudeMarketplacesDir:
         assert changed is False
         assert _read(kanon_file) == original
 
-    def test_tolerates_handwritten_false_flag(self, tmp_path: pathlib.Path) -> None:
-        """A hand-written ``_MARKETPLACE=false`` does not count as remaining.
+    def test_keeps_header_for_disabled_marketplace_delivery(self, tmp_path: pathlib.Path) -> None:
+        """Disabled marketplaces still need the directory for manifest delivery.
 
         Args:
             tmp_path: Pytest-provided temporary directory.
@@ -289,8 +289,8 @@ class TestPruneClaudeMarketplacesDir:
         changed = prune_claude_marketplaces_dir_if_unused(kanon_file)
 
         text = _read(kanon_file)
-        assert changed is True
-        assert _header_count(text) == 0
+        assert changed is False
+        assert _header_count(text) == 1
         assert "KANON_SOURCE_FOO_MARKETPLACE=false" in text
 
     def test_noop_when_header_absent(self, tmp_path: pathlib.Path) -> None:

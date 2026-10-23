@@ -18,14 +18,9 @@ Scenarios covered:
 8. monorepo-prefixed-ref            -- ``https://h/r.git@subpackage/==1.0.0`` splits to
                                        ``(https://h/r.git, subpackage/==1.0.0)``
 
-The end-to-end cycle (AC-CYCLE-001) verifies the ``resolve_catalog_dir`` pipeline using
-plain ``file://`` fixture git repos, confirming the URL/ref produced by
-``_parse_catalog_source`` flows correctly into the resolver.
+Real catalog discovery and selected-ref behavior are exercised by
+``tests/integration/test_add_core.py`` and ``test_add_selected_revision.py``.
 """
-
-import pathlib
-import subprocess
-from collections.abc import Callable
 
 import pytest
 
@@ -38,7 +33,6 @@ from kanon_cli.core.catalog import (
     _split_catalog_source_optional_ref,
     normalize_catalog_source_ref,
     parse_catalog_sources,
-    resolve_catalog_dir,
     resolve_env_catalog_source,
 )
 
@@ -123,138 +117,6 @@ def test_parse_catalog_source_invalid(source: str, message_fragment: str | None)
         assert message_fragment in str(exc_info.value), (
             f"Expected {message_fragment!r} to appear in error message for {source!r}; got: {exc_info.value!r}"
         )
-
-
-def _init_fixture_repo(base: pathlib.Path, branch: str) -> pathlib.Path:
-    """Create a bare git repo under ``base/`` with a ``catalog/`` directory.
-
-    The repo is initialised on ``branch``, contains a ``catalog/kanon/`` tree
-    (mirroring the bundled catalog layout), and exposes a ``file://`` URL that
-    ``git clone --depth 1 --branch <branch>`` can consume without network access.
-
-    Returns the absolute path to the bare repo (usable as ``file://<path>``).
-    """
-    repo_dir = base / "fixture-repo"
-    repo_dir.mkdir(parents=True)
-
-    subprocess.run(
-        ["git", "init", "-b", branch, str(repo_dir)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    subprocess.run(
-        ["git", "-C", str(repo_dir), "config", "user.email", "test@example.com"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(repo_dir), "config", "user.name", "Test"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    catalog_kanon = repo_dir / "catalog" / "kanon"
-    catalog_kanon.mkdir(parents=True)
-    (catalog_kanon / "README.md").write_text("fixture\n")
-
-    subprocess.run(
-        ["git", "-C", str(repo_dir), "add", "."],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    subprocess.run(
-        ["git", "-C", str(repo_dir), "commit", "-m", "init"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    return repo_dir
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    "build_source,branch",
-    [
-        (
-            lambda repo_url: f"{repo_url}@main",
-            "main",
-        ),
-        (
-            lambda repo_url: f"{repo_url}@feature",
-            "feature",
-        ),
-        (
-            lambda repo_url: f"{repo_url}@v1.0.0",
-            "v1.0.0",
-        ),
-    ],
-    ids=[
-        "plain-file-url-branch-main",
-        "plain-file-url-branch-feature",
-        "plain-file-url-tag-ref",
-    ],
-)
-def test_round_trip_through_catalog_resolver(
-    tmp_path: pathlib.Path,
-    build_source: Callable[[str], str],
-    branch: str,
-) -> None:
-    """The URL/ref produced by ``_parse_catalog_source`` flows correctly through the resolver.
-
-    Covers AC-CYCLE-001: builds a ``file://`` fixture git repo, constructs the
-    ``<git-url>@<ref>`` string, calls ``resolve_catalog_dir``, and asserts the
-    resolver returns a path under the expected clone directory that contains the
-    ``catalog/`` subtree.
-
-    Each parametrised case uses a plain ``file://`` URL pointing at the fixture
-    repo and verifies that the resolver clones the repo at the correct ref,
-    returning a path containing the expected ``catalog/`` subtree.
-    """
-    fixture_base = tmp_path / "fixture"
-    fixture_base.mkdir()
-
-    repo_dir = _init_fixture_repo(fixture_base, "main")
-
-    if branch != "main" and branch != "feature":
-        subprocess.run(
-            ["git", "-C", str(repo_dir), "tag", branch],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    elif branch == "feature":
-        subprocess.run(
-            ["git", "-C", str(repo_dir), "checkout", "-b", branch],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-        subprocess.run(
-            ["git", "-C", str(repo_dir), "checkout", "main"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-
-    file_url = f"file://{repo_dir}"
-    source = build_source(file_url)
-
-    url, ref = _parse_catalog_source(source)
-    assert url == file_url, f"Splitter produced wrong URL for {source!r}: got {url!r}"
-    assert ref == branch, f"Splitter produced wrong ref for {source!r}: got {ref!r}"
-
-    result = resolve_catalog_dir(source)
-
-    assert result.is_dir(), f"resolve_catalog_dir returned a non-directory path: {result}"
-    assert result.name == "catalog", f"resolve_catalog_dir should return the catalog/ subdirectory; got: {result}"
-    assert (result / "kanon").is_dir(), f"Expected catalog/kanon/ to exist in cloned repo; result path: {result}"
 
 
 _PLURAL_VALID_CASES = [

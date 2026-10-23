@@ -226,20 +226,16 @@ class TestCleanRegister:
         parsed = parser.parse_args(["clean", "--purge-all"])
         assert parsed.purge_all is True
 
-    def test_description_documents_store_prune(self) -> None:
-        """The clean subparser description documents that it prunes the KANON_HOME store.
-
-        ``kanon clean`` now prunes the content-addressed entries from the shared
-        KANON_HOME store in addition to the per-project artifacts; the help text
-        must keep that behaviour documented (doc-in-sync, spec Section 3.5).
-        """
+    def test_description_documents_project_scope_and_machine_purge(self) -> None:
+        """Help distinguishes project-scoped clean from machine-wide purge."""
         parser = argparse.ArgumentParser()
         subparsers = parser.add_subparsers()
         register(subparsers)
 
         clean_parser = subparsers.choices["clean"]
         description = clean_parser.description or ""
-        assert "store" in description.lower(), "the clean help text must document that it prunes the KANON_HOME store"
+        assert "Other projects sharing the same KANON_HOME are left alone" in description
+        assert "--purge-all" in description
 
 
 @pytest.mark.unit

@@ -78,7 +78,6 @@ class TestCleanEnvOverrideRemovesPlugin:
              so it uninstalls the marketplace regardless of the .kanon flag.
         """
         from kanon_cli.core.install import _RefResolution
-        from kanon_cli.core.include_walker import IncludeTree
 
         mp_dir = tmp_path / ".claude-mp"
         mp_dir.mkdir()
@@ -94,7 +93,6 @@ class TestCleanEnvOverrideRemovesPlugin:
             patch("kanon_cli.core.install.install_marketplace_plugins"),
             patch("kanon_cli.core.install.register_direct_checkout_marketplaces"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=fake_resolution),
-            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             install(
                 kanonenv_install,
@@ -109,26 +107,16 @@ class TestCleanEnvOverrideRemovesPlugin:
 
         kanonenv_clean = _write_kanonenv(tmp_path, marketplace_install=False, marketplace_dir=mp_dir)
 
-        uninstall_calls: list = []
+        assert lf.sources[0].registered_marketplaces == []
 
-        def fake_uninstall(d: pathlib.Path) -> None:
-            uninstall_calls.append(d)
-
-        with patch("kanon_cli.core.clean.uninstall_marketplace_plugins", side_effect=fake_uninstall):
+        with patch("kanon_cli.core.clean.uninstall_marketplace_plugins") as uninstall:
             clean(kanonenv_clean)
 
-        assert len(uninstall_calls) == 1, (
-            "clean must call uninstall_marketplace_plugins once when lockfile records marketplace_registered=true, "
-            f"even though .kanon stores KANON_MARKETPLACE_INSTALL=false; got {uninstall_calls!r}"
-        )
-        assert uninstall_calls[0] == mp_dir, (
-            f"uninstall must be called with marketplace_dir={mp_dir!r}, got {uninstall_calls[0]!r}"
-        )
+        uninstall.assert_called_once_with(mp_dir, allowed_source_roots=[], copied_json_owners={})
 
     def test_install_no_marketplace_writes_false_to_lockfile(self, tmp_path: pathlib.Path) -> None:
         """AC-7: install with KANON_MARKETPLACE_INSTALL=false writes marketplace_registered=false."""
         from kanon_cli.core.install import _RefResolution
-        from kanon_cli.core.include_walker import IncludeTree
 
         kanonenv = _write_kanonenv(tmp_path, marketplace_install=False)
 
@@ -139,7 +127,6 @@ class TestCleanEnvOverrideRemovesPlugin:
             patch("kanon_cli.repo.repo_envsubst"),
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=fake_resolution),
-            patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
         ):
             install(
                 kanonenv,

@@ -114,8 +114,8 @@ def register(subparsers) -> None:
         default=False,
         help=(
             "Opt in to the lenient npm-install reconcile when .kanon and "
-            ".kanon.lock have drifted. By default a drifted pair fails fast "
-            "(exit 1) without mutating the lock. With this flag, kanon prunes "
+            ".kanon.lock have drifted. Pure additions install automatically; "
+            "other drift fails without mutating the lock. With this flag, kanon prunes "
             "orphaned lock entries, re-resolves added or changed sources, "
             "replays unchanged sources, and rewrites .kanon.lock on success. "
             "Use --refresh-lock to rebuild the entire lock from scratch instead."
@@ -129,8 +129,8 @@ def register(subparsers) -> None:
             "Upgrade orphaned lock entries to a hard error in the consistent "
             "state. An orphaned lock entry is a source present in .kanon.lock "
             "but absent from .kanon (e.g. after 'kanon remove'). Drift between "
-            ".kanon and .kanon.lock already fails fast by default; this flag "
-            "additionally fails on an orphan that survives a kanon_hash match. "
+            ".kanon and .kanon.lock fails fast, including pure additions that "
+            "plain install accepts. Also fails on an orphan that survives a kanon_hash match. "
             "Remediation: restore the missing KANON_SOURCE_<name>_* triples in "
             ".kanon, or run with --reconcile to prune."
         ),
@@ -140,7 +140,7 @@ def register(subparsers) -> None:
         action="store_true",
         default=False,
         help=(
-            "Upgrade branch drift to a hard error in the consistent state. "
+            "Upgrade branch drift to a hard error when replaying an unchanged lock or adding sources. "
             "Branch drift occurs when the lockfile records a SHA for a "
             "branch-shaped source but the branch's current tip on the remote is "
             "a different SHA. Without this flag, the locked SHA is reused and an "

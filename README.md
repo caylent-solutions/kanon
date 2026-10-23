@@ -381,9 +381,9 @@ kanon clean --orphans    # also prune kanon-owned marketplaces no longer referen
 ```
 
 `kanon clean` removes this project's synced packages and Kanon state from
-the shared `KANON_HOME` store, prunes the content-addressed entries it no
-longer references, and (for any source with
-`KANON_SOURCE_<alias>_MARKETPLACE=true`) uninstalls marketplace plugins.
+the shared `KANON_HOME` store. Marketplace cleanup uses the last successful
+install's per-source ownership records, even if marketplace flags have since
+changed.
 
 **Important:** All synced artifacts live in the shared `KANON_HOME` store
 and are never committed. Commit only `.kanon` and `.kanon.lock` to your
@@ -538,12 +538,12 @@ kanon install --refresh-lock-source NAME  # re-resolve one source's chain only
   `KANON_HOME` store; detects cross-source name collisions (fail-fast). When
   the store lives inside a git repo, writes a `.gitignore` safety net into
   the store root.
-- Reconciles against `.kanon.lock` like `npm ci`: a plain `install` fails fast
-  (exit 1) without mutating the lock when `.kanon` and `.kanon.lock` have
-  drifted (a source added, removed, or with a changed ref). `--reconcile` opts
+- Adding sources followed by plain `install` preserves existing pins and
+  resolves the additions. Changes to an existing source's URL, path or ref,
+  and removals, fail fast (exit 1) without mutating the lock. `--reconcile` opts
   in to the lenient prune-and-re-resolve (prune orphaned entries, re-resolve
   added/changed sources, replay unchanged ones, rewrite the lock on success).
-  `--strict-lock` additionally rejects an orphaned lock entry that survives a
+  `--strict-lock` rejects pure additions too, and an orphaned lock entry that survives a
   `kanon_hash` match. Branch drift (a locked SHA differing from the branch's
   current tip) reuses the locked SHA with an info-line; `--strict-drift`
   promotes that to an error.
@@ -571,14 +571,19 @@ kanon clean --purge-all           # also remove the KANON_HOME store directory
 
 **Behavior:**
 
-1. For any source with `KANON_SOURCE_<alias>_MARKETPLACE=true`: uninstalls
-   plugins and removes the marketplace directory.
+1. Uninstalls plugins from sources recorded as marketplace owners in the last
+   successful install, then removes the marketplace directory.
 2. Removes this project's source workspace under the shared `KANON_HOME`
    store, and the aggregated `.packages/` links this project created.
 
+Current flags do not override recorded install ownership. Locks that omit
+per-source attribution retain the older directory-wide uninstall behavior.
+The configured marketplace directory is still removed in full; use a separate
+marketplace directory for each consumer project.
+
 `kanon clean` is scoped to the project you run it in. Other projects sharing the
-same `KANON_HOME` keep their workspaces, their package links, and the shared
-content-addressed store entries. Use `--purge-all` for machine-wide teardown.
+same `KANON_HOME` keep their workspaces and package links. Use `--purge-all`
+for machine-wide teardown, including unused snapshots left by older versions.
 
 With `--orphans`, before the normal teardown kanon also unregisters any
 kanon-owned marketplaces recorded in `.kanon.lock` that are no longer
@@ -768,8 +773,8 @@ There is no required global header. The only global variable kanon reads is:
 Directory for marketplace symlinks. Auto-added (as
 `CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces`) by `kanon add` of a
 `claude-marketplace` entry and by `kanon marketplace enable`, and pruned by
-`kanon remove` / `kanon marketplace disable` once the last
-`KANON_SOURCE_<alias>_MARKETPLACE=true` dependency is gone. Hand-set the line
+`kanon remove` once the last marketplace dependency is gone. Disabling a
+dependency retains the directory for its manifest's file delivery. Hand-set the line
 only to override the directory; a custom value is preserved and never clobbered.
 
 ### Source Variables
@@ -804,9 +809,10 @@ fast naming the `KANON_SOURCE_<alias>_<VAR>` key to set.
 
 **`KANON_SOURCE_<alias>_MARKETPLACE`** (Optional)
 Per-source marketplace toggle. Set to `true` to enable the marketplace
-lifecycle for this source; absence means `false` (kanon never writes
-`=false`). Written by `kanon add --marketplace-install`; manage it with
-`kanon marketplace enable` / `disable` / `status`.
+lifecycle for this source; absence means disabled. Written by
+`kanon add --marketplace-install`; manage it with `kanon marketplace enable` /
+`disable` / `status`. Disabling retains `=false` so the source's marketplace
+type is preserved and it can be enabled again.
 
 ### Environment Variables
 
@@ -839,7 +845,7 @@ environment-variable reference.
 
 ```properties
 # Auto-added by `kanon add` of a claude-marketplace entry / `kanon marketplace
-# enable`; pruned on the last `kanon remove` / `kanon marketplace disable`.
+# enable`; pruned when `kanon remove` removes the last marketplace dependency.
 # Hand-set it only to override the directory.
 CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
 
@@ -925,33 +931,38 @@ regardless of which source provided each package.
 ### Directory Structure After Install
 
 Fetched artifacts live in the shared `KANON_HOME` store
-(`$KANON_HOME`, default `~/.kanon-home`), content-addressed and deduped across
-projects. Only `.kanon` and `.kanon.lock` live in (and are committed to)
-the project itself:
+(`$KANON_HOME`, default `~/.kanon-home`) in workspaces isolated by project
+and source alias. Commit `.kanon` and `.kanon.lock`; the project `.packages/`
+anchor is generated and ignored:
 
 ```text
 project/
   .kanon                            # Configuration (committed)
   .kanon.lock                       # Resolved SHAs (committed)
+  .packages -> <project-packages>    # Generated link to this project's packages
 
-$KANON_HOME/                        # Shared store (default ~/.kanon-home; not in the repo)
+$KANON_HOME/                        # Shared home (default ~/.kanon-home)
+  cache/                            # Discovery and completion caches
   store/
-    .kanon-data/
-      sources/
+    .locks/<project-address>/       # Per-project edit locks
+    .kanon-data/sources/
+      <project-address>/
         build/                      # Isolated source workspace
           .repo/
-          .packages/
-            my-build-conventions/
-        marketplaces/               # Isolated source workspace
+          .packages/my-build-conventions/
+        marketplaces/               # Another source workspace
           .repo/
-          .packages/
-            my-marketplace-plugin/
-    .packages/                      # Aggregated symlinks
-      my-build-conventions -> \
-        ../.kanon-data/sources/build/.packages/my-build-conventions
-      my-marketplace-plugin -> \
-        ../.kanon-data/sources/marketplaces/.packages/my-marketplace-plugin
+          .packages/my-marketplace-plugin/
+        .packages/                  # Private aggregation; <project-packages> above
+          my-build-conventions -> ../build/.packages/my-build-conventions
+          my-marketplace-plugin -> ../marketplaces/.packages/my-marketplace-plugin
+    .packages/                      # Shared convenience links
 ```
+
+Install uses these workspaces directly and does not keep a second snapshot of
+each workspace. Existing `store/entries/` snapshots from older versions are
+unused and left untouched by project-scoped clean; `kanon clean --purge-all`
+removes the shared store and caches, including those old snapshots.
 
 Relocate the store for a single invocation with `--home` / `--store-dir`,
 or persistently with the `KANON_HOME` environment variable. When the store

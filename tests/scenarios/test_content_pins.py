@@ -24,7 +24,7 @@ import sys
 import pytest
 
 from kanon_cli.core.lockfile import read_lockfile
-from tests.scenarios.conftest import init_git_work_dir, project_address_for, run_git
+from tests.scenarios.conftest import init_git_work_dir, make_plain_repo, project_address_for, run_git
 
 
 def _git_out(args: list[str], cwd: pathlib.Path) -> str:
@@ -211,3 +211,41 @@ def test_refresh_lock_advances_branch_content_pin(tmp_path: pathlib.Path) -> Non
     refreshed = _install(ws, kanon_home, "--refresh-lock")
     assert refreshed.returncode == 0, refreshed.stderr
     assert _content_pin(ws / ".kanon.lock", "dep", "content.git") == new_tip
+
+
+@pytest.mark.scenario
+def test_same_project_at_two_paths_replays_distinct_content_shas(tmp_path: pathlib.Path) -> None:
+    """Replay preserves an old-tag checkout and a newer default-path checkout."""
+    content_work, content_bare, old_sha = _make_content_repo(tmp_path, "content")
+    new_sha = _advance_main(content_work, content_bare)
+    assert old_sha != new_sha
+    name = content_bare.name
+    older_path = "older"
+    manifest_xml = (
+        f'<manifest><remote name="origin" fetch="{content_bare.parent.as_uri()}/"/>'
+        '<default remote="origin" revision="refs/heads/main"/>'
+        f'<project name="{name}" path="{older_path}" revision="refs/tags/1.0.0"/>'
+        f'<project name="{name}"/></manifest>'
+    )
+    manifest_bare = make_plain_repo(tmp_path, "dual-manifest", {"repo-specs/meta.xml": manifest_xml})
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    kanon_home = tmp_path / "kanon-home"
+    _write_kanon(workspace, "dep", manifest_bare.as_uri(), "refs/heads/main")
+
+    initial = _install(workspace, kanon_home)
+    assert initial.returncode == 0, initial.stderr
+    lock_path = workspace / ".kanon.lock"
+    expected = {older_path: old_sha, name: new_sha}
+    pins = read_lockfile(lock_path).sources[0].content_pins
+    assert {pin.path: pin.resolved_sha for pin in pins} == expected
+    lock_bytes = lock_path.read_bytes()
+    source_dir = kanon_home / "store" / ".kanon-data" / "sources" / project_address_for(workspace) / "dep"
+    for path, sha in expected.items():
+        assert _git_out(["rev-parse", "HEAD"], source_dir / path) == sha
+
+    replay = _install(workspace, kanon_home)
+    assert replay.returncode == 0, replay.stderr
+    assert lock_path.read_bytes() == lock_bytes
+    for path, sha in expected.items():
+        assert _git_out(["rev-parse", "HEAD"], source_dir / path) == sha

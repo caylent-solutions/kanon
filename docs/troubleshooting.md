@@ -943,8 +943,8 @@ kanon marketplace disable <alias>
 kanon install
 ```
 
-`kanon marketplace disable` removes the `KANON_SOURCE_<alias>_MARKETPLACE` line
-(absence is the canonical false). With no dependency opted in, `kanon install`
+`kanon marketplace disable` writes `KANON_SOURCE_<alias>_MARKETPLACE=false`,
+preserving its type so `enable` can restore it. With no dependency opted in, `kanon install`
 skips all `claude plugin marketplace add` invocations. The source repos are
 still cloned; only the Claude Code plugin registration step is skipped. Use
 `kanon marketplace status` to confirm each dependency's effective setting.

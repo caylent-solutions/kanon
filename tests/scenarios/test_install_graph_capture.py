@@ -27,7 +27,7 @@ _MANIFEST_ALIAS = "primary"
 _CONTENT_PACKAGE = "pkg-alpha"
 
 
-def _build_fixture(base: pathlib.Path) -> str:
+def _build_fixture(base: pathlib.Path, default_location: str = "explicit") -> str:
     """Build a file:// manifest repo pulling one content package; return its URL."""
     content_repos = base / "content-repos"
     manifest_repos = base / "manifest-repos"
@@ -52,21 +52,34 @@ def _build_fixture(base: pathlib.Path) -> str:
         ' remote="local" revision="main" />\n'
         "</manifest>\n"
     )
+    files = {
+        "repo-specs/remote.xml": remote_xml,
+        "repo-specs/primary.xml": primary_xml,
+    }
+    if default_location != "explicit":
+        files["repo-specs/packages.xml"] = (
+            f'<manifest><project name="{_CONTENT_PACKAGE}" path=".packages/{_CONTENT_PACKAGE}"/></manifest>'
+        )
+        default = '<default remote="local" revision="main"/>' if default_location == "root" else ""
+        if default_location == "root":
+            files["repo-specs/remote.xml"] = remote_xml.replace('  <default remote="local" revision="main" />\n', "")
+        files["repo-specs/primary.xml"] = (
+            f'<manifest>{default}<include name="repo-specs/remote.xml"/>'
+            '<include name="repo-specs/packages.xml"/></manifest>'
+        )
     bare = make_plain_repo(
         manifest_repos,
         "manifest-primary",
-        {
-            "repo-specs/remote.xml": remote_xml,
-            "repo-specs/primary.xml": primary_xml,
-        },
+        files,
     )
     return bare.as_uri()
 
 
 @pytest.mark.scenario
-def test_install_populates_projects_and_why_shows_them(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("default_location", ["explicit", "root", "included"])
+def test_install_populates_projects_and_why_shows_them(tmp_path: pathlib.Path, default_location: str) -> None:
     """A real install writes the project layer and 'kanon why' resolves the project."""
-    manifest_url = _build_fixture(tmp_path / "fixtures")
+    manifest_url = _build_fixture(tmp_path / "fixtures", default_location)
     project_root = tmp_path / "project"
     project_root.mkdir()
     home = tmp_path / "kanon-home"
@@ -81,6 +94,13 @@ def test_install_populates_projects_and_why_shows_them(tmp_path: pathlib.Path) -
         "KANON_SKIP_UPDATE_CHECK": "1",
         "KANON_TELEMETRY_DISABLED": "1",
     }
+
+    project_url = (tmp_path / "fixtures" / "content-repos" / _CONTENT_PACKAGE).as_uri()
+    live_why = run_kanon(
+        "why", project_url, "--catalog-source", f"{manifest_url}@main", cwd=project_root, extra_env=extra_env
+    )
+    assert live_why.returncode == 0, live_why.stderr
+    assert _CONTENT_PACKAGE in live_why.stdout
 
     install = run_kanon("install", cwd=project_root, extra_env=extra_env)
     assert install.returncode == 0, install.stderr

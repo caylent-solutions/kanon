@@ -39,7 +39,7 @@ _shtab_kanon_catalog_commands() {
 
 _shtab_kanon_marketplace_commands() {
   local _commands=(
-    "disable:Remove the KANON_SOURCE_\<alias\>_MARKETPLACE line from .kanon for the"
+    "disable:Write KANON_SOURCE_\<alias\>_MARKETPLACE\=false in .kanon for the"
     "enable:Write KANON_SOURCE_\<alias\>_MARKETPLACE\=true into .kanon for the"
     "status:Print a table of every dependency in .kanon, its catalog \<type\>, and"
   )
@@ -63,7 +63,7 @@ _shtab_kanon_options=(
   "--verbose[Enable debug-level output. Mutually exclusive with --quiet.]"
   "--no-color[Disable ANSI color output. Takes precedence over the NO_COLOR environment variable and TTY auto-detection.]"
   "--no-update-check[Skip the best-effort \'update available\' PyPI lookup for this invocation. Equivalent to setting KANON_SKIP_UPDATE_CHECK\=1.]"
-  {--home,--store-dir}"[Use \<path\> as the shared kanon home root (the content-addressed store and caches live under it). Takes precedence over the KANON_HOME environment variable and the \~\/.kanon-home default. --store-dir is an accepted alias.]:home:"
+  {--home,--store-dir}"[Use \<path\> as the shared kanon home root (source workspaces and caches live under it). Takes precedence over the KANON_HOME environment variable and the \~\/.kanon-home default. --store-dir is an accepted alias.]:home:"
   "*--allow-abs-root[Permit an absolute \<linkfile\>\/\<copyfile\> dest to resolve under \<path\>. Repeatable. Takes precedence over the KANON_ALLOWED_ABS_ROOTS environment variable. The consumer project root and CLAUDE_MARKETPLACES_DIR are always permitted and cannot be removed, so this can only widen the boundary.]:allow_abs_root:"
   "--telemetry-debug[Print the exact usage-telemetry JSON that would be sent to stderr for this invocation (still non-blocking). Equivalent to setting KANON_TELEMETRY_DEBUG\=1. Telemetry is on by default\; disable it entirely with KANON_TELEMETRY_DISABLED\=1.]"
   "--telemetry-endpoint[Override the usage-telemetry collector endpoint (https\:\/\/ only) for this invocation. Takes precedence over the KANON_TELEMETRY_ENDPOINT environment variable.]:telemetry_endpoint:"
@@ -226,9 +226,9 @@ _shtab_kanon_install_options=(
   "(- : *)"{-h,--help}"[show this help message and exit]"
   "--refresh-lock[Ignore the existing lockfile, re-resolve every transitive version from scratch against the committed .kanon source declarations, and overwrite .kanon.lock with the new state.]"
   "--refresh-lock-source[Re-resolve exactly one top-level source\'s full chain from the committed .kanon while preserving every other source\'s lockfile entries verbatim. NAME may be a source name (the KANON_SOURCE_\<name\> key) or a catalog entry name resolved via derive_source_name.]:refresh_lock_source:"
-  "--reconcile[Opt in to the lenient npm-install reconcile when .kanon and .kanon.lock have drifted. By default a drifted pair fails fast (exit 1) without mutating the lock. With this flag, kanon prunes orphaned lock entries, re-resolves added or changed sources, replays unchanged sources, and rewrites .kanon.lock on success. Use --refresh-lock to rebuild the entire lock from scratch instead.]"
-  "--strict-lock[Upgrade orphaned lock entries to a hard error in the consistent state. An orphaned lock entry is a source present in .kanon.lock but absent from .kanon (e.g. after \'kanon remove\'). Drift between .kanon and .kanon.lock already fails fast by default\; this flag additionally fails on an orphan that survives a kanon_hash match. Remediation\: restore the missing KANON_SOURCE_\<name\>_\* triples in .kanon, or run with --reconcile to prune.]"
-  "--strict-drift[Upgrade branch drift to a hard error in the consistent state. Branch drift occurs when the lockfile records a SHA for a branch-shaped source but the branch\'s current tip on the remote is a different SHA. Without this flag, the locked SHA is reused and an info-line is emitted (the content pin is replayed). With this flag, kanon exits with an error listing every drifted source. Remediation\: run \'kanon install --refresh-lock-source \<source\>\' to accept the new branch tip.]"
+  "--reconcile[Opt in to the lenient npm-install reconcile when .kanon and .kanon.lock have drifted. Pure additions install automatically\; other drift fails without mutating the lock. With this flag, kanon prunes orphaned lock entries, re-resolves added or changed sources, replays unchanged sources, and rewrites .kanon.lock on success. Use --refresh-lock to rebuild the entire lock from scratch instead.]"
+  "--strict-lock[Upgrade orphaned lock entries to a hard error in the consistent state. An orphaned lock entry is a source present in .kanon.lock but absent from .kanon (e.g. after \'kanon remove\'). Drift between .kanon and .kanon.lock fails fast, including pure additions that plain install accepts. Also fails on an orphan that survives a kanon_hash match. Remediation\: restore the missing KANON_SOURCE_\<name\>_\* triples in .kanon, or run with --reconcile to prune.]"
+  "--strict-drift[Upgrade branch drift to a hard error when replaying an unchanged lock or adding sources. Branch drift occurs when the lockfile records a SHA for a branch-shaped source but the branch\'s current tip on the remote is a different SHA. Without this flag, the locked SHA is reused and an info-line is emitted (the content pin is replayed). With this flag, kanon exits with an error listing every drifted source. Remediation\: run \'kanon install --refresh-lock-source \<source\>\' to accept the new branch tip.]"
   "--lock-file[Path to the lock file. Defaults to \<kanon-file\>.lock (derived from --kanon-file). The KANON_LOCK_FILE environment variable is consulted when this flag is absent\; the CLI flag takes precedence when both are set.]:lock_file:"
   ":Path to the .kanon configuration file (default\: auto-discover from current directory):"
 )

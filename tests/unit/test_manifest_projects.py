@@ -200,6 +200,26 @@ def test_extend_remote_preserves_revision_and_group_only_ignores_base_rev(tmp_pa
     _assert_vendored_parity(root, tmp_path)
 
 
+@pytest.mark.parametrize(
+    "following_mutation",
+    [
+        "",
+        '<extend-project name="second" path="right" dest-path="final" revision="moved"/>',
+        '<remove-project name="second" path="right"/>',
+    ],
+)
+def test_destination_overwrite_retains_only_runtime_checkout_projects(tmp_path: Path, following_mutation: str) -> None:
+    root = _write(
+        tmp_path,
+        "root.xml",
+        '<remote name="origin" fetch="https://example.com/team"/>'
+        '<default remote="origin" revision="main"/>'
+        '<project name="first" path="left"/><project name="second" path="right"/>'
+        '<extend-project name="first" dest-path="right"/>' + following_mutation,
+    )
+    _assert_vendored_parity(root, tmp_path)
+
+
 @pytest.mark.parametrize("operation", ["remove-project", "extend-project"])
 def test_mutation_rejects_mismatched_base_revision(tmp_path: Path, operation: str) -> None:
     root = _write(

@@ -2,16 +2,16 @@
 
 A ``claude-marketplace`` dependency requires the global ``.kanon`` header
 ``CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces`` so that
-``kanon install`` knows where to register marketplace plugins (spec Section 4.3).
+``kanon install`` can resolve marketplace delivery paths and register plugins.
 This module keeps that header in sync with the presence of any
-``KANON_SOURCE_<alias>_MARKETPLACE=true`` dependency:
+``KANON_SOURCE_<alias>_MARKETPLACE`` dependency, including disabled ones:
 
 * ``ensure_claude_marketplaces_dir`` inserts the header the first time a
   marketplace dependency is added or enabled (never duplicating it, never
   clobbering a custom value an operator hand-set).
 * ``prune_claude_marketplaces_dir_if_unused`` removes the header once the last
-  marketplace dependency is removed or disabled, so the CWD ``.kanon`` carries no
-  stale auto-managed line.
+  marketplace dependency is removed. Disabled dependencies still sync their
+  manifests and can need the directory for linkfile or copyfile destinations.
 
 Both functions are idempotent and preserve the file's dominant newline. Matching
 is done on the parsed KEY of each line, never on a substring: the literal
@@ -27,7 +27,6 @@ import sys
 from kanon_cli.constants import (
     KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
     MARKETPLACE_DIR_GLOBAL_KEY,
-    MARKETPLACE_FLAG_TRUE,
     SOURCE_MARKETPLACE_SUFFIX,
     SOURCE_PREFIX,
 )
@@ -151,10 +150,10 @@ def has_claude_marketplaces_dir_header(kanon_file: pathlib.Path) -> bool:
     return _has_header(_read_lines(kanon_file))
 
 
-def _is_enabled_marketplace_line(line: str) -> bool:
-    """Return whether ``line`` is a ``KANON_SOURCE_<alias>_MARKETPLACE`` true flag.
+def _is_marketplace_line(line: str) -> bool:
+    """Return whether ``line`` declares a source's marketplace type marker.
 
-    Match is on the parsed KEY (prefix + suffix) and the parsed value, never a
+    Match is on the parsed KEY (prefix + suffix), never a
     substring, so the ``CLAUDE_MARKETPLACES_DIR`` header is never mistaken for a
     marketplace dependency.
 
@@ -162,15 +161,12 @@ def _is_enabled_marketplace_line(line: str) -> bool:
         line: A single ``.kanon`` line.
 
     Returns:
-        ``True`` when the key is a source marketplace flag whose value is true.
+        ``True`` when the key is a source marketplace flag, enabled or disabled.
     """
     key = _key_of(line)
     if key is None:
         return False
-    if not key.startswith(SOURCE_PREFIX) or not key.endswith(SOURCE_MARKETPLACE_SUFFIX):
-        return False
-    value = line.strip().split("=", 1)[1].strip()
-    return value.lower() == MARKETPLACE_FLAG_TRUE
+    return key.startswith(SOURCE_PREFIX) and key.endswith(SOURCE_MARKETPLACE_SUFFIX)
 
 
 def _first_content_index(lines: list[str]) -> int:
@@ -249,12 +245,12 @@ def prune_claude_marketplaces_dir_if_unused(kanon_file: pathlib.Path, *, hold_lo
     """Remove the ``CLAUDE_MARKETPLACES_DIR`` header when no marketplace remains.
 
     Reads ``kanon_file`` (treated as empty when absent). When the header is
-    present AND no remaining line is a ``KANON_SOURCE_<alias>_MARKETPLACE`` flag
-    with a true value, every header line is removed and the file is written back.
+    present AND no remaining line is a ``KANON_SOURCE_<alias>_MARKETPLACE`` flag,
+    every header line is removed and the file is written back.
     Pruning is unconditional of the header's value (a custom value is removed too)
     once no marketplace dependency remains; the header is re-added automatically on
-    the next add or enable. A hand-written ``=false`` flag does not count as a
-    remaining marketplace.
+    the next add or enable. An ``=false`` flag keeps the header because disabled
+    sources still deliver files from their manifests.
 
     Args:
         kanon_file: Path to the ``.kanon`` file.
@@ -284,7 +280,7 @@ def _prune_unlocked(kanon_file: pathlib.Path) -> bool:
     lines = _read_lines(kanon_file)
     if not _has_header(lines):
         return False
-    if any(_is_enabled_marketplace_line(line) for line in lines):
+    if any(_is_marketplace_line(line) for line in lines):
         return False
 
     kept = [line for line in lines if _key_of(line) != MARKETPLACE_DIR_GLOBAL_KEY]

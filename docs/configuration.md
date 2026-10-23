@@ -749,9 +749,9 @@ edit:
 - `kanon add` of a `claude-marketplace` entry and `kanon marketplace enable`
   insert `CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces` once, as the
   first non-comment line, when it is absent.
-- `kanon remove` and `kanon marketplace disable` prune the line once the last
-  `KANON_SOURCE_<alias>_MARKETPLACE=true` dependency is gone; it is re-added
-  automatically on the next add or enable.
+- `kanon remove` prunes the line once the last marketplace dependency is gone;
+  it is re-added automatically on the next add or enable. Disabling a dependency
+  retains the line because its manifest still delivers files to that directory.
 - A hand-set custom value is preserved (never duplicated, never clobbered);
   set the line by hand only to override the directory.
 

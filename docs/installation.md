@@ -62,8 +62,8 @@ one top-level source while preserving every other lockfile entry, pass
 
 ## Where artifacts live
 
-`kanon install` publishes fetched data into the shared `KANON_HOME`
-store, content-addressed and deduped across projects:
+`kanon install` keeps fetched data in the shared `KANON_HOME` store, with
+separate workspaces for each consumer project and source alias:
 
 - The store root resolves with precedence `--home` / `--store-dir`
   flag > `KANON_HOME` environment variable > the default `~/.kanon-home`.

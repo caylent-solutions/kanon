@@ -44,7 +44,7 @@ import os
 import pathlib
 import subprocess
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -200,14 +200,11 @@ class TestInstallHttpRemoteAllowedWithOverride:
             patch("kanon_cli.core.install.run_repo_init"),
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
-            patch("kanon_cli.core.install._walk_includes") as mock_walk,
             patch("kanon_cli.core.install._include_tree_to_entries", return_value=[]),
             patch("kanon_cli.core.install.aggregate_symlinks", return_value={}),
             patch("kanon_cli.core.install.update_gitignore"),
             patch("kanon_cli.core.install._emit_install_state"),
         ):
-            mock_walk.return_value = MagicMock(includes=[])
-
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,
@@ -260,14 +257,11 @@ class TestInstallHttpsUrlNoError:
             patch("kanon_cli.core.install.run_repo_init"),
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
-            patch("kanon_cli.core.install._walk_includes") as mock_walk,
             patch("kanon_cli.core.install._include_tree_to_entries", return_value=[]),
             patch("kanon_cli.core.install.aggregate_symlinks", return_value={}),
             patch("kanon_cli.core.install.update_gitignore"),
             patch("kanon_cli.core.install._emit_install_state"),
         ):
-            mock_walk.return_value = MagicMock(includes=[])
-
             _run_install(
                 kanonenv_path=kanonenv,
                 lockfile_path=lockfile_path,

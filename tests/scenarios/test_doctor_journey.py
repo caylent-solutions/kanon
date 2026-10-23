@@ -24,7 +24,7 @@ provoke one doctor defect and asserts the corresponding exit code and message:
 
 The workspace uses `file://` source URLs, so each subprocess runs with
 `KANON_ALLOW_INSECURE_REMOTES=1`. A per-test `KANON_HOME` isolates the shared
-content-addressed store and caches. `KANON_GIT_RETRY_COUNT=1` keeps the
+project source workspaces and caches. `KANON_GIT_RETRY_COUNT=1` keeps the
 unreachable-remote `git ls-remote` from retrying.
 """
 

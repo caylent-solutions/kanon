@@ -61,6 +61,7 @@ class TestInstallEnforcesHttpsPolicy:
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes") as mock_walk,
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
             patch("kanon_cli.core.install._include_tree_to_entries", return_value=[]),
             patch("kanon_cli.core.install.aggregate_symlinks", return_value={}),
             patch("kanon_cli.core.install.update_gitignore"),
@@ -95,6 +96,7 @@ class TestInstallEnforcesHttpsPolicy:
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes") as mock_walk,
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
             patch("kanon_cli.core.install._include_tree_to_entries", return_value=[]),
             patch("kanon_cli.core.install.aggregate_symlinks", return_value={}),
             patch("kanon_cli.core.install.update_gitignore"),
@@ -130,6 +132,7 @@ class TestInstallEnforcesHttpsPolicy:
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes") as mock_walk,
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
             patch("kanon_cli.core.install._include_tree_to_entries", return_value=[]),
             patch("kanon_cli.core.install.aggregate_symlinks", return_value={}),
             patch("kanon_cli.core.install.update_gitignore"),
@@ -168,6 +171,7 @@ class TestInstallEnforcesHttpsPolicy:
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes") as mock_walk,
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             from kanon_cli.core.install import _RefResolution
 
@@ -196,6 +200,7 @@ class TestInstallEnforcesHttpsPolicy:
             patch("kanon_cli.core.install.run_repo_envsubst"),
             patch("kanon_cli.core.install.run_repo_sync"),
             patch("kanon_cli.core.install._walk_includes") as mock_walk,
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
             patch("kanon_cli.core.install._include_tree_to_entries", return_value=[]),
             patch("kanon_cli.core.install.aggregate_symlinks", return_value={}),
             patch("kanon_cli.core.install.update_gitignore"),

@@ -107,8 +107,8 @@ def cache_dir() -> Path:
     resolves with precedence ``KANON_HOME`` env > default ``~/.kanon-home`` (the
     default is derived from the real user home directory, never a hard-coded
     absolute path). This replaces the removed per-user cache-dir override and its
-    XDG fallback; the cache now shares the single ``KANON_HOME`` store root with
-    every other piece of fetched data so it is deduped and located deterministically.
+    XDG fallback; the cache and project source workspaces now share the single
+    ``KANON_HOME`` root while keeping their own directory trees.
     """
     return Path(resolve_kanon_home()) / KANON_HOME_CACHE_SUBDIR
 

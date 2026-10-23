@@ -19,7 +19,7 @@ from unittest.mock import patch
 import pytest
 
 from kanon_cli.commands.install import _run as _install_run
-from kanon_cli.core.install import install
+from kanon_cli.core.install import compute_project_address, install, resolve_workspace_base_dir
 from kanon_cli.core.kanonenv import parse_kanonenv
 
 
@@ -273,7 +273,13 @@ class TestMarketplaceInstallTrueFromFile:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-        mock_mp.assert_called_once_with(marketplace_dir)
+        mock_mp.assert_called_once_with(
+            marketplace_dir,
+            allowed_source_roots=[
+                resolve_workspace_base_dir() / ".kanon-data" / "sources" / compute_project_address(kanonenv) / "primary"
+            ],
+            copied_json_owners={},
+        )
 
     def test_marketplace_install_triggered_for_any_opted_in_dependency(
         self,

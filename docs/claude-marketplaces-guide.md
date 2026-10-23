@@ -130,10 +130,10 @@ where the checkout itself carries `.claude-plugin/marketplace.json`.
 
 ## Install and Uninstall Lifecycle
 
-The marketplace install/uninstall lifecycle is controlled per source by the
+Marketplace installation is controlled per source by the
 `KANON_SOURCE_<alias>_MARKETPLACE` flag in `.kanon`. When any source sets it
-to `true`, Kanon manages Claude Code marketplace plugin registration and
-unregistration. Toggle it with `kanon marketplace enable <alias>` /
+to `true`, Kanon registers that source's marketplaces and installs their
+plugins. Toggle it with `kanon marketplace enable <alias>` /
 `kanon marketplace disable <alias>`, or inspect the effective setting with
 `kanon marketplace status`.
 
@@ -141,8 +141,9 @@ The global `CLAUDE_MARKETPLACES_DIR` header that `kanon install` needs is
 auto-managed: `kanon add` of a `claude-marketplace` entry and
 `kanon marketplace enable` insert
 `CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces` once when it is absent,
-and `kanon remove` / `kanon marketplace disable` prune it once the last
-marketplace dependency is gone. Hand-set the line only to override the
+and `kanon remove` prunes it once the last marketplace dependency is gone.
+Disabling a dependency retains the directory because its manifest still
+delivers files. Hand-set the line only to override the
 directory; a custom value is preserved and never clobbered. So the canonical
 `kanon add <claude-marketplace> ; kanon install` flow works with no manual
 edit to `.kanon`.
@@ -156,8 +157,11 @@ plugins. The marketplace lifecycle runs when at least one source has
 Registration depends on the delivered directory containing
 `.claude-plugin/marketplace.json` at its root:
 
-- For a `<linkfile>` into `${CLAUDE_MARKETPLACES_DIR}`, its `src` must point
-  to that marketplace root.
+- A `<linkfile>` may deliver the whole marketplace root, or deliver its JSON
+  to `<entry>/.claude-plugin/marketplace.json`. Kanon resolves the JSON target
+  to identify the source that owns it.
+- A `<copyfile>` may deliver that same JSON path. Kanon uses repo's resolved
+  copyfile ledger to identify the source that last delivered it.
 - For an enabled source's project with no `<linkfile>`, Kanon checks the
   project checkout root and adds a marketplace symlink when the JSON exists.
 - Directories without the JSON remain installed as files but are skipped
@@ -171,10 +175,18 @@ name and plugin list come from `marketplace.json`.
 
 For example, one `.kanon` can include a shared lint configuration and a Claude
 marketplace: both sources sync, while only the marketplace root is registered.
-The marketplace directory is shared and scanned as a whole whenever the
-lifecycle is enabled. A source's `MARKETPLACE=false` flag does not suppress
-its manifest's `<linkfile>` writes; avoid pointing plain-package linkfiles
-there when another source enables the marketplace lifecycle.
+A source's `MARKETPLACE=false` or absent flag does not suppress its manifest's
+`<linkfile>` or `<copyfile>` writes, but those entries are excluded from
+registration. Registration records are attributed to the source that owns the
+delivered JSON. Disabling a source and running install unregisters names that
+no enabled source still provides; repeated installs preserve these records.
+
+Use distinct destinations for different sources. If a later source removes or
+replaces an enabled source's marketplace with disabled content at the same
+destination, installation fails before updating the lockfile. Marketplace
+directories are still shared: installation clears the configured directory,
+and `kanon clean` removes that whole directory. Use a separate
+directory for each project when its cleanup must be independent.
 
 ### Install Lifecycle
 
@@ -193,7 +205,7 @@ When a user runs `kanon install .kanon`:
 5. **Collision detection** -- Fail immediately if two sources produce the
    same package name
 6. **Install plugins** -- The Kanon CLI locates the `claude` binary, discovers
-   [marketplace roots](#mixed-packages-and-marketplaces) and their plugins,
+   enabled sources' [marketplace roots](#mixed-packages-and-marketplaces) and their plugins,
    registers marketplaces, and installs
    plugins via the Claude Code CLI. Each successful install is followed by
    `claude plugin update <plugin>@<marketplace> --scope user` so an existing
@@ -207,9 +219,11 @@ When a user runs `kanon install .kanon`:
 When a user runs `kanon clean .kanon`, the order is
 critical -- uninstall plugins before removing files:
 
-1. **Uninstall plugins** -- The Kanon CLI locates the `claude` binary, discovers
-   marketplace entries and plugins, uninstalls each plugin, and removes
-   marketplace registrations via the Claude Code CLI
+1. **Uninstall plugins** -- The Kanon CLI uses the lockfile's last-installed
+   source ownership to select marketplace entries and plugins, uninstalls those
+   plugins, and removes their registrations via the Claude Code CLI. Editing
+   marketplace flags before cleaning does not change that installed ownership.
+   Older lockfiles without source ownership records retain directory-wide cleanup.
 2. **Remove marketplace directory** -- Delete `${CLAUDE_MARKETPLACES_DIR}`
    to prevent stale plugin references
 3. **Remove `.packages/`** -- Delete all synced package directories

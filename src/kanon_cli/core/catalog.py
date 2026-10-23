@@ -1,33 +1,17 @@
-"""Catalog directory resolution for Kanon.
+"""Catalog source parsing and default-branch resolution for discovery commands.
 
-Resolves the catalog directory from an explicit ``<git_url>@<ref>`` catalog
-source (supplied by the ``--catalog-source`` CLI flag, or by the single entry
-configured in the plural ``KANON_CATALOG_SOURCES`` environment variable). No
-default catalog source exists; when none is supplied, the resolver raises
-``MissingCatalogSourceError`` per spec Section 4 and Section 13 decision 19 (no
-default manifest repo).
+``KANON_CATALOG_SOURCES`` is a newline-delimited list of ``url[@ref]`` entries.
+Whitespace and blank lines are ignored; duplicate entries retain their first
+position. Commands decide whether to consume the full discovery set or require
+one source. No default catalog repository is provided.
 
-``KANON_CATALOG_SOURCES`` (plural, spec Section 6 / Section 7.1 / FR-9) is a
-newline-delimited list of ``url[@ref]`` entries: surrounding whitespace per
-line is trimmed, blank lines are skipped, and identical entries are
-deduplicated while preserving first-seen order. A malformed (non-blank) entry
-fails fast with a clear message naming the offending line. This is the
-discovery set that browse/search commands enumerate; the single-source
-commands (``add``, ``list``) consume it only when exactly one entry is
-configured (spec Section 4.2).
-
-Remote catalog sources use the format ``<git_url>@<ref>`` where ref
-can be a branch name, tag, or ``latest`` (resolves to highest semver tag).
-The ``@`` delimiter is always the LAST ``@`` in the source string, which
-allows SSH URLs containing a user-info ``@`` (e.g. ``git@host:org/repo.git@main``)
-to be parsed unambiguously.
+Explicit refs take precedence over the configured default branch. Source parsing
+preserves SSH user-info containing ``@`` and supports omitted refs. Manifest
+entries are discovered from ``repo-specs/`` by the calling commands.
 """
 
 import os
-import pathlib
-import subprocess
 import sys
-import tempfile
 
 from kanon_cli import constants
 from kanon_cli.constants import (
@@ -43,19 +27,7 @@ from kanon_cli.constants import (
 from kanon_cli.version import (
     _list_branch_head,
     _resolve_symref_default_branch,
-    is_version_constraint,
-    resolve_version,
 )
-
-
-class MissingCatalogSourceError(ValueError):
-    """Raised when resolve_catalog_dir cannot determine a catalog source.
-
-    No ``--catalog-source`` CLI flag and no single ``KANON_CATALOG_SOURCES``
-    entry were supplied. The calling command catches this exception, formats
-    the canonical spec Section 4 missing-source error text with its own command
-    name, writes it to stderr, and exits 1.
-    """
 
 
 class MultipleCatalogSourcesError(ValueError):
@@ -310,36 +282,6 @@ def resolve_env_catalog_sources() -> list[str]:
     return [f"{url}@{ref}" for url, ref in entries]
 
 
-def resolve_catalog_dir(catalog_source: str | None = None) -> pathlib.Path:
-    """Resolve the catalog directory from a ``<git_url>@<ref>`` catalog source.
-
-    When ``catalog_source`` is ``None`` the single entry configured in
-    ``KANON_CATALOG_SOURCES`` is used (spec Section 4.2). Raises
-    ``MissingCatalogSourceError`` when no source is supplied. See spec Section 4.
-
-    Args:
-        catalog_source: Remote catalog source (``<git_url>@<ref>``). When
-            ``None``, the single ``KANON_CATALOG_SOURCES`` entry is resolved.
-
-    Returns:
-        Path to the resolved catalog directory.
-
-    Raises:
-        MissingCatalogSourceError: When no catalog source is supplied or
-            configured.
-        MultipleCatalogSourcesError: When ``KANON_CATALOG_SOURCES`` lists more
-            than one source and no explicit ``catalog_source`` disambiguates.
-        SystemExit: If the remote catalog cannot be cloned or has no ``catalog/`` dir.
-        ValueError: If the catalog source format is invalid.
-    """
-    source = catalog_source or resolve_env_catalog_source()
-
-    if source:
-        return _clone_remote_catalog(source)
-
-    raise MissingCatalogSourceError()
-
-
 _NO_REF_SEPARATOR_MARKER = "No ref separator '@' found after the URL"
 
 
@@ -485,50 +427,3 @@ def normalize_catalog_source_ref(
         warned_urls=warned_urls,
     )
     return f"{url}@{resolved_ref}"
-
-
-def _clone_remote_catalog(source: str) -> pathlib.Path:
-    """Clone a remote catalog repo and return the catalog directory path.
-
-    Args:
-        source: Catalog source string (``<git_url>@<ref>``).
-
-    Returns:
-        Path to the ``catalog/`` directory inside the cloned repo.
-
-    Raises:
-        SystemExit: If git clone fails or the repo has no ``catalog/`` directory.
-        ValueError: If the source format is invalid.
-    """
-    url, ref = _parse_catalog_source(source)
-
-    if ref == "latest":
-        ref = "*"
-    if is_version_constraint(ref):
-        resolved = resolve_version(url, ref)
-        ref = resolved.removeprefix("refs/tags/")
-
-    clone_dir = pathlib.Path(tempfile.mkdtemp(prefix="kanon-catalog-"))
-
-    result = subprocess.run(
-        ["git", "clone", "--depth", "1", "--branch", ref, url, str(clone_dir / "repo")],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        print(
-            f"ERROR: Failed to clone catalog from {url}@{ref}: {result.stderr}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    catalog_path = clone_dir / "repo" / "catalog"
-    if not catalog_path.is_dir():
-        print(
-            f"ERROR: Remote repo {url}@{ref} does not contain a 'catalog/' directory",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    return catalog_path

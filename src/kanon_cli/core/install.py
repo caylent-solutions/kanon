@@ -71,7 +71,6 @@ import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
-from collections.abc import Callable
 from typing import NamedTuple, cast
 
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
@@ -84,11 +83,9 @@ from kanon_cli.constants import (
     KANON_ALLOW_INSECURE_REMOTES,
     KANON_GIT_LS_REMOTE_TIMEOUT,
     KANON_HOME_ENV_VAR,
-    KANON_HOME_STORE_ENTRIES_SUBDIR,
     KANON_HOME_STORE_GITIGNORE_ENTRY,
     KANON_HOME_STORE_LOCKS_SUBDIR,
     KANON_HOME_STORE_SUBDIR,
-    KANON_HOME_STORE_TMP_SUBDIR,
     KANON_PROJECT_ROOT_ENV,
     PACKAGES_DIR_NAME,
     PROJECT_PACKAGES_ANCHOR_GITIGNORE_ENTRY,
@@ -118,7 +115,7 @@ from kanon_cli.core.lockfile import (
     read_lockfile,
     write_lockfile,
 )
-from kanon_cli.core.manifest import collect_manifest_projects, join_project_repo_url
+from kanon_cli.core.manifest import ManifestProject, collect_manifest_projects, join_project_repo_url
 from kanon_cli.core.include_walker import (
     IncludeCycleError,
     IncludeTree,
@@ -129,8 +126,11 @@ from kanon_cli.core.include_walker import (
 )
 from kanon_cli.core.manifest_vars import functional_vars_in_manifest_files
 from kanon_cli.core.marketplace import (
+    copied_marketplace_json_paths,
     create_dirsymlink,
+    discover_marketplace_entries,
     discover_registered_marketplace_names,
+    filter_owned_marketplace_entries,
     install_marketplace_plugins,
     locate_claude_binary,
     register_direct_checkout_marketplaces,
@@ -152,13 +152,9 @@ __all__ = [
     "_canonicalize_include_path",
     "_walk_includes",
     "compute_project_address",
-    "compute_store_entry_address",
     "kanon_home_inside_git_repo",
-    "prune_store",
-    "publish_store_entry",
     "resolve_kanon_lock_root",
     "resolve_workspace_base_dir",
-    "store_entries_dir",
     "write_store_gitignore_if_in_git_repo",
 ]
 
@@ -1250,10 +1246,9 @@ def resolve_workspace_base_dir() -> pathlib.Path:
     root (spec Section 7.1 / Section 8 / FR-15): ``<KANON_HOME>/store``, where
     ``KANON_HOME`` resolves with precedence ``KANON_HOME`` env > default
     ``~/.kanon-home`` (the default is derived from the real user home directory, never
-    a hard-coded absolute path). All fetched data is content-addressed under this
-    shared store and deduped across projects, replacing the removed per-project
-    ``.packages/`` / ``.kanon-data/`` location and the two location env vars it
-    subsumed.
+    a hard-coded absolute path). Source workspaces and their package indexes are
+    keyed by the consumer project's resolved ``.kanon`` path inside this store.
+    The project-root ``.packages`` anchor points at that project's index.
 
     The resolved store directory is created if it does not yet exist.  If
     creation fails or the resulting directory is not writable, the function
@@ -1312,12 +1307,8 @@ def resolve_kanon_lock_root(kanon_file: pathlib.Path) -> pathlib.Path:
 def compute_project_address(kanon_file: pathlib.Path) -> str:
     """Compute a stable per-consumer-project address for mutable store workspaces.
 
-    Mirrors ``resolve_kanon_lock_root``: a full 64-character lowercase hex
-    sha256 digest of the RESOLVED ``.kanon`` path -- the same address shape as
-    ``resolve_kanon_lock_root`` and ``compute_store_entry_address``, so every
-    address-shaped store subdirectory name in this module follows one
-    convention (untruncated, since both siblings require the full digest as a
-    store subdirectory name).
+    A full 64-character lowercase hex SHA-256 digest of the resolved ``.kanon``
+    path identifies both the mutable workspace and its edit-lock directory.
 
     The per-source ``.repo`` workspace under ``.kanon-data/sources/`` is
     single-tenant: ``repo envsubst`` bakes one project's absolute paths into
@@ -1327,8 +1318,7 @@ def compute_project_address(kanon_file: pathlib.Path) -> str:
     receiving nothing (or losing already-delivered files) while the other
     owns it. Keying the workspace -- and the aggregated ``.packages/``
     symlink tree -- by this address gives each consumer project its own
-    workspace while immutable published content still dedups across projects
-    via ``compute_store_entry_address``.
+    workspace and preserves each project's delivered-file ownership.
 
     Args:
         kanon_file: Path to the ``.kanon`` configuration file (resolved
@@ -1395,57 +1385,6 @@ def project_packages_dir(base_dir: pathlib.Path, project_address: str) -> pathli
     return project_sources_dir(base_dir, project_address) / PACKAGES_DIR_NAME
 
 
-def store_entries_dir(store_base: pathlib.Path) -> pathlib.Path:
-    """Return the directory under ``store_base`` that holds content-addressed entries.
-
-    The entries directory is ``<store_base>/<KANON_HOME_STORE_ENTRIES_SUBDIR>``.
-    Each immutable store entry is published into a content-addressed
-    subdirectory of this path. The directory is the single prune surface for
-    ``kanon clean`` (spec Section 3.5).
-
-    Args:
-        store_base: The resolved store base directory (``<KANON_HOME>/store``).
-
-    Returns:
-        The absolute path to the store-entries directory. The directory is not
-        created here; ``publish_store_entry`` creates it on demand.
-    """
-    return store_base / KANON_HOME_STORE_ENTRIES_SUBDIR
-
-
-def compute_store_entry_address(url: str, resolved_sha: str) -> str:
-    """Compute the content address for an immutable store entry.
-
-    The address is the lowercase hex SHA-256 digest of the canonicalized
-    repository URL joined to the resolved commit SHA. Two project directories
-    that install the same ``manifest@SHA`` from the same canonical remote
-    therefore compute an identical address and dedup to a single store entry
-    (spec Section 3.5 / FR-16). The address is a single path component (no
-    directory separators) so it is safe to use as a store subdirectory name.
-
-    Args:
-        url: The source repository URL as declared in ``.kanon`` (any scheme;
-            canonicalized before hashing so SSH/HTTPS/SCP variants of the same
-            remote collapse to one address).
-        resolved_sha: The resolved commit SHA the entry materializes
-            (40 or 64 lowercase hex characters).
-
-    Returns:
-        A 64-character lowercase hex string -- the content address.
-
-    Raises:
-        ValueError: If ``url`` or ``resolved_sha`` is empty; a content address
-            for an unidentified entry is a logic error and must fail fast.
-    """
-    if not url:
-        raise ValueError("compute_store_entry_address: url must be a non-empty string")
-    if not resolved_sha:
-        raise ValueError("compute_store_entry_address: resolved_sha must be a non-empty string")
-    canonical = canonicalize_repo_url(url)
-    digest = hashlib.sha256(f"{canonical}@{resolved_sha}".encode("utf-8"))
-    return digest.hexdigest()
-
-
 def kanon_home_inside_git_repo(store_base: pathlib.Path) -> bool:
     """Return ``True`` when the resolved ``KANON_HOME`` store sits inside a git repo.
 
@@ -1503,111 +1442,6 @@ def write_store_gitignore_if_in_git_repo(store_base: pathlib.Path) -> bool:
     store_base.mkdir(parents=True, exist_ok=True)
     update_gitignore(store_base, entries=[KANON_HOME_STORE_GITIGNORE_ENTRY])
     return True
-
-
-def publish_store_entry(
-    store_base: pathlib.Path,
-    address: str,
-    materialize: Callable[[pathlib.Path], None],
-) -> pathlib.Path:
-    """Publish an immutable content-addressed entry into the store atomically.
-
-    Concurrency-safe publish (spec Section 3.5 / FR-16):
-
-    1. Readiness via final-path existence -- if the final content-addressed path
-       already exists, the entry is already published (a dedup hit) and the path
-       is returned immediately. There is NO poll-sleep; existence is the readiness
-       signal.
-    2. Otherwise a per-entry lock is acquired through the E2 cross-platform lock
-       interface (``kanon_workspace_lock``) on a per-address lock root, with the
-       configurable fail-fast acquisition timeout
-       (``KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS``) and stale-lock recovery
-       diagnostics (pid / host / timestamp) the interface already carries
-       (spec Section 7.3). Distinct addresses use distinct lock roots, so
-       publishes of different entries never serialise against one another.
-    3. Inside the lock the existence check is repeated -- a racing publisher may
-       have completed between step 1 and lock acquisition; if so the freshly
-       published path is returned without re-materializing.
-    4. The content is materialized into a private temp directory inside the store
-       (same filesystem as the final path) via the caller-supplied ``materialize``
-       callback, then moved into the final content-addressed path with
-       ``Path.replace`` (an atomic rename). A partially-materialized temp dir is
-       removed on any failure so a crash never leaves a half-written final entry.
-
-    Args:
-        store_base: The resolved store base directory (``<KANON_HOME>/store``).
-        address: The content address (a single path component) produced by
-            ``compute_store_entry_address``.
-        materialize: A callback that populates the passed temp directory with the
-            entry's content. It must not assume any particular starting state
-            beyond the directory existing and being empty.
-
-    Returns:
-        The absolute path to the published content-addressed entry directory.
-
-    Raises:
-        ValueError: If ``address`` is empty or contains a path separator (a
-            non-single-component address is a logic error and must fail fast).
-        WorkspaceLockTimeoutError: If the per-entry lock cannot be acquired within
-            ``KANON_WORKSPACE_LOCK_TIMEOUT_SECONDS`` (carries pid/host/timestamp).
-        OSError: If a store directory cannot be created or the rename fails.
-    """
-    if not address or os.sep in address or (os.altsep and os.altsep in address) or "/" in address:
-        raise ValueError(f"publish_store_entry: address must be a single path component; got {address!r}")
-
-    entries_dir = store_entries_dir(store_base)
-    final_path = entries_dir / address
-
-    if final_path.exists():
-        return final_path
-
-    entries_dir.mkdir(parents=True, exist_ok=True)
-    lock_root = store_base / KANON_HOME_STORE_LOCKS_SUBDIR / address
-    lock_root.mkdir(parents=True, exist_ok=True)
-
-    with kanon_workspace_lock(lock_root):
-        if final_path.exists():
-            return final_path
-
-        tmp_root = store_base / KANON_HOME_STORE_TMP_SUBDIR
-        tmp_root.mkdir(parents=True, exist_ok=True)
-        tmp_dir = tmp_root / address
-        if tmp_dir.exists():
-            shutil.rmtree(tmp_dir)
-        tmp_dir.mkdir(parents=True)
-        try:
-            materialize(tmp_dir)
-            tmp_dir.replace(final_path)
-        except BaseException:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-            raise
-
-    return final_path
-
-
-def prune_store(store_base: pathlib.Path) -> None:
-    """Remove every published content-addressed entry from the store.
-
-    Removes the store-entries directory (``store_entries_dir``) and the private
-    publish-scratch directories (the per-address lock roots and the temp dir).
-    The store base directory itself is preserved so a subsequent install can
-    repopulate it without re-resolving ``KANON_HOME``. This is the prune surface
-    invoked by ``kanon clean`` (spec Section 3.5 / FR-16).
-
-    The removals tolerate an already-absent directory (a clean before any
-    install is a no-op), but any other OS error during removal is NOT swallowed:
-    a store that cannot be pruned must surface to the operator.
-
-    Args:
-        store_base: The resolved store base directory (``<KANON_HOME>/store``).
-    """
-    for subdir in (
-        store_entries_dir(store_base),
-        store_base / KANON_HOME_STORE_LOCKS_SUBDIR,
-        store_base / KANON_HOME_STORE_TMP_SUBDIR,
-    ):
-        if subdir.exists():
-            shutil.rmtree(subdir)
 
 
 def create_source_dirs(
@@ -1781,50 +1615,9 @@ def _collect_manifest_tree_paths(
     return ordered
 
 
-def _iter_manifest_projects(
-    manifest_paths: list[pathlib.Path],
-) -> list[tuple[str, str]]:
-    """Yield the ``(project_name, project_path)`` pairs across a manifest tree.
-
-    Parses every resolved manifest XML in *manifest_paths* and collects each
-    ``<project name=... path=...>`` element.  A project with no ``path`` falls
-    back to its ``name`` (the repo-tool convention).  Duplicate ``(name, path)``
-    pairs across the include chain are de-duplicated, preserving first-seen
-    order, so a diamond-included manifest contributes each project once.
-
-    Args:
-        manifest_paths: Absolute paths to the source's resolved manifest files
-            (the root manifest plus its ``<include>`` chain).
-
-    Returns:
-        The de-duplicated list of ``(project_name, project_path)`` pairs.
-    """
-    pairs: list[tuple[str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for manifest_path in manifest_paths:
-        if not manifest_path.is_file():
-            continue
-        try:
-            tree = ET.parse(str(manifest_path))
-        except ET.ParseError:
-            continue
-        root = tree.getroot()
-        for project_el in root.findall("project"):
-            name = project_el.get("name", "")
-            if not name:
-                continue
-            path = project_el.get("path", "") or name
-            key = (name, path)
-            if key in seen:
-                continue
-            seen.add(key)
-            pairs.append(key)
-    return pairs
-
-
 def capture_content_pins(
     source_dir: pathlib.Path,
-    manifest_paths: list[pathlib.Path],
+    projects: list[ManifestProject],
 ) -> list[ContentPinEntry]:
     """Capture each synced project's resolved content commit SHA (spec v5).
 
@@ -1845,16 +1638,16 @@ def capture_content_pins(
     Args:
         source_dir: Path to ``.kanon-data/sources/<name>/`` (the ``repo init``
             workspace; project paths are resolved relative to this).
-        manifest_paths: Absolute paths to the source's resolved manifest files
-            (the root manifest plus its ``<include>`` chain).
+        projects: The resolved manifest graph, including nested projects and
+            the final identities after ordered extensions and removals.
 
     Returns:
         A list of ``ContentPinEntry`` rows, one per project whose checkout SHA
         could be resolved, sorted by ``(name, path)`` for deterministic output.
     """
     pins: list[ContentPinEntry] = []
-    for project_name, project_path in _iter_manifest_projects(manifest_paths):
-        checkout_dir = source_dir / project_path
+    for project in projects:
+        checkout_dir = source_dir / project.path
         if not (checkout_dir / ".git").exists():
             continue
         result = subprocess.run(
@@ -1869,7 +1662,7 @@ def capture_content_pins(
         sha = result.stdout.strip()
         if not sha:
             continue
-        pins.append(ContentPinEntry(name=project_name, path=project_path, resolved_sha=sha))
+        pins.append(ContentPinEntry(name=project.name, path=project.path, resolved_sha=sha))
     return sorted(pins, key=lambda p: (p.name, p.path))
 
 
@@ -1878,6 +1671,8 @@ def build_project_entries(
     manifest_repo_root: pathlib.Path,
     manifest_paths: list[pathlib.Path],
     content_pins: list[ContentPinEntry],
+    *,
+    projects: list[ManifestProject] | None = None,
 ) -> list[ProjectEntry]:
     """Resolve every synced repo package to a fully-provenanced ``ProjectEntry``.
 
@@ -1912,6 +1707,8 @@ def build_project_entries(
             (the root manifest plus its ``<include>`` chain).
         content_pins: The ``ContentPinEntry`` rows captured after ``repo sync``;
             supplies each project's resolved content SHA.
+        projects: An already-resolved graph from before replay pin overlays,
+            preserving the manifest's declared revisions in provenance.
 
     Returns:
         A list of ``ProjectEntry`` rows -- one per resolvable synced project --
@@ -1921,10 +1718,11 @@ def build_project_entries(
     if not sha_by_identity:
         return []
 
-    try:
-        projects = collect_manifest_projects(manifest_xml_path, manifest_repo_root)
-    except (ET.ParseError, FileNotFoundError, OSError):
-        return []
+    if projects is None:
+        try:
+            projects = collect_manifest_projects(manifest_xml_path, manifest_repo_root)
+        except (ET.ParseError, FileNotFoundError, OSError):
+            return []
 
     included_paths = {path.resolve() for path in manifest_paths}
     entries: list[ProjectEntry] = []
@@ -1954,68 +1752,44 @@ def build_project_entries(
 
 
 def apply_content_pins_to_manifests(
-    manifest_paths: list[pathlib.Path],
+    manifest_xml_path: pathlib.Path,
     content_pins: list[ContentPinEntry],
+    projects: list[ManifestProject],
 ) -> None:
-    """Rewrite each pinned ``<project revision>`` to its locked content SHA.
+    """Apply locked content SHAs after the manifest's original operations.
 
     Replay path (spec Section 5.2 / FR-22): when a source's locked
-    ``content_pins`` are present, this rewrites the ``revision`` attribute of
-    every matching ``<project>`` element (matched by project ``name`` and checkout
-    ``path``, which defaults to the name when omitted or empty). Nested project
-    names and paths are resolved relative to their parent as in ``repo sync``.
-    This updates the projects in the
-    resolved manifest XML files to the locked 40/64-hex content SHA, BEFORE
-    ``repo sync`` runs.  The vendored repo tool accepts a bare SHA revision and
-    checks out exactly that commit, so the exact locked content is materialised
-    and the declared branch/tag tip is NOT re-resolved.
+    ``content_pins`` are present, append path-scoped ``extend-project`` elements
+    to the root manifest for live projects whose resolved identity has a pin.
+    The original includes, removals, extensions and ``base-rev`` assertions run
+    first, unchanged. The final overlays then select each locked SHA before
+    ``repo sync`` checks out content, including nested and relocated projects.
 
-    Only projects with a captured pin are rewritten; a project absent from
-    *content_pins* keeps its declared revision.  A manifest file is rewritten in
-    place only when at least one of its projects was repinned.
+    Only live projects with a captured pin receive an overlay. Unpinned
+    projects retain their declared revisions. The root is written once, only
+    when at least one effective revision differs from its pin.
 
     Args:
-        manifest_paths: Absolute paths to the source's resolved manifest files.
+        manifest_xml_path: Absolute path to the source's root manifest XML.
         content_pins: The locked ``ContentPinEntry`` rows for this source.
+        projects: The validated, resolved graph before pin overlays.
 
     Raises:
         OSError: If a manifest file cannot be rewritten.
     """
     sha_by_identity = {(pin.name, pin.path): pin.resolved_sha for pin in content_pins}
-    if not sha_by_identity:
+    overlays = [
+        (project, sha_by_identity[(project.name, project.path)])
+        for project in projects
+        if (project.name, project.path) in sha_by_identity
+        and project.revision != sha_by_identity[(project.name, project.path)]
+    ]
+    if not overlays:
         return
-
-    def pin_project(project_el: ET.Element, parent_name: str = "", parent_path: str = "") -> bool:
-        name = project_el.get("name", "")
-        if parent_name:
-            name = os.path.join(parent_name, name)
-        path = (project_el.get("path", "") or name).rstrip("/")
-        if parent_name:
-            path = os.path.join(parent_path, path)
-        locked_sha = sha_by_identity.get((name, path))
-        changed = False
-        if locked_sha is not None and project_el.get("revision") != locked_sha:
-            project_el.set("revision", locked_sha)
-            changed = True
-        for child in project_el.findall("project"):
-            if pin_project(child, name, path):
-                changed = True
-        return changed
-
-    for manifest_path in manifest_paths:
-        if not manifest_path.is_file():
-            continue
-        try:
-            tree = ET.parse(str(manifest_path))
-        except ET.ParseError:
-            continue
-        root = tree.getroot()
-        changed = False
-        for project_el in root.findall("project"):
-            if pin_project(project_el):
-                changed = True
-        if changed:
-            tree.write(str(manifest_path), encoding="unicode", xml_declaration=True)
+    tree = ET.parse(str(manifest_xml_path))
+    for project, locked_sha in overlays:
+        ET.SubElement(tree.getroot(), "extend-project", name=project.name, path=project.path, revision=locked_sha)
+    tree.write(str(manifest_xml_path), encoding="unicode", xml_declaration=True)
 
 
 def assert_manifest_vars_resolved(
@@ -2879,6 +2653,20 @@ def _run_install(
     resolved_entries: list[SourceEntry] = []
 
     attributed_marketplaces: dict[str, list[str]] = {}
+    previous_marketplace_ledgers = (
+        {entry.name: tuple(entry.registered_marketplaces) for entry in existing_lockfile.sources}
+        if existing_lockfile is not None
+        else {}
+    )
+    previous_marketplace_names = {name for names in previous_marketplace_ledgers.values() for name in names}
+    previous_marketplace_metadata = (
+        (existing_lockfile.marketplace_registered, existing_lockfile.marketplace_dir)
+        if existing_lockfile is not None
+        else (False, "")
+    )
+    copied_json_owners: dict[pathlib.Path, pathlib.Path] = {}
+    enabled_marketplace_claims: dict[pathlib.Path, str] = {}
+    enabled_source_roots = [source_dirs[name] for name in source_names if source_marketplace[name]]
 
     refresh_lock_source_nn: str = cast(str, refresh_lock_source)
     target_source_entry: SourceEntry | None = None
@@ -2894,10 +2682,6 @@ def _run_install(
         source_dir = source_dirs[name]
         source_data = sources[name]
         print(f"kanon install: syncing source '{name}'...")
-
-        before_marketplace_names: set[str] = set()
-        if source_marketplace[name]:
-            before_marketplace_names = set(discover_registered_marketplace_names(pathlib.Path(marketplace_dir_str)))
 
         reconcile_replay = install_state is InstallState.RECONCILE and _should_replay_source(
             name,
@@ -3064,43 +2848,43 @@ def _run_install(
         _manifest_tree_paths = _collect_manifest_tree_paths(include_tree, manifest_repo_root)
 
         assert_manifest_vars_resolved(name, _manifest_tree_paths)
+        _manifest_projects = collect_manifest_projects(manifest_xml_path, manifest_repo_root, include_tree=include_tree)
 
         _replay_locked_pins = not _is_reresolve and bool(resolved_entries[-1].content_pins)
         if _replay_locked_pins:
-            apply_content_pins_to_manifests(_manifest_tree_paths, resolved_entries[-1].content_pins)
+            apply_content_pins_to_manifests(manifest_xml_path, resolved_entries[-1].content_pins, _manifest_projects)
 
         print("  repo sync...")
         run_repo_sync(source_dir)
 
+        if any_marketplace:
+            for json_path in copied_marketplace_json_paths(source_dir, pathlib.Path(marketplace_dir_str)):
+                copied_json_owners[json_path] = source_dir
+
         if not _replay_locked_pins:
-            resolved_entries[-1].content_pins = capture_content_pins(source_dir, _manifest_tree_paths)
+            resolved_entries[-1].content_pins = capture_content_pins(source_dir, _manifest_projects)
             _captured_content_pins = _captured_content_pins or bool(resolved_entries[-1].content_pins)
             resolved_entries[-1].projects = build_project_entries(
                 manifest_xml_path,
                 manifest_repo_root,
                 _manifest_tree_paths,
                 resolved_entries[-1].content_pins,
+                projects=_manifest_projects,
             )
 
         if source_marketplace[name]:
             marketplace_dir = pathlib.Path(marketplace_dir_str)
             register_direct_checkout_marketplaces(manifest_xml_path, source_dir, marketplace_dir)
-
-            after_names = set(discover_registered_marketplace_names(marketplace_dir))
-            attributed_marketplaces[name] = sorted(after_names - before_marketplace_names)
-            resolved_entries[-1].registered_marketplaces = attributed_marketplaces[name]
+            for entry in filter_owned_marketplace_entries(
+                discover_marketplace_entries(marketplace_dir), [source_dir], copied_json_owners
+            ):
+                if (entry / ".claude-plugin" / "marketplace.json").is_file():
+                    enabled_marketplace_claims[entry] = name
 
         resolved_entries[-1].includes = _include_tree_to_entries(
             include_tree,
             source_url=source_data["url"],
             resolved_sha=resolved_entries[-1].resolved_sha,
-        )
-
-        entry_address = compute_store_entry_address(source_data["url"], resolved_entries[-1].resolved_sha)
-        publish_store_entry(
-            base_dir,
-            entry_address,
-            lambda dest, src=source_dir: shutil.copytree(src, dest, symlinks=True, dirs_exist_ok=True),
         )
 
     if install_state is not InstallState.LOCKFILE_CONSISTENT:
@@ -3131,27 +2915,61 @@ def _run_install(
 
     _print_package_summary(package_owners, source_names)
 
+    for marketplace_entry, source_name in enabled_marketplace_claims.items():
+        if not (
+            marketplace_entry / ".claude-plugin" / "marketplace.json"
+        ).is_file() or not filter_owned_marketplace_entries(
+            [marketplace_entry], enabled_source_roots, copied_json_owners
+        ):
+            raise ValueError(
+                f"Marketplace destination '{marketplace_entry}' from enabled source '{source_name}' "
+                "was removed or replaced by a source that does not provide an enabled marketplace at this path. "
+                "Use distinct marketplace linkfile/copyfile destinations, or enable the source whose "
+                "marketplace should be registered. The lockfile has not been updated."
+            )
+
+    for entry in resolved_entries:
+        attributed_marketplaces[entry.name] = (
+            discover_registered_marketplace_names(
+                pathlib.Path(marketplace_dir_str),
+                allowed_source_roots=[source_dirs[entry.name]],
+                copied_json_owners=copied_json_owners,
+            )
+            if source_marketplace[entry.name]
+            else []
+        )
+        entry.registered_marketplaces = attributed_marketplaces[entry.name]
+
+    marketplace_metadata_changed = {
+        name: tuple(names) for name, names in attributed_marketplaces.items()
+    } != previous_marketplace_ledgers or (
+        any_marketplace,
+        marketplace_dir_str if any_marketplace else "",
+    ) != previous_marketplace_metadata
+
     if any_marketplace:
         print("\nkanon install: installing marketplace plugins...")
         marketplace_dir = pathlib.Path(marketplace_dir_str)
-        install_marketplace_plugins(marketplace_dir)
+        install_marketplace_plugins(
+            marketplace_dir,
+            allowed_source_roots=enabled_source_roots,
+            copied_json_owners=copied_json_owners,
+        )
 
     new_marketplace_set: set[str] = set()
     for _names in attributed_marketplaces.values():
         new_marketplace_set.update(_names)
 
-    old_marketplace_set: set[str] = set()
-    if existing_lockfile is not None:
-        for _src in existing_lockfile.sources:
-            old_marketplace_set.update(_src.registered_marketplaces)
-
-    orphaned_marketplaces = sorted(old_marketplace_set - new_marketplace_set)
+    orphaned_marketplaces = sorted(previous_marketplace_names - new_marketplace_set)
     if orphaned_marketplaces:
         print("\nkanon install: pruning marketplaces no longer referenced by .kanon...")
         claude_bin = locate_claude_binary()
         for name in orphaned_marketplaces:
             print(f"  - unregistering marketplace: {name}")
-            remove_marketplace(claude_bin, name)
+            if not remove_marketplace(claude_bin, name):
+                raise ValueError(
+                    f"Failed to unregister marketplace '{name}'; retry install. The lockfile has not been updated."
+                )
 
     if install_state in (InstallState.LOCKFILE_ABSENT, InstallState.REFRESH_LOCK):
         computed_hash = _kanon_hash(kanonenv_path)
@@ -3198,6 +3016,8 @@ def _run_install(
                 new_kanon_hash=new_kanon_hash,
                 attributed_marketplaces=attributed_marketplaces,
             )
+            merged_lf.marketplace_registered = any_marketplace
+            merged_lf.marketplace_dir = marketplace_dir_str if any_marketplace else ""
             write_lockfile(merged_lf, lockfile_path)
         else:
             lf = Lockfile(
@@ -3211,7 +3031,9 @@ def _run_install(
             )
             write_lockfile(lf, lockfile_path)
 
-    elif install_state is InstallState.LOCKFILE_CONSISTENT and (_consistent_has_orphans or _captured_content_pins):
+    elif install_state is InstallState.LOCKFILE_CONSISTENT and (
+        _consistent_has_orphans or _captured_content_pins or marketplace_metadata_changed
+    ):
         pruned_lf_nn = cast(Lockfile, existing_lockfile)
         active_names = set(source_names)
 

@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from collections.abc import Iterable, Mapping
 
 
 def create_dirsymlink(link_path: pathlib.Path, target: pathlib.Path) -> None:
@@ -89,6 +90,63 @@ def discover_marketplace_entries(marketplace_dir: pathlib.Path) -> list[pathlib.
         if entry.is_dir():
             entries.append(entry)
     return entries
+
+
+def filter_owned_marketplace_entries(
+    entries: Iterable[pathlib.Path],
+    source_roots: Iterable[pathlib.Path],
+    copied_json_owners: Mapping[pathlib.Path, pathlib.Path] | None = None,
+) -> list[pathlib.Path]:
+    """Keep entries whose marketplace metadata belongs to a supplied workspace.
+
+    Resolve the JSON path, not only the entry directory: repo linkfiles may
+    create a directory containing a symlinked marketplace.json. This also
+    handles a symlink of the whole marketplace root. Source aliases and JSON
+    marketplace names are deliberately not used as ownership identifiers.
+    Regular copied JSON files use the final delivery owner recorded by repo
+    sync's copyfile ledger instead of inferring ownership from their contents.
+    """
+    roots = tuple(root.resolve() for root in source_roots)
+    owned = []
+    for entry in entries:
+        json_path = (entry / ".claude-plugin" / "marketplace.json").resolve()
+        copied_owner = (copied_json_owners or {}).get(json_path)
+        if copied_owner is not None:
+            if copied_owner.resolve() in roots:
+                owned.append(entry)
+        elif any(json_path.is_relative_to(root) for root in roots):
+            owned.append(entry)
+    return owned
+
+
+def copied_marketplace_json_paths(source_dir: pathlib.Path, marketplace_dir: pathlib.Path) -> list[pathlib.Path]:
+    """Read exact marketplace JSON copyfile destinations from repo's sync ledger.
+
+    Only direct marketplace entries under the configured directory qualify.
+    The ledger was produced from repo's resolved manifest, so include, removal
+    and extension semantics need no second XML implementation here.
+    """
+    ledger = source_dir / ".repo" / "copy-link-files.json"
+    if not ledger.is_file():
+        return []
+    with ledger.open(encoding="utf-8") as stream:
+        deliveries = json.load(stream)
+    destinations = deliveries.get("copyfile", [])
+    if not isinstance(destinations, list) or any(not isinstance(dest, str) for dest in destinations):
+        raise ValueError(f"Invalid copyfile destinations in repo sync ledger: {ledger}")
+    root = marketplace_dir.resolve()
+    result = []
+    for destination in destinations:
+        path = pathlib.Path(destination)
+        if not path.is_absolute():
+            path = source_dir / path
+        path = path.resolve()
+        if not path.is_relative_to(root):
+            continue
+        relative = path.relative_to(root)
+        if len(relative.parts) == 3 and relative.parts[1:] == (".claude-plugin", "marketplace.json"):
+            result.append(path)
+    return result
 
 
 def read_marketplace_name(marketplace_path: pathlib.Path) -> str:
@@ -417,7 +475,12 @@ def register_direct_checkout_marketplaces(
         create_dirsymlink(link_target, project_dir.resolve())
 
 
-def discover_registered_marketplace_names(marketplace_dir: pathlib.Path) -> list[str]:
+def discover_registered_marketplace_names(
+    marketplace_dir: pathlib.Path,
+    *,
+    allowed_source_roots: Iterable[pathlib.Path] | None = None,
+    copied_json_owners: Mapping[pathlib.Path, pathlib.Path] | None = None,
+) -> list[str]:
     """Discover the marketplace names present under ``marketplace_dir``.
 
     Walks the directory with :func:`discover_marketplace_entries` and reads each
@@ -426,7 +489,8 @@ def discover_registered_marketplace_names(marketplace_dir: pathlib.Path) -> list
     :func:`install_marketplace_plugins` applies to linkfile targets that do not
     point at a marketplace root). The result is the authoritative set of
     marketplace names kanon just registered: it feeds the install auto-prune and
-    the ``kanon clean --orphans`` reconciliation.
+    the ``kanon clean --orphans`` reconciliation. When ``allowed_source_roots``
+    is supplied, only entries whose JSON belongs to those workspaces contribute.
 
     Args:
         marketplace_dir: Path to ``CLAUDE_MARKETPLACES_DIR``.
@@ -444,7 +508,10 @@ def discover_registered_marketplace_names(marketplace_dir: pathlib.Path) -> list
         return []
 
     names: set[str] = set()
-    for entry in discover_marketplace_entries(marketplace_dir):
+    entries = discover_marketplace_entries(marketplace_dir)
+    if allowed_source_roots is not None:
+        entries = filter_owned_marketplace_entries(entries, allowed_source_roots, copied_json_owners)
+    for entry in entries:
         try:
             names.add(read_marketplace_name(entry))
         except FileNotFoundError:
@@ -452,11 +519,18 @@ def discover_registered_marketplace_names(marketplace_dir: pathlib.Path) -> list
     return sorted(names)
 
 
-def install_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
+def install_marketplace_plugins(
+    marketplace_dir: pathlib.Path,
+    *,
+    allowed_source_roots: Iterable[pathlib.Path] | None = None,
+    copied_json_owners: Mapping[pathlib.Path, pathlib.Path] | None = None,
+) -> None:
     """Orchestrate marketplace plugin installation.
 
     Locates claude binary, discovers marketplace entries, registers each
-    marketplace, discovers and installs plugins.
+    marketplace, discovers and installs plugins. ``allowed_source_roots`` limits
+    registration to entries whose JSON belongs to an enabled source workspace;
+    omitting it preserves standalone directory-wide discovery.
 
     Args:
         marketplace_dir: Path to CLAUDE_MARKETPLACES_DIR.
@@ -474,6 +548,8 @@ def install_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
         return
 
     entries = discover_marketplace_entries(marketplace_dir)
+    if allowed_source_roots is not None:
+        entries = filter_owned_marketplace_entries(entries, allowed_source_roots, copied_json_owners)
     if not entries:
         print("Warning: No marketplace entries found. Nothing to do.", file=sys.stderr)
         return
@@ -525,11 +601,18 @@ def install_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
         sys.exit(1)
 
 
-def uninstall_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
+def uninstall_marketplace_plugins(
+    marketplace_dir: pathlib.Path,
+    *,
+    allowed_source_roots: Iterable[pathlib.Path] | None = None,
+    copied_json_owners: Mapping[pathlib.Path, pathlib.Path] | None = None,
+) -> None:
     """Orchestrate marketplace plugin uninstallation.
 
     Locates claude binary, discovers marketplace entries, uninstalls each
-    plugin, then removes marketplace registrations.
+    plugin, then removes marketplace registrations. When ownership roots are
+    supplied, only entries delivered by those last-installed sources are used;
+    omitting them preserves the legacy directory-wide teardown.
 
     Args:
         marketplace_dir: Path to CLAUDE_MARKETPLACES_DIR.
@@ -547,6 +630,8 @@ def uninstall_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
         return
 
     entries = discover_marketplace_entries(marketplace_dir)
+    if allowed_source_roots is not None:
+        entries = filter_owned_marketplace_entries(entries, allowed_source_roots, copied_json_owners)
     if not entries:
         print("Warning: No marketplace entries found. Nothing to uninstall.", file=sys.stderr)
         return

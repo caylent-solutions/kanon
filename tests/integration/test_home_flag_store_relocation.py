@@ -24,7 +24,6 @@ import pytest
 
 from kanon_cli.cli import main
 from kanon_cli.constants import KANON_HOME_STORE_SUBDIR
-from kanon_cli.core.include_walker import IncludeTree
 from kanon_cli.core.install import _RefResolution, install
 from tests.conftest import assert_only_packages_anchor_beside_kanon
 
@@ -59,17 +58,13 @@ def _install_patches() -> tuple:
         patch("kanon_cli.repo.repo_envsubst"),
         patch("kanon_cli.repo.repo_sync"),
         patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=_FAKE_REF_RESOLUTION),
-        patch(
-            "kanon_cli.core.install._walk_includes",
-            return_value=IncludeTree(path=pathlib.Path("meta.xml")),
-        ),
     )
 
 
 def _run_install_direct(kanonenv: pathlib.Path, lock_path: pathlib.Path) -> None:
     """Run install() directly with repo operations patched to no-ops."""
-    p_init, p_env, p_sync, p_ref, p_walk = _install_patches()
-    with p_init, p_env, p_sync, p_ref, p_walk:
+    p_init, p_env, p_sync, p_ref = _install_patches()
+    with p_init, p_env, p_sync, p_ref:
         install(kanonenv, lock_file_path=lock_path)
 
 
@@ -122,8 +117,8 @@ class TestHomeFlagRelocatesStoreEndToEnd:
 
         kanonenv = _url_kanonenv(project)
 
-        p_init, p_env, p_sync, p_ref, p_walk = _install_patches()
-        with p_init, p_env, p_sync, p_ref, p_walk:
+        p_init, p_env, p_sync, p_ref = _install_patches()
+        with p_init, p_env, p_sync, p_ref:
             main(["--home", str(flag_home), "install", str(kanonenv)])
 
         assert (flag_store / ".kanon-data").exists(), "--home must relocate the store to the flag path"

@@ -387,9 +387,10 @@ class TestFullJourneyBootstrapInstallMarketplaceClean:
         def fake_repo_sync_mp(repo_dir: str, **kwargs) -> None:
             _write_empty_manifest(repo_dir)
             mp_dir = marketplaces_dir / _MARKETPLACE_NAME
-            mp_dir.mkdir(parents=True, exist_ok=True)
-            cp_dir = mp_dir / ".claude-plugin"
-            cp_dir.mkdir(exist_ok=True)
+            checkout = pathlib.Path(repo_dir) / "marketplace-checkout"
+            cp_dir = checkout / ".claude-plugin"
+            cp_dir.mkdir(parents=True, exist_ok=True)
+            mp_dir.symlink_to(checkout, target_is_directory=True)
             manifest = {
                 "name": _MARKETPLACE_NAME,
                 "plugins": [{"name": _PLUGIN_NAME}],
@@ -760,9 +761,10 @@ class TestFullJourneyMultiSourceWithMarketplace:
             if source_name == "mp":
                 _write_empty_manifest(repo_dir)
                 mp_dir = marketplaces_dir / _MARKETPLACE_NAME
-                mp_dir.mkdir(parents=True, exist_ok=True)
-                cp_dir = mp_dir / ".claude-plugin"
-                cp_dir.mkdir(exist_ok=True)
+                checkout = repo_path / "marketplace-checkout"
+                cp_dir = checkout / ".claude-plugin"
+                cp_dir.mkdir(parents=True, exist_ok=True)
+                mp_dir.symlink_to(checkout, target_is_directory=True)
                 manifest = {
                     "name": _MARKETPLACE_NAME,
                     "plugins": [{"name": _PLUGIN_NAME}],

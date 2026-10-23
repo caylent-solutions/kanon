@@ -311,6 +311,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install.install_marketplace_plugins") as mock_install,
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
@@ -320,7 +321,11 @@ class TestInstallLifecycle:
         mock_init.assert_called_once()
         mock_envsubst.assert_called_once()
         mock_sync.assert_called_once()
-        mock_install.assert_called_once_with(mp_dir)
+        mock_install.assert_called_once_with(
+            mp_dir,
+            allowed_source_roots=[store / ".kanon-data" / "sources" / project_address / "build"],
+            copied_json_owners={},
+        )
 
     def test_register_direct_checkout_marketplaces_called_when_marketplace_install(
         self, tmp_path: pathlib.Path
@@ -352,6 +357,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install.register_direct_checkout_marketplaces") as mock_reg,
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
@@ -388,6 +394,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install.register_direct_checkout_marketplaces") as mock_reg,
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
@@ -414,6 +421,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.repo.repo_sync") as mock_sync,
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             manager.attach_mock(mock_init, "repo_init")
             manager.attach_mock(mock_envsubst, "repo_envsubst")
@@ -443,6 +451,7 @@ class TestInstallLifecycle:
             patch("kanon_cli.core.install.resolve_version", return_value="3.0.0") as mock_resolve,
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=self._FAKE_REF_RESOLUTION),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
@@ -500,6 +509,7 @@ class TestInstallWorkspaceLock:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=fake_resolution),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
@@ -545,6 +555,7 @@ class TestInstallWorkspaceLock:
             patch("kanon_cli.repo.repo_sync"),
             patch("kanon_cli.core.install._resolve_ref_to_sha", return_value=fake_resolution),
             patch("kanon_cli.core.install._walk_includes", return_value=IncludeTree(path=pathlib.Path("meta.xml"))),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
@@ -819,6 +830,7 @@ class TestInstallMarketplaceLockfileState:
                 "kanon_cli.core.install._walk_includes",
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(kanonenv, lock_file_path=lock_path)
 
@@ -855,6 +867,7 @@ class TestInstallMarketplaceLockfileState:
                 "kanon_cli.core.install._walk_includes",
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(kanonenv, lock_file_path=lock_path)
 
@@ -975,6 +988,7 @@ class TestInstallKanonHomeStore:
                 "kanon_cli.core.install._walk_includes",
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
         ):
             install(kanonenv, lock_file_path=lock_path)
 
@@ -1172,52 +1186,6 @@ class TestInstallPyUtf8EncodingSweep:
 
 
 @pytest.mark.unit
-class TestComputeStoreEntryAddress:
-    """compute_store_entry_address derives a deterministic content address."""
-
-    def test_deterministic_for_same_url_and_sha(self) -> None:
-        """The same (url, sha) yields the same address across calls (dedup key)."""
-        from kanon_cli.core.install import compute_store_entry_address
-
-        sha = "a" * 40
-        first = compute_store_entry_address("https://example.com/repo.git", sha)
-        second = compute_store_entry_address("https://example.com/repo.git", sha)
-        assert first == second
-        assert len(first) == 64
-        assert all(c in "0123456789abcdef" for c in first)
-
-    def test_canonical_url_variants_collapse_to_one_address(self) -> None:
-        """SSH and HTTPS forms of the same remote produce one address (canonicalized)."""
-        from kanon_cli.core.install import compute_store_entry_address
-
-        sha = "b" * 40
-        https = compute_store_entry_address("https://example.com/org/repo.git", sha)
-        ssh = compute_store_entry_address("git@example.com:org/repo.git", sha)
-        assert https == ssh
-
-    def test_distinct_sha_yields_distinct_address(self) -> None:
-        """A different SHA produces a different content address (immutability)."""
-        from kanon_cli.core.install import compute_store_entry_address
-
-        url = "https://example.com/repo.git"
-        assert compute_store_entry_address(url, "a" * 40) != compute_store_entry_address(url, "c" * 40)
-
-    @pytest.mark.parametrize(
-        "url,sha",
-        [
-            ("", "a" * 40),
-            ("https://example.com/repo.git", ""),
-        ],
-    )
-    def test_empty_argument_fails_fast(self, url: str, sha: str) -> None:
-        """An empty url or sha raises ValueError (no silent unidentified address)."""
-        from kanon_cli.core.install import compute_store_entry_address
-
-        with pytest.raises(ValueError):
-            compute_store_entry_address(url, sha)
-
-
-@pytest.mark.unit
 class TestComputeProjectAddress:
     """compute_project_address derives a stable per-consumer-project address (issue #96).
 
@@ -1269,133 +1237,6 @@ class TestComputeProjectAddress:
         symlink_kanonenv.symlink_to(real_kanonenv)
 
         assert compute_project_address(symlink_kanonenv) == compute_project_address(real_kanonenv)
-
-
-@pytest.mark.unit
-class TestPublishStoreEntry:
-    """publish_store_entry publishes via atomic rename, dedups, and locks per entry."""
-
-    def test_publishes_into_final_content_addressed_path(self, tmp_path: pathlib.Path) -> None:
-        """A fresh publish materializes content under store/entries/<address>."""
-        from kanon_cli.core.install import publish_store_entry, store_entries_dir
-
-        store = tmp_path / "store"
-        store.mkdir()
-        address = "f" * 64
-
-        def materialize(dest: pathlib.Path) -> None:
-            (dest / "marker.txt").write_text("payload", encoding="utf-8")
-
-        final = publish_store_entry(store, address, materialize)
-
-        assert final == store_entries_dir(store) / address
-        assert final.is_dir()
-        assert (final / "marker.txt").read_text(encoding="utf-8") == "payload"
-
-    def test_dedup_skips_rematerialize_when_final_path_exists(self, tmp_path: pathlib.Path) -> None:
-        """A second publish of the same address is a dedup no-op (readiness via existence)."""
-        from kanon_cli.core.install import publish_store_entry
-
-        store = tmp_path / "store"
-        store.mkdir()
-        address = "1" * 64
-        call_count = {"n": 0}
-
-        def materialize(dest: pathlib.Path) -> None:
-            call_count["n"] += 1
-            (dest / "data").write_text("x", encoding="utf-8")
-
-        first = publish_store_entry(store, address, materialize)
-        second = publish_store_entry(store, address, materialize)
-
-        assert first == second
-        assert call_count["n"] == 1, "the second publish must not re-materialize an existing entry"
-
-    def test_no_sleep_call_in_install_core(self) -> None:
-        """AC-24: no time.sleep() call is introduced under src/kanon_cli/core (no poll-sleep).
-
-        The check matches the call syntax ``time.sleep(`` (a real sleep call),
-        not the bare token that appears in prose. ``core/git_runner.py`` documents
-        the ABSENCE of a sleep with the literal token inside its docstring; that
-        prose is not a sleep call and must not be flagged. The store-publish path
-        added by this work unit blocks on a kernel lock and detects readiness via
-        final-path existence, never a poll-sleep.
-        """
-        import re
-
-        core_dir = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "core"
-        call_pattern = re.compile(r"\btime\.sleep\s*\(")
-        offenders = []
-        for py in core_dir.rglob("*.py"):
-            text = py.read_text(encoding="utf-8")
-            if call_pattern.search(text):
-                offenders.append(str(py))
-        assert offenders == [], f"time.sleep() call must not appear under core/: {offenders}"
-
-    def test_atomic_rename_used_in_publish(self) -> None:
-        """AC-24: the publish path uses an atomic rename (Path.replace) into the store."""
-        install_py = pathlib.Path(__file__).resolve().parents[2] / "src" / "kanon_cli" / "core" / "install.py"
-        text = install_py.read_text(encoding="utf-8")
-        assert ".replace(final_path)" in text, "publish must atomically rename the temp dir into the final path"
-
-    def test_partial_materialize_leaves_no_final_entry(self, tmp_path: pathlib.Path) -> None:
-        """A failing materialize callback removes the temp dir and never creates the final entry."""
-        from kanon_cli.core.install import publish_store_entry, store_entries_dir
-
-        store = tmp_path / "store"
-        store.mkdir()
-        address = "2" * 64
-
-        def materialize(dest: pathlib.Path) -> None:
-            (dest / "half").write_text("partial", encoding="utf-8")
-            raise RuntimeError("materialize blew up")
-
-        with pytest.raises(RuntimeError, match="materialize blew up"):
-            publish_store_entry(store, address, materialize)
-
-        assert not (store_entries_dir(store) / address).exists(), "no final entry on materialize failure"
-
-    @pytest.mark.parametrize("bad_address", ["", "with/slash", "a" + __import__("os").sep + "b"])
-    def test_non_single_component_address_fails_fast(self, tmp_path: pathlib.Path, bad_address: str) -> None:
-        """An address that is not a single path component raises ValueError (fail fast)."""
-        from kanon_cli.core.install import publish_store_entry
-
-        store = tmp_path / "store"
-        store.mkdir()
-        with pytest.raises(ValueError):
-            publish_store_entry(store, bad_address, lambda dest: None)
-
-    def test_contended_publish_fails_fast_on_timeout(
-        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """A held per-entry lock makes a second in-process publish fail fast with diagnostics.
-
-        The E2 ``kanon_workspace_lock`` re-entrance guard raises immediately when
-        the same process already holds the per-entry lock, so a nested publish of
-        the same address fails fast (no deadlock, no sleep). This proves the
-        publish guards each entry with the per-entry lock rather than racing.
-        """
-        from kanon_cli.core.install import compute_store_entry_address, publish_store_entry
-        from kanon_cli.utils.concurrency import WorkspaceLockReentranceError
-
-        store = tmp_path / "store"
-        store.mkdir()
-        address = compute_store_entry_address("https://example.com/repo.git", "d" * 40)
-
-        captured: dict[str, Exception] = {}
-
-        def nested_materialize(dest: pathlib.Path) -> None:
-            try:
-                publish_store_entry(store, address, lambda d: None)
-            except WorkspaceLockReentranceError as exc:
-                captured["err"] = exc
-            (dest / "ok").write_text("done", encoding="utf-8")
-
-        publish_store_entry(store, address, nested_materialize)
-
-        assert "err" in captured, "nested publish of a held entry must hit the per-entry lock guard"
-        message = str(captured["err"])
-        assert "already held by this process" in message
 
 
 @pytest.mark.unit
@@ -1472,41 +1313,6 @@ class TestStoreGitignoreSafetyNet:
         store = repo / "store"
         store.mkdir()
         assert kanon_home_inside_git_repo(store) is True
-
-
-@pytest.mark.unit
-class TestPruneStore:
-    """prune_store removes content-addressed entries but keeps the store base."""
-
-    def test_prunes_entries_and_keeps_store_base(self, tmp_path: pathlib.Path) -> None:
-        """prune_store removes entries/.locks/.tmp, preserving the store base dir."""
-        from kanon_cli.constants import (
-            KANON_HOME_STORE_LOCKS_SUBDIR,
-            KANON_HOME_STORE_TMP_SUBDIR,
-        )
-        from kanon_cli.core.install import prune_store, store_entries_dir
-
-        store = tmp_path / "store"
-        entries = store_entries_dir(store)
-        (entries / "abc").mkdir(parents=True)
-        (store / KANON_HOME_STORE_LOCKS_SUBDIR / "abc").mkdir(parents=True)
-        (store / KANON_HOME_STORE_TMP_SUBDIR).mkdir(parents=True)
-
-        prune_store(store)
-
-        assert not entries.exists()
-        assert not (store / KANON_HOME_STORE_LOCKS_SUBDIR).exists()
-        assert not (store / KANON_HOME_STORE_TMP_SUBDIR).exists()
-        assert store.exists(), "the store base directory must survive a prune"
-
-    def test_prune_on_absent_store_is_noop(self, tmp_path: pathlib.Path) -> None:
-        """Pruning a store that was never populated is a no-op (clean before install)."""
-        from kanon_cli.core.install import prune_store
-
-        store = tmp_path / "store"
-        store.mkdir()
-        prune_store(store)
-        assert store.exists()
 
 
 @pytest.mark.unit
@@ -1617,6 +1423,7 @@ class TestProjectKeyedWorkspaces:
                 "kanon_cli.core.install._walk_includes",
                 return_value=IncludeTree(path=pathlib.Path("meta.xml")),
             ),
+            patch("kanon_cli.core.install.collect_manifest_projects", return_value=[]),
             patch(
                 "kanon_cli.core.install.run_git_ls_remote",
                 return_value=(0, f"{resolved_sha}\trefs/heads/main\n", ""),
@@ -1624,11 +1431,10 @@ class TestProjectKeyedWorkspaces:
         ):
             install(kanonenv, lock_file_path=kanonenv.parent / ".kanon.lock")
 
-    def test_store_entry_dedup_survives_project_keying(
+    def test_same_source_uses_distinct_project_workspaces(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Two projects installing the same url@sha still dedupe to one store entry."""
-        from kanon_cli.core.install import store_entries_dir
+        """Same-source installs remain isolated without a second workspace copy."""
 
         store = tmp_path / "home" / "store"
         monkeypatch.setenv("KANON_HOME", str(tmp_path / "home"))
@@ -1639,8 +1445,14 @@ class TestProjectKeyedWorkspaces:
         self._patched_install(kanonenv_a, "a" * 40)
         self._patched_install(kanonenv_b, "a" * 40)
 
-        entries = list(store_entries_dir(store).iterdir())
-        assert len(entries) == 1, f"expected exactly one deduped store entry; got {entries}"
+        workspaces = [
+            store / ".kanon-data" / "sources" / compute_project_address(kanonenv) / "shared"
+            for kanonenv in (kanonenv_a, kanonenv_b)
+        ]
+        assert all(workspace.is_dir() for workspace in workspaces)
+        assert workspaces[0] != workspaces[1]
+        assert not (store / "entries").exists()
+        assert not (store / ".tmp").exists()
 
 
 @pytest.mark.unit

@@ -77,7 +77,9 @@ class ManifestProject(NamedTuple):
     manifest_path: pathlib.Path
 
 
-def collect_manifest_projects(xml_path: pathlib.Path, manifest_repo: pathlib.Path) -> list[ManifestProject]:
+def collect_manifest_projects(
+    xml_path: pathlib.Path, manifest_repo: pathlib.Path, *, include_tree: IncludeTree | None = None
+) -> list[ManifestProject]:
     """Resolve projects across the validated include graph without Git or network.
 
     Includes are rooted at the manifest repository, cycle-checked and diamond-
@@ -85,10 +87,13 @@ def collect_manifest_projects(xml_path: pathlib.Path, manifest_repo: pathlib.Pat
     including when defined in another included file. Projects, removals and
     extensions follow declaration order after expanding includes. Nested project
     names and checkout paths follow their parent; include revisions apply only
-    to the included file's top-level projects. Unresolved remotes remain a
-    validation concern and are omitted from the explanatory graph.
+    to the included file's top-level projects. Only the final occupant of each
+    checkout path is returned, matching the runtime's sync list. Unresolved remotes remain a
+    validation concern and are omitted from the explanatory graph. Callers that
+    already validated the include tree can pass it to avoid walking it again.
     """
-    include_tree = _walk_includes(xml_path, manifest_repo)
+    if include_tree is None:
+        include_tree = _walk_includes(xml_path, manifest_repo)
     declarations: list[tuple[pathlib.Path, Element, str]] = []
 
     def visit(node: IncludeTree, include_revision: str = "") -> None:
@@ -124,6 +129,7 @@ def collect_manifest_projects(xml_path: pathlib.Path, manifest_repo: pathlib.Pat
 
     default_remote, default_revision = default or ("", "")
     projects: list[ManifestProject] = []
+    projects_by_path: dict[str, ManifestProject] = {}
 
     def add_project(
         element: Element, path: pathlib.Path, include_revision: str = "", parent: ManifestProject | None = None
@@ -142,6 +148,7 @@ def collect_manifest_projects(xml_path: pathlib.Path, manifest_repo: pathlib.Pat
         project = ManifestProject(name, checkout_path, fetch, revision, path)
         if not any((p.name, p.path) == (name, checkout_path) for p in projects):
             projects.append(project)
+            projects_by_path[checkout_path] = project
         for child in element.findall("project"):
             add_project(child, path, parent=project)
 
@@ -160,6 +167,8 @@ def collect_manifest_projects(xml_path: pathlib.Path, manifest_repo: pathlib.Pat
             if base_revision and checks_revision and any(p.revision != base_revision for p in matching):
                 raise ValueError(f"Manifest {element.tag} base-rev does not match project {name or checkout_path!r}")
             if element.tag == "remove-project":
+                for project in matching:
+                    projects_by_path.pop(project.path, None)
                 projects = [p for p in projects if p not in matching]
                 continue
             destination = element.get("dest-path", "")
@@ -171,15 +180,23 @@ def collect_manifest_projects(xml_path: pathlib.Path, manifest_repo: pathlib.Pat
             for project in projects:
                 if project in matching:
                     if remote_name and remote is None:
+                        if projects_by_path.get(project.path) is project:
+                            del projects_by_path[project.path]
                         continue
+                    original = project
                     project = project._replace(
                         path=destination.rstrip("/") or project.path,
                         fetch=remote[0] if remote is not None else project.fetch,
                         revision=element.get("revision") or project.revision,
                     )
+                    if destination:
+                        projects_by_path.pop(original.path, None)
+                        projects_by_path[project.path] = project
+                    elif projects_by_path.get(original.path) is original:
+                        projects_by_path[project.path] = project
                 updated.append(project)
             projects = updated
-    return projects
+    return list(projects_by_path.values())
 
 
 def walk_includes_collecting_remotes(

@@ -65,9 +65,10 @@ jobs:
 ## Where install artifacts live
 
 `kanon install` writes its fetched data into the shared `KANON_HOME` store
-(`$KANON_HOME`, default `~/.kanon-home`), content-addressed and deduped across
-projects. Cache that directory between runs (keyed on `.kanon.lock`) to
-avoid re-cloning; the example above caches `~/.kanon-home`. Set `KANON_HOME`
+(`$KANON_HOME`, default `~/.kanon-home`), with workspaces isolated by consumer
+project path and source alias. Cache that directory between runs (keyed on
+`.kanon.lock`) and keep the checkout path stable to reuse those workspaces;
+the example above caches `~/.kanon-home`. Set `KANON_HOME`
 (or the `--home` / `--store-dir` flag) to relocate the store, for example
 to a path that your CI runner caches by default.
 

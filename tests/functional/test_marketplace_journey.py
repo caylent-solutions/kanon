@@ -137,8 +137,8 @@ _MARKETPLACES_DIR_HEADER = "CLAUDE_MARKETPLACES_DIR=${HOME}/.claude-marketplaces
 
 
 @pytest.mark.functional
-def test_marketplace_enable_adds_header_and_disable_prunes_it(tmp_path: pathlib.Path) -> None:
-    """enable inserts the CLAUDE_MARKETPLACES_DIR header; disable of the last marketplace prunes it (Feature A)."""
+def test_marketplace_enable_adds_header_and_disable_keeps_delivery_path(tmp_path: pathlib.Path) -> None:
+    """Disabling the last marketplace retains the directory needed by its manifest."""
     workspace = tmp_path / "project"
     workspace.mkdir()
     kanon_file = workspace / ".kanon"
@@ -160,8 +160,8 @@ def test_marketplace_enable_adds_header_and_disable_prunes_it(tmp_path: pathlib.
     disable_result = _run_kanon("marketplace", "disable", _ALIAS, cwd=workspace)
     assert disable_result.returncode == 0, disable_result.stderr
     after_disable = kanon_file.read_text(encoding="utf-8")
-    assert "CLAUDE_MARKETPLACES_DIR" not in after_disable, (
-        f"disable of the last marketplace must prune the header; got:\n{after_disable}"
+    assert after_disable.count(_MARKETPLACES_DIR_HEADER) == 1, (
+        f"disable must retain the header for manifest delivery; got:\n{after_disable}"
     )
 
 

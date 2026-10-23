@@ -36,6 +36,8 @@ import urllib.parse
 from packaging.version import InvalidVersion, Version
 
 from kanon_cli.constants import (
+    _KANON_RESOLVE_TIMEOUT_DEFAULT,
+    _KANON_RESOLVE_TIMEOUT_ENV,
     CATALOG_TYPE_CLAUDE_MARKETPLACE,
     GLOBALLY_SUPPLIED_MANIFEST_VARS,
     KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
@@ -966,12 +968,15 @@ def _build_entry_catalog(
 def _find_entry_by_name(
     name: str,
     catalog: list[tuple[CatalogMetadata, pathlib.Path, str]],
+    *,
+    revision: str | None = None,
 ) -> tuple[CatalogMetadata, pathlib.Path, str]:
     """Find a catalog entry by exact name match.
 
     Args:
         name: The requested catalog entry name.
         catalog: The list of (CatalogMetadata, xml_path, url) tuples.
+        revision: The selected revision, when validating a resolved entry.
 
     Returns:
         The matching (CatalogMetadata, xml_path, url) tuple.
@@ -983,9 +988,12 @@ def _find_entry_by_name(
         if metadata.name == name:
             return metadata, xml_path, url
 
+    location = f" at selected ref '{revision}'" if revision is not None else ""
+    guidance = "Run 'kanon search' to discover available entry names."
+    if revision is not None:
+        guidance += " Select a ref containing this entry."
     print(
-        f"ERROR: Catalog entry '{name}' not found in the manifest repo.\n"
-        "Run 'kanon search' to discover available entry names.",
+        f"ERROR: Catalog entry '{name}' not found in the manifest repo{location}.\n{guidance}",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -1128,6 +1136,48 @@ def _resolve_manifest_repo_for_add(
         sys.exit(1)
 
     return repo_dir, url, resolved_ref
+
+
+def _checkout_manifest_revision(manifest_root: pathlib.Path, name: str, revision: str) -> None:
+    """Load a selected entry revision into the disposable catalog checkout.
+
+    Fetching the exact ref supports tags, branches and commit IDs even when the
+    initial catalog clone contains only the discovery branch. Fail before any
+    consumer configuration changes if the revision cannot be read.
+    """
+    try:
+        timeout = int(os.environ.get(_KANON_RESOLVE_TIMEOUT_ENV, str(_KANON_RESOLVE_TIMEOUT_DEFAULT)))
+        if timeout <= 0:
+            raise ValueError
+    except ValueError:
+        print(f"ERROR: {_KANON_RESOLVE_TIMEOUT_ENV} must be a positive integer.", file=sys.stderr)
+        sys.exit(1)
+    for arguments in (
+        ["fetch", "--depth", "1", "--", "origin", revision],
+        ["checkout", "--detach", "FETCH_HEAD"],
+    ):
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(manifest_root), *arguments],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            print(
+                f"ERROR: Reading catalog entry '{name}' at selected ref '{revision}' timed out after {timeout}s.\n"
+                f"Check remote connectivity or increase {_KANON_RESOLVE_TIMEOUT_ENV}, then retry 'kanon add'.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if result.returncode != 0:
+            print(
+                f"ERROR: Cannot read catalog entry '{name}' at selected ref '{revision}': {result.stderr}\n"
+                "Check that the selected ref exists and is accessible, then retry 'kanon add'.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
 
 def _xml_repo_relative_path(
@@ -1527,6 +1577,8 @@ def run_add(args: argparse.Namespace) -> int:
     )
 
     catalog = _build_entry_catalog(manifest_root, url)
+    selected_catalog = catalog
+    selected_revision = _ref
 
     existing_aliases = _read_all_source_aliases(kanon_file)
     existing_manifest_names = _read_alias_by_manifest_name(kanon_file)
@@ -1535,9 +1587,21 @@ def run_add(args: argparse.Namespace) -> int:
     for raw_entry in args.entries:
         name, spec = _split_name_spec(raw_entry)
 
-        metadata, xml_path, entry_url = _find_entry_by_name(name, catalog)
+        _metadata, _xml_path, entry_url = _find_entry_by_name(name, catalog)
 
         resolved_revision = _resolve_spec(name, entry_url, spec)
+        if resolved_revision != selected_revision:
+            _checkout_manifest_revision(manifest_root, name, resolved_revision)
+            try:
+                selected_catalog = _build_entry_catalog(manifest_root, entry_url)
+            except SystemExit:
+                print(
+                    f"ERROR: Cannot resolve catalog entry '{name}' at selected ref '{resolved_revision}'.",
+                    file=sys.stderr,
+                )
+                raise
+            selected_revision = resolved_revision
+        metadata, xml_path, entry_url = _find_entry_by_name(name, selected_catalog, revision=resolved_revision)
 
         base_alias = derive_source_name(metadata.name)
 

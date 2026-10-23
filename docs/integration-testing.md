@@ -734,8 +734,8 @@ rm -rf "${IC03_DIR}"
 ### IC-04: no marketplace dependency declared (default)
 
 In 3.0.0 there is no global marketplace toggle. Marketplace registration is opt-in
-per dependency via `KANON_SOURCE_<alias>_MARKETPLACE=true`; the canonical
-"disabled" state is simply the absence of that line (kanon never writes `=false`).
+per dependency via `KANON_SOURCE_<alias>_MARKETPLACE=true`; an absent or explicit
+`=false` line is disabled. `marketplace disable` retains `=false` for re-enabling.
 A `.kanon` with no `_MARKETPLACE` line therefore skips the marketplace lifecycle.
 
 ```bash
@@ -6272,7 +6272,8 @@ kanon marketplace disable alpha --kanon-file .kanon
 ```
 
 **Pass criteria:** Exit code 0. stdout contains `already disabled for 'alpha'`.
-The `.kanon` file is unchanged (kanon never writes a `=false` line).
+The `.kanon` file is unchanged; disabling a non-marketplace dependency does not
+add a marketplace type marker.
 
 ### NS-04: `kanon completion powershell` emits a PowerShell script
 

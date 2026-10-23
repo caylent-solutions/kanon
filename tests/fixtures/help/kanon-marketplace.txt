@@ -8,9 +8,8 @@ determinism is unaffected.
 
 Subcommands:
   enable <alias>    Write KANON_SOURCE_<alias>_MARKETPLACE=true.
-  disable <alias>   Remove the KANON_SOURCE_<alias>_MARKETPLACE line
-                    (absence is the canonical false; kanon never
-                    writes =false itself).
+  disable <alias>   Write KANON_SOURCE_<alias>_MARKETPLACE=false,
+                    preserving the type so enable can restore it.
   status [--all]    Show each dependency, its catalog <type>, and the
                     effective marketplace setting. An explicit =false
                     and an absent line render identically (disabled).
@@ -24,7 +23,7 @@ marketplace subcommands:
   {enable,disable,status}
     enable              Enable marketplace install for a dependency (writes
                         =true).
-    disable             Disable marketplace install for a dependency (removes
-                        the line).
+    disable             Disable marketplace install for a dependency (writes
+                        =false).
     status              Show each dependency's marketplace type and effective
                         setting.

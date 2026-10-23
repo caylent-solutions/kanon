@@ -795,8 +795,8 @@ class TestParseXmlIncludesAndProjectsEdgePaths:
 class TestResolveIncludePath:
     """Tests for _resolve_include_path (coverage AC-FINAL-014)."""
 
-    def test_resolves_relative_to_xml_dir(self, tmp_path: Path) -> None:
-        """_resolve_include_path finds file relative to xml_path's directory."""
+    def test_does_not_resolve_relative_to_xml_dir(self, tmp_path: Path) -> None:
+        """A sibling XML is not an installable manifest-root-relative include."""
         xml_dir = tmp_path / "repo-specs"
         xml_dir.mkdir()
         target = xml_dir / "child.xml"
@@ -804,11 +804,11 @@ class TestResolveIncludePath:
         xml_path = xml_dir / "parent.xml"
         xml_path.write_text("<manifest/>")
 
-        result = _resolve_include_path("child.xml", xml_path, tmp_path)
-        assert result == target
+        result = _resolve_include_path("child.xml", tmp_path)
+        assert result is None
 
     def test_resolves_relative_to_manifest_root(self, tmp_path: Path) -> None:
-        """_resolve_include_path falls back to manifest_root when not in xml dir."""
+        """_resolve_include_path resolves from the manifest repository root."""
         xml_dir = tmp_path / "repo-specs"
         xml_dir.mkdir()
         xml_path = xml_dir / "parent.xml"
@@ -817,15 +817,40 @@ class TestResolveIncludePath:
         target = tmp_path / "common.xml"
         target.write_text("<manifest/>")
 
-        result = _resolve_include_path("common.xml", xml_path, tmp_path)
+        result = _resolve_include_path("common.xml", tmp_path)
         assert result == target
+
+    def test_manifest_root_include_wins_over_sibling_file(self, tmp_path: Path) -> None:
+        """Search resolves the same include as install when both paths exist."""
+        from kanon_cli.core.include_walker import _walk_includes
+
+        repo_specs = tmp_path / "repo-specs"
+        xml_path = _write_marketplace_xml_with_include(
+            repo_specs,
+            "pkg",
+            "1.0.0",
+            include_name="child.xml",
+            project_name="root-project",
+            project_revision="refs/heads/main",
+        )
+        expected_project = "installed-project"
+        shadow_project = "sibling-project"
+        for directory, project in ((tmp_path, expected_project), (repo_specs, shadow_project)):
+            (directory / "child.xml").write_text(f'<manifest><project name="{project}"/></manifest>')
+
+        include_tree = _walk_includes(xml_path, tmp_path)
+        result = _resolve_include_path("child.xml", tmp_path)
+        assert result == tmp_path / include_tree.includes[0].path
+        rendered = "\n".join(_render_tree(tmp_path, entry_name="pkg", max_depth=None))
+        assert expected_project in rendered
+        assert shadow_project not in rendered
 
     def test_returns_none_when_not_found(self, tmp_path: Path) -> None:
         """_resolve_include_path returns None when the include file does not exist."""
         xml_path = tmp_path / "parent.xml"
         xml_path.write_text("<manifest/>")
 
-        result = _resolve_include_path("does-not-exist.xml", xml_path, tmp_path)
+        result = _resolve_include_path("does-not-exist.xml", tmp_path)
         assert result is None
 
 
@@ -1104,7 +1129,7 @@ def _build_sibling_tree_fixture(
     """Write a marketplace XML with multiple sibling include XMLs, each with projects.
 
     Each include XML is placed at ``tmp_path/<stem>.xml`` so that
-    ``_resolve_include_path`` can locate it via the ``manifest_root`` fallback.
+    ``_resolve_include_path`` can locate it relative to ``manifest_root``.
 
     Args:
         tmp_path: Pytest tmp_path fixture root.

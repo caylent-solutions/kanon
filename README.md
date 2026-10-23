@@ -538,12 +538,12 @@ kanon install --refresh-lock-source NAME  # re-resolve one source's chain only
   `KANON_HOME` store; detects cross-source name collisions (fail-fast). When
   the store lives inside a git repo, writes a `.gitignore` safety net into
   the store root.
-- Reconciles against `.kanon.lock` like `npm ci`: a plain `install` fails fast
-  (exit 1) without mutating the lock when `.kanon` and `.kanon.lock` have
-  drifted (a source added, removed, or with a changed ref). `--reconcile` opts
+- Adding sources followed by plain `install` preserves existing pins and
+  resolves the additions. Changes to an existing source's URL, path or ref,
+  and removals, fail fast (exit 1) without mutating the lock. `--reconcile` opts
   in to the lenient prune-and-re-resolve (prune orphaned entries, re-resolve
   added/changed sources, replay unchanged ones, rewrite the lock on success).
-  `--strict-lock` additionally rejects an orphaned lock entry that survives a
+  `--strict-lock` rejects pure additions too, and an orphaned lock entry that survives a
   `kanon_hash` match. Branch drift (a locked SHA differing from the branch's
   current tip) reuses the locked SHA with an info-line; `--strict-drift`
   promotes that to an error.
@@ -804,9 +804,10 @@ fast naming the `KANON_SOURCE_<alias>_<VAR>` key to set.
 
 **`KANON_SOURCE_<alias>_MARKETPLACE`** (Optional)
 Per-source marketplace toggle. Set to `true` to enable the marketplace
-lifecycle for this source; absence means `false` (kanon never writes
-`=false`). Written by `kanon add --marketplace-install`; manage it with
-`kanon marketplace enable` / `disable` / `status`.
+lifecycle for this source; absence means disabled. Written by
+`kanon add --marketplace-install`; manage it with `kanon marketplace enable` /
+`disable` / `status`. Disabling retains `=false` so the source's marketplace
+type is preserved and it can be enabled again.
 
 ### Environment Variables
 

@@ -4,7 +4,7 @@ Covers the per-dependency marketplace management command (spec Section 4.4 /
 FR-18):
 
 - ``enable <alias>`` writes ``KANON_SOURCE_<alias>_MARKETPLACE=true``.
-- ``disable <alias>`` removes the line (absence is the canonical false).
+- ``disable <alias>`` writes ``=false`` to preserve the marketplace type.
 - ``status`` renders an explicit ``=false`` and an absent line identically.
 - Unknown alias -> clear error (non-zero exit).
 - ``enable`` on a non-marketplace type -> pretty error (non-zero exit).
@@ -192,19 +192,20 @@ class TestEnable:
 class TestDisable:
     """Verify ``marketplace disable`` semantics."""
 
-    def test_disable_removes_the_line(self, tmp_path: pathlib.Path) -> None:
+    def test_disable_preserves_type_with_false(self, tmp_path: pathlib.Path) -> None:
         kanon_file = _write_kanon(tmp_path, _source_block("foo", marketplace="true"))
         rc = run_disable(_namespace("foo", kanon_file))
         assert rc == 0
         text = kanon_file.read_text(encoding="utf-8")
-        assert "KANON_SOURCE_foo_MARKETPLACE" not in text
+        assert "KANON_SOURCE_foo_MARKETPLACE=false" in text
 
         assert "KANON_SOURCE_foo_URL=" in text
 
-    def test_disable_never_writes_false(self, tmp_path: pathlib.Path) -> None:
+    def test_disabled_marketplace_can_be_enabled_again(self, tmp_path: pathlib.Path) -> None:
         kanon_file = _write_kanon(tmp_path, _source_block("foo", marketplace="true"))
         run_disable(_namespace("foo", kanon_file))
-        assert "=false" not in kanon_file.read_text(encoding="utf-8")
+        assert run_enable(_namespace("foo", kanon_file)) == 0
+        assert "KANON_SOURCE_foo_MARKETPLACE=true" in kanon_file.read_text(encoding="utf-8")
 
     def test_disable_already_disabled_is_noop(self, tmp_path: pathlib.Path) -> None:
         kanon_file = _write_kanon(tmp_path, _source_block("foo", marketplace=None))
@@ -220,11 +221,12 @@ class TestDisable:
         assert exc_info.value.code == 1
         assert "unknown source alias" in capsys.readouterr().err
 
-    def test_disable_explicit_false_line_removed(self, tmp_path: pathlib.Path) -> None:
+    def test_disable_explicit_false_preserves_type(self, tmp_path: pathlib.Path) -> None:
         kanon_file = _write_kanon(tmp_path, _source_block("foo", marketplace="false"))
+        before = kanon_file.read_text(encoding="utf-8")
         rc = run_disable(_namespace("foo", kanon_file))
         assert rc == 0
-        assert "KANON_SOURCE_foo_MARKETPLACE" not in kanon_file.read_text(encoding="utf-8")
+        assert kanon_file.read_text(encoding="utf-8") == before
 
 
 @pytest.mark.unit

@@ -240,6 +240,11 @@ the node identified by `<name-or-url>`. It resolves the tree from the
 lockfile when available; a live catalog source is required only when no
 lockfile exists.
 
+Live resolution and install's recorded project metadata both follow nested XML
+includes and inherit manifest-wide remote and revision defaults. A project's
+captured commit is matched by its name and checkout path, so the recorded graph
+uses the commit captured from the corresponding checkout.
+
 ### why -- Accepted argument shapes
 
 The single positional argument is matched in the following precedence:

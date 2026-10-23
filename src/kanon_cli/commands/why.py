@@ -40,7 +40,6 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 
-import defusedxml.ElementTree as ET
 
 from kanon_cli.repo.subcmds.envsubst import _UNRESOLVED_PATTERN
 from kanon_cli.constants import (
@@ -65,7 +64,7 @@ from kanon_cli.core.include_walker import IncludeTree, _walk_includes
 from kanon_cli.core.install import _resolve_ref_to_sha
 from kanon_cli.core.kanonenv import parse_kanonenv
 from kanon_cli.core.lockfile import Lockfile, IncludeEntry, read_lockfile
-from kanon_cli.core.manifest import join_project_repo_url, walk_includes_collecting_remotes
+from kanon_cli.core.manifest import collect_manifest_projects, join_project_repo_url
 from kanon_cli.core.metadata import derive_source_name
 from kanon_cli.core.remote_url import _enforce_remote_url_policy
 from kanon_cli.core.url import canonicalize_repo_url
@@ -383,8 +382,8 @@ def _build_project_nodes_from_xml(
     """Parse ``<project>`` elements from a manifest XML and return project ``ChainNode`` objects.
 
     Resolves the project URL by looking up each project's ``remote`` attribute
-    in the remote-name -> fetch-URL mapping collected by
-    ``walk_includes_collecting_remotes``.  Remote ``fetch`` values that contain
+    in the include graph with manifest-wide defaults resolved by
+    ``collect_manifest_projects``.  Remote ``fetch`` values that contain
     ``${VAR}`` placeholders are substituted from ``globals_map`` via
     ``_substitute_fetch_url`` before canonicalization.  Only ``<project>``
     elements whose remote resolves to a concrete, canonicalizable fetch URL are
@@ -422,37 +421,23 @@ def _build_project_nodes_from_xml(
     resolved_kanon_file: pathlib.Path = kanon_file if kanon_file is not None else pathlib.Path(".kanon")
 
     try:
-        remote_map = walk_includes_collecting_remotes(manifest_xml_path, manifest_repo)
-        tree = ET.parse(str(manifest_xml_path))
-        root = tree.getroot()
+        projects = collect_manifest_projects(manifest_xml_path, manifest_repo)
     except Exception as exc:
         raise LiveResolveError(
             source_name,
             f"failed to parse manifest XML at {manifest_xml_path}: {exc}",
         ) from exc
 
-    if root is None:
-        return []
-
     project_nodes: list[ChainNode] = []
-    for project_el in root.iter("project"):
-        remote_attr = project_el.get("remote")
-        project_name = project_el.get("name", "")
-        if not remote_attr or not project_name:
-            continue
-
-        raw_fetch = remote_map.get(remote_attr)
-        if raw_fetch is None:
-            continue
-
+    for project in projects:
         fetch_url = _substitute_fetch_url(
-            raw_fetch,
+            project.fetch,
             resolved_globals,
             source_name,
             resolved_kanon_file,
         )
 
-        raw_url = join_project_repo_url(fetch_url, project_name)
+        raw_url = join_project_repo_url(fetch_url, project.name)
         try:
             canonical = canonicalize_repo_url(raw_url)
         except ValueError:
@@ -461,7 +446,7 @@ def _build_project_nodes_from_xml(
         project_nodes.append(
             ChainNode(
                 kind="project",
-                name=project_name,
+                name=project.name,
                 ref=None,
                 sha=source_sha,
                 url=raw_url,

@@ -269,7 +269,8 @@ validates dependency information.
 **`KANON_RESOLVE_TIMEOUT`** (default: `30`) -- Timeout in seconds for
 each `git ls-remote` call in `kanon install`, `kanon outdated`,
 `kanon why`, and `kanon doctor`. Bounded per call; not a global wall
-clock. Defined in `src/kanon_cli/constants.py`.
+clock. `kanon add` also uses this limit for each fetch and checkout of a
+selected entry revision. Defined in `src/kanon_cli/constants.py`.
 
 **`KANON_SYNC_JOBS`** (default: unset) -- Upper bound on how many worker
 processes `repo sync` fans out to during `kanon install`. This is a **cap**: it
@@ -706,10 +707,14 @@ install fast, naming the `KANON_SOURCE_<alias>_<VAR>` key to set.
 
 ## Per-dependency marketplace install flag
 
+See [mixed packages and marketplaces](claude-marketplaces-guide.md#mixed-packages-and-marketplaces)
+for the runtime JSON discriminator and the shared-directory limitation.
+
 There is no global marketplace-install toggle. Marketplace install is a
 per-dependency setting stored in `.kanon` as
 `KANON_SOURCE_<alias>_MARKETPLACE=true`. Absence of the line is the
-canonical "disabled" state; kanon never writes `=false` itself.
+default disabled state. `kanon marketplace disable` writes `=false` to retain
+the source's marketplace identity so `kanon marketplace enable` can restore it.
 
 When `KANON_SOURCE_<alias>_MARKETPLACE=true` for a dependency:
 

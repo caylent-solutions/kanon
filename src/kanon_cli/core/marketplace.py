@@ -218,9 +218,11 @@ def register_marketplace(claude_bin: str, marketplace_path: pathlib.Path) -> boo
 
 
 def install_plugin(claude_bin: str, plugin_name: str, marketplace_name: str) -> bool:
-    """Install a plugin via Claude Code CLI.
+    """Install a plugin and refresh it from the registered marketplace.
 
-    Runs: claude plugin install <plugin_name>@<marketplace_name> --scope user
+    Runs ``claude plugin install`` followed by ``claude plugin update``, both
+    at user scope. Claude treats installing an existing plugin as a successful
+    no-op; the update is required to refresh its cached version after a repin.
 
     Args:
         claude_bin: Path to claude binary.
@@ -229,30 +231,31 @@ def install_plugin(claude_bin: str, plugin_name: str, marketplace_name: str) -> 
         marketplace_name: Name of the marketplace (from marketplace.json).
 
     Returns:
-        True if install succeeded, False otherwise.
+        True if installation and refresh succeeded, False otherwise.
     """
     timeout = _get_timeout("CLAUDE_INSTALL_TIMEOUT")
     plugin_ref = f"{plugin_name}@{marketplace_name}"
-    try:
-        result = subprocess.run(
-            [claude_bin, "plugin", "install", plugin_ref, "--scope", "user"],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        print(
-            f"ERROR: Timed out after {timeout} seconds installing plugin {plugin_ref}",
-            file=sys.stderr,
-        )
-        return False
+    for action in ("install", "update"):
+        try:
+            result = subprocess.run(
+                [claude_bin, "plugin", action, plugin_ref, "--scope", "user"],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            print(
+                f"ERROR: Timed out after {timeout} seconds running plugin {action} for {plugin_ref}",
+                file=sys.stderr,
+            )
+            return False
 
-    if result.returncode != 0:
-        print(
-            f"ERROR: Failed to install plugin {plugin_ref}: {result.stderr}",
-            file=sys.stderr,
-        )
-        return False
+        if result.returncode != 0:
+            print(
+                f"ERROR: Failed to {action} plugin {plugin_ref}: {result.stderr}",
+                file=sys.stderr,
+            )
+            return False
     return True
 
 
@@ -499,6 +502,7 @@ def install_marketplace_plugins(marketplace_dir: pathlib.Path) -> None:
             marketplaces_registered += 1
         else:
             any_failures = True
+            continue
 
         plugins = discover_plugins(entry)
         for plugin_name, _plugin_path in plugins:

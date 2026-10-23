@@ -214,7 +214,7 @@ class TestNSCommandSurface:
         )
 
     def test_ns_03_marketplace_disable_already_disabled_is_noop(self, tmp_path: pathlib.Path) -> None:
-        """NS-03: disable on an already-disabled alias exits 0 and never writes =false."""
+        """NS-03: disable on a non-marketplace alias exits 0 without adding a marker."""
         manifest_bare = _build_alpha_manifest(tmp_path / "fixtures")
         work_dir = tmp_path / "ns-03"
         work_dir.mkdir()
@@ -232,7 +232,7 @@ class TestNSCommandSurface:
         )
         after = kanon_file.read_text()
         assert after == before, ".kanon must be unchanged after a no-op disable"
-        assert "_MARKETPLACE" not in after, "kanon must never write a =false _MARKETPLACE line"
+        assert "_MARKETPLACE" not in after, "disable must not give a non-marketplace alias a type marker"
 
     def test_ns_04_completion_powershell_emits_script(self, tmp_path: pathlib.Path) -> None:
         """NS-04: completion powershell prints a PowerShell script header, exit 0."""

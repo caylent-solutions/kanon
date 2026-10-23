@@ -27,6 +27,7 @@ Spec references:
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import string
@@ -35,6 +36,7 @@ from typing import TYPE_CHECKING, NamedTuple, cast
 import defusedxml.ElementTree as ET
 
 from kanon_cli.constants import KANON_ALLOW_INSECURE_REMOTES
+from kanon_cli.core.include_walker import IncludeTree, _walk_includes
 from kanon_cli.core.metadata import find_catalog_entry_files
 from kanon_cli.core.remote_url import RemoteUrlScheme, _classify_remote_url_scheme
 
@@ -63,6 +65,121 @@ class RawFinding(NamedTuple):
     code: str
     message: str
     remediation: str
+
+
+class ManifestProject(NamedTuple):
+    """A project with manifest-wide defaults resolved, retaining checkout identity."""
+
+    name: str
+    path: str
+    fetch: str
+    revision: str
+    manifest_path: pathlib.Path
+
+
+def collect_manifest_projects(xml_path: pathlib.Path, manifest_repo: pathlib.Path) -> list[ManifestProject]:
+    """Resolve projects across the validated include graph without Git or network.
+
+    Includes are rooted at the manifest repository, cycle-checked and diamond-
+    deduplicated by the shared walker. Remotes and the default apply globally,
+    including when defined in another included file. Projects, removals and
+    extensions follow declaration order after expanding includes. Nested project
+    names and checkout paths follow their parent; include revisions apply only
+    to the included file's top-level projects. Unresolved remotes remain a
+    validation concern and are omitted from the explanatory graph.
+    """
+    include_tree = _walk_includes(xml_path, manifest_repo)
+    declarations: list[tuple[pathlib.Path, Element, str]] = []
+
+    def visit(node: IncludeTree, include_revision: str = "") -> None:
+        path = manifest_repo / node.path
+        root = cast("Element", ET.parse(str(path)).getroot())
+        children = {(manifest_repo / child.path).resolve(): child for child in node.includes}
+        for element in root:
+            if element.tag == "include":
+                child = children.pop((manifest_repo / element.get("name", "")).resolve(), None)
+                if child is not None:
+                    visit(child, element.get("revision", ""))
+            else:
+                declarations.append((path, element, include_revision))
+
+    visit(include_tree)
+    remotes: dict[str, tuple[str, str]] = {}
+    default: tuple[str, str] | None = None
+    for _path, element, _include_revision in declarations:
+        if element.tag == "remote":
+            name, fetch = element.get("name", ""), element.get("fetch", "")
+            if name and fetch:
+                declaration = (fetch, element.get("revision", ""))
+                if name in remotes and remotes[name] != declaration:
+                    raise ValueError(f"Conflicting manifest remote {name!r}")
+                remotes[name] = declaration
+        elif element.tag == "default":
+            if not element.attrib:
+                continue
+            declaration = (element.get("remote", ""), element.get("revision", ""))
+            if default is not None and default != declaration:
+                raise ValueError("Conflicting manifest default remote or revision")
+            default = declaration
+
+    default_remote, default_revision = default or ("", "")
+    projects: list[ManifestProject] = []
+
+    def add_project(
+        element: Element, path: pathlib.Path, include_revision: str = "", parent: ManifestProject | None = None
+    ) -> None:
+        name = element.get("name", "")
+        remote = remotes.get(element.get("remote") or default_remote)
+        if not name or remote is None:
+            return
+        if parent is not None:
+            name = os.path.join(parent.name, name)
+        checkout_path = (element.get("path", "") or name).rstrip("/")
+        if parent is not None:
+            checkout_path = os.path.join(parent.path, checkout_path)
+        fetch, remote_revision = remote
+        revision = element.get("revision", include_revision) or remote_revision or default_revision
+        project = ManifestProject(name, checkout_path, fetch, revision, path)
+        if not any((p.name, p.path) == (name, checkout_path) for p in projects):
+            projects.append(project)
+        for child in element.findall("project"):
+            add_project(child, path, parent=project)
+
+    for path, element, include_revision in declarations:
+        if element.tag == "project":
+            add_project(element, path, include_revision)
+        elif element.tag in ("remove-project", "extend-project"):
+            name, checkout_path = element.get("name", ""), element.get("path", "")
+            if not name and (element.tag == "extend-project" or not checkout_path):
+                raise ValueError(f"Manifest {element.tag} requires a project name or path")
+            matching = [
+                p for p in projects if (not name or p.name == name) and (not checkout_path or p.path == checkout_path)
+            ]
+            base_revision = element.get("base-rev", "")
+            checks_revision = element.tag == "remove-project" or bool(element.get("revision"))
+            if base_revision and checks_revision and any(p.revision != base_revision for p in matching):
+                raise ValueError(f"Manifest {element.tag} base-rev does not match project {name or checkout_path!r}")
+            if element.tag == "remove-project":
+                projects = [p for p in projects if p not in matching]
+                continue
+            destination = element.get("dest-path", "")
+            if destination and not checkout_path and len(matching) > 1:
+                raise ValueError(f"Manifest extend-project dest-path matches multiple projects: {name!r}")
+            remote_name = element.get("remote", "")
+            remote = remotes.get(remote_name) if remote_name else None
+            updated: list[ManifestProject] = []
+            for project in projects:
+                if project in matching:
+                    if remote_name and remote is None:
+                        continue
+                    project = project._replace(
+                        path=destination.rstrip("/") or project.path,
+                        fetch=remote[0] if remote is not None else project.fetch,
+                        revision=element.get("revision") or project.revision,
+                    )
+                updated.append(project)
+            projects = updated
+    return projects
 
 
 def walk_includes_collecting_remotes(

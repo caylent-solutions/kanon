@@ -48,7 +48,7 @@ convention:
 |`_REF`|Required|Branch name, exact tag ref, or PEP 440 version constraint|
 |`_PATH`|Required|Path to the entry-point manifest XML within the repository|
 |`_NAME`|Required|Original catalog entry name for the source (written by `kanon add`)|
-|`_MARKETPLACE`|Optional|Set to `true` to enable the Claude marketplace lifecycle for this source; absence means disabled (kanon never writes `=false`)|
+|`_MARKETPLACE`|Optional|Set to `true` to enable the Claude marketplace lifecycle for this source; absence means disabled. `marketplace disable` retains `=false` so the type remains available for re-enabling|
 |`_<VAR>`|Optional|Per-dependency env var (e.g. `_GITBASE`) supplying one `${VAR}` the source's manifest references; `GITBASE` is auto-derived from the source URL by `kanon add`|
 
 Sources are processed in alphabetical order by name.

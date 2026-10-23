@@ -19,12 +19,13 @@ Every ``kanon install`` invocation inspects the state matrix:
   LOCKFILE_ABSENT        -- .kanon.lock absent; resolve fresh, write lockfile.
   LOCKFILE_CONSISTENT    -- .kanon.lock present and kanon_hash matches; replay SHAs
                             and replay the locked content pins (v5).
-  LOCKFILE_HASH_MISMATCH -- .kanon.lock present but kanon_hash differs.  Default
-                            install FAILS FAST (the FR-24 .kanon <-> .kanon.lock
+  LOCKFILE_HASH_MISMATCH -- .kanon.lock present but kanon_hash differs.  Pure additions
+                            reconcile while preserving existing pins; other drift
+                            FAILS FAST (the FR-24 .kanon <-> .kanon.lock
                             consistency check runs before resolving and the lock is
                             never mutated; npm ci).  --reconcile opts back in to the
                             lenient RECONCILE; --refresh-lock rebuilds the whole lock.
-  RECONCILE              -- --reconcile opt-in: prune orphans, resolve added/changed
+  RECONCILE              -- pure additions or --reconcile: resolve added/changed
                             sources fresh, replay unchanged sources, rebuild + write
                             the lock once at the end on success only.
   LOCKFILE_UNREACHABLE   -- lockfile SHA no longer reachable on remote; hard error.
@@ -104,6 +105,7 @@ from kanon_cli.constants import (
 )
 from kanon_cli.core.git_runner import run_git_ls_remote
 from kanon_cli.core.kanon_hash import kanon_hash as _kanon_hash
+from kanon_cli.core.kanon_hash import hash_sources
 from kanon_cli.core.lockfile import (
     CURRENT_SCHEMA_VERSION,
     ContentPinEntry,
@@ -116,7 +118,7 @@ from kanon_cli.core.lockfile import (
     read_lockfile,
     write_lockfile,
 )
-from kanon_cli.core.manifest import join_project_repo_url, walk_includes_collecting_remotes
+from kanon_cli.core.manifest import collect_manifest_projects, join_project_repo_url
 from kanon_cli.core.include_walker import (
     IncludeCycleError,
     IncludeTree,
@@ -250,9 +252,9 @@ class InstallState(enum.Enum):
     - LOCKFILE_ABSENT:          .kanon.lock absent; resolve fresh, write lockfile.
     - LOCKFILE_CONSISTENT:      .kanon.lock present and kanon_hash matches; replay SHAs.
     - LOCKFILE_HASH_MISMATCH:   .kanon.lock present but kanon_hash differs; classification
-                                result only.  Default install derives ``RECONCILE`` from it;
-                                ``--strict-lock`` turns it into a clean hard error.
-    - RECONCILE:                default install with a hash mismatch; reconcile .kanon <-> lock
+                                result only. Pure additions derive ``RECONCILE`` unless
+                                ``--strict-lock`` is set; other drift needs ``--reconcile``.
+    - RECONCILE:                pure additions or explicit reconciliation of .kanon <-> lock
                                 npm-style (prune orphans, resolve added/changed sources fresh,
                                 replay unchanged sources, rebuild + write the lock once on success).
     - LOCKFILE_UNREACHABLE:     lockfile SHA no longer reachable on remote; hard error.
@@ -1887,11 +1889,11 @@ def build_project_entries(
 
     URLs are resolved from the already-synced local manifests (no extra network)
     with the same helpers the live ``why`` resolver uses:
-    ``walk_includes_collecting_remotes`` builds the ``<remote name> -> fetch``
-    map, ``join_project_repo_url`` joins the remote base to the ``<project name>``
+    ``collect_manifest_projects`` resolves the include graph and inherited
+    remote/revision defaults, ``join_project_repo_url`` joins the remote base to the ``<project name>``
     repo path, and ``canonicalize_repo_url`` canonicalizes the result. The
     resolved content SHA of each project is taken from the ``content_pins`` the
-    caller captured after ``repo sync`` (keyed by project name), so a project only
+    caller captured after ``repo sync`` (keyed by project name and checkout path), so a project only
     yields a ``ProjectEntry`` when its checkout SHA was captured. Projects whose
     ``remote`` cannot be resolved to a concrete fetch URL, or whose joined URL is
     not canonicalizable, are skipped -- matching the live ``why`` resolver, which
@@ -1915,59 +1917,38 @@ def build_project_entries(
         A list of ``ProjectEntry`` rows -- one per resolvable synced project --
         sorted by project name for deterministic, byte-stable lockfile output.
     """
-    sha_by_name = {pin.name: pin.resolved_sha for pin in content_pins}
-    if not sha_by_name:
+    sha_by_identity = {(pin.name, pin.path): pin.resolved_sha for pin in content_pins}
+    if not sha_by_identity:
         return []
 
     try:
-        remote_map = walk_includes_collecting_remotes(manifest_xml_path, manifest_repo_root)
+        projects = collect_manifest_projects(manifest_xml_path, manifest_repo_root)
     except (ET.ParseError, FileNotFoundError, OSError):
-        remote_map = {}
+        return []
 
+    included_paths = {path.resolve() for path in manifest_paths}
     entries: list[ProjectEntry] = []
-    seen: set[str] = set()
-    for manifest_path in manifest_paths:
-        if not manifest_path.is_file():
+    for project in projects:
+        if project.manifest_path.resolve() not in included_paths:
             continue
+        resolved_sha = sha_by_identity.get((project.name, project.path))
+        if resolved_sha is None:
+            continue
+        raw_url = join_project_repo_url(project.fetch, project.name)
         try:
-            tree = ET.parse(str(manifest_path))
-        except ET.ParseError:
+            canonical_url = canonicalize_repo_url(raw_url)
+        except ValueError:
             continue
-        root = tree.getroot()
-        default_el = root.find("default")
-        default_remote = default_el.get("remote") if default_el is not None else None
-        default_revision = default_el.get("revision") if default_el is not None else None
-
-        for project_el in root.findall("project"):
-            name = project_el.get("name", "")
-            if not name or name in seen:
-                continue
-            resolved_sha = sha_by_name.get(name)
-            if resolved_sha is None:
-                continue
-            remote_name = project_el.get("remote") or default_remote
-            if not remote_name:
-                continue
-            fetch_url = remote_map.get(remote_name)
-            if not fetch_url:
-                continue
-            raw_url = join_project_repo_url(fetch_url, name)
-            try:
-                canonical_url = canonicalize_repo_url(raw_url)
-            except ValueError:
-                continue
-            revision = project_el.get("revision") or default_revision or ""
-            entries.append(
-                ProjectEntry(
-                    name=name,
-                    url=raw_url,
-                    canonical_url=canonical_url,
-                    ref_spec="*",
-                    resolved_ref=revision or resolved_sha,
-                    resolved_sha=resolved_sha,
-                )
+        entries.append(
+            ProjectEntry(
+                name=project.name,
+                url=raw_url,
+                canonical_url=canonical_url,
+                ref_spec="*",
+                resolved_ref=project.revision or resolved_sha,
+                resolved_sha=resolved_sha,
             )
-            seen.add(name)
+        )
 
     return sorted(entries, key=lambda p: p.name)
 
@@ -1980,7 +1961,10 @@ def apply_content_pins_to_manifests(
 
     Replay path (spec Section 5.2 / FR-22): when a source's locked
     ``content_pins`` are present, this rewrites the ``revision`` attribute of
-    every matching ``<project>`` element (matched by project ``name``) in the
+    every matching ``<project>`` element (matched by project ``name`` and checkout
+    ``path``, which defaults to the name when omitted or empty). Nested project
+    names and paths are resolved relative to their parent as in ``repo sync``.
+    This updates the projects in the
     resolved manifest XML files to the locked 40/64-hex content SHA, BEFORE
     ``repo sync`` runs.  The vendored repo tool accepts a bare SHA revision and
     checks out exactly that commit, so the exact locked content is materialised
@@ -1997,9 +1981,27 @@ def apply_content_pins_to_manifests(
     Raises:
         OSError: If a manifest file cannot be rewritten.
     """
-    sha_by_name = {pin.name: pin.resolved_sha for pin in content_pins}
-    if not sha_by_name:
+    sha_by_identity = {(pin.name, pin.path): pin.resolved_sha for pin in content_pins}
+    if not sha_by_identity:
         return
+
+    def pin_project(project_el: ET.Element, parent_name: str = "", parent_path: str = "") -> bool:
+        name = project_el.get("name", "")
+        if parent_name:
+            name = os.path.join(parent_name, name)
+        path = (project_el.get("path", "") or name).rstrip("/")
+        if parent_name:
+            path = os.path.join(parent_path, path)
+        locked_sha = sha_by_identity.get((name, path))
+        changed = False
+        if locked_sha is not None and project_el.get("revision") != locked_sha:
+            project_el.set("revision", locked_sha)
+            changed = True
+        for child in project_el.findall("project"):
+            if pin_project(child, name, path):
+                changed = True
+        return changed
+
     for manifest_path in manifest_paths:
         if not manifest_path.is_file():
             continue
@@ -2010,12 +2012,7 @@ def apply_content_pins_to_manifests(
         root = tree.getroot()
         changed = False
         for project_el in root.findall("project"):
-            name = project_el.get("name", "")
-            locked_sha = sha_by_name.get(name)
-            if locked_sha is None:
-                continue
-            if project_el.get("revision") != locked_sha:
-                project_el.set("revision", locked_sha)
+            if pin_project(project_el):
                 changed = True
         if changed:
             tree.write(str(manifest_path), encoding="unicode", xml_declaration=True)
@@ -2483,6 +2480,22 @@ def _strict_lock_drift_error(
     )
 
 
+def _only_adds_sources(sources: dict[str, dict[str, str]], lockfile: Lockfile) -> bool:
+    """Allow additions only when all previously locked declarations are unchanged.
+
+    Comparing the canonical hash of the retained declarations also checks URL
+    and manifest path drift, which alias/ref parity alone cannot detect.
+    """
+    locked_aliases = {entry.alias for entry in lockfile.sources}
+    if not locked_aliases < sources.keys():
+        return False
+    retained = {alias: sources[alias] for alias in locked_aliases}
+    if hash_sources(retained) != lockfile.kanon_hash:
+        return False
+    check_lockfile_consistency(list(retained), {alias: source["ref"] for alias, source in retained.items()}, lockfile)
+    return True
+
+
 def _assert_lockfile_consistent_or_fail(
     kanon_aliases: list[str],
     kanon_ref_specs: dict[str, str],
@@ -2492,7 +2505,7 @@ def _assert_lockfile_consistent_or_fail(
 
     Runs the shared :func:`check_lockfile_consistency` -- the SAME alias-set /
     per-alias ref-spec parity check ``kanon validate lockfile`` runs -- before
-    the default install resolves anything.  A drifted pair (an added/removed
+    resolving non-additive drift. A drifted pair (an added/removed
     source alias, or a changed ``<source revision>``) raises
     :class:`LockfileConsistencyError`, which the install CLI converts to a
     non-zero exit with the check's actionable message (spec Section 4.3 /
@@ -2658,7 +2671,9 @@ def _run_install(
     Implements the lockfile state-machine branching:
     - LOCKFILE_ABSENT: resolve fresh, install, write lockfile.
     - LOCKFILE_CONSISTENT: install exactly the SHAs in the lockfile; skip resolve.
-    - LOCKFILE_HASH_MISMATCH (default, npm ci): FAIL FAST -- the .kanon <-> .kanon.lock
+    - LOCKFILE_HASH_MISMATCH (pure additions): resolve new sources, replay existing
+      pins, and write the lock on success. --strict-lock rejects additions too.
+    - LOCKFILE_HASH_MISMATCH (other drift): FAIL FAST -- the .kanon <-> .kanon.lock
       consistency check (FR-24) runs before resolving, so a drifted pair exits 1
       with an actionable error and the lock is never mutated.  Reconciliation is
       opt-in via ``--reconcile``; a full rebuild is opt-in via ``--refresh-lock``.
@@ -2693,20 +2708,21 @@ def _run_install(
             while preserving all other lockfile entries.
         strict_lock: When ``True``, upgrade orphaned lock entries (sources in the
             lockfile but absent from ``.kanon``) to ``OrphanedLockEntryError``
-            instead of pruning with an info-line.  Only applies in the consistent
-            state; on a hash mismatch the default is already fail-fast.
+            instead of pruning with an info-line in the consistent state.
+            Also reject pure source additions on a hash mismatch.
         strict_drift: When ``True``, upgrade branch drift (branch tip on remote
             differs from locked SHA) to ``BranchDriftError`` instead of reusing
-            the locked SHA with an info-line.  Only applies in the consistent state.
+            the locked SHA with an info-line. Applies to consistent replay and
+            automatic pure additions.
         reconcile: When ``True``, opt back in to the lenient npm-install reconcile
             on a hash mismatch (prune orphans, re-resolve added/changed sources,
             replay unchanged ones, rewrite the lock on success).  Default ``False``
-            fails fast on drift via the FR-24 consistency check before resolving.
+            accepts pure additions and fails fast on other drift before resolving.
 
     Raises:
         LockfileConsistencyError: On the default (non-``--reconcile``) path when the
             ``.kanon`` and ``.kanon.lock`` alias sets or per-alias ref-specs have
-            drifted (the FR-24 consistency check runs before resolving).
+            drifted beyond pure additions (checked before resolving).
         KanonHashMismatchError: On the default path when the lockfile's kanon_hash
             differs for a reason the consistency check does not cover (e.g. a PATH
             change) other than a pure source removal.  ``--reconcile`` reconciles
@@ -2749,6 +2765,7 @@ def _run_install(
     _captured_content_pins: bool = False
 
     reconcile_computed_hash: str | None = None
+    additive = False
 
     if install_state is InstallState.LOCKFILE_HASH_MISMATCH:
         existing_lockfile_nn = cast(Lockfile, lockfile_hash_mismatch_lockfile)
@@ -2760,7 +2777,10 @@ def _run_install(
             name: mismatch_config["sources"][name]["ref"] for name in mismatch_source_names
         }
 
-        if not reconcile:
+        additive = (
+            not reconcile and not strict_lock and _only_adds_sources(mismatch_config["sources"], existing_lockfile_nn)
+        )
+        if not reconcile and not additive:
             _assert_lockfile_consistent_or_fail(
                 mismatch_source_names,
                 mismatch_revision_specs,
@@ -2830,7 +2850,7 @@ def _run_install(
     allow_insecure: bool = os.environ.get(KANON_ALLOW_INSECURE_REMOTES) == "1"
 
     _drifted_source_names: set[str] = set()
-    if install_state is InstallState.LOCKFILE_CONSISTENT and existing_lockfile is not None:
+    if existing_lockfile is not None and (install_state is InstallState.LOCKFILE_CONSISTENT or additive):
         orphaned = _detect_orphaned_lock_entries(existing_lockfile, source_names)
         if orphaned:
             if strict_lock:
@@ -2941,11 +2961,12 @@ def _run_install(
         elif install_state is InstallState.RECONCILE:
             if reconcile_replay and existing_lockfile is not None:
                 pinned = cast(SourceEntry, next(e for e in existing_lockfile.sources if e.name == name))
-                _check_sha_reachable(
-                    url=pinned.url,
-                    sha=pinned.resolved_sha,
-                    source_name=name,
-                )
+                if name not in _drifted_source_names:
+                    _check_sha_reachable(
+                        url=pinned.url,
+                        sha=pinned.resolved_sha,
+                        source_name=name,
+                    )
                 resolved_revision = pinned.resolved_sha
                 resolved_entries.append(pinned)
             else:
@@ -3275,17 +3296,16 @@ def install(
             (enforced at the CLI level by argparse).  Default ``None`` preserves
             prior behaviour.
         strict_lock: When ``True``, upgrade orphaned lock entries to
-            ``OrphanedLockEntryError`` instead of pruning with an info-line.  Only
-            applies in the ``LOCKFILE_CONSISTENT`` state.  Default ``False``
-            preserves prior behaviour (prune + info-line).
+            ``OrphanedLockEntryError`` instead of pruning with an info-line.
+            Also rejects pure source additions before any resolution.
         strict_drift: When ``True``, upgrade branch drift to
             ``BranchDriftError`` instead of reusing the locked SHA with an info-line.
-            Only applies in the ``LOCKFILE_CONSISTENT`` state.  Default
+            Applies to consistent replay and automatic pure additions. Default
             ``False`` preserves prior behaviour (reuse + info-line).
         reconcile: When ``True``, opt in to the lenient npm-install reconcile on a
             hash mismatch (prune orphans, re-resolve added/changed sources, replay
-            unchanged ones).  Default ``False`` fails fast on ``.kanon`` <->
-            ``.kanon.lock`` drift via the FR-24 consistency check before resolving.
+            unchanged ones). Default ``False`` accepts pure additions and
+            rejects other declaration drift before resolving.
 
     Raises:
         LockfileConsistencyError: On the default (non-``--reconcile``) path when

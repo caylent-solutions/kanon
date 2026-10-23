@@ -7,7 +7,7 @@ to manage, distribute, and install Claude Code marketplace plugins.
 
 ## Marketplace Manifest Structure
 
-Marketplace manifest files are named `*-marketplace.xml` (e.g.,
+Marketplace manifests commonly use `*-marketplace.xml` names (e.g.,
 `claude-history-marketplace.xml`). Each manifest includes shared remote
 definitions via `<include>` and declares its `<project>` entries.
 
@@ -98,13 +98,14 @@ This allows Claude Code to discover and load marketplace plugins at runtime.
 ### How Linkfiles Work
 
 1. **Source (`src`)** -- A relative path within the cloned package repository
-   pointing to the marketplace plugin directory
+   pointing to the marketplace root containing `.claude-plugin/marketplace.json`,
+   not a plugin subdirectory inside that marketplace
 2. **Destination (`dest`)** -- Must use the `${CLAUDE_MARKETPLACES_DIR}`
    environment variable, resolved at install time by `repo envsubst`
 3. **Execution** -- When `repo sync` runs, it creates a symlink from the
    destination to the source package directory
-4. **Discovery** -- Claude Code scans `${CLAUDE_MARKETPLACES_DIR}` to find
-   all registered marketplace plugins
+4. **Discovery** -- Kanon scans `${CLAUDE_MARKETPLACES_DIR}` and registers
+   marketplace roots with Claude Code
 
 ### Validation Rules
 
@@ -146,6 +147,35 @@ directory; a custom value is preserved and never clobbered. So the canonical
 `kanon add <claude-marketplace> ; kanon install` flow works with no manual
 edit to `.kanon`.
 
+### Mixed Packages and Marketplaces
+
+Every declared source is synced, whether it contains plain files or Claude
+plugins. The marketplace lifecycle runs when at least one source has
+`KANON_SOURCE_<alias>_MARKETPLACE=true`.
+
+Registration depends on the delivered directory containing
+`.claude-plugin/marketplace.json` at its root:
+
+- For a `<linkfile>` into `${CLAUDE_MARKETPLACES_DIR}`, its `src` must point
+  to that marketplace root.
+- For an enabled source's project with no `<linkfile>`, Kanon checks the
+  project checkout root and adds a marketplace symlink when the JSON exists.
+- Directories without the JSON remain installed as files but are skipped
+  during registration, with a `Skipping non-marketplace entry` warning when
+  encountered in the marketplace directory.
+
+The XML filename and `<catalog-metadata><name>` do not determine registration.
+The metadata `<type>` helps `kanon add` choose the initial marketplace flag,
+but it does not turn a plain directory into a marketplace. Claude's marketplace
+name and plugin list come from `marketplace.json`.
+
+For example, one `.kanon` can include a shared lint configuration and a Claude
+marketplace: both sources sync, while only the marketplace root is registered.
+The marketplace directory is shared and scanned as a whole whenever the
+lifecycle is enabled. A source's `MARKETPLACE=false` flag does not suppress
+its manifest's `<linkfile>` writes; avoid pointing plain-package linkfiles
+there when another source enables the marketplace lifecycle.
+
 ### Install Lifecycle
 
 When a user runs `kanon install .kanon`:
@@ -163,8 +193,14 @@ When a user runs `kanon install .kanon`:
 5. **Collision detection** -- Fail immediately if two sources produce the
    same package name
 6. **Install plugins** -- The Kanon CLI locates the `claude` binary, discovers
-   marketplace entries and plugins, registers marketplaces, and installs
-   plugins via the Claude Code CLI
+   [marketplace roots](#mixed-packages-and-marketplaces) and their plugins,
+   registers marketplaces, and installs
+   plugins via the Claude Code CLI. Each successful install is followed by
+   `claude plugin update <plugin>@<marketplace> --scope user` so an existing
+   plugin refreshes from the marketplace Kanon just synced. Re-running Claude's
+   install command alone leaves an existing plugin's recorded version unchanged.
+   Both commands use `CLAUDE_INSTALL_TIMEOUT`. Start a new Claude session or run
+   `/reload-plugins` after changing a plugin version.
 
 ### Uninstall Lifecycle
 
@@ -181,8 +217,9 @@ critical -- uninstall plugins before removing files:
 
 ### Failure Handling
 
-- If any marketplace registration or plugin install fails, `kanon install`
-  aborts immediately with an actionable error message
+- If marketplace registration fails, its plugins are not installed or updated.
+- If any marketplace registration, plugin install, or plugin update fails,
+  `kanon install` exits non-zero with an actionable error message.
 - If any plugin uninstall or marketplace removal fails, `kanon clean` aborts
   immediately with an actionable error message
 - All failures surface clear diagnostics identifying the failed step

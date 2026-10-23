@@ -186,7 +186,7 @@ CLAUDE_MARKETPLACES_DIR=/path/to/marketplaces
 Earlier kanon used a single global `KANON_MARKETPLACE_INSTALL` toggle. That
 variable was **removed**. Marketplace install is now an opt-in per dependency:
 add `KANON_SOURCE_<alias>_MARKETPLACE=true` to that dependency's block (absence of
-the line is the canonical false; kanon never writes `=false`). Manage the flag
+the line means disabled; `marketplace disable` retains `=false` for re-enabling). Manage the flag
 with `kanon marketplace enable <alias>`, `kanon marketplace disable <alias>`, and
 `kanon marketplace status`. If your hand-written file still has a global
 `KANON_MARKETPLACE_INSTALL` line, delete it and set the per-dependency flag on

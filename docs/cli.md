@@ -334,12 +334,17 @@ The value written for the added dependency is resolved as follows:
    `claude-marketplace`.
 2. **`--no-marketplace-install`** -- forces the dependency to NOT register
    as a marketplace: the `KANON_SOURCE_<alias>_MARKETPLACE` line is omitted
-   (absence is the canonical "disabled"; kanon never writes `=false`).
+   (absence means "disabled").
 3. **Neither flag** -- the setting is auto-detected from the entry's
    `<catalog-metadata><type>`: `claude-marketplace` entries get
    `_MARKETPLACE=true`, all others omit the line.
 
 The two flags are mutually exclusive (passing both is a usage error).
+
+After adding a marketplace, `kanon marketplace disable <alias>` writes
+`_MARKETPLACE=false` to preserve its type. `kanon marketplace enable <alias>`
+can then restore it without fetching the catalog. Both commands leave the
+lockfile unchanged.
 
 ### Usage examples
 

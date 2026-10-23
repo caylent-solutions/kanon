@@ -23,10 +23,12 @@ import pytest
 from kanon_cli.core.install import (
     KanonHashMismatchError,
     OrphanedLockEntryError,
+    _only_adds_sources,
     _should_replay_source,
     _strict_lock_drift_error,
 )
-from kanon_cli.core.lockfile import CURRENT_SCHEMA_VERSION, Lockfile, SourceEntry
+from kanon_cli.core.kanon_hash import hash_sources
+from kanon_cli.core.lockfile import CURRENT_SCHEMA_VERSION, Lockfile, LockfileConsistencyError, SourceEntry
 
 
 _SHA = "a" * 40
@@ -54,6 +56,35 @@ def _lockfile(*entries: SourceEntry) -> Lockfile:
         kanon_hash=_HASH_OLD,
         sources=list(entries),
     )
+
+
+@pytest.mark.unit
+class TestAdditiveDeclarations:
+    """Only unchanged retained declarations and valid pins admit automatic additions."""
+
+    @pytest.mark.parametrize("change", [None, "url", "path", "ref", "remove", "unchanged"])
+    def test_only_new_sources_are_allowed(self, change: str | None) -> None:
+        original = _entry("alpha", "main")
+        source = {"url": original.url, "path": original.path, "ref": original.ref_spec}
+        lockfile = _lockfile(original)
+        lockfile.kanon_hash = hash_sources({original.alias: source})
+        sources = {original.alias: dict(source), "beta": dict(source)}
+        if change in {"url", "path", "ref"}:
+            sources[original.alias][change] += "-changed"
+        elif change == "remove":
+            del sources[original.alias]
+        elif change == "unchanged":
+            del sources["beta"]
+        assert _only_adds_sources(sources, lockfile) is (change is None)
+
+    def test_changed_retained_lock_ref_is_rejected(self) -> None:
+        original = _entry("alpha", "main")
+        source = {"url": original.url, "path": original.path, "ref": original.ref_spec}
+        lockfile = _lockfile(original)
+        lockfile.kanon_hash = hash_sources({original.alias: source})
+        original.ref_spec = "edited-lock-ref"
+        with pytest.raises(LockfileConsistencyError, match="ref-specs differ"):
+            _only_adds_sources({original.alias: source, "beta": dict(source)}, lockfile)
 
 
 @pytest.mark.unit

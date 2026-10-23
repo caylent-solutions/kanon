@@ -1129,27 +1129,23 @@ def _parse_xml_includes_and_projects(
 
 def _resolve_include_path(
     inc_name: str,
-    xml_path: pathlib.Path,
     manifest_root: pathlib.Path,
 ) -> pathlib.Path | None:
     """Resolve an include name to a filesystem path.
 
-    Tries the path relative to ``xml_path``'s directory first, then relative
-    to ``manifest_root``. Returns ``None`` when the file does not exist at
-    either location.
+    Resolves relative to ``manifest_root``, matching the install include
+    walker and the repo manifest format. Returns ``None`` when that path
+    does not exist, even if a same-named file is beside the including XML.
 
     Args:
         inc_name: The ``name`` attribute value from an ``<include>`` element.
-        xml_path: The XML file that contains the ``<include>`` directive.
         manifest_root: Root directory of the cloned manifest repo.
 
     Returns:
         Resolved :class:`pathlib.Path` when found, or ``None``.
     """
-    for candidate in (xml_path.parent / inc_name, manifest_root / inc_name):
-        if candidate.exists():
-            return candidate
-    return None
+    candidate = manifest_root / inc_name
+    return candidate if candidate.exists() else None
 
 
 def _render_tree(
@@ -1225,7 +1221,7 @@ def _render_tree(
     include_paths: list[pathlib.Path] = []
     include_placeholders: list[str] = []
     for inc_name in root_includes:
-        resolved = _resolve_include_path(inc_name, entry_xml, manifest_root)
+        resolved = _resolve_include_path(inc_name, manifest_root)
         if resolved is not None:
             include_paths.append(resolved)
         else:

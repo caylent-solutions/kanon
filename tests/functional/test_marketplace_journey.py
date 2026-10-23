@@ -5,8 +5,7 @@ enable/disable/status arc against a synthetic ``.kanon`` file, asserting at each
 step that:
 
 - ``enable`` writes ``KANON_SOURCE_<alias>_MARKETPLACE=true``;
-- ``disable`` removes the line entirely (absence is the canonical false; no
-  ``=false`` is ever written);
+- ``disable`` retains ``=false`` so the marketplace can be enabled again;
 - ``status`` renders an explicit ``=false`` and an absent line identically (both
   "disabled");
 - ``.kanon.lock`` is never created or modified by any of the three operations
@@ -81,7 +80,7 @@ def journey_workspace(tmp_path: pathlib.Path) -> "tuple[pathlib.Path, pathlib.Pa
 def test_marketplace_enable_disable_status_journey(
     journey_workspace: "tuple[pathlib.Path, pathlib.Path, pathlib.Path]",
 ) -> None:
-    """Drive enable -> disable -> status and assert .kanon.lock is untouched."""
+    """Drive disable -> status -> re-enable without changing the lockfile."""
     workspace, kanon_file, lock_file = journey_workspace
 
     status_initial = _run_kanon("marketplace", "status", "--all", cwd=workspace)
@@ -97,30 +96,29 @@ def test_marketplace_enable_disable_status_journey(
     disable_result = _run_kanon("marketplace", "disable", _ALIAS, cwd=workspace)
     assert disable_result.returncode == 0, disable_result.stderr
     after_disable = kanon_file.read_text(encoding="utf-8")
-    assert f"KANON_SOURCE_{_ALIAS}_MARKETPLACE" not in after_disable
-
-    assert f"KANON_SOURCE_{_ALIAS}_MARKETPLACE=false" not in after_disable
+    assert f"KANON_SOURCE_{_ALIAS}_MARKETPLACE=false" in after_disable
     assert lock_file.read_text(encoding="utf-8") == _LOCK_SENTINEL
 
-    status_after_disable = _run_kanon("marketplace", "status", "--all", cwd=workspace)
+    status_after_disable = _run_kanon("marketplace", "status", cwd=workspace)
     assert status_after_disable.returncode == 0, status_after_disable.stderr
-    absent_row = next(line for line in status_after_disable.stdout.splitlines() if line.startswith(_ALIAS))
+    disabled_row = next(line for line in status_after_disable.stdout.splitlines() if line.startswith(_ALIAS))
     explicit_false_row = next(
         line for line in status_after_disable.stdout.splitlines() if line.startswith(_FALSE_ALIAS)
     )
-    assert absent_row.split()[-1] == "disabled"
+    assert "claude-marketplace" in disabled_row
+    assert disabled_row.split()[-1] == "disabled"
     assert explicit_false_row.split()[-1] == "disabled"
 
-    enable_result = _run_kanon("marketplace", "enable", _FALSE_ALIAS, cwd=workspace)
+    enable_result = _run_kanon("marketplace", "enable", _ALIAS, cwd=workspace)
     assert enable_result.returncode == 0, enable_result.stderr
     after_enable = kanon_file.read_text(encoding="utf-8")
-    assert f"KANON_SOURCE_{_FALSE_ALIAS}_MARKETPLACE=true" in after_enable
-    assert f"KANON_SOURCE_{_FALSE_ALIAS}_MARKETPLACE=false" not in after_enable
+    assert f"KANON_SOURCE_{_ALIAS}_MARKETPLACE=true" in after_enable
+    assert f"KANON_SOURCE_{_ALIAS}_MARKETPLACE=false" not in after_enable
     assert lock_file.read_text(encoding="utf-8") == _LOCK_SENTINEL
 
     status_after_enable = _run_kanon("marketplace", "status", "--all", cwd=workspace)
     assert status_after_enable.returncode == 0, status_after_enable.stderr
-    enabled_row = next(line for line in status_after_enable.stdout.splitlines() if line.startswith(_FALSE_ALIAS))
+    enabled_row = next(line for line in status_after_enable.stdout.splitlines() if line.startswith(_ALIAS))
     assert enabled_row.split()[-1] == "enabled"
 
     assert lock_file.read_text(encoding="utf-8") == _LOCK_SENTINEL
@@ -180,7 +178,7 @@ def test_marketplace_disable_keeps_header_when_another_marketplace_remains(tmp_p
     disable_result = _run_kanon("marketplace", "disable", _ALIAS, cwd=workspace)
     assert disable_result.returncode == 0, disable_result.stderr
     after_disable = kanon_file.read_text(encoding="utf-8")
-    assert f"KANON_SOURCE_{_ALIAS}_MARKETPLACE" not in after_disable
+    assert f"KANON_SOURCE_{_ALIAS}_MARKETPLACE=false" in after_disable
     assert f"KANON_SOURCE_{second_alias}_MARKETPLACE=true" in after_disable
     assert after_disable.count(_MARKETPLACES_DIR_HEADER) == 1, (
         f"the header must remain while another marketplace is still enabled; got:\n{after_disable}"

@@ -239,7 +239,9 @@ SHA byte-for-byte (npm-style content-SHA locking), so a branch or tag
 
 **`path`** (string) -- The project's checkout path (`<project path>`),
 used to locate the checkout when re-capturing and to rewrite the replay
-revision.
+revision. Capture and replay match the pair `(name, path)`, so the same
+repository can have distinct pinned commits at different checkout paths.
+An omitted or empty `<project path>` uses the project name.
 
 **`resolved_sha`** (string) -- The 40- or 64-hex content commit SHA
 captured at lock time.
@@ -431,7 +433,7 @@ alias-keyed `.kanon` source declarations and changes whenever a source
 `URL`, `REF`, or `PATH` changes.
 
 A `kanon_hash` mismatch means `.kanon` changed since the lockfile was
-written. Plain `kanon install` fails fast on this drift (exit 1) without
+written. Except for pure additions, plain `kanon install` fails fast (exit 1) without
 mutating the lock (see [Install reconcile model](#install-reconcile-model));
 `kanon install --reconcile` opts in to the lenient prune-and-reconcile, and
 `kanon install --refresh-lock` (full) or
@@ -639,7 +641,10 @@ When the `kanon_hash` computed from the current `.kanon` file differs
 from the value recorded in the lockfile, the behaviour follows the model
 described under [Install reconcile model](#install-reconcile-model):
 
-- **Plain `kanon install` fails fast** (exit 1) and **never mutates the
+- **Pure additions install automatically** while retaining every existing
+  source's URL, manifest path, ref and locked content. `--strict-lock`
+  rejects additions too. No lockfile update is written on failure.
+- **Other drift fails fast** (exit 1) and **never mutates the
   lockfile**. The FR-24 consistency check runs before any resolution and
   rejects an alias-set drift (a source added to or removed from `.kanon`)
   or a per-alias ref-spec mismatch with an actionable error, for example:
@@ -706,10 +711,13 @@ resolution and during `LOCKFILE_CONSISTENT` replay.
 
 ## Install reconcile model
 
-`kanon install` treats `.kanon` and `.kanon.lock` like `npm ci` by
-default: the committed lockfile is authoritative and any drift between
-`.kanon` and `.kanon.lock` is a hard error. The lenient `npm install`
-style reconcile is opt-in via `--reconcile`.
+`kanon install` preserves existing locked dependencies. Adding new sources
+installs only those additions and replays the existing pins, so `kanon add`
+followed by `kanon install` works in an already installed project. All previously
+locked source declarations must retain their URL, manifest path and ref:
+Kanon checks their canonical hash against the previous lock before proceeding.
+Removals and changes to existing declarations still require `--reconcile`
+or a lock refresh. `--strict-lock` also rejects pure additions.
 
 ### Plain `kanon install` -- fail fast on drift (`npm ci`)
 
@@ -717,11 +725,11 @@ When `.kanon` is unchanged since the lockfile was written
 (`LOCKFILE_CONSISTENT`), plain install replays every locked SHA verbatim
 and does not touch the remote or the lockfile.
 
-When `.kanon` has drifted, the default `kanon install` runs the FR-24
+For changes other than pure additions, the default `kanon install` runs the FR-24
 consistency check **before** resolving anything, exits 1, and **never
 mutates the lockfile**. Drift is either:
 
-- **Alias-set drift** -- a source added to or removed from `.kanon` since
+- **Alias-set drift** -- a source removed from `.kanon`, possibly alongside additions, since
   the lock was written (the `.kanon` and `.kanon.lock` alias sets differ).
 - **Per-alias ref-spec mismatch** -- a source whose `.kanon` revision
   differs from the `ref_spec` recorded in the lock.
@@ -761,8 +769,8 @@ same edit.
 
 ### `kanon install --strict-lock` -- reject surviving orphans
 
-Ordinary drift already fails the default install, so `--strict-lock` is
-effectively the default for drift. It additionally rejects an orphaned
+`--strict-lock` rejects all declaration drift, including pure additions that
+plain install accepts. It additionally rejects an orphaned
 lock entry that survives a `kanon_hash` match -- a source present in
 `.kanon.lock` but absent from `.kanon` (e.g. after `kanon remove`) that
 did not change the hash. Remediation: restore the missing

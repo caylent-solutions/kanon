@@ -78,6 +78,15 @@ block. The following fields are enforced by `kanon validate metadata` and
 - `owner-email` -- maintainer's contact address.
 - `keywords` -- comma-separated search terms.
 
+**OPTIONAL fields** (absence is silent):
+
+- `min-kanon-version` -- the oldest kanon that supports this entry, as a
+  single PEP 440 version (e.g. `3.4.2`). `kanon add` refuses the entry on an
+  older kanon and writes the value into the consumer's `.kanon` as
+  `KANON_MIN_VERSION` when it is higher than the one already there. It never
+  lowers an existing value. A malformed value is an audit ERROR (M008) and makes
+  `kanon add` of that entry fail.
+
 Example `<catalog-metadata>` block:
 
 ```xml
@@ -92,6 +101,7 @@ Example `<catalog-metadata>` block:
   <owner-name>Platform Team</owner-name>
   <owner-email>platform@example.com</owner-email>
   <keywords>python,library,utilities</keywords>
+  <min-kanon-version>3.4.2</min-kanon-version>
 </catalog-metadata>
 ```
 

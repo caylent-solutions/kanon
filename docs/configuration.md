@@ -753,6 +753,37 @@ edit:
 See [docs/lockfile.md](lockfile.md#marketplace-ownership-and-pruning) for
 how the per-source ledger drives marketplace pruning.
 
+## Minimum kanon version
+
+A `.kanon` can declare the oldest kanon allowed to operate on it:
+
+```properties
+KANON_MIN_VERSION=3.4.2
+```
+
+- `kanon install`, `kanon add`, `kanon remove` and `kanon clean` read the line
+  before doing any work. Read-only commands (`list`, `why`, `outdated`,
+  `validate`, `doctor`) do not check it.
+- When the running kanon is older than the minimum, the command exits 1 with
+  `ERROR: <path> requires kanon <min> or later; this is kanon <running>.` and
+  `Upgrade with: pipx upgrade kanon-cli`. The `.kanon` is left unchanged.
+- The value must be a single PEP 440 version. Anything else (`latest`,
+  `>=3.4.2`, `${VAR}`, an empty value) exits 1 with an `Invalid
+  KANON_MIN_VERSION=...` error; it is never skipped.
+- The value is read verbatim from the file. A `KANON_MIN_VERSION` environment
+  variable neither overrides nor supplies it, and the update-check opt-outs
+  (`--no-update-check`, `KANON_SKIP_UPDATE_CHECK`) do not affect it.
+- `kanon clean --purge-all` with no `.kanon` present has no file to read, so it
+  runs unchecked.
+- A catalog entry can declare `<min-kanon-version>` in its
+  `<catalog-metadata>`. `kanon add` refuses the entry when the running kanon is
+  older, and otherwise writes the highest declared value across the added
+  entries into `.kanon` when it is above the current `KANON_MIN_VERSION` (or
+  none is set). `kanon add` never lowers the value; `--dry-run` previews the
+  change as `-`/`+` lines.
+- kanon releases before 3.5.0 treat the line as an unknown global and ignore
+  it, so a repo can add it before every operator has upgraded.
+
 ---
 
 ## kanon repo Subcommand

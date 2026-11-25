@@ -182,6 +182,7 @@ def _run(args) -> int | None:
         args: Parsed arguments with kanonenv_path.
     """
     from kanon_cli.core.kanonenv import parse_kanonenv
+    from kanon_cli.core.min_version import enforce_min_version
 
     _warn_if_legacy_env_vars_set()
 
@@ -199,6 +200,7 @@ def _run(args) -> int | None:
         sys.exit(1)
 
     try:
+        enforce_min_version(args.kanonenv_path)
         parse_kanonenv(args.kanonenv_path)
     except (FileNotFoundError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

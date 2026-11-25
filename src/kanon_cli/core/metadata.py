@@ -44,7 +44,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from xml.etree.ElementTree import Element, ParseError as XMLParseError
 
+from packaging.version import InvalidVersion, Version
+
 from kanon_cli.constants import (
+    KANON_CATALOG_MIN_VERSION_TAG,
     KANON_CATALOG_METADATA_RECOMMENDED_FIELDS,
     KANON_CATALOG_METADATA_REQUIRED_FIELDS,
     RECOMMENDED_CHAR_RE,
@@ -139,6 +142,13 @@ class CatalogMetadata:
     - ``owner_email`` -- primary owner contact address.
     - ``keywords`` -- list of keyword strings, empty when absent.
 
+    Optional fields (absence is silent; the slot holds ``None``):
+
+    - ``min_kanon_version`` -- the ``<min-kanon-version>`` text: the oldest kanon
+      this entry supports. Kept verbatim here so one malformed entry never breaks
+      listing a whole catalog; ``kanon add`` validates it when the entry is
+      selected, and ``kanon catalog audit --check metadata`` reports it (M008).
+
     See ``spec/kanon-list-add-lock-features-spec.md`` Section 3.5 for the
     soft-spot rule 1 semantics that govern this dataclass.
     """
@@ -151,6 +161,7 @@ class CatalogMetadata:
     owner_name: str | None = None
     owner_email: str | None = None
     keywords: list[str] = field(default_factory=list)
+    min_kanon_version: str | None = None
 
 
 def _check_duplicate_children(block: Element, xml_path: Path) -> None:
@@ -280,6 +291,9 @@ def _parse_catalog_metadata(xml_path: Path) -> CatalogMetadata:
         else:
             keywords = [token.strip() for token in raw_kw.split(",") if token.strip()]
 
+    raw_min_version = children.get(KANON_CATALOG_MIN_VERSION_TAG)
+    min_kanon_version = raw_min_version.strip() if raw_min_version and raw_min_version.strip() else None
+
     if missing_recommended:
         print(
             f"WARNING: {xml_path}: recommended <catalog-metadata> fields missing: " + ", ".join(missing_recommended),
@@ -295,6 +309,7 @@ def _parse_catalog_metadata(xml_path: Path) -> CatalogMetadata:
         owner_name=owner_name,
         owner_email=owner_email,
         keywords=keywords,
+        min_kanon_version=min_kanon_version,
     )
 
 
@@ -333,6 +348,8 @@ def audit_catalog_metadata(xml_path: Path) -> list[MetadataAuditIssue]:
     - ``"error"`` / ``M006``: duplicate child tag within the single block.
     - ``"error"`` / ``M001``: required field missing or whitespace-only.
     - ``"warn"``  / ``M002``: recommended field absent.
+    - ``"error"`` / ``M008``: ``<min-kanon-version>`` present but not a single
+      PEP 440 version.
 
     Args:
         xml_path: Path to the ``*-marketplace.xml`` file.
@@ -445,6 +462,23 @@ def audit_catalog_metadata(xml_path: Path) -> list[MetadataAuditIssue]:
                         f"{xml_path}: recommended <catalog-metadata> field <{tag_name}> "
                         "is absent. "
                         f"Consider adding <{tag_name}> to improve catalog discoverability."
+                    ),
+                )
+            )
+
+    raw_min_version = children.get(KANON_CATALOG_MIN_VERSION_TAG)
+    if raw_min_version is not None and raw_min_version.strip():
+        try:
+            Version(raw_min_version.strip())
+        except InvalidVersion:
+            issues.append(
+                MetadataAuditIssue(
+                    severity="error",
+                    code="M008",
+                    message=(
+                        f"{xml_path}: <{KANON_CATALOG_MIN_VERSION_TAG}> {raw_min_version.strip()!r} "
+                        "is not a single PEP 440 version. "
+                        f"Set it to a release such as 3.4.2, or remove <{KANON_CATALOG_MIN_VERSION_TAG}>."
                     ),
                 )
             )

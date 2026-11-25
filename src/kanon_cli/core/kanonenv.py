@@ -47,6 +47,7 @@ import re
 import stat
 
 from kanon_cli.constants import (
+    KANON_MIN_VERSION_KEY,
     MARKETPLACE_DIR_GLOBAL_KEY,
     SHELL_VAR_PATTERN,
     SOURCE_ENV_KEY,
@@ -65,6 +66,9 @@ _UNSAFE_WRITE_BITS = stat.S_IWGRP | stat.S_IWOTH
 
 
 _PATH_SUFFIX = "_PATH"
+
+
+_ENV_OVERRIDE_EXEMPT_KEYS = frozenset({MARKETPLACE_DIR_GLOBAL_KEY, KANON_MIN_VERSION_KEY})
 
 
 class NoSourcesError(ValueError):
@@ -135,6 +139,30 @@ def parse_kanonenv(path: pathlib.Path) -> dict:
     expanded = _expand_shell_variables(merged)
 
     return _build_result(expanded)
+
+
+def read_raw_value(path: pathlib.Path, key: str) -> str | None:
+    """Return one key's literal value from a .kanon file, or None when absent.
+
+    Reads the raw KEY=VALUE lines only: no environment overrides, no shell
+    expansion, and no source validation. Callers that must inspect a single
+    global before the full ``parse_kanonenv`` pipeline can run (for example on a
+    ``.kanon`` that declares no sources yet) use this instead.
+
+    Args:
+        path: Path to the .kanon file.
+        key: The exact key to look up.
+
+    Returns:
+        The stripped value, or None when the file does not exist or does not
+        declare the key.
+
+    Raises:
+        ValueError: If the same key appears more than once in the file.
+    """
+    if not path.is_file():
+        return None
+    return _read_key_value_pairs(path).get(key)
 
 
 def _check_no_symlink(path: pathlib.Path) -> None:
@@ -279,6 +307,11 @@ def _apply_env_overrides(raw_vars: dict[str, str]) -> dict[str, str]:
     the adoption pass below only fills the key from the OS env when ``.kanon``
     declares no value for it.
 
+    ``KANON_MIN_VERSION`` is also exempt from the same-name-override pass, and is
+    never adopted from the OS environment. It is repo policy: an operator's shell
+    must not be able to lower or impose the minimum kanon version a ``.kanon``
+    declares.
+
     Args:
         raw_vars: Dict of KEY=VALUE pairs from the file.
 
@@ -287,7 +320,7 @@ def _apply_env_overrides(raw_vars: dict[str, str]) -> dict[str, str]:
     """
     merged = dict(raw_vars)
     for key in merged:
-        if key == MARKETPLACE_DIR_GLOBAL_KEY:
+        if key in _ENV_OVERRIDE_EXEMPT_KEYS:
             continue
         env_value = os.environ.get(key)
         if env_value is not None:

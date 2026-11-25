@@ -177,6 +177,25 @@ class TestEnvOverrides:
         result = parse_kanonenv(kanonenv)
         assert result["globals"]["CLAUDE_MARKETPLACES_DIR"] == "/from/file"
 
+    def test_min_version_file_value_is_not_overridden_by_os_env(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """KANON_MIN_VERSION is repo policy, so an OS env value cannot lower it."""
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text("KANON_MIN_VERSION=3.4.2\n" + _block("build"))
+        monkeypatch.setenv("KANON_MIN_VERSION", "0.0.0")
+        result = parse_kanonenv(kanonenv)
+        assert result["globals"]["KANON_MIN_VERSION"] == "3.4.2"
+
+    def test_min_version_is_not_adopted_from_os_env(
+        self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        kanonenv = tmp_path / ".kanon"
+        kanonenv.write_text(_block("build"))
+        monkeypatch.setenv("KANON_MIN_VERSION", "9.0.0")
+        result = parse_kanonenv(kanonenv)
+        assert "KANON_MIN_VERSION" not in result["globals"]
+
 
 @pytest.mark.unit
 class TestValidation:

@@ -38,7 +38,9 @@ from packaging.version import InvalidVersion, Version
 from kanon_cli.constants import (
     CATALOG_TYPE_CLAUDE_MARKETPLACE,
     GLOBALLY_SUPPLIED_MANIFEST_VARS,
+    KANON_CATALOG_MIN_VERSION_TAG,
     KANON_HEADER_CLAUDE_MARKETPLACES_DIR,
+    KANON_MIN_VERSION_KEY,
     KANON_KANON_FILE_DEFAULT,
     KANON_KANON_FILE_ENV,
     KANON_LOCK_FILE,
@@ -70,8 +72,10 @@ from kanon_cli.core.kanonenv_writer import (
     ensure_claude_marketplaces_dir,
     guard_kanon_file_not_dir,
     has_claude_marketplaces_dir_header,
+    upsert_min_version,
 )
 from kanon_cli.core.lockfile import write_lockfile
+from kanon_cli.core.min_version import enforce_min_version, parse_min_version, require_kanon_version
 from kanon_cli.utils.concurrency import kanon_workspace_lock
 from kanon_cli.utils.lock_file_path import derive_lock_file_path
 from kanon_cli.core.metadata import (
@@ -120,11 +124,13 @@ def register(subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]") 
             "Resolve catalog entries from a manifest repo and append the\n"
             "alias-keyed KANON_SOURCE_<alias>_{URL,REF,PATH,NAME} block (plus an\n"
             "optional per-dependency env-var line per ${VAR} the manifest needs)\n"
-            "to the destination .kanon file. The only global header written is the\n"
-            "single CLAUDE_MARKETPLACES_DIR line, auto-added once when a\n"
+            "to the destination .kanon file. Two global headers are auto-managed:\n"
+            "the CLAUDE_MARKETPLACES_DIR line, auto-added once when a\n"
             "claude-marketplace entry is added (and pruned by 'kanon remove' /\n"
             "'kanon marketplace disable' once the last marketplace dependency is\n"
-            "gone); hand-set that line to override the directory.\n\n"
+            "gone; hand-set that line to override the directory), and the\n"
+            "KANON_MIN_VERSION line, raised to the highest <min-kanon-version>\n"
+            "an added entry declares (never lowered).\n\n"
             "Each ENTRY is '<name>' or '<name>@<spec>' where <spec> is a PEP 440\n"
             "constraint (e.g. ==1.0.0, ~=1.2, >=1.0.0,<2.0.0). The last '@' in\n"
             "each argument is the delimiter -- see spec Section 4.0 resolver rules.\n"
@@ -1432,16 +1438,70 @@ def _render_dry_run_diff(
         print(f"+{new_line}")
 
 
+def _check_entry_min_version(metadata: CatalogMetadata, xml_path: pathlib.Path) -> Version | None:
+    """Validate a catalog entry's ``<min-kanon-version>`` against the running kanon.
+
+    Args:
+        metadata: The selected entry's parsed ``<catalog-metadata>``.
+        xml_path: The entry's catalog XML file, named in any error.
+
+    Returns:
+        The entry's minimum kanon version, or None when it declares none.
+
+    Raises:
+        KanonVersionTooOldError: If the running kanon is older than the minimum.
+        ValueError: If the declared value is not a single PEP 440 version.
+    """
+    if metadata.min_kanon_version is None:
+        return None
+    required = parse_min_version(
+        metadata.min_kanon_version,
+        key=f"<{KANON_CATALOG_MIN_VERSION_TAG}>",
+        origin=str(xml_path),
+    )
+    require_kanon_version(required, origin=f"catalog entry '{metadata.name}' ({xml_path})")
+    return required
+
+
+def _raised_min_version(declared: Version | None, catalog_min_versions: list[Version]) -> Version | None:
+    """Return the ``KANON_MIN_VERSION`` to write, or None when ``.kanon`` needs no change.
+
+    The highest catalog minimum is written only when it is above the ``.kanon``'s
+    declared minimum (or none is declared); ``kanon add`` never lowers it.
+
+    Args:
+        declared: The ``.kanon``'s current ``KANON_MIN_VERSION``, if any.
+        catalog_min_versions: The minimums declared by the entries being added.
+
+    Returns:
+        The version to write, or None.
+    """
+    if not catalog_min_versions:
+        return None
+    highest = max(catalog_min_versions)
+    if declared is not None and highest <= declared:
+        return None
+    return highest
+
+
 def run_add(args: argparse.Namespace) -> int:
     """Entry-point function for the 'kanon add' subcommand.
 
     Resolves each requested catalog entry, constructs the alias-keyed
     KANON_SOURCE_<alias>_* block lines, and appends (or overwrites) them in the
-    destination .kanon file. Creates the file when absent. The only global header
-    written is the single ``CLAUDE_MARKETPLACES_DIR`` line, auto-added once when a
+    destination .kanon file. Creates the file when absent. Two global headers are
+    auto-managed: the ``CLAUDE_MARKETPLACES_DIR`` line, auto-added once when a
     ``claude-marketplace`` entry is added (and pruned by ``kanon remove`` /
-    ``kanon marketplace disable`` once the last marketplace dependency is gone);
-    no other standard header is written (spec Section 5.1).
+    ``kanon marketplace disable`` once the last marketplace dependency is gone),
+    and the ``KANON_MIN_VERSION`` line, raised to the highest
+    ``<min-kanon-version>`` an added entry declares and never lowered. No other
+    standard header is written (spec Section 5.1).
+
+    Minimum kanon version: the ``.kanon``'s own ``KANON_MIN_VERSION`` is enforced
+    before any catalog work. Each selected entry's ``<min-kanon-version>`` is
+    validated and checked against the running kanon during the resolution
+    phase, so an entry that needs a newer kanon (or declares a malformed value)
+    fails before anything is written.
 
     The implementation uses a two-phase approach to satisfy AC-FUNC-004
     (destination .kanon is unchanged after any error):
@@ -1494,6 +1554,7 @@ def run_add(args: argparse.Namespace) -> int:
 
     kanon_file = pathlib.Path(getattr(args, "kanon_file", KANON_KANON_FILE_DEFAULT))
     guard_kanon_file_not_dir(kanon_file)
+    declared_min_version = enforce_min_version(kanon_file)
     force: bool = getattr(args, "force", False)
     dry_run: bool = getattr(args, "dry_run", False)
     alias_override: str | None = getattr(args, "alias_override", None)
@@ -1532,10 +1593,15 @@ def run_add(args: argparse.Namespace) -> int:
     existing_manifest_names = _read_alias_by_manifest_name(kanon_file)
 
     resolved_entries: list[tuple[str, str, str, str, list[str], bool, str]] = []
+    catalog_min_versions: list[Version] = []
     for raw_entry in args.entries:
         name, spec = _split_name_spec(raw_entry)
 
         metadata, xml_path, entry_url = _find_entry_by_name(name, catalog)
+
+        entry_min_version = _check_entry_min_version(metadata, xml_path)
+        if entry_min_version is not None:
+            catalog_min_versions.append(entry_min_version)
 
         resolved_revision = _resolve_spec(name, entry_url, spec)
 
@@ -1616,6 +1682,7 @@ def run_add(args: argparse.Namespace) -> int:
         resolved_entries.append((alias, mode, entry_url, lock_ref_spec, lines, marketplace, rel_path))
 
     any_marketplace = any(entry[5] for entry in resolved_entries)
+    raised_min_version = _raised_min_version(declared_min_version, catalog_min_versions)
 
     if dry_run:
         for alias, mode, _entry_url, _lock_ref_spec, lines, _marketplace, _path in resolved_entries:
@@ -1627,6 +1694,10 @@ def run_add(args: argparse.Namespace) -> int:
             )
         if any_marketplace and not has_claude_marketplaces_dir_header(kanon_file):
             print(f"+{KANON_HEADER_CLAUDE_MARKETPLACES_DIR}")
+        if raised_min_version is not None:
+            if declared_min_version is not None:
+                print(f"-{KANON_MIN_VERSION_KEY}={declared_min_version}")
+            print(f"+{KANON_MIN_VERSION_KEY}={raised_min_version}")
         return 0
 
     with kanon_workspace_lock(resolve_kanon_lock_root(kanon_file)):
@@ -1654,5 +1725,8 @@ def run_add(args: argparse.Namespace) -> int:
 
         if any_marketplace:
             ensure_claude_marketplaces_dir(kanon_file, hold_lock=False)
+
+        if raised_min_version is not None:
+            upsert_min_version(kanon_file, str(raised_min_version), hold_lock=False)
 
     return 0
